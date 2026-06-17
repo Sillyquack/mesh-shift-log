@@ -84,17 +84,23 @@ a:focus-visible {
   z-index: 100;
   display: grid;
   place-items: center;
+  overflow-y: auto;
+  overscroll-behavior: contain;
   background: rgba(0, 0, 0, 0.58);
   padding: 18px;
 }
 
 .pilot-modal {
   width: min(100%, 440px);
+  max-height: min(90vh, 720px);
+  overflow-y: auto;
+  overscroll-behavior: contain;
   border: 1px solid var(--line);
   border-radius: 8px;
   background: var(--surface);
   box-shadow: var(--shadow);
   padding: 24px;
+  -webkit-overflow-scrolling: touch;
 }
 
 .pilot-modal h1 {
@@ -109,6 +115,13 @@ a:focus-visible {
 .alert-modal {
   display: grid;
   gap: 12px;
+  padding-bottom: max(24px, env(safe-area-inset-bottom));
+}
+
+.alert-modal select,
+.alert-modal textarea,
+.alert-modal input {
+  max-width: 100%;
 }
 
 .eyebrow {
@@ -1306,6 +1319,22 @@ textarea {
   .task-title-row {
     grid-template-columns: 1fr auto;
     align-items: start;
+  }
+}
+
+@media (max-width: 480px), (max-height: 620px) {
+  .modal-backdrop {
+    align-items: start;
+    padding: 10px;
+  }
+
+  .pilot-modal {
+    max-height: calc(100dvh - 20px);
+    padding: 18px;
+  }
+
+  .alert-modal {
+    padding-bottom: max(22px, env(safe-area-inset-bottom));
   }
 }
 
