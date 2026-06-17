@@ -319,16 +319,36 @@ export const defaultRoutines = [
 
 export const knowledgeBase = [
   {
+    title: 'How to use this app',
+    body: 'Enter your code, choose your shift, complete tasks, add comments when needed, add handover notes, and ask the manager to export backups.',
+  },
+  {
+    title: 'POS/register basics',
+    body: 'Count cash carefully, close POS tables before closing, and only confirm critical POS tasks after checking the register.',
+  },
+  {
+    title: 'Salto/security reminders',
+    body: 'Use Salto checks when doors have manual overrides, and physically check doors before confirming security tasks.',
+  },
+  {
+    title: 'Handover notes',
+    body: 'Add low stock, maintenance issues, member notes and event details before leaving the shift.',
+  },
+  {
+    title: 'Backup/export',
+    body: 'Data is local to this browser. Managers should export JSON backups regularly from the dashboard.',
+  },
+  {
+    title: 'Time2Staff login',
+    body: 'Use OPEN, CLOSE or EVENT, then enter your real first name. This name is saved with completed tasks.',
+  },
+  {
+    title: 'Critical tasks',
+    body: 'Critical tasks must be physically checked before you confirm them. Do not mark them Done from memory.',
+  },
+  {
     title: 'Guest incident notes',
     body: 'Write clear facts only: what happened, who was informed, and what follow-up is needed.',
-  },
-  {
-    title: 'Maintenance issues',
-    body: 'Take a photo, add location and urgency, then notify the manager channel before ending the shift.',
-  },
-  {
-    title: 'Event handoff',
-    body: 'Confirm organizer name, room setup, catering timing, AV needs and any unpaid extras.',
   },
   {
     title: 'Security reminder',

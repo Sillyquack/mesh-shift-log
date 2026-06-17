@@ -9,6 +9,7 @@ import {
   staffCodes,
 } from './data/routines.js';
 
+const APP_VERSION = '0.4.0';
 const LOG_KEY = 'mesh-shift-logs-v1';
 const ROUTINE_KEY = 'mesh-routines-v1';
 const SESSION_KEY = 'mesh-current-user-v1';
@@ -56,6 +57,26 @@ function formatDateTime(value) {
     hour: '2-digit',
     minute: '2-digit',
   });
+}
+
+function formatBackupTime(value) {
+  if (!value) return '';
+  const date = new Date(value);
+  return date.toLocaleString([], {
+    month: 'short',
+    day: 'numeric',
+    hour: '2-digit',
+    minute: '2-digit',
+  });
+}
+
+function backupFilename(date = new Date()) {
+  const year = date.getFullYear();
+  const month = String(date.getMonth() + 1).padStart(2, '0');
+  const day = String(date.getDate()).padStart(2, '0');
+  const hours = String(date.getHours()).padStart(2, '0');
+  const minutes = String(date.getMinutes()).padStart(2, '0');
+  return `mesh-shift-log-backup-${year}-${month}-${day}-${hours}${minutes}.json`;
 }
 
 function readStorage(key, fallback) {
@@ -180,6 +201,19 @@ function routinesUseDefaults(routines) {
   return JSON.stringify(normalizeRoutines(routines)) === JSON.stringify(normalizeRoutines(defaultRoutines));
 }
 
+function estimateLocalStorageSize() {
+  try {
+    let total = 0;
+    for (let index = 0; index < localStorage.length; index += 1) {
+      const key = localStorage.key(index);
+      total += key.length + (localStorage.getItem(key) || '').length;
+    }
+    return `${Math.ceil((total * 2) / 1024)} KB`;
+  } catch {
+    return 'Unavailable';
+  }
+}
+
 function PilotNotice({ onAccept }) {
   return (
     <div className="modal-backdrop" role="dialog" aria-modal="true" aria-labelledby="pilot-title">
@@ -192,6 +226,20 @@ function PilotNotice({ onAccept }) {
         </p>
         <button type="button" className="primary-button" onClick={onAccept}>I understand</button>
       </section>
+    </div>
+  );
+}
+
+function UpdateBanner({ waitingWorker }) {
+  if (!waitingWorker) return null;
+  function refreshApp() {
+    waitingWorker.postMessage({ type: 'SKIP_WAITING' });
+    window.location.reload();
+  }
+  return (
+    <div className="update-banner">
+      <span>Update available.</span>
+      <button type="button" className="ghost-button compact-button" onClick={refreshApp}>Refresh app</button>
     </div>
   );
 }
@@ -281,7 +329,7 @@ function Login({ onLogin }) {
   );
 }
 
-function TopBar({ user, selectedShift, onBack, onLogout }) {
+function TopBar({ user, selectedShift, onBack, onLogout, isOnline }) {
   const shiftLabel = selectedShift === 'manager'
     ? 'Manager dashboard'
     : shiftOptions.find((shift) => shift.id === selectedShift)?.label || 'Select shift';
@@ -292,6 +340,9 @@ function TopBar({ user, selectedShift, onBack, onLogout }) {
         <span>{user.role}</span>
       </div>
       <div className="top-actions">
+        <span className={`pilot-status ${isOnline ? 'online' : 'offline'}`}>
+          Local pilot | {isOnline ? 'Online' : 'Offline - local data available'}
+        </span>
         {selectedShift && <span className="shift-pill">{shiftLabel}</span>}
         {selectedShift && <button type="button" className="ghost-button" onClick={onBack}>Change shift</button>}
         <button type="button" className="ghost-button" onClick={onLogout}>Log out</button>
@@ -300,18 +351,31 @@ function TopBar({ user, selectedShift, onBack, onLogout }) {
   );
 }
 
-function ShiftPicker({ user, onSelect, onManager }) {
+function ShiftPicker({ user, onSelect, onManager, routines, logs, handoverNotes }) {
+  const date = todayKey();
+  function shiftStatus(shiftType) {
+    if (shiftType === 'guides') return 'Quick reference';
+    const tasks = flattenTasks(routines, shiftType, date);
+    const shiftLogs = logs.filter((log) => log.date === date && log.shiftType === shiftType);
+    const handled = shiftLogs.filter(isHandled).length;
+    const handledIds = new Set(shiftLogs.filter(isHandled).map((log) => log.taskId));
+    const criticalRemaining = tasks.filter((task) => task.priority === 'critical' && !handledIds.has(task.id)).length;
+    const hasHandover = Object.values(handoverNotes).some((note) => note.date === date && note.shiftType === shiftType && handoverHasContent(note));
+    if (shiftType === 'weekly') return `${handled}/${tasks.length} handled`;
+    return `${handled}/${tasks.length} handled | ${criticalRemaining} critical | handover ${hasHandover ? 'yes' : 'no'}`;
+  }
   return (
     <main className="page">
       <section className="intro">
-        <p className="eyebrow">Today</p>
-        <h1>Choose a shift</h1>
+        <p className="eyebrow">{new Date().toLocaleDateString()}</p>
+        <h1>Start today's routines</h1>
+        <p className="muted">{user.name}</p>
       </section>
       <section className="shift-grid">
         {shiftOptions.map((shift) => (
           <button key={shift.id} className="shift-card" type="button" onClick={() => onSelect(shift.id)}>
             <span>{shift.label}</span>
-            <small>Open</small>
+            <small>{shiftStatus(shift.id)}</small>
           </button>
         ))}
         {user.isManager && (
@@ -724,6 +788,18 @@ function ManagerDashboard({ routines, setRoutines, logs, setLogs, handoverNotes,
   const loggedDates = [...new Set([...logs.map((log) => log.date), ...allHandoversWithContent.map((note) => note.date)])].length;
   const handledRecords = logs.filter(isHandled).length;
   const usingDefaultRoutines = routinesUseDefaults(routines);
+  const normalizedRoutineList = normalizeRoutines(routines);
+  const allRoutineTasks = normalizedRoutineList.flatMap((routine) => routine.tasks);
+  const activeTaskCount = allRoutineTasks.filter((task) => task.active !== false).length;
+  const inactiveTaskCount = allRoutineTasks.filter((task) => task.active === false).length;
+  const backupAgeDays = lastExportAt ? (Date.now() - new Date(lastExportAt).getTime()) / 86400000 : null;
+  const backupStatus = handledRecords || allHandoversWithContent.length
+    ? !lastExportAt
+      ? 'No backup exported yet.'
+      : backupAgeDays > 7
+        ? 'Backup recommended.'
+        : 'Backup up to date.'
+    : 'No shift data yet.';
   const attentionItems = [
     ...criticalMissing.slice(0, 4).map((task) => ({
       id: task.id,
@@ -806,6 +882,41 @@ function ManagerDashboard({ routines, setRoutines, logs, setLogs, handoverNotes,
     return lines.join('\n').trim();
   }
 
+  function buildDiagnostics() {
+    return [
+      'Mesh Shift Log diagnostics',
+      `Version: ${APP_VERSION}`,
+      `Users: ${staffCodes.length}`,
+      `Sections: ${normalizedRoutineList.length}`,
+      `Active tasks: ${activeTaskCount}`,
+      `Inactive tasks: ${inactiveTaskCount}`,
+      `Logged dates: ${loggedDates}`,
+      `Task records: ${logs.length}`,
+      `Handled records: ${handledRecords}`,
+      `Handover notes: ${allHandoversWithContent.length}`,
+      `Routine source: ${usingDefaultRoutines ? 'default routines' : 'local edited/imported routines'}`,
+      `LocalStorage estimate: ${estimateLocalStorageSize()}`,
+      `Last backup: ${lastExportAt ? formatBackupTime(lastExportAt) : 'none'}`,
+    ].join('\n');
+  }
+
+  function buildPilotInstructions() {
+    return [
+      'Mesh Shift Log pilot instructions:',
+      '',
+      '1. Open the app.',
+      '2. Enter your staff code.',
+      '3. Time2Staff: use OPEN, CLOSE or EVENT and enter your real first name.',
+      '4. Choose your shift.',
+      '5. Mark tasks Done only when completed.',
+      '6. Use Not relevant only when the task does not apply today, and add a reason when asked.',
+      '7. Add handover notes before leaving.',
+      '8. Critical tasks must be physically checked.',
+      '',
+      'Data is saved on this device/browser only.',
+    ].join('\n');
+  }
+
   function progressForShift(shiftType) {
     const shiftTasks = flattenTasks(routines, shiftType, date);
     const shiftLogs = dateLogs.filter((log) => log.shiftType === shiftType);
@@ -818,20 +929,25 @@ function ManagerDashboard({ routines, setRoutines, logs, setLogs, handoverNotes,
   }
 
   function exportData() {
+    const exportedAt = new Date().toISOString();
     const payload = {
-      exportedAt: new Date().toISOString(),
+      appVersion: APP_VERSION,
+      exportedAt,
       logs,
       routines,
       handoverNotes,
+      lastExportAt: exportedAt,
+      settings: {
+        pilotNoticeAccepted: readStorage(PILOT_NOTICE_KEY, false),
+      },
     };
     const blob = new Blob([JSON.stringify(payload, null, 2)], { type: 'application/json' });
     const url = URL.createObjectURL(blob);
     const link = document.createElement('a');
     link.href = url;
-    link.download = `mesh-shift-log-${todayKey()}.json`;
+    link.download = backupFilename(new Date(exportedAt));
     link.click();
     URL.revokeObjectURL(url);
-    const exportedAt = new Date().toISOString();
     setLastExportAt(exportedAt);
     saveStorage(LAST_EXPORT_KEY, exportedAt);
     setMessage('Backup exported.');
@@ -864,6 +980,24 @@ function ManagerDashboard({ routines, setRoutines, logs, setLogs, handoverNotes,
     }
   }
 
+  async function copyDiagnostics() {
+    try {
+      await navigator.clipboard.writeText(buildDiagnostics());
+      setMessage('Diagnostics copied.');
+    } catch {
+      setMessage('Could not copy diagnostics automatically. Select the text below and copy it manually.');
+    }
+  }
+
+  async function copyPilotInstructions() {
+    try {
+      await navigator.clipboard.writeText(buildPilotInstructions());
+      setMessage('Pilot instructions copied.');
+    } catch {
+      setMessage('Could not copy pilot instructions automatically. Select the text below and copy it manually.');
+    }
+  }
+
   function importData(event) {
     const file = event.target.files?.[0];
     if (!file) return;
@@ -873,6 +1007,22 @@ function ManagerDashboard({ routines, setRoutines, logs, setLogs, handoverNotes,
         const data = JSON.parse(reader.result);
         if (data.logs && !Array.isArray(data.logs)) throw new Error('Logs must be an array.');
         if (data.routines && !Array.isArray(data.routines)) throw new Error('Routines must be an array.');
+        const previewLogs = Array.isArray(data.logs) ? data.logs : [];
+        const previewHandovers = normalizeHandovers(data.handoverNotes || {});
+        const previewDates = new Set([
+          ...previewLogs.map((log) => log.date).filter(Boolean),
+          ...Object.values(previewHandovers).map((note) => note.date).filter(Boolean),
+        ]).size;
+        const preview = [
+          `Exported: ${data.exportedAt ? formatBackupTime(data.exportedAt) : 'unknown'}`,
+          `Logged dates: ${previewDates}`,
+          `Task records: ${previewLogs.length}`,
+          `Handover notes: ${Object.values(previewHandovers).filter(handoverHasContent).length}`,
+          `Routines included: ${Array.isArray(data.routines) ? 'yes' : 'no'}`,
+          '',
+          'Import this backup into this browser?',
+        ].join('\n');
+        if (!window.confirm(preview)) return;
         if (data.logs) {
           const normalizedLogs = normalizeLogs(data.logs);
           setLogs(normalizedLogs);
@@ -889,6 +1039,11 @@ function ManagerDashboard({ routines, setRoutines, logs, setLogs, handoverNotes,
           const normalizedNotes = normalizeHandovers(data.handoverNotes);
           setHandoverNotes(normalizedNotes);
           saveStorage(HANDOVER_KEY, normalizedNotes);
+        }
+        if (data.lastExportAt || data.exportedAt) {
+          const importedExportAt = data.lastExportAt || data.exportedAt;
+          setLastExportAt(importedExportAt);
+          saveStorage(LAST_EXPORT_KEY, importedExportAt);
         }
         setMessage('Import complete.');
       } catch (error) {
@@ -1032,12 +1187,43 @@ function ManagerDashboard({ routines, setRoutines, logs, setLogs, handoverNotes,
           <span><strong>{usingDefaultRoutines ? 'Default' : 'Local edits'}</strong> routines</span>
         </div>
         <p className="muted">
-          {lastExportAt ? `Last backup: ${formatDateTime(lastExportAt)}` : 'No backup exported yet.'}
+          {backupStatus} {lastExportAt ? `Last backup: ${formatBackupTime(lastExportAt)}.` : ''}
         </p>
         <div className="backup-actions">
           <button type="button" className="primary-button compact-button" onClick={exportData}>Export backup</button>
           <button type="button" className="ghost-button compact-button" onClick={onResetPilotNotice}>Show pilot notice again</button>
         </div>
+      </section>
+
+      <section className="pilot-tools-grid">
+        <article className="quick-start-card">
+          <div className="panel-title-row">
+            <div>
+              <p className="eyebrow">Pilot</p>
+              <h2>Pilot quick start</h2>
+            </div>
+            <button type="button" className="ghost-button compact-button" onClick={copyPilotInstructions}>Copy</button>
+          </div>
+          <ol>
+            <li>Staff enter their code.</li>
+            <li>Time2Staff use OPEN, CLOSE or EVENT, then their real first name.</li>
+            <li>Choose shift and mark tasks Done only when completed.</li>
+            <li>Use Not relevant only when the task does not apply today.</li>
+            <li>Add handover notes before leaving.</li>
+            <li>Critical tasks must be physically checked.</li>
+          </ol>
+        </article>
+
+        <article className="diagnostics-card">
+          <div className="panel-title-row">
+            <div>
+              <p className="eyebrow">Data health</p>
+              <h2>Diagnostics</h2>
+            </div>
+            <button type="button" className="ghost-button compact-button" onClick={copyDiagnostics}>Copy</button>
+          </div>
+          <pre>{buildDiagnostics()}</pre>
+        </article>
       </section>
 
       <section className="summary-grid">
@@ -1292,10 +1478,47 @@ export default function App() {
   const [routines, setRoutines] = useState(() => normalizeRoutines(readStorage(ROUTINE_KEY, defaultRoutines)));
   const [handoverNotes, setHandoverNotes] = useState(() => normalizeHandovers(readStorage(HANDOVER_KEY, {})));
   const [pilotAccepted, setPilotAccepted] = useState(() => readStorage(PILOT_NOTICE_KEY, false));
+  const [isOnline, setIsOnline] = useState(() => navigator.onLine);
+  const [waitingWorker, setWaitingWorker] = useState(null);
 
   useEffect(() => saveStorage(LOG_KEY, logs), [logs]);
   useEffect(() => saveStorage(ROUTINE_KEY, routines), [routines]);
   useEffect(() => saveStorage(HANDOVER_KEY, handoverNotes), [handoverNotes]);
+
+  useEffect(() => {
+    function updateOnlineStatus() {
+      setIsOnline(navigator.onLine);
+    }
+    window.addEventListener('online', updateOnlineStatus);
+    window.addEventListener('offline', updateOnlineStatus);
+    return () => {
+      window.removeEventListener('online', updateOnlineStatus);
+      window.removeEventListener('offline', updateOnlineStatus);
+    };
+  }, []);
+
+  useEffect(() => {
+    if (!('serviceWorker' in navigator) || import.meta.env.DEV) return undefined;
+    let registrationRef;
+    navigator.serviceWorker.register(`${import.meta.env.BASE_URL}sw.js`).then((registration) => {
+      registrationRef = registration;
+      if (registration.waiting) setWaitingWorker(registration.waiting);
+      registration.addEventListener('updatefound', () => {
+        const nextWorker = registration.installing;
+        if (!nextWorker) return;
+        nextWorker.addEventListener('statechange', () => {
+          if (nextWorker.state === 'installed' && navigator.serviceWorker.controller) {
+            setWaitingWorker(nextWorker);
+          }
+        });
+      });
+    }).catch(() => {
+      // PWA support is helpful but not required for the local pilot.
+    });
+    return () => {
+      registrationRef?.update?.();
+    };
+  }, []);
 
   if (!user) {
     return (
@@ -1309,6 +1532,7 @@ export default function App() {
             }}
           />
         )}
+        <UpdateBanner waitingWorker={waitingWorker} />
       </>
     );
   }
@@ -1325,6 +1549,7 @@ export default function App() {
       <TopBar
         user={user}
         selectedShift={showManager ? 'manager' : selectedShift}
+        isOnline={isOnline}
         onBack={() => {
           setSelectedShift(null);
           setShowManager(false);
@@ -1332,7 +1557,14 @@ export default function App() {
         onLogout={logout}
       />
       {!selectedShift && !showManager && (
-        <ShiftPicker user={user} onSelect={setSelectedShift} onManager={() => setShowManager(true)} />
+        <ShiftPicker
+          user={user}
+          onSelect={setSelectedShift}
+          onManager={() => setShowManager(true)}
+          routines={routines}
+          logs={logs}
+          handoverNotes={handoverNotes}
+        />
       )}
       {selectedShift && !showManager && (
         <Checklist
@@ -1367,6 +1599,7 @@ export default function App() {
           }}
         />
       )}
+      <UpdateBanner waitingWorker={waitingWorker} />
     </>
   );
 }

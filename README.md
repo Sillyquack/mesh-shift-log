@@ -2,6 +2,8 @@
 
 Mobile-first internal shift operations tool for Mesh Youngstorget hospitality staff.
 
+Current app version: `0.4.0`.
+
 The app is currently a local-only MVP. It has no backend and stores shift logs, handover notes and manager routine edits in the browser with `localStorage`.
 
 ## Pilot Use
@@ -14,6 +16,16 @@ The app is currently a local-only MVP. It has no backend and stores shift logs, 
 - Critical tasks should only be confirmed after a real physical check.
 - There is no backend or live sync yet.
 
+## Install / Offline
+
+The app includes a basic PWA manifest and service worker.
+
+- After the first online visit, the app shell can load offline.
+- Shift data is still stored in localStorage on the device.
+- Offline support does not sync data between devices.
+- Browser install options vary by phone and browser.
+- If an update is available, the app may show `Update available. Refresh app.`
+
 ## What The App Does
 
 - Staff-code login for named staff and Time2Staff roles
@@ -23,6 +35,7 @@ The app is currently a local-only MVP. It has no backend and stores shift logs, 
 - Handover notes per date, shift and user
 - Manager dashboard with progress, missing tasks, critical tasks, handover notes and history
 - Local data status, backup reminder and daily report copy for managers
+- Diagnostics and pilot quick-start copy tools for managers
 - Basic manager-only routine editor
 - JSON export/import for backups and moving local data between browsers
 
@@ -67,6 +80,10 @@ The routine editor also has separate routine export/import controls for moving j
 
 `Clear test logs` removes local logs and handover notes only. It keeps routines and routine edits.
 
+## Diagnostics
+
+Manager dashboard includes a data health/diagnostics card showing app version, task counts, log counts, handover count, routine source, and localStorage size estimate. Use `Copy diagnostics` when debugging pilot issues.
+
 ## Run Locally
 
 ```bash
@@ -98,3 +115,4 @@ Before deploying, make sure GitHub Pages is enabled for the `gh-pages` branch in
 - Manager routine edits are local until exported/imported elsewhere
 - No real authentication; staff codes are client-side demo access only
 - No live multi-device sync
+- Offline app shell may require one successful online visit first

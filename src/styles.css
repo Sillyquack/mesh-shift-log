@@ -255,6 +255,18 @@ textarea {
   flex-wrap: wrap;
 }
 
+.pilot-status {
+  width: 100%;
+  color: var(--muted) !important;
+  font-size: 0.72rem !important;
+  font-weight: 850;
+  text-align: right;
+}
+
+.pilot-status.offline {
+  color: var(--important) !important;
+}
+
 .shift-pill {
   max-width: 128px;
   overflow: hidden;
@@ -266,6 +278,24 @@ textarea {
   font-weight: 850;
   text-overflow: ellipsis;
   white-space: nowrap;
+}
+
+.update-banner {
+  position: fixed;
+  right: 14px;
+  bottom: 14px;
+  z-index: 90;
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  background: var(--surface);
+  box-shadow: var(--shadow);
+  padding: 10px 12px;
+  color: var(--text);
+  font-size: 0.9rem;
+  font-weight: 850;
 }
 
 .page {
@@ -813,7 +843,9 @@ textarea {
 
 .local-status-card,
 .daily-report-panel,
-.danger-zone {
+.danger-zone,
+.quick-start-card,
+.diagnostics-card {
   display: grid;
   gap: 12px;
   margin-bottom: 16px;
@@ -826,11 +858,14 @@ textarea {
 
 .local-status-card h2,
 .daily-report-panel h2,
-.danger-zone h2 {
+.danger-zone h2,
+.quick-start-card h2,
+.diagnostics-card h2 {
   margin-bottom: 4px;
 }
 
-.daily-report-panel pre {
+.daily-report-panel pre,
+.diagnostics-card pre {
   max-height: 360px;
   overflow: auto;
   margin: 0;
@@ -841,6 +876,18 @@ textarea {
   padding: 12px;
   white-space: pre-wrap;
   font: 0.86rem/1.45 ui-monospace, SFMono-Regular, Consolas, "Liberation Mono", monospace;
+}
+
+.pilot-tools-grid {
+  display: grid;
+  gap: 12px;
+}
+
+.quick-start-card ol {
+  margin: 0;
+  padding-left: 22px;
+  color: var(--muted);
+  line-height: 1.45;
 }
 
 .danger-zone {
@@ -1103,6 +1150,10 @@ textarea {
     grid-template-columns: repeat(4, minmax(0, 1fr));
   }
 
+  .pilot-tools-grid {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+
   .task-title-row {
     grid-template-columns: 1fr auto;
     align-items: start;
@@ -1117,6 +1168,10 @@ textarea {
 
   .top-actions {
     max-width: 185px;
+  }
+
+  .pilot-status {
+    text-align: left;
   }
 
   .ghost-button {
@@ -1151,5 +1206,12 @@ textarea {
 
   .task-actions .compact-button {
     flex: 1 1 130px;
+  }
+
+  .update-banner {
+    right: 10px;
+    bottom: 10px;
+    left: 10px;
+    justify-content: space-between;
   }
 }
