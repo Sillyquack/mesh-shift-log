@@ -178,6 +178,30 @@ function normalizeArray(value) {
   return Array.isArray(value) ? value : [];
 }
 
+function normalizeAlerts(value) {
+  return normalizeArray(value)
+    .filter((alert) => alert && typeof alert === 'object')
+    .map((alert, index) => ({
+      ...alert,
+      id: alert.id || `imported-alert-${index}-${Date.now()}`,
+      date: alert.date || todayKey(),
+      createdAt: alert.createdAt || `${alert.date || todayKey()}T00:00:00`,
+      createdBy: alert.createdBy || 'Unknown',
+      category: alert.category || 'Other',
+      severity: alert.severity || 'Medium',
+      area: alert.area || 'Other',
+      message: alert.message || '',
+      needsImmediateHelp: Boolean(alert.needsImmediateHelp),
+      status: alert.status || 'open',
+      managerNote: alert.managerNote || '',
+      acknowledgedBy: alert.acknowledgedBy || '',
+      acknowledgedAt: alert.acknowledgedAt || '',
+      resolvedBy: alert.resolvedBy || '',
+      resolvedAt: alert.resolvedAt || '',
+      updatedAt: alert.updatedAt || '',
+    }));
+}
+
 function handoverHasContent(note) {
   return Boolean(note && [note.nextShift, note.lowStock, note.maintenance, note.memberEvent].some((value) => value?.trim()));
 }
@@ -228,6 +252,27 @@ function getShiftStats(tasks, logsByTask) {
   const missing = Math.max(tasks.length - handled, 0);
   const criticalMissing = tasks.filter((task) => task.priority === 'critical' && !isHandled(logsByTask[task.id])).length;
   return { done, notRelevant, handled, missing, criticalMissing };
+}
+
+function alertStatus(alert) {
+  return alert.status || 'open';
+}
+
+function isOpenAlert(alert) {
+  return alertStatus(alert) === 'open';
+}
+
+function isUrgentAlert(alert) {
+  return alert.severity === 'Urgent' || alert.needsImmediateHelp;
+}
+
+function groupAlerts(alerts) {
+  return {
+    openUrgent: alerts.filter((alert) => isOpenAlert(alert) && isUrgentAlert(alert)),
+    openNormal: alerts.filter((alert) => isOpenAlert(alert) && !isUrgentAlert(alert)),
+    acknowledged: alerts.filter((alert) => alertStatus(alert) === 'acknowledged'),
+    resolved: alerts.filter((alert) => alertStatus(alert) === 'resolved'),
+  };
 }
 
 function estimateLocalStorageSize() {
@@ -335,6 +380,42 @@ function AlertManagerModal({ user, onClose, onSave }) {
         </div>
       </form>
     </div>
+  );
+}
+
+function AlertCard({ alert, isManager = false, onAction }) {
+  const status = alertStatus(alert);
+  const isImmediate = isUrgentAlert(alert);
+
+  return (
+    <article className={`alert-row severity-${alert.severity.toLowerCase()} status-${status} ${isImmediate ? 'needs-help' : ''}`}>
+      <div className="alert-header">
+        <strong>{alert.severity}: {alert.category}</strong>
+        <span>{status}</span>
+      </div>
+      <div className="alert-meta">
+        <span>Area: {alert.area}</span>
+        <span>Created by: {alert.createdBy}</span>
+        <span>Created: {formatDateTime(alert.createdAt)}</span>
+        <span>Immediate help: {alert.needsImmediateHelp ? 'Yes' : 'No'}</span>
+      </div>
+      <p>{alert.message}</p>
+      {alert.acknowledgedBy && (
+        <small>Acknowledged by {alert.acknowledgedBy} at {formatDateTime(alert.acknowledgedAt)}</small>
+      )}
+      {alert.resolvedBy && (
+        <small>Resolved by {alert.resolvedBy} at {formatDateTime(alert.resolvedAt)}</small>
+      )}
+      {alert.managerNote && <small>Manager note: {alert.managerNote}</small>}
+      {isManager && status !== 'resolved' && (
+        <div className="inline-actions">
+          {status !== 'acknowledged' && (
+            <button type="button" className="ghost-button compact-button" onClick={() => onAction(alert.id, 'acknowledged')}>Acknowledge</button>
+          )}
+          <button type="button" className="primary-button compact-button" onClick={() => onAction(alert.id, 'resolved')}>Resolve</button>
+        </div>
+      )}
+    </article>
   );
 }
 
@@ -574,7 +655,9 @@ function StaffDashboard({ user, routines, logs, handoverNotes, finishRecords, al
   const date = todayKey();
   const todayLogs = logs.filter((log) => log.date === date);
   const todayHandovers = Object.values(handoverNotes).filter((note) => note.date === date && handoverHasContent(note));
-  const openAlerts = alerts.filter((alert) => alert.date === date && alert.status !== 'resolved');
+  const openAlerts = alerts
+    .filter((alert) => alert.date === date && isOpenAlert(alert))
+    .sort((a, b) => Number(isUrgentAlert(b)) - Number(isUrgentAlert(a)) || new Date(b.createdAt) - new Date(a.createdAt));
   const contributors = [...new Set(todayLogs.map((log) => log.completedBy))].sort();
   const recentLogs = [...todayLogs].sort((a, b) => new Date(b.completedAt) - new Date(a.completedAt)).slice(0, 8);
   const shifts = shiftOptions.filter((shift) => shift.id !== 'guides');
@@ -623,11 +706,7 @@ function StaffDashboard({ user, routines, logs, handoverNotes, finishRecords, al
         <h2>Needs attention</h2>
         {openAlerts.length === 0 && <p className="muted">No open local alerts today.</p>}
         {openAlerts.map((alert) => (
-          <article key={alert.id} className={`alert-row severity-${alert.severity.toLowerCase()}`}>
-            <strong>{alert.severity}: {alert.category}</strong>
-            <span>{alert.area} | {alert.createdBy} | {formatDateTime(alert.createdAt)}</span>
-            <p>{alert.message}</p>
-          </article>
+          <AlertCard key={alert.id} alert={alert} />
         ))}
         {todayHandovers.filter((note) => note.lowStock || note.maintenance).map((note) => (
           <p key={`${note.shiftType}-${note.completedBy}`} className="attention-line">
@@ -1085,6 +1164,14 @@ function ManagerDashboard({
   const dateLogs = logs.filter((log) => log.date === date);
   const dateFinishRecords = finishRecords.filter((record) => record.date === date);
   const dateAlerts = alerts.filter((alert) => alert.date === date);
+  const visibleAlerts = dateAlerts
+    .filter((alert) => {
+      if (staffFilter === 'all') return true;
+      return [alert.createdBy, alert.acknowledgedBy, alert.resolvedBy].includes(staffFilter);
+    })
+    .sort((a, b) => new Date(b.createdAt) - new Date(a.createdAt));
+  const alertGroups = groupAlerts(visibleAlerts);
+  const dateAlertGroups = groupAlerts(dateAlerts);
   const dateResponsible = responsibleAssignments.filter((item) => item.date === date);
   const filteredLogs = dateLogs.filter((log) => {
     const staffMatch = staffFilter === 'all' || log.completedBy === staffFilter;
@@ -1102,8 +1189,16 @@ function ManagerDashboard({
   const inputDeviationLogs = filteredLogs.filter(hasDeviation);
   const time2StaffLogs = filteredLogs.filter((log) => log.completedBy.includes('Time2Staff'));
   const notRelevantLogs = filteredLogs.filter((log) => log.status === 'not_relevant');
-  const staffNames = [...new Set(logs.map((log) => log.completedBy))].sort();
-  const dates = [...new Set(logs.map((log) => log.date))].sort().reverse();
+  const staffNames = [...new Set([
+    ...logs.map((log) => log.completedBy),
+    ...alerts.flatMap((alert) => [alert.createdBy, alert.acknowledgedBy, alert.resolvedBy]),
+  ].filter(Boolean))].sort();
+  const dates = [...new Set([
+    ...logs.map((log) => log.date),
+    ...alerts.map((alert) => alert.date),
+    ...finishRecords.map((record) => record.date),
+    ...responsibleAssignments.map((item) => item.date),
+  ].filter(Boolean))].sort().reverse();
   const visibleHandovers = Object.values(handoverNotes).filter((note) => {
     if (note.date !== date) return false;
     if (shiftFilter !== 'all' && note.shiftType !== shiftFilter) return false;
@@ -1112,7 +1207,13 @@ function ManagerDashboard({
   });
   const handoverGroups = groupBy(visibleHandovers, (note) => note.shiftType);
   const allHandoversWithContent = Object.values(handoverNotes).filter(handoverHasContent);
-  const loggedDates = [...new Set([...logs.map((log) => log.date), ...allHandoversWithContent.map((note) => note.date)])].length;
+  const loggedDates = [...new Set([
+    ...logs.map((log) => log.date),
+    ...allHandoversWithContent.map((note) => note.date),
+    ...alerts.map((alert) => alert.date),
+    ...finishRecords.map((record) => record.date),
+    ...responsibleAssignments.map((item) => item.date),
+  ].filter(Boolean))].length;
   const handledRecords = logs.filter(isHandled).length;
   const usingDefaultRoutines = routinesUseDefaults(routines);
   const normalizedRoutineList = normalizeRoutines(routines);
@@ -1211,9 +1312,28 @@ function ManagerDashboard({
       lines.push('');
     });
     if (dateAlerts.length) {
+      const reportAlertGroups = [
+        ['Open alerts', [...dateAlertGroups.openUrgent, ...dateAlertGroups.openNormal]],
+        ['Acknowledged alerts', dateAlertGroups.acknowledged],
+        ['Resolved alerts', dateAlertGroups.resolved],
+      ];
       lines.push('Local alerts:');
-      dateAlerts.forEach((alert) => {
-        lines.push(`- ${alert.status} | ${alert.severity} | ${alert.category} | ${alert.area}: ${alert.message}`);
+      reportAlertGroups.forEach(([title, alertList]) => {
+        lines.push(title);
+        if (alertList.length === 0) {
+          lines.push('- None');
+          return;
+        }
+        alertList.forEach((alert) => {
+          lines.push(`- ${alert.severity} | ${alert.category} | ${alert.area}`);
+          lines.push(`  Message: ${alert.message}`);
+          lines.push(`  Created by: ${alert.createdBy} at ${formatDateTime(alert.createdAt)}`);
+          lines.push(`  Status: ${alertStatus(alert)}`);
+          if (alert.needsImmediateHelp) lines.push('  Needs immediate help: yes');
+          if (alert.acknowledgedBy) lines.push(`  Acknowledged by: ${alert.acknowledgedBy} at ${formatDateTime(alert.acknowledgedAt)}`);
+          if (alert.resolvedBy) lines.push(`  Resolved by: ${alert.resolvedBy} at ${formatDateTime(alert.resolvedAt)}`);
+          if (alert.managerNote) lines.push(`  Manager note: ${alert.managerNote}`);
+        });
       });
       lines.push('');
     }
@@ -1234,7 +1354,9 @@ function ManagerDashboard({
       `Handover notes: ${allHandoversWithContent.length}`,
       `Finish records: ${finishRecords.length}`,
       `Alerts: ${alerts.length}`,
-      `Open alerts: ${alerts.filter((alert) => alert.status !== 'resolved').length}`,
+      `Open alerts: ${alerts.filter(isOpenAlert).length}`,
+      `Acknowledged alerts: ${alerts.filter((alert) => alertStatus(alert) === 'acknowledged').length}`,
+      `Resolved alerts: ${alerts.filter((alert) => alertStatus(alert) === 'resolved').length}`,
       `Responsible assignments: ${responsibleAssignments.length}`,
       `Routine source: ${usingDefaultRoutines ? 'default routines' : 'local edited/imported routines'}`,
       `LocalStorage estimate: ${estimateLocalStorageSize()}`,
@@ -1327,7 +1449,7 @@ function ManagerDashboard({
       await navigator.clipboard.writeText(report);
       setMessage('Daily report copied.');
     } catch {
-      setMessage('Could not copy automatically. Select the report text below and copy it manually.');
+      setMessage('Could not copy automatically. You can manually select the report text below.');
     }
   }
 
@@ -1401,8 +1523,9 @@ function ManagerDashboard({
           saveStorage(FINISH_KEY, data.finishRecords);
         }
         if (data.alerts) {
-          setAlerts(data.alerts);
-          saveStorage(ALERT_KEY, data.alerts);
+          const normalizedAlerts = normalizeAlerts(data.alerts);
+          setAlerts(normalizedAlerts);
+          saveStorage(ALERT_KEY, normalizedAlerts);
         }
         if (data.responsibleAssignments) {
           setResponsibleAssignments(data.responsibleAssignments);
@@ -1513,13 +1636,31 @@ function ManagerDashboard({
   }
 
   function updateAlert(alertId, status) {
-    const note = window.prompt(`Optional manager note for ${status}:`, '') || '';
+    const currentAlert = alerts.find((alert) => alert.id === alertId);
+    if (!currentAlert) {
+      setMessage('Alert not found.');
+      return;
+    }
+    const noteResponse = window.prompt(`Optional manager note for ${status}:`, currentAlert.managerNote || '');
+    const managerNote = noteResponse === null
+      ? currentAlert.managerNote || ''
+      : noteResponse.trim() || currentAlert.managerNote || '';
+    const timestamp = new Date().toISOString();
+    const statusFields = status === 'acknowledged'
+      ? { acknowledgedBy: user.name, acknowledgedAt: timestamp }
+      : { resolvedBy: user.name, resolvedAt: timestamp };
     const nextAlerts = alerts.map((alert) => alert.id === alertId
-      ? { ...alert, status, managerNote: note, updatedAt: new Date().toISOString() }
+      ? {
+        ...alert,
+        status,
+        ...statusFields,
+        managerNote,
+        updatedAt: timestamp,
+      }
       : alert);
     setAlerts(nextAlerts);
     saveStorage(ALERT_KEY, nextAlerts);
-    setMessage(`Alert marked ${status}.`);
+    setMessage(status === 'acknowledged' ? 'Alert acknowledged.' : 'Alert resolved.');
   }
 
   function assignResponsible(event) {
@@ -1576,6 +1717,45 @@ function ManagerDashboard({
         </label>
       </section>
 
+      <section className="alert-dashboard-panel">
+        <div>
+          <p className="eyebrow">Local alerts</p>
+          <h2>Open alerts</h2>
+          <p className="muted">Visible in this app/browser. Real notifications require backend or Slack integration later.</p>
+        </div>
+        {alertGroups.openUrgent.length + alertGroups.openNormal.length === 0 && <p className="muted">No open alerts.</p>}
+        <div className="alert-group">
+          <h3>Open urgent alerts</h3>
+          {alertGroups.openUrgent.length === 0 && <p className="muted">None.</p>}
+          {alertGroups.openUrgent.map((alert) => (
+            <AlertCard key={alert.id} alert={alert} isManager onAction={updateAlert} />
+          ))}
+        </div>
+        <div className="alert-group">
+          <h3>Open normal alerts</h3>
+          {alertGroups.openNormal.length === 0 && <p className="muted">None.</p>}
+          {alertGroups.openNormal.map((alert) => (
+            <AlertCard key={alert.id} alert={alert} isManager onAction={updateAlert} />
+          ))}
+        </div>
+        {alertGroups.acknowledged.length > 0 && (
+          <div className="alert-group acknowledged-group">
+            <h3>Acknowledged alerts</h3>
+            {alertGroups.acknowledged.map((alert) => (
+              <AlertCard key={alert.id} alert={alert} isManager onAction={updateAlert} />
+            ))}
+          </div>
+        )}
+        {alertGroups.resolved.length > 0 && (
+          <details className="alert-group resolved-group">
+            <summary>Resolved alerts ({alertGroups.resolved.length})</summary>
+            {alertGroups.resolved.map((alert) => (
+              <AlertCard key={alert.id} alert={alert} isManager onAction={updateAlert} />
+            ))}
+          </details>
+        )}
+      </section>
+
       <section className="local-status-card">
         <div>
           <p className="eyebrow">Pilot data</p>
@@ -1587,7 +1767,7 @@ function ManagerDashboard({
           <span><strong>{handledRecords}</strong> handled records</span>
           <span><strong>{allHandoversWithContent.length}</strong> handover notes</span>
           <span><strong>{finishRecords.length}</strong> finish records</span>
-          <span><strong>{alerts.filter((alert) => alert.status !== 'resolved').length}</strong> open alerts</span>
+          <span><strong>{alerts.filter(isOpenAlert).length}</strong> open alerts</span>
           <span><strong>{responsibleAssignments.length}</strong> responsible</span>
           <span><strong>{usingDefaultRoutines ? 'Default' : 'Local edits'}</strong> routines</span>
         </div>
@@ -1665,26 +1845,6 @@ function ManagerDashboard({
             <strong>{shiftLabels[assignment.shiftType]}</strong>
             <span>{assignment.responsibleName} | assigned {formatDateTime(assignment.assignedAt)}</span>
             {assignment.note && <small>{assignment.note}</small>}
-          </article>
-        ))}
-      </section>
-
-      <section className="manager-list">
-        <h2>Local alerts</h2>
-        <p className="muted">Local alert - visible in this app/browser. Real notifications require backend/Slack integration.</p>
-        {dateAlerts.length === 0 && <p className="muted">No local alerts for this date.</p>}
-        {dateAlerts.map((alert) => (
-          <article key={alert.id} className={`alert-row severity-${alert.severity.toLowerCase()}`}>
-            <strong>{alert.severity}: {alert.category}</strong>
-            <span>{alert.area} | {alert.createdBy} | {alert.status} | {formatDateTime(alert.createdAt)}</span>
-            <p>{alert.message}</p>
-            {alert.managerNote && <small>Manager note: {alert.managerNote}</small>}
-            {alert.status !== 'acknowledged' && alert.status !== 'resolved' && (
-              <button type="button" className="ghost-button compact-button" onClick={() => updateAlert(alert.id, 'acknowledged')}>Acknowledge</button>
-            )}
-            {alert.status !== 'resolved' && (
-              <button type="button" className="primary-button compact-button" onClick={() => updateAlert(alert.id, 'resolved')}>Resolve</button>
-            )}
           </article>
         ))}
       </section>
@@ -1775,7 +1935,16 @@ function ManagerDashboard({
           </div>
           <button type="button" className="primary-button compact-button" onClick={copyDailyReport}>Copy daily report</button>
         </div>
-        <pre>{buildDailyReport()}</pre>
+        {(message.includes('Daily report') || message.includes('Could not copy automatically')) && (
+          <p className="status-message report-message">{message}</p>
+        )}
+        <textarea
+          className="report-textarea"
+          readOnly
+          rows="14"
+          value={buildDailyReport()}
+          aria-label="Daily report text"
+        />
       </section>
 
       <section className="manager-list">
@@ -1958,7 +2127,7 @@ export default function App() {
   const [routines, setRoutines] = useState(() => normalizeRoutines(readStorage(ROUTINE_KEY, defaultRoutines)));
   const [handoverNotes, setHandoverNotes] = useState(() => normalizeHandovers(readStorage(HANDOVER_KEY, {})));
   const [finishRecords, setFinishRecords] = useState(() => normalizeArray(readStorage(FINISH_KEY, [])));
-  const [alerts, setAlerts] = useState(() => normalizeArray(readStorage(ALERT_KEY, [])));
+  const [alerts, setAlerts] = useState(() => normalizeAlerts(readStorage(ALERT_KEY, [])));
   const [responsibleAssignments, setResponsibleAssignments] = useState(() => normalizeArray(readStorage(RESPONSIBLE_KEY, [])));
   const [pilotAccepted, setPilotAccepted] = useState(() => readStorage(PILOT_NOTICE_KEY, false));
   const [isOnline, setIsOnline] = useState(() => navigator.onLine);

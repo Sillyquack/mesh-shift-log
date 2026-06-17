@@ -872,6 +872,7 @@ textarea {
 }
 
 .local-status-card,
+.alert-dashboard-panel,
 .daily-report-panel,
 .danger-zone,
 .quick-start-card,
@@ -887,6 +888,7 @@ textarea {
 }
 
 .local-status-card h2,
+.alert-dashboard-panel h2,
 .daily-report-panel h2,
 .danger-zone h2,
 .quick-start-card h2,
@@ -895,6 +897,7 @@ textarea {
 }
 
 .daily-report-panel pre,
+.daily-report-panel textarea,
 .diagnostics-card pre {
   max-height: 360px;
   overflow: auto;
@@ -906,6 +909,17 @@ textarea {
   padding: 12px;
   white-space: pre-wrap;
   font: 0.86rem/1.45 ui-monospace, SFMono-Regular, Consolas, "Liberation Mono", monospace;
+}
+
+.report-textarea {
+  min-height: 280px;
+  white-space: pre-wrap;
+}
+
+.report-message {
+  width: max-content;
+  max-width: 100%;
+  margin-bottom: 0;
 }
 
 .pilot-tools-grid {
@@ -941,18 +955,89 @@ textarea {
   padding: 12px;
 }
 
+.alert-dashboard-panel {
+  border-color: color-mix(in srgb, var(--critical) 24%, var(--line));
+}
+
+.alert-group {
+  display: grid;
+  gap: 8px;
+  border-top: 1px solid var(--line);
+  padding-top: 12px;
+}
+
+.alert-group h3,
+.alert-group summary {
+  margin: 0;
+  color: var(--muted);
+  font-size: 0.82rem;
+  font-weight: 900;
+  text-transform: uppercase;
+}
+
+.alert-group summary {
+  cursor: pointer;
+}
+
+.alert-header {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 10px;
+}
+
+.alert-header span {
+  border-radius: 999px;
+  background: var(--surface-strong);
+  color: var(--muted);
+  padding: 4px 8px;
+  font-size: 0.72rem;
+  font-weight: 900;
+  text-transform: uppercase;
+}
+
+.alert-meta {
+  display: flex;
+  gap: 6px;
+  flex-wrap: wrap;
+}
+
+.alert-meta span,
+.alert-row small {
+  color: var(--muted);
+  font-size: 0.78rem;
+  font-weight: 800;
+}
+
 .alert-row p {
   margin: 0;
   color: var(--muted);
 }
 
-.alert-row.severity-urgent {
+.alert-row.severity-urgent,
+.alert-row.needs-help {
   border-left-color: var(--critical);
   background: color-mix(in srgb, var(--critical) 7%, var(--surface));
 }
 
+.alert-row.needs-help {
+  border-color: color-mix(in srgb, var(--critical) 42%, var(--line));
+  box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--critical) 16%, transparent);
+}
+
 .alert-row.severity-low {
   border-left-color: var(--normal);
+}
+
+.alert-row.status-acknowledged {
+  border-left-color: var(--important);
+  background: color-mix(in srgb, var(--important) 5%, var(--surface));
+}
+
+.alert-row.status-resolved {
+  opacity: 0.78;
+  border-left-color: var(--normal);
+  background: color-mix(in srgb, var(--surface-strong) 62%, var(--surface));
 }
 
 .compact-editor {
