@@ -467,18 +467,18 @@ function Login({ onLogin }) {
         <p className="eyebrow">Mesh Youngstorget</p>
         <h1>Shift checklist</h1>
         <p className="muted">
-          {pendingUser ? 'Use your real first name. This is saved with completed tasks.' : 'Sign in with your staff code to start today.'}
+          {pendingUser ? 'Use your real first name. This is saved with completed tasks.' : 'Enter your staff code. Ask manager if you need access.'}
         </p>
         <form onSubmit={submit} className="login-form">
           {!pendingUser ? (
             <>
-              <label htmlFor="staff-code">Staff code</label>
+              <label htmlFor="staff-code">Enter your staff code</label>
               <input
                 id="staff-code"
                 autoFocus
                 value={code}
                 onChange={(event) => setCode(event.target.value)}
-                placeholder="1001"
+                placeholder="Staff code"
               />
             </>
           ) : (
