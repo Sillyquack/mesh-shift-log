@@ -9,13 +9,16 @@ import {
   staffCodes,
 } from './data/routines.js';
 
-const APP_VERSION = '0.4.0';
+const APP_VERSION = '0.5.0';
 const LOG_KEY = 'mesh-shift-logs-v1';
 const ROUTINE_KEY = 'mesh-routines-v1';
 const SESSION_KEY = 'mesh-current-user-v1';
 const HANDOVER_KEY = 'mesh-handover-notes-v1';
 const PILOT_NOTICE_KEY = 'mesh-pilot-notice-accepted-v1';
 const LAST_EXPORT_KEY = 'mesh-last-export-at-v1';
+const FINISH_KEY = 'mesh-shift-finish-records-v1';
+const ALERT_KEY = 'mesh-local-alerts-v1';
+const RESPONSIBLE_KEY = 'mesh-shift-responsible-v1';
 
 const priorityLabels = {
   normal: 'Normal',
@@ -25,6 +28,9 @@ const priorityLabels = {
 
 const weekdays = ['sunday', 'monday', 'tuesday', 'wednesday', 'thursday', 'friday', 'saturday'];
 const shiftLabels = Object.fromEntries(shiftOptions.map((shift) => [shift.id, shift.label]));
+const alertCategories = ['Stock empty', 'Equipment broken', 'Technical issue', 'Safety/security', 'POS/register', 'Cleaning/maintenance', 'Lost/found item', 'Other'];
+const alertSeverities = ['Low', 'Medium', 'Urgent'];
+const alertAreas = ['Workbar', 'Cornerbar', 'Atrium', 'Kitchen', 'Toilets', 'Entrance', 'POS', 'Salto/security', 'Other'];
 
 const blankTask = {
   title: '',
@@ -168,6 +174,10 @@ function normalizeHandovers(notes) {
   return notes && typeof notes === 'object' && !Array.isArray(notes) ? notes : {};
 }
 
+function normalizeArray(value) {
+  return Array.isArray(value) ? value : [];
+}
+
 function handoverHasContent(note) {
   return Boolean(note && [note.nextShift, note.lowStock, note.maintenance, note.memberEvent].some((value) => value?.trim()));
 }
@@ -199,6 +209,25 @@ function slug(text) {
 
 function routinesUseDefaults(routines) {
   return JSON.stringify(normalizeRoutines(routines)) === JSON.stringify(normalizeRoutines(defaultRoutines));
+}
+
+function finishKey(date, shiftType, finishedBy) {
+  return `${date}-${shiftType}-${finishedBy}`;
+}
+
+function isResponsibleUser(user, assignment) {
+  if (!user || !assignment?.responsibleName) return false;
+  return user.name.toLowerCase() === assignment.responsibleName.toLowerCase()
+    || user.staffName?.toLowerCase() === assignment.responsibleName.toLowerCase();
+}
+
+function getShiftStats(tasks, logsByTask) {
+  const done = tasks.filter((task) => logsByTask[task.id]?.status === 'done').length;
+  const notRelevant = tasks.filter((task) => logsByTask[task.id]?.status === 'not_relevant').length;
+  const handled = done + notRelevant;
+  const missing = Math.max(tasks.length - handled, 0);
+  const criticalMissing = tasks.filter((task) => task.priority === 'critical' && !isHandled(logsByTask[task.id])).length;
+  return { done, notRelevant, handled, missing, criticalMissing };
 }
 
 function estimateLocalStorageSize() {
@@ -240,6 +269,71 @@ function UpdateBanner({ waitingWorker }) {
     <div className="update-banner">
       <span>Update available.</span>
       <button type="button" className="ghost-button compact-button" onClick={refreshApp}>Refresh app</button>
+    </div>
+  );
+}
+
+function AlertManagerModal({ user, onClose, onSave }) {
+  const [form, setForm] = useState({
+    category: 'Stock empty',
+    severity: 'Medium',
+    area: 'Workbar',
+    message: '',
+    needsImmediateHelp: false,
+  });
+
+  function submit(event) {
+    event.preventDefault();
+    if (!form.message.trim()) return;
+    onSave({
+      id: `alert-${Date.now()}`,
+      date: todayKey(),
+      createdAt: new Date().toISOString(),
+      createdBy: user.name,
+      ...form,
+      message: form.message.trim(),
+      status: 'open',
+      managerNote: '',
+    });
+  }
+
+  return (
+    <div className="modal-backdrop" role="dialog" aria-modal="true" aria-labelledby="alert-title">
+      <form className="pilot-modal alert-modal" onSubmit={submit}>
+        <p className="eyebrow">Local alert</p>
+        <h1 id="alert-title">Alert manager</h1>
+        <p>Visible in this app/browser. Real phone notifications require Slack/email/backend integration later.</p>
+        <label>
+          Category
+          <select value={form.category} onChange={(event) => setForm((current) => ({ ...current, category: event.target.value }))}>
+            {alertCategories.map((category) => <option key={category} value={category}>{category}</option>)}
+          </select>
+        </label>
+        <label>
+          Severity
+          <select value={form.severity} onChange={(event) => setForm((current) => ({ ...current, severity: event.target.value }))}>
+            {alertSeverities.map((severity) => <option key={severity} value={severity}>{severity}</option>)}
+          </select>
+        </label>
+        <label>
+          Area
+          <select value={form.area} onChange={(event) => setForm((current) => ({ ...current, area: event.target.value }))}>
+            {alertAreas.map((area) => <option key={area} value={area}>{area}</option>)}
+          </select>
+        </label>
+        <label>
+          Message
+          <textarea rows="3" value={form.message} onChange={(event) => setForm((current) => ({ ...current, message: event.target.value }))} />
+        </label>
+        <label className="toggle-row">
+          <input type="checkbox" checked={form.needsImmediateHelp} onChange={(event) => setForm((current) => ({ ...current, needsImmediateHelp: event.target.checked }))} />
+          Needs immediate help
+        </label>
+        <div className="backup-actions">
+          <button type="submit" className="primary-button">Save local alert</button>
+          <button type="button" className="ghost-button" onClick={onClose}>Cancel</button>
+        </div>
+      </form>
     </div>
   );
 }
@@ -351,7 +445,7 @@ function TopBar({ user, selectedShift, onBack, onLogout, isOnline }) {
   );
 }
 
-function ShiftPicker({ user, onSelect, onManager, routines, logs, handoverNotes }) {
+function ShiftPicker({ user, onSelect, onManager, routines, logs, handoverNotes, responsibleAssignments }) {
   const date = todayKey();
   function shiftStatus(shiftType) {
     if (shiftType === 'guides') return 'Quick reference';
@@ -361,8 +455,10 @@ function ShiftPicker({ user, onSelect, onManager, routines, logs, handoverNotes 
     const handledIds = new Set(shiftLogs.filter(isHandled).map((log) => log.taskId));
     const criticalRemaining = tasks.filter((task) => task.priority === 'critical' && !handledIds.has(task.id)).length;
     const hasHandover = Object.values(handoverNotes).some((note) => note.date === date && note.shiftType === shiftType && handoverHasContent(note));
+    const responsible = responsibleAssignments.find((item) => item.date === date && item.shiftType === shiftType);
+    const responsibleText = responsible ? ` | responsible: ${responsible.responsibleName}` : '';
     if (shiftType === 'weekly') return `${handled}/${tasks.length} handled`;
-    return `${handled}/${tasks.length} handled | ${criticalRemaining} critical | handover ${hasHandover ? 'yes' : 'no'}`;
+    return `${handled}/${tasks.length} handled | ${criticalRemaining} critical | handover ${hasHandover ? 'yes' : 'no'}${responsibleText}`;
   }
   return (
     <main className="page">
@@ -372,6 +468,10 @@ function ShiftPicker({ user, onSelect, onManager, routines, logs, handoverNotes 
         <p className="muted">{user.name}</p>
       </section>
       <section className="shift-grid">
+        <button className="shift-card overview-card" type="button" onClick={() => onSelect('overview')}>
+          <span>Today's overview</span>
+          <small>Team transparency, not competition</small>
+        </button>
         {shiftOptions.map((shift) => (
           <button key={shift.id} className="shift-card" type="button" onClick={() => onSelect(shift.id)}>
             <span>{shift.label}</span>
@@ -470,7 +570,131 @@ function HandoverNotes({ user, shiftType, notes, setNotes }) {
   );
 }
 
-function Checklist({ user, shiftType, routines, logs, setLogs, handoverNotes, setHandoverNotes }) {
+function StaffDashboard({ user, routines, logs, handoverNotes, finishRecords, alerts, responsibleAssignments, onAlert }) {
+  const date = todayKey();
+  const todayLogs = logs.filter((log) => log.date === date);
+  const todayHandovers = Object.values(handoverNotes).filter((note) => note.date === date && handoverHasContent(note));
+  const openAlerts = alerts.filter((alert) => alert.date === date && alert.status !== 'resolved');
+  const contributors = [...new Set(todayLogs.map((log) => log.completedBy))].sort();
+  const recentLogs = [...todayLogs].sort((a, b) => new Date(b.completedAt) - new Date(a.completedAt)).slice(0, 8);
+  const shifts = shiftOptions.filter((shift) => shift.id !== 'guides');
+
+  return (
+    <main className="page">
+      <section className="intro compact">
+        <p className="eyebrow">{new Date().toLocaleDateString()}</p>
+        <h1>Today's overview</h1>
+        <p className="muted">Active user: {user.name}</p>
+        <p className="muted">Thanks to everyone keeping the day moving. Completed tasks are shown for transparency, not competition.</p>
+        <button type="button" className="ghost-button compact-button" onClick={onAlert}>Alert manager</button>
+      </section>
+
+      <section className="summary-grid">
+        {shifts.map((shift) => {
+          const tasks = flattenTasks(routines, shift.id, date);
+          const shiftLogs = todayLogs.filter((log) => log.shiftType === shift.id);
+          const logsByTask = Object.fromEntries(shiftLogs.map((log) => [log.taskId, log]));
+          const stats = getShiftStats(tasks, logsByTask);
+          const finish = finishRecords.find((record) => record.date === date && record.shiftType === shift.id);
+          return (
+            <article key={shift.id} className="summary-card">
+              <span>{shift.label}</span>
+              <strong>{stats.handled}/{tasks.length}</strong>
+              <small>Missing {stats.missing} | Critical {stats.criticalMissing}</small>
+              {finish && <small>Finished by {finish.finishedBy} at {formatDateTime(finish.finishedAt)}</small>}
+            </article>
+          );
+        })}
+      </section>
+
+      <section className="manager-list">
+        <h2>Shift responsible</h2>
+        {responsibleAssignments.filter((item) => item.date === date).length === 0 && <p className="muted">No responsible assignments today.</p>}
+        {responsibleAssignments.filter((item) => item.date === date).map((item) => (
+          <article key={item.id} className="log-row">
+            <strong>{shiftLabels[item.shiftType]}</strong>
+            <span>{item.responsibleName} | assigned by {item.assignedBy}</span>
+            {item.note && <small>{item.note}</small>}
+          </article>
+        ))}
+      </section>
+
+      <section className="attention-panel">
+        <h2>Needs attention</h2>
+        {openAlerts.length === 0 && <p className="muted">No open local alerts today.</p>}
+        {openAlerts.map((alert) => (
+          <article key={alert.id} className={`alert-row severity-${alert.severity.toLowerCase()}`}>
+            <strong>{alert.severity}: {alert.category}</strong>
+            <span>{alert.area} | {alert.createdBy} | {formatDateTime(alert.createdAt)}</span>
+            <p>{alert.message}</p>
+          </article>
+        ))}
+        {todayHandovers.filter((note) => note.lowStock || note.maintenance).map((note) => (
+          <p key={`${note.shiftType}-${note.completedBy}`} className="attention-line">
+            <small>Handover</small>
+            {shiftLabels[note.shiftType]} | {note.completedBy}
+            <span>{note.lowStock || note.maintenance}</span>
+          </p>
+        ))}
+      </section>
+
+      <section className="manager-list">
+        <h2>Recent handled tasks</h2>
+        {recentLogs.length === 0 && <p className="muted">No tasks handled yet today.</p>}
+        {recentLogs.map((log) => (
+          <article key={log.id} className="log-row">
+            <strong>{log.taskTitle}</strong>
+            <span>{shiftLabels[log.shiftType]} | {log.completedBy} | {formatDateTime(log.completedAt)}</span>
+          </article>
+        ))}
+      </section>
+
+      <section className="manager-list">
+        <h2>Contributors today</h2>
+        {contributors.length === 0 && <p className="muted">No contributors logged yet.</p>}
+        {contributors.map((name) => (
+          <article key={name} className="log-row">
+            <strong>{name}</strong>
+            <span>Handled tasks: {todayLogs.filter((log) => log.completedBy === name).length}</span>
+          </article>
+        ))}
+        <p className="muted">Some tasks are larger than others. This is only a transparency overview.</p>
+      </section>
+
+      <section className="manager-list">
+        <h2>Handover notes</h2>
+        {todayHandovers.length === 0 && <p className="muted">No handover notes yet today.</p>}
+        {todayHandovers.map((note) => (
+          <article key={`${note.shiftType}-${note.completedBy}`} className="log-row">
+            <strong>{shiftLabels[note.shiftType]} | {note.completedBy}</strong>
+            {note.nextShift && <small>Next shift: {note.nextShift}</small>}
+            {note.lowStock && <small>Low stock: {note.lowStock}</small>}
+            {note.maintenance && <small>Maintenance: {note.maintenance}</small>}
+            {note.memberEvent && <small>Member/event: {note.memberEvent}</small>}
+          </article>
+        ))}
+      </section>
+    </main>
+  );
+}
+
+function Checklist({
+  user,
+  shiftType,
+  routines,
+  logs,
+  setLogs,
+  handoverNotes,
+  setHandoverNotes,
+  finishRecords,
+  setFinishRecords,
+  alerts,
+  setAlerts,
+  responsibleAssignments,
+  onShowOverview,
+  onChangeShift,
+  onLogout,
+}) {
   const [drafts, setDrafts] = useState({});
   const [comments, setComments] = useState({});
   const [hideCompleted, setHideCompleted] = useState(false);
@@ -481,14 +705,20 @@ function Checklist({ user, shiftType, routines, logs, setLogs, handoverNotes, se
   const currentHandover = handoverNotes[handoverKey];
   const hasHandover = handoverHasContent(currentHandover);
   const logsByTask = Object.fromEntries(logs.filter((log) => log.date === date).map((log) => [log.taskId, log]));
-  const doneCount = tasks.filter((task) => logsByTask[task.id]?.status === 'done').length;
-  const notRelevantCount = tasks.filter((task) => logsByTask[task.id]?.status === 'not_relevant').length;
-  const handledCount = doneCount + notRelevantCount;
-  const criticalRemaining = tasks.filter((task) => task.priority === 'critical' && !isHandled(logsByTask[task.id])).length;
+  const stats = getShiftStats(tasks, logsByTask);
+  const doneCount = stats.done;
+  const notRelevantCount = stats.notRelevant;
+  const handledCount = stats.handled;
+  const criticalRemaining = stats.criticalMissing;
   const importantRemaining = tasks.filter((task) => task.priority === 'important' && !isHandled(logsByTask[task.id])).length;
-  const missingCount = Math.max(tasks.length - handledCount, 0);
+  const missingCount = stats.missing;
   const securityRemaining = tasks.filter((task) => ['security', 'salto', 'cornerbar'].includes(task.area) && !isHandled(logsByTask[task.id])).length;
   const posRemaining = tasks.filter((task) => task.area === 'pos' && !isHandled(logsByTask[task.id])).length;
+  const assignment = responsibleAssignments.find((item) => item.date === date && item.shiftType === shiftType);
+  const isResponsible = isResponsibleUser(user, assignment);
+  const responsibleCriticalMissing = tasks.filter((task) => task.section === 'Responsible closing control' && task.priority === 'critical' && !isHandled(logsByTask[task.id])).length;
+  const [finished, setFinished] = useState(false);
+  const [showAlert, setShowAlert] = useState(false);
   const visibleTasks = tasks.filter((task) => {
     const log = logsByTask[task.id];
     if (hideCompleted && isHandled(log)) return false;
@@ -546,6 +776,46 @@ function Checklist({ user, shiftType, routines, logs, setLogs, handoverNotes, se
     saveStorage(LOG_KEY, nextLogs);
   }
 
+  function saveAlert(alertRecord) {
+    const nextAlerts = [...alerts, alertRecord];
+    setAlerts(nextAlerts);
+    saveStorage(ALERT_KEY, nextAlerts);
+    setShowAlert(false);
+    window.alert('Alert saved locally.\n\nPilot note: real phone notifications require Slack/email/backend integration later.');
+  }
+
+  function finishShift() {
+    if (criticalRemaining > 0 && !window.confirm('There are still critical tasks missing. Are you sure you want to finish this shift?')) {
+      return;
+    }
+    if (!hasHandover && (missingCount > 0 || criticalRemaining > 0) && !window.confirm('Add a handover note before finishing?')) {
+      return;
+    }
+    if (isResponsible && shiftType === 'closing') {
+      if (responsibleCriticalMissing > 0 && !window.confirm('Responsible closing checks are still missing. Finish anyway?')) return;
+      if (!hasHandover && !window.confirm('Please add a final handover note before finishing responsible closing. Finish anyway?')) return;
+    }
+    const record = {
+      id: finishKey(date, shiftType, user.name),
+      date,
+      shiftType,
+      finishedBy: user.name,
+      finishedAt: new Date().toISOString(),
+      doneCount,
+      notRelevantCount,
+      missingCount,
+      criticalMissingCount: criticalRemaining,
+      handoverPresent: hasHandover,
+    };
+    const nextRecords = [
+      ...finishRecords.filter((item) => item.id !== record.id),
+      record,
+    ];
+    setFinishRecords(nextRecords);
+    saveStorage(FINISH_KEY, nextRecords);
+    setFinished(true);
+  }
+
   if (shiftType === 'guides') {
     return (
       <main className="page">
@@ -560,6 +830,29 @@ function Checklist({ user, shiftType, routines, logs, setLogs, handoverNotes, se
               <p>{guide.body}</p>
             </article>
           ))}
+        </section>
+      </main>
+    );
+  }
+
+  if (finished) {
+    return (
+      <main className="page">
+        <section className="finish-screen">
+          <p className="eyebrow">Finished</p>
+          <h1>Shift finished</h1>
+          <p>Nice work, {user.name}.</p>
+          <div className="summary-metrics">
+            <span>Done {doneCount}</span>
+            <span>Not relevant {notRelevantCount}</span>
+            <span>Missing {missingCount}</span>
+            <span>Critical missing {criticalRemaining}</span>
+          </div>
+          <div className="backup-actions">
+            <button type="button" className="primary-button" onClick={onShowOverview}>View dashboard</button>
+            <button type="button" className="ghost-button" onClick={onChangeShift}>Change shift</button>
+            <button type="button" className="ghost-button" onClick={onLogout}>Log out</button>
+          </div>
         </section>
       </main>
     );
@@ -589,6 +882,12 @@ function Checklist({ user, shiftType, routines, logs, setLogs, handoverNotes, se
         {user.baseName?.startsWith('Time2Staff') && (
           <p className="identity-reminder">You are logged as {user.name}.</p>
         )}
+        {assignment && (
+          <p className={`responsible-banner ${isResponsible ? 'is-current' : ''}`}>
+            {isResponsible ? 'You are shift responsible.' : `${assignment.responsibleName} is shift responsible today.`}
+            {assignment.note ? ` ${assignment.note}` : ''}
+          </p>
+        )}
         {shiftType === 'closing' && (
           <section className="readiness-card">
             <strong>
@@ -597,7 +896,10 @@ function Checklist({ user, shiftType, routines, logs, setLogs, handoverNotes, se
             <span>{securityRemaining} security | {posRemaining} register/POS | handover {hasHandover ? 'present' : 'missing'}</span>
           </section>
         )}
-        <a className="handover-jump" href="#handover-notes">Jump to handover notes</a>
+        <div className="backup-actions">
+          <a className="handover-jump" href="#handover-notes">Jump to handover notes</a>
+          <button type="button" className="ghost-button compact-button" onClick={() => setShowAlert(true)}>Alert manager</button>
+        </div>
         <div className="checklist-controls">
           <label className="toggle-row">
             <input type="checkbox" checked={hideCompleted} onChange={(event) => setHideCompleted(event.target.checked)} />
@@ -741,11 +1043,32 @@ function Checklist({ user, shiftType, routines, logs, setLogs, handoverNotes, se
           <p className="all-clear">No critical tasks missing.</p>
         )}
       </section>
+      <section className="finish-panel">
+        <h2>Finish shift</h2>
+        <p className="muted">Use this when you are done with this shift on this device.</p>
+        <button type="button" className="primary-button" onClick={finishShift}>Finish shift</button>
+      </section>
+      {showAlert && <AlertManagerModal user={user} onClose={() => setShowAlert(false)} onSave={saveAlert} />}
     </main>
   );
 }
 
-function ManagerDashboard({ routines, setRoutines, logs, setLogs, handoverNotes, setHandoverNotes, onResetPilotNotice }) {
+function ManagerDashboard({
+  routines,
+  setRoutines,
+  logs,
+  setLogs,
+  handoverNotes,
+  setHandoverNotes,
+  finishRecords,
+  setFinishRecords,
+  alerts,
+  setAlerts,
+  responsibleAssignments,
+  setResponsibleAssignments,
+  onResetPilotNotice,
+  user,
+}) {
   const [date, setDate] = useState(todayKey());
   const [staffFilter, setStaffFilter] = useState('all');
   const [shiftFilter, setShiftFilter] = useState('all');
@@ -754,11 +1077,15 @@ function ManagerDashboard({ routines, setRoutines, logs, setLogs, handoverNotes,
   const [message, setMessage] = useState('');
   const [clearPhrase, setClearPhrase] = useState('');
   const [lastExportAt, setLastExportAt] = useState(() => readStorage(LAST_EXPORT_KEY, ''));
+  const [responsibleForm, setResponsibleForm] = useState({ shiftType: 'closing', responsibleName: '', note: '' });
 
   const activeShifts = shiftOptions.filter((shift) => shift.id !== 'guides');
   const allTasks = activeShifts.flatMap((shift) => flattenTasks(routines, shift.id, date));
   const visibleTasks = allTasks.filter((task) => shiftFilter === 'all' || task.shiftType === shiftFilter);
   const dateLogs = logs.filter((log) => log.date === date);
+  const dateFinishRecords = finishRecords.filter((record) => record.date === date);
+  const dateAlerts = alerts.filter((alert) => alert.date === date);
+  const dateResponsible = responsibleAssignments.filter((item) => item.date === date);
   const filteredLogs = dateLogs.filter((log) => {
     const staffMatch = staffFilter === 'all' || log.completedBy === staffFilter;
     const shiftMatch = shiftFilter === 'all' || log.shiftType === shiftFilter;
@@ -793,7 +1120,7 @@ function ManagerDashboard({ routines, setRoutines, logs, setLogs, handoverNotes,
   const activeTaskCount = allRoutineTasks.filter((task) => task.active !== false).length;
   const inactiveTaskCount = allRoutineTasks.filter((task) => task.active === false).length;
   const backupAgeDays = lastExportAt ? (Date.now() - new Date(lastExportAt).getTime()) / 86400000 : null;
-  const backupStatus = handledRecords || allHandoversWithContent.length
+  const backupStatus = handledRecords || allHandoversWithContent.length || alerts.length || finishRecords.length || responsibleAssignments.length
     ? !lastExportAt
       ? 'No backup exported yet.'
       : backupAgeDays > 7
@@ -849,8 +1176,12 @@ function ManagerDashboard({ routines, setRoutines, logs, setLogs, handoverNotes,
       const criticalMissingCount = shiftTasks.filter((task) => task.priority === 'critical' && !handledIds.has(task.id)).length;
       const staff = [...new Set(shiftLogs.map((log) => log.completedBy))];
       const shiftHandovers = visibleHandovers.filter((note) => note.shiftType === shift.id);
-      if (handled === 0 && shiftHandovers.length === 0 && missing === shiftTasks.length) return;
+      const finish = dateFinishRecords.find((record) => record.shiftType === shift.id);
+      const responsible = dateResponsible.find((item) => item.shiftType === shift.id);
+      if (handled === 0 && shiftHandovers.length === 0 && !finish && !responsible && missing === shiftTasks.length) return;
       lines.push(shift.label);
+      if (responsible) lines.push(`Responsible: ${responsible.responsibleName}`);
+      if (finish) lines.push(`Finished: ${finish.finishedBy} at ${formatDateTime(finish.finishedAt)}`);
       lines.push(`Handled: ${handled} / ${shiftTasks.length}`);
       lines.push(`Done: ${done}`);
       lines.push(`Not relevant: ${notRelevant}`);
@@ -879,6 +1210,13 @@ function ManagerDashboard({ routines, setRoutines, logs, setLogs, handoverNotes,
       }
       lines.push('');
     });
+    if (dateAlerts.length) {
+      lines.push('Local alerts:');
+      dateAlerts.forEach((alert) => {
+        lines.push(`- ${alert.status} | ${alert.severity} | ${alert.category} | ${alert.area}: ${alert.message}`);
+      });
+      lines.push('');
+    }
     return lines.join('\n').trim();
   }
 
@@ -894,6 +1232,10 @@ function ManagerDashboard({ routines, setRoutines, logs, setLogs, handoverNotes,
       `Task records: ${logs.length}`,
       `Handled records: ${handledRecords}`,
       `Handover notes: ${allHandoversWithContent.length}`,
+      `Finish records: ${finishRecords.length}`,
+      `Alerts: ${alerts.length}`,
+      `Open alerts: ${alerts.filter((alert) => alert.status !== 'resolved').length}`,
+      `Responsible assignments: ${responsibleAssignments.length}`,
       `Routine source: ${usingDefaultRoutines ? 'default routines' : 'local edited/imported routines'}`,
       `LocalStorage estimate: ${estimateLocalStorageSize()}`,
       `Last backup: ${lastExportAt ? formatBackupTime(lastExportAt) : 'none'}`,
@@ -936,6 +1278,9 @@ function ManagerDashboard({ routines, setRoutines, logs, setLogs, handoverNotes,
       logs,
       routines,
       handoverNotes,
+      finishRecords,
+      alerts,
+      responsibleAssignments,
       lastExportAt: exportedAt,
       settings: {
         pilotNoticeAccepted: readStorage(PILOT_NOTICE_KEY, false),
@@ -959,13 +1304,19 @@ function ManagerDashboard({ routines, setRoutines, logs, setLogs, handoverNotes,
       return;
     }
     const confirmed = window.confirm(
-      'This clears local shift logs and handover notes from this browser only. Routine setup will stay. Export a backup first if needed.',
+      'This clears local shift logs, handover notes, alerts, finish records and responsible assignments from this browser only. Routine setup will stay. Export a backup first if needed.',
     );
     if (!confirmed) return;
     setLogs([]);
     setHandoverNotes({});
+    setFinishRecords([]);
+    setAlerts([]);
+    setResponsibleAssignments([]);
     saveStorage(LOG_KEY, []);
     saveStorage(HANDOVER_KEY, {});
+    saveStorage(FINISH_KEY, []);
+    saveStorage(ALERT_KEY, []);
+    saveStorage(RESPONSIBLE_KEY, []);
     setClearPhrase('');
     setMessage('Test logs cleared from this browser.');
   }
@@ -1007,6 +1358,9 @@ function ManagerDashboard({ routines, setRoutines, logs, setLogs, handoverNotes,
         const data = JSON.parse(reader.result);
         if (data.logs && !Array.isArray(data.logs)) throw new Error('Logs must be an array.');
         if (data.routines && !Array.isArray(data.routines)) throw new Error('Routines must be an array.');
+        if (data.finishRecords && !Array.isArray(data.finishRecords)) throw new Error('Finish records must be an array.');
+        if (data.alerts && !Array.isArray(data.alerts)) throw new Error('Alerts must be an array.');
+        if (data.responsibleAssignments && !Array.isArray(data.responsibleAssignments)) throw new Error('Responsible assignments must be an array.');
         const previewLogs = Array.isArray(data.logs) ? data.logs : [];
         const previewHandovers = normalizeHandovers(data.handoverNotes || {});
         const previewDates = new Set([
@@ -1018,6 +1372,8 @@ function ManagerDashboard({ routines, setRoutines, logs, setLogs, handoverNotes,
           `Logged dates: ${previewDates}`,
           `Task records: ${previewLogs.length}`,
           `Handover notes: ${Object.values(previewHandovers).filter(handoverHasContent).length}`,
+          `Alerts: ${Array.isArray(data.alerts) ? data.alerts.length : 0}`,
+          `Finish records: ${Array.isArray(data.finishRecords) ? data.finishRecords.length : 0}`,
           `Routines included: ${Array.isArray(data.routines) ? 'yes' : 'no'}`,
           '',
           'Import this backup into this browser?',
@@ -1039,6 +1395,18 @@ function ManagerDashboard({ routines, setRoutines, logs, setLogs, handoverNotes,
           const normalizedNotes = normalizeHandovers(data.handoverNotes);
           setHandoverNotes(normalizedNotes);
           saveStorage(HANDOVER_KEY, normalizedNotes);
+        }
+        if (data.finishRecords) {
+          setFinishRecords(data.finishRecords);
+          saveStorage(FINISH_KEY, data.finishRecords);
+        }
+        if (data.alerts) {
+          setAlerts(data.alerts);
+          saveStorage(ALERT_KEY, data.alerts);
+        }
+        if (data.responsibleAssignments) {
+          setResponsibleAssignments(data.responsibleAssignments);
+          saveStorage(RESPONSIBLE_KEY, data.responsibleAssignments);
         }
         if (data.lastExportAt || data.exportedAt) {
           const importedExportAt = data.lastExportAt || data.exportedAt;
@@ -1144,6 +1512,40 @@ function ManagerDashboard({ routines, setRoutines, logs, setLogs, handoverNotes,
     setMessage('Task deactivated.');
   }
 
+  function updateAlert(alertId, status) {
+    const note = window.prompt(`Optional manager note for ${status}:`, '') || '';
+    const nextAlerts = alerts.map((alert) => alert.id === alertId
+      ? { ...alert, status, managerNote: note, updatedAt: new Date().toISOString() }
+      : alert);
+    setAlerts(nextAlerts);
+    saveStorage(ALERT_KEY, nextAlerts);
+    setMessage(`Alert marked ${status}.`);
+  }
+
+  function assignResponsible(event) {
+    event.preventDefault();
+    if (!responsibleForm.responsibleName.trim()) {
+      setMessage('Responsible person name is required.');
+      return;
+    }
+    const assignment = {
+      id: `${date}-${responsibleForm.shiftType}`,
+      date,
+      shiftType: responsibleForm.shiftType,
+      responsibleName: responsibleForm.responsibleName.trim(),
+      assignedBy: user.name,
+      assignedAt: new Date().toISOString(),
+      note: responsibleForm.note.trim(),
+    };
+    const nextAssignments = [
+      ...responsibleAssignments.filter((item) => item.id !== assignment.id),
+      assignment,
+    ];
+    setResponsibleAssignments(nextAssignments);
+    saveStorage(RESPONSIBLE_KEY, nextAssignments);
+    setMessage('Shift responsible saved.');
+  }
+
   return (
     <main className="page manager-page">
       <section className="intro compact">
@@ -1184,6 +1586,9 @@ function ManagerDashboard({ routines, setRoutines, logs, setLogs, handoverNotes,
           <span><strong>{loggedDates}</strong> logged dates</span>
           <span><strong>{handledRecords}</strong> handled records</span>
           <span><strong>{allHandoversWithContent.length}</strong> handover notes</span>
+          <span><strong>{finishRecords.length}</strong> finish records</span>
+          <span><strong>{alerts.filter((alert) => alert.status !== 'resolved').length}</strong> open alerts</span>
+          <span><strong>{responsibleAssignments.length}</strong> responsible</span>
           <span><strong>{usingDefaultRoutines ? 'Default' : 'Local edits'}</strong> routines</span>
         </div>
         <p className="muted">
@@ -1226,17 +1631,91 @@ function ManagerDashboard({ routines, setRoutines, logs, setLogs, handoverNotes,
         </article>
       </section>
 
+      <section className="manager-list">
+        <h2>Shift responsible</h2>
+        <form className="editor-form compact-editor" onSubmit={assignResponsible}>
+          <label>
+            Shift
+            <select value={responsibleForm.shiftType} onChange={(event) => setResponsibleForm((current) => ({ ...current, shiftType: event.target.value }))}>
+              {activeShifts.map((shift) => <option key={shift.id} value={shift.id}>{shift.label}</option>)}
+            </select>
+          </label>
+          <label>
+            Responsible person
+            <input
+              list="staff-names"
+              value={responsibleForm.responsibleName}
+              onChange={(event) => setResponsibleForm((current) => ({ ...current, responsibleName: event.target.value }))}
+              placeholder="Name"
+            />
+            <datalist id="staff-names">
+              {staffCodes.map((staff) => <option key={staff.code} value={staff.name} />)}
+              {staffNames.map((name) => <option key={name} value={name} />)}
+            </datalist>
+          </label>
+          <label>
+            Note
+            <input value={responsibleForm.note} onChange={(event) => setResponsibleForm((current) => ({ ...current, note: event.target.value }))} placeholder="Optional note" />
+          </label>
+          <button type="submit" className="primary-button">Save responsible</button>
+        </form>
+        {dateResponsible.length === 0 && <p className="muted">No responsible assignments for this date.</p>}
+        {dateResponsible.map((assignment) => (
+          <article key={assignment.id} className="log-row">
+            <strong>{shiftLabels[assignment.shiftType]}</strong>
+            <span>{assignment.responsibleName} | assigned {formatDateTime(assignment.assignedAt)}</span>
+            {assignment.note && <small>{assignment.note}</small>}
+          </article>
+        ))}
+      </section>
+
+      <section className="manager-list">
+        <h2>Local alerts</h2>
+        <p className="muted">Local alert - visible in this app/browser. Real notifications require backend/Slack integration.</p>
+        {dateAlerts.length === 0 && <p className="muted">No local alerts for this date.</p>}
+        {dateAlerts.map((alert) => (
+          <article key={alert.id} className={`alert-row severity-${alert.severity.toLowerCase()}`}>
+            <strong>{alert.severity}: {alert.category}</strong>
+            <span>{alert.area} | {alert.createdBy} | {alert.status} | {formatDateTime(alert.createdAt)}</span>
+            <p>{alert.message}</p>
+            {alert.managerNote && <small>Manager note: {alert.managerNote}</small>}
+            {alert.status !== 'acknowledged' && alert.status !== 'resolved' && (
+              <button type="button" className="ghost-button compact-button" onClick={() => updateAlert(alert.id, 'acknowledged')}>Acknowledge</button>
+            )}
+            {alert.status !== 'resolved' && (
+              <button type="button" className="primary-button compact-button" onClick={() => updateAlert(alert.id, 'resolved')}>Resolve</button>
+            )}
+          </article>
+        ))}
+      </section>
+
+      <section className="manager-list">
+        <h2>Real alert notifications</h2>
+        <p className="muted">
+          Current alerts are local to this browser/device. To make Bobby's phone vibrate immediately, this app will need integration with Slack, email, SMS, push notifications or a backend service.
+        </p>
+        <div className="task-labels">
+          <span>Slack webhook</span>
+          <span>Email notification</span>
+          <span>Push notification service</span>
+          <span>Supabase/Firebase backend</span>
+          <span>SMS gateway</span>
+        </div>
+      </section>
+
       <section className="summary-grid">
         {activeShifts.map((shift) => {
           const progress = progressForShift(shift.id);
           const handled = progress.done + progress.notRelevant;
           const percent = progress.total ? (handled / progress.total) * 100 : 0;
+          const finish = dateFinishRecords.find((record) => record.shiftType === shift.id);
           return (
             <article key={shift.id} className="summary-card">
               <span>{shift.label}</span>
               <strong>{handled}/{progress.total}</strong>
               <small>Done {progress.done} | N/A {progress.notRelevant}</small>
               <small>Missing {progress.missing} | Critical {progress.criticalMissing}</small>
+              {finish && <small>Finished by {finish.finishedBy}</small>}
               <div className="mini-progress" aria-label={`${shift.label} progress`}>
                 <i style={{ width: `${percent}%` }} />
               </div>
@@ -1474,9 +1953,13 @@ export default function App() {
   const [user, setUser] = useState(() => readStorage(SESSION_KEY, null));
   const [selectedShift, setSelectedShift] = useState(null);
   const [showManager, setShowManager] = useState(false);
+  const [showGlobalAlert, setShowGlobalAlert] = useState(false);
   const [logs, setLogs] = useState(() => normalizeLogs(readStorage(LOG_KEY, [])));
   const [routines, setRoutines] = useState(() => normalizeRoutines(readStorage(ROUTINE_KEY, defaultRoutines)));
   const [handoverNotes, setHandoverNotes] = useState(() => normalizeHandovers(readStorage(HANDOVER_KEY, {})));
+  const [finishRecords, setFinishRecords] = useState(() => normalizeArray(readStorage(FINISH_KEY, [])));
+  const [alerts, setAlerts] = useState(() => normalizeArray(readStorage(ALERT_KEY, [])));
+  const [responsibleAssignments, setResponsibleAssignments] = useState(() => normalizeArray(readStorage(RESPONSIBLE_KEY, [])));
   const [pilotAccepted, setPilotAccepted] = useState(() => readStorage(PILOT_NOTICE_KEY, false));
   const [isOnline, setIsOnline] = useState(() => navigator.onLine);
   const [waitingWorker, setWaitingWorker] = useState(null);
@@ -1484,6 +1967,9 @@ export default function App() {
   useEffect(() => saveStorage(LOG_KEY, logs), [logs]);
   useEffect(() => saveStorage(ROUTINE_KEY, routines), [routines]);
   useEffect(() => saveStorage(HANDOVER_KEY, handoverNotes), [handoverNotes]);
+  useEffect(() => saveStorage(FINISH_KEY, finishRecords), [finishRecords]);
+  useEffect(() => saveStorage(ALERT_KEY, alerts), [alerts]);
+  useEffect(() => saveStorage(RESPONSIBLE_KEY, responsibleAssignments), [responsibleAssignments]);
 
   useEffect(() => {
     function updateOnlineStatus() {
@@ -1564,27 +2050,56 @@ export default function App() {
           routines={routines}
           logs={logs}
           handoverNotes={handoverNotes}
+          responsibleAssignments={responsibleAssignments}
         />
       )}
       {selectedShift && !showManager && (
-        <Checklist
-          user={user}
-          shiftType={selectedShift}
-          routines={routines}
-          logs={logs}
-          setLogs={setLogs}
-          handoverNotes={handoverNotes}
-          setHandoverNotes={setHandoverNotes}
-        />
+        selectedShift === 'overview' ? (
+          <StaffDashboard
+            user={user}
+            routines={routines}
+            logs={logs}
+            handoverNotes={handoverNotes}
+            finishRecords={finishRecords}
+            alerts={alerts}
+            responsibleAssignments={responsibleAssignments}
+            onAlert={() => setShowGlobalAlert(true)}
+          />
+        ) : (
+          <Checklist
+            user={user}
+            shiftType={selectedShift}
+            routines={routines}
+            logs={logs}
+            setLogs={setLogs}
+            handoverNotes={handoverNotes}
+            setHandoverNotes={setHandoverNotes}
+            finishRecords={finishRecords}
+            setFinishRecords={setFinishRecords}
+            alerts={alerts}
+            setAlerts={setAlerts}
+            responsibleAssignments={responsibleAssignments}
+            onShowOverview={() => setSelectedShift('overview')}
+            onChangeShift={() => setSelectedShift(null)}
+            onLogout={logout}
+          />
+        )
       )}
       {showManager && user.isManager && (
         <ManagerDashboard
+          user={user}
           routines={routines}
           setRoutines={setRoutines}
           logs={logs}
           setLogs={setLogs}
           handoverNotes={handoverNotes}
           setHandoverNotes={setHandoverNotes}
+          finishRecords={finishRecords}
+          setFinishRecords={setFinishRecords}
+          alerts={alerts}
+          setAlerts={setAlerts}
+          responsibleAssignments={responsibleAssignments}
+          setResponsibleAssignments={setResponsibleAssignments}
           onResetPilotNotice={() => {
             localStorage.removeItem(PILOT_NOTICE_KEY);
             setPilotAccepted(false);
@@ -1596,6 +2111,19 @@ export default function App() {
           onAccept={() => {
             saveStorage(PILOT_NOTICE_KEY, true);
             setPilotAccepted(true);
+          }}
+        />
+      )}
+      {showGlobalAlert && (
+        <AlertManagerModal
+          user={user}
+          onClose={() => setShowGlobalAlert(false)}
+          onSave={(alertRecord) => {
+            const nextAlerts = [...alerts, alertRecord];
+            setAlerts(nextAlerts);
+            saveStorage(ALERT_KEY, nextAlerts);
+            setShowGlobalAlert(false);
+            window.alert('Alert saved locally.\n\nPilot note: real phone notifications require Slack/email/backend integration later.');
           }}
         />
       )}

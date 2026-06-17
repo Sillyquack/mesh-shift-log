@@ -224,6 +224,18 @@ export const defaultRoutines = [
     ['Set alarm before leaving', { area: 'security', priority: 'critical', criticalConfirm: true }],
     ['Manually lock Cornerbar street door upper lock', { area: 'cornerbar', priority: 'critical', criticalConfirm: true }],
   ]),
+  section('responsible-closing-control', 'closing', 'Responsible closing control', [
+    ['Confirm cash/register settlement is completed', { area: 'pos', priority: 'critical', criticalConfirm: true }],
+    ['Confirm Workbar iPads, terminals and POS are charging/in place', { area: 'pos', priority: 'important' }],
+    ['Confirm Cornerbar iPads, terminals and POS are charging/in place if used', { area: 'cornerbar', priority: 'important', inputType: 'comment' }],
+    ['Confirm tills and keys are in the safe', { area: 'security', priority: 'critical', criticalConfirm: true }],
+    ['Confirm Workbar has been checked after guests left', { area: 'workbar', priority: 'important' }],
+    ['Confirm Cornerbar has been checked after guests left', { area: 'cornerbar', priority: 'important' }],
+    ['Confirm all relevant doors are locked', { area: 'security', priority: 'critical', criticalConfirm: true }],
+    ['Confirm Salto/door overrides are checked', { area: 'salto', priority: 'critical', criticalConfirm: true }],
+    ['Confirm alarm is set before leaving', { area: 'security', priority: 'critical', criticalConfirm: true }],
+    ['Confirm final handover note is written', { area: 'general', priority: 'important', requiresComment: true }],
+  ]),
   section('event-before', 'event', 'Event before', [
     ['Check Google Calendar for Atrium, Bar, Workbar and project rooms', { area: 'event', priority: 'important' }],
     ['Clock in and be ready before shift starts', { area: 'general', priority: 'important' }],

@@ -106,6 +106,11 @@ a:focus-visible {
   line-height: 1.45;
 }
 
+.alert-modal {
+  display: grid;
+  gap: 12px;
+}
+
 .eyebrow {
   margin: 0 0 8px;
   color: var(--brand);
@@ -446,7 +451,8 @@ textarea {
 }
 
 .identity-reminder,
-.readiness-card {
+.readiness-card,
+.responsible-banner {
   margin: 12px 0 0;
   border-radius: 8px;
   background: var(--surface-strong);
@@ -466,6 +472,18 @@ textarea {
 .readiness-card span {
   color: var(--muted);
   font-size: 0.82rem;
+}
+
+.responsible-banner {
+  border: 1px solid color-mix(in srgb, var(--brand) 35%, var(--line));
+  background: color-mix(in srgb, var(--brand) 9%, var(--surface));
+  color: var(--brand-strong);
+}
+
+.responsible-banner.is-current {
+  border-color: color-mix(in srgb, var(--important) 40%, var(--line));
+  background: color-mix(in srgb, var(--important) 10%, var(--surface));
+  color: var(--text);
 }
 
 .toggle-row {
@@ -811,6 +829,18 @@ textarea {
   padding: 16px;
 }
 
+.finish-panel,
+.finish-screen {
+  display: grid;
+  gap: 12px;
+  margin-top: 18px;
+  border: 1px solid color-mix(in srgb, var(--brand) 28%, var(--line));
+  border-radius: 8px;
+  background: color-mix(in srgb, var(--brand) 5%, var(--surface));
+  box-shadow: 0 8px 24px rgba(22, 32, 29, 0.06);
+  padding: 16px;
+}
+
 .summary-metrics,
 .status-grid {
   display: grid;
@@ -893,6 +923,40 @@ textarea {
 .danger-zone {
   border-color: color-mix(in srgb, var(--critical) 32%, var(--line));
   background: color-mix(in srgb, var(--critical) 5%, var(--surface));
+}
+
+.overview-card {
+  border-color: color-mix(in srgb, var(--brand) 45%, var(--line));
+  background: color-mix(in srgb, var(--brand) 8%, var(--surface));
+}
+
+.alert-row {
+  display: grid;
+  gap: 6px;
+  margin-bottom: 10px;
+  border: 1px solid var(--line);
+  border-left: 6px solid var(--important);
+  border-radius: 8px;
+  background: var(--surface);
+  padding: 12px;
+}
+
+.alert-row p {
+  margin: 0;
+  color: var(--muted);
+}
+
+.alert-row.severity-urgent {
+  border-left-color: var(--critical);
+  background: color-mix(in srgb, var(--critical) 7%, var(--surface));
+}
+
+.alert-row.severity-low {
+  border-left-color: var(--normal);
+}
+
+.compact-editor {
+  margin-bottom: 12px;
 }
 
 .summary-grid {

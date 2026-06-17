@@ -2,7 +2,7 @@
 
 Mobile-first internal shift operations tool for Mesh Youngstorget hospitality staff.
 
-Current app version: `0.4.0`.
+Current app version: `0.5.0`.
 
 The app is currently a local-only MVP. It has no backend and stores shift logs, handover notes and manager routine edits in the browser with `localStorage`.
 
@@ -36,8 +36,24 @@ The app includes a basic PWA manifest and service worker.
 - Manager dashboard with progress, missing tasks, critical tasks, handover notes and history
 - Local data status, backup reminder and daily report copy for managers
 - Diagnostics and pilot quick-start copy tools for managers
+- Finish shift flow with local finish records
+- Staff-facing Today's overview dashboard
+- Local Alert manager logging with clear limitations
+- Manager-assigned Shift responsible role
+- Responsible closing control section
 - Basic manager-only routine editor
 - JSON export/import for backups and moving local data between browsers
+
+## v0.5 Operational Flow
+
+- Staff can finish a shift and see a local summary.
+- Today's overview is visible to all users for transparent team status.
+- Alert manager creates local alerts visible in this browser/app only.
+- Managers can acknowledge or resolve local alerts.
+- Managers can assign a Shift responsible for a date and shift.
+- Closing shift includes Responsible closing control tasks.
+
+Local alerts do not vibrate Bobby's phone or notify another device. Real alerts require a future Slack, email, SMS, push notification or backend integration.
 
 ## Demo Codes
 
@@ -73,12 +89,15 @@ Manager dashboard export backs up:
 - Logs
 - Handover notes
 - Imported or edited routine data
+- Finish records
+- Local alerts
+- Responsible assignments
 
 Use import to restore a backup or copy data to another browser/device. Bad JSON is rejected with an error message.
 
 The routine editor also has separate routine export/import controls for moving just the routine setup.
 
-`Clear test logs` removes local logs and handover notes only. It keeps routines and routine edits.
+`Clear test logs` removes local logs, handover notes, finish records, alerts and responsible assignments only. It keeps routines and routine edits.
 
 ## Diagnostics
 
@@ -111,6 +130,7 @@ Before deploying, make sure GitHub Pages is enabled for the `gh-pages` branch in
 
 - No backend yet
 - Data is local per browser/device
+- Local alerts are not real push notifications
 - Export/import is needed for backup and sharing data
 - Manager routine edits are local until exported/imported elsewhere
 - No real authentication; staff codes are client-side demo access only

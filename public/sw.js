@@ -1,4 +1,4 @@
-const CACHE_NAME = 'mesh-shift-log-v0.4.0';
+const CACHE_NAME = 'mesh-shift-log-v0.5.0';
 const APP_SHELL = ['./', './index.html', './manifest.webmanifest', './icon.svg'];
 
 // Simple app-shell caching for the local pilot.
