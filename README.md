@@ -59,9 +59,13 @@ Local alerts do not vibrate Bobby's phone or notify another device. Real alerts 
 
 ## Staff Codes
 
-Staff codes are not shown on the login page. Managers can view, add, edit, mask/show, copy, deactivate and generate local staff codes from the manager dashboard.
+Staff codes are not shown on the login page. Managers can view, add, edit, mask/show, copy, deactivate, export/import and generate local staff codes from the manager dashboard.
 
-The default local setup still includes Bobby, Ivana, Vlad, Rebekka, Mircea and Time2Staff Opening/Closing/Event Responsible so development and pilot installs continue to work. Treat these as local client-side access codes, not real authentication.
+The default local setup includes Bobby, Ivana, Vlad, Rebekka, Mircea, Dima and Time2Staff Opening/Closing/Event Responsible, so those users are available after deploy on a fresh device.
+
+Manager-created staff code changes are local to that browser/device. To move staff codes to another phone or browser, use the manager-only staff codes export/import tool, or add the user to the default staff list before deployment.
+
+Treat staff codes as local client-side access codes, not real authentication. Real shared user management requires backend authentication later.
 
 ## Time2Staff Name Capture
 
@@ -93,7 +97,7 @@ Manager dashboard export backs up:
 
 Use import to restore a backup or copy data to another browser/device. Bad JSON is rejected with an error message.
 
-The routine editor also has separate routine export/import controls for moving just the routine setup.
+The routine editor has separate routine export/import controls for moving just the routine setup. The Staff codes section has separate export/import controls for moving just the local staff/user configuration.
 
 `Clear test logs` removes local logs, handover notes, finish records, alerts and responsible assignments only. It keeps routines, routine edits and staff/user code configuration.
 

@@ -191,7 +191,16 @@ function normalizeArray(value) {
 }
 
 function normalizeStaffUsers(value) {
-  const source = Array.isArray(value) && value.length ? value : staffCodes;
+  const storedUsers = Array.isArray(value) && value.length ? value : [];
+  const source = storedUsers.length
+    ? [
+      ...storedUsers,
+      ...staffCodes.filter((defaultStaff) => !storedUsers.some((staff) => (
+        String(staff.code || '').toLowerCase() === defaultStaff.code.toLowerCase()
+        || String(staff.name || '').toLowerCase() === defaultStaff.name.toLowerCase()
+      ))),
+    ]
+    : staffCodes;
   return source
     .filter((staff) => staff && typeof staff === 'object')
     .map((staff, index) => ({
@@ -1812,6 +1821,51 @@ function ManagerDashboard({
     }
   }
 
+  function exportStaffUsers() {
+    const exportedAt = new Date().toISOString();
+    const payload = {
+      appVersion: APP_VERSION,
+      exportedAt,
+      staffUsers,
+    };
+    const blob = new Blob([JSON.stringify(payload, null, 2)], { type: 'application/json' });
+    const url = URL.createObjectURL(blob);
+    const link = document.createElement('a');
+    link.href = url;
+    link.download = `mesh-staff-codes-${todayKey()}.json`;
+    link.click();
+    URL.revokeObjectURL(url);
+    setMessage('Staff codes exported.');
+  }
+
+  function importStaffUsers(event) {
+    const file = event.target.files?.[0];
+    if (!file) return;
+    const reader = new FileReader();
+    reader.onload = () => {
+      try {
+        const data = JSON.parse(reader.result);
+        const importedStaffUsers = Array.isArray(data) ? data : data.staffUsers;
+        validateStaffUsers(importedStaffUsers);
+        const normalizedStaffUsers = normalizeStaffUsers(importedStaffUsers);
+        const preview = [
+          `Staff users: ${normalizedStaffUsers.length}`,
+          '',
+          'Replace local staff code configuration on this browser/device?',
+        ].join('\n');
+        if (!window.confirm(preview)) return;
+        setStaffUsers(normalizedStaffUsers);
+        saveStorage(STAFF_KEY, normalizedStaffUsers);
+        resetStaffForm();
+        setMessage('Staff codes imported.');
+      } catch (error) {
+        setMessage(`Staff code import failed: ${error.message}`);
+      }
+    };
+    reader.readAsText(file);
+    event.target.value = '';
+  }
+
   function assignResponsible(event) {
     event.preventDefault();
     if (!responsibleForm.responsibleName.trim()) {
@@ -1971,7 +2025,15 @@ function ManagerDashboard({
             Show codes
           </label>
         </div>
+        <p className="muted">Staff code changes are local to this browser/device. To use these codes on another device, export/import backup or add them to default staff before deployment.</p>
         <p className="muted">Local/client-side access only. Do not treat these codes as real authentication.</p>
+        <div className="backup-actions">
+          <button type="button" className="ghost-button compact-button" onClick={exportStaffUsers}>Export staff codes</button>
+          <label className="file-button compact-file">
+            Import staff codes
+            <input type="file" accept="application/json" onChange={importStaffUsers} />
+          </label>
+        </div>
         <div className="staff-code-list">
           {staffUsers.map((staff) => (
             <article key={staff.id} className={`log-row ${staff.active === false ? 'inactive-task' : ''}`}>

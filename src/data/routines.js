@@ -4,6 +4,7 @@ export const staffCodes = [
   { code: '1003', name: 'Vlad', role: 'staff', isManager: false },
   { code: '1004', name: 'Rebekka', role: 'staff', isManager: false },
   { code: '1005', name: 'Mircea', role: 'staff', isManager: false },
+  { code: '456208', name: 'Dima', role: 'staff', isManager: false },
   { code: 'OPEN', name: 'Time2Staff Opening', role: 'opening team', isManager: false, needsName: true },
   { code: 'CLOSE', name: 'Time2Staff Closing', role: 'closing team', isManager: false, needsName: true },
   { code: 'EVENT', name: 'Time2Staff Event Responsible', role: 'event responsible', isManager: false, needsName: true },
