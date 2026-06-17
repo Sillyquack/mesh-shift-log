@@ -1,0 +1,18 @@
+{
+  "name": "Mesh Shift Log",
+  "short_name": "Shift Log",
+  "description": "Local pilot shift checklist for Mesh Youngstorget.",
+  "start_url": "./",
+  "scope": "./",
+  "display": "standalone",
+  "background_color": "#101412",
+  "theme_color": "#0f6f5c",
+  "icons": [
+    {
+      "src": "./icon.svg",
+      "sizes": "any",
+      "type": "image/svg+xml",
+      "purpose": "any maskable"
+    }
+  ]
+}
