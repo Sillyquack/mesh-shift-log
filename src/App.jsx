@@ -19,6 +19,8 @@ const LAST_EXPORT_KEY = 'mesh-last-export-at-v1';
 const FINISH_KEY = 'mesh-shift-finish-records-v1';
 const ALERT_KEY = 'mesh-local-alerts-v1';
 const RESPONSIBLE_KEY = 'mesh-shift-responsible-v1';
+const STAFF_KEY = 'mesh-staff-users-v1';
+const weakCodes = new Set(['0000', '1111', '1234', '12345', '123456', 'PASSWORD', 'ADMIN', 'MANAGER', 'BOBBY']);
 
 const priorityLabels = {
   normal: 'Normal',
@@ -44,6 +46,16 @@ const blankTask = {
   requiresComment: false,
   criticalConfirm: false,
   managerOnly: false,
+  active: true,
+};
+
+const blankStaffForm = {
+  id: '',
+  name: '',
+  role: 'staff',
+  code: '',
+  isManager: false,
+  needsName: false,
   active: true,
 };
 
@@ -178,6 +190,37 @@ function normalizeArray(value) {
   return Array.isArray(value) ? value : [];
 }
 
+function normalizeStaffUsers(value) {
+  const source = Array.isArray(value) && value.length ? value : staffCodes;
+  return source
+    .filter((staff) => staff && typeof staff === 'object')
+    .map((staff, index) => ({
+      ...staff,
+      id: staff.id || `staff-${slug(staff.name || staff.code || String(index))}`,
+      name: staff.name || 'Unnamed staff',
+      role: staff.role || (staff.isManager ? 'manager' : 'staff'),
+      code: String(staff.code || '').trim(),
+      isManager: Boolean(staff.isManager),
+      needsName: Boolean(staff.needsName),
+      active: staff.active !== false,
+    }));
+}
+
+function validateStaffUsers(users) {
+  if (!Array.isArray(users)) throw new Error('Staff users must be an array.');
+  const seenCodes = new Set();
+  users.forEach((staff) => {
+    if (!staff || typeof staff !== 'object') throw new Error('Each staff user must be an object.');
+    if (!String(staff.name || '').trim()) throw new Error('Each staff user needs a display name.');
+    const code = String(staff.code || '').trim();
+    if (!code) throw new Error('Each staff user needs a code.');
+    if (code.length < 4) throw new Error(`Code for ${staff.name} must be at least 4 characters.`);
+    if (weakCodes.has(code.toUpperCase())) throw new Error(`Code for ${staff.name} is too easy to guess.`);
+    if (seenCodes.has(code.toLowerCase())) throw new Error(`Duplicate staff code found for ${staff.name}.`);
+    seenCodes.add(code.toLowerCase());
+  });
+}
+
 function normalizeAlerts(value) {
   return normalizeArray(value)
     .filter((alert) => alert && typeof alert === 'object')
@@ -233,6 +276,24 @@ function slug(text) {
 
 function routinesUseDefaults(routines) {
   return JSON.stringify(normalizeRoutines(routines)) === JSON.stringify(normalizeRoutines(defaultRoutines));
+}
+
+function validateStaffCode(code, staffUsers, editingId = '') {
+  const normalizedCode = String(code || '').trim();
+  if (!normalizedCode) return 'Code cannot be blank.';
+  if (normalizedCode.length < 4) return 'Code must be at least 4 characters.';
+  if (weakCodes.has(normalizedCode.toUpperCase())) return 'This code is too easy to guess.';
+  const duplicate = staffUsers.find((staff) => staff.id !== editingId && staff.code.toLowerCase() === normalizedCode.toLowerCase());
+  if (duplicate) return `Code already belongs to ${duplicate.name}.`;
+  return '';
+}
+
+function generateStaffCode(staffUsers) {
+  for (let attempt = 0; attempt < 100; attempt += 1) {
+    const code = String(Math.floor(100000 + Math.random() * 900000));
+    if (!validateStaffCode(code, staffUsers)) return code;
+  }
+  return String(Date.now()).slice(-6);
 }
 
 function finishKey(date, shiftType, finishedBy) {
@@ -419,7 +480,7 @@ function AlertCard({ alert, isManager = false, onAction }) {
   );
 }
 
-function Login({ onLogin }) {
+function Login({ onLogin, staffUsers }) {
   const [code, setCode] = useState('');
   const [workerName, setWorkerName] = useState('');
   const [pendingUser, setPendingUser] = useState(null);
@@ -449,7 +510,7 @@ function Login({ onLogin }) {
       return;
     }
 
-    const user = staffCodes.find((staff) => staff.code.toLowerCase() === code.trim().toLowerCase());
+    const user = staffUsers.find((staff) => staff.active !== false && staff.code.toLowerCase() === code.trim().toLowerCase());
     if (!user) {
       setError('Code not found. Check the staff code and try again.');
       return;
@@ -1135,6 +1196,8 @@ function Checklist({
 function ManagerDashboard({
   routines,
   setRoutines,
+  staffUsers,
+  setStaffUsers,
   logs,
   setLogs,
   handoverNotes,
@@ -1157,6 +1220,8 @@ function ManagerDashboard({
   const [clearPhrase, setClearPhrase] = useState('');
   const [lastExportAt, setLastExportAt] = useState(() => readStorage(LAST_EXPORT_KEY, ''));
   const [responsibleForm, setResponsibleForm] = useState({ shiftType: 'closing', responsibleName: '', note: '' });
+  const [showStaffCodes, setShowStaffCodes] = useState(false);
+  const [staffForm, setStaffForm] = useState(blankStaffForm);
 
   const activeShifts = shiftOptions.filter((shift) => shift.id !== 'guides');
   const allTasks = activeShifts.flatMap((shift) => flattenTasks(routines, shift.id, date));
@@ -1344,7 +1409,7 @@ function ManagerDashboard({
     return [
       'Mesh Shift Log diagnostics',
       `Version: ${APP_VERSION}`,
-      `Users: ${staffCodes.length}`,
+      `Users: ${staffUsers.length}`,
       `Sections: ${normalizedRoutineList.length}`,
       `Active tasks: ${activeTaskCount}`,
       `Inactive tasks: ${inactiveTaskCount}`,
@@ -1399,6 +1464,7 @@ function ManagerDashboard({
       exportedAt,
       logs,
       routines,
+      staffUsers,
       handoverNotes,
       finishRecords,
       alerts,
@@ -1483,6 +1549,7 @@ function ManagerDashboard({
         if (data.finishRecords && !Array.isArray(data.finishRecords)) throw new Error('Finish records must be an array.');
         if (data.alerts && !Array.isArray(data.alerts)) throw new Error('Alerts must be an array.');
         if (data.responsibleAssignments && !Array.isArray(data.responsibleAssignments)) throw new Error('Responsible assignments must be an array.');
+        if (data.staffUsers) validateStaffUsers(data.staffUsers);
         const previewLogs = Array.isArray(data.logs) ? data.logs : [];
         const previewHandovers = normalizeHandovers(data.handoverNotes || {});
         const previewDates = new Set([
@@ -1497,6 +1564,7 @@ function ManagerDashboard({
           `Alerts: ${Array.isArray(data.alerts) ? data.alerts.length : 0}`,
           `Finish records: ${Array.isArray(data.finishRecords) ? data.finishRecords.length : 0}`,
           `Routines included: ${Array.isArray(data.routines) ? 'yes' : 'no'}`,
+          `Staff config included: ${Array.isArray(data.staffUsers) ? 'yes' : 'no'}`,
           '',
           'Import this backup into this browser?',
         ].join('\n');
@@ -1511,6 +1579,11 @@ function ManagerDashboard({
           const normalized = normalizeRoutines(data.routines);
           setRoutines(normalized);
           saveStorage(ROUTINE_KEY, normalized);
+        }
+        if (data.staffUsers) {
+          const normalizedStaffUsers = normalizeStaffUsers(data.staffUsers);
+          setStaffUsers(normalizedStaffUsers);
+          saveStorage(STAFF_KEY, normalizedStaffUsers);
         }
         if (data.handoverNotes) {
           validateHandoverImport(data.handoverNotes);
@@ -1657,6 +1730,86 @@ function ManagerDashboard({
     saveStorage(ALERT_KEY, nextAlerts);
     setAlerts(nextAlerts);
     setMessage(status === 'acknowledged' ? 'Alert acknowledged.' : 'Alert resolved.');
+  }
+
+  function resetStaffForm() {
+    setStaffForm(blankStaffForm);
+  }
+
+  function editStaffUser(staff) {
+    setStaffForm({
+      id: staff.id,
+      name: staff.name,
+      role: staff.role,
+      code: staff.code,
+      isManager: staff.isManager,
+      needsName: staff.needsName,
+      active: staff.active !== false,
+    });
+  }
+
+  function saveStaffUser(event) {
+    event.preventDefault();
+    const name = staffForm.name.trim();
+    const code = staffForm.code.trim();
+    if (!name) {
+      setMessage('Staff name is required.');
+      return;
+    }
+    const codeError = validateStaffCode(code, staffUsers, staffForm.id);
+    if (codeError) {
+      setMessage(codeError);
+      return;
+    }
+    const existing = staffUsers.find((staff) => staff.id === staffForm.id);
+    const isCurrentUser = existing && (existing.id === user.id || existing.code === user.code || existing.name === user.name);
+    const isManagerCodeChange = existing && (existing.isManager || existing.name.toLowerCase().includes('bobby')) && existing.code !== code;
+    if (isManagerCodeChange) {
+      const confirmed = window.confirm('Make sure you save this code before logging out.');
+      if (!confirmed) return;
+    }
+    if (isCurrentUser && (staffForm.active === false || (existing.isManager && !staffForm.isManager))) {
+      const confirmed = window.confirm('This is the currently logged-in manager. Save this change anyway? Make sure another manager code works first.');
+      if (!confirmed) return;
+    }
+    const savedStaff = {
+      ...(existing || {}),
+      id: staffForm.id || `staff-${Date.now()}`,
+      name,
+      role: staffForm.role.trim() || (staffForm.isManager ? 'manager' : 'staff'),
+      code,
+      isManager: staffForm.isManager,
+      needsName: staffForm.needsName,
+      active: staffForm.active,
+    };
+    const nextStaffUsers = existing
+      ? staffUsers.map((staff) => (staff.id === existing.id ? savedStaff : staff))
+      : [...staffUsers, savedStaff];
+    setStaffUsers(nextStaffUsers);
+    saveStorage(STAFF_KEY, nextStaffUsers);
+    resetStaffForm();
+    setMessage('Staff code saved.');
+  }
+
+  function toggleStaffActive(staff) {
+    const isCurrentUser = staff.id === user.id || staff.code === user.code || staff.name === user.name;
+    if (staff.active !== false && isCurrentUser) {
+      const confirmed = window.confirm('This is the currently logged-in manager. Deactivate anyway? Make sure another manager code works first.');
+      if (!confirmed) return;
+    }
+    const nextStaffUsers = staffUsers.map((item) => (item.id === staff.id ? { ...item, active: item.active === false } : item));
+    setStaffUsers(nextStaffUsers);
+    saveStorage(STAFF_KEY, nextStaffUsers);
+    setMessage(staff.active === false ? 'Staff user reactivated.' : 'Staff user deactivated.');
+  }
+
+  async function copyStaffCode(code) {
+    try {
+      await navigator.clipboard.writeText(code);
+      setMessage('Staff code copied.');
+    } catch {
+      setMessage('Could not copy code automatically.');
+    }
   }
 
   function assignResponsible(event) {
@@ -1807,6 +1960,69 @@ function ManagerDashboard({
         </article>
       </section>
 
+      <section className="manager-list staff-code-manager">
+        <div className="panel-title-row">
+          <div>
+            <p className="eyebrow">Manager only</p>
+            <h2>Staff codes</h2>
+          </div>
+          <label className="toggle-row small-toggle">
+            <input type="checkbox" checked={showStaffCodes} onChange={(event) => setShowStaffCodes(event.target.checked)} />
+            Show codes
+          </label>
+        </div>
+        <p className="muted">Local/client-side access only. Do not treat these codes as real authentication.</p>
+        <div className="staff-code-list">
+          {staffUsers.map((staff) => (
+            <article key={staff.id} className={`log-row ${staff.active === false ? 'inactive-task' : ''}`}>
+              <strong>{staff.name}</strong>
+              <span>{staff.role} | {staff.isManager ? 'Manager' : 'Staff'} | {staff.active === false ? 'Inactive' : 'Active'}</span>
+              <small>Code: {showStaffCodes ? staff.code : '••••••'}{staff.needsName ? ' | asks for real name' : ''}</small>
+              <div className="inline-actions">
+                <button type="button" className="ghost-button compact-button" onClick={() => editStaffUser(staff)}>Edit</button>
+                <button type="button" className="ghost-button compact-button" onClick={() => toggleStaffActive(staff)}>
+                  {staff.active === false ? 'Reactivate' : 'Deactivate'}
+                </button>
+                {showStaffCodes && (
+                  <button type="button" className="ghost-button compact-button" onClick={() => copyStaffCode(staff.code)}>Copy code</button>
+                )}
+              </div>
+            </article>
+          ))}
+        </div>
+        <form className="editor-form staff-editor" onSubmit={saveStaffUser}>
+          <label>
+            Display name
+            <input value={staffForm.name} onChange={(event) => setStaffForm((current) => ({ ...current, name: event.target.value }))} placeholder="Name" />
+          </label>
+          <label>
+            Role/type
+            <input value={staffForm.role} onChange={(event) => setStaffForm((current) => ({ ...current, role: event.target.value }))} placeholder="staff" />
+          </label>
+          <label>
+            Code
+            <input value={staffForm.code} onChange={(event) => setStaffForm((current) => ({ ...current, code: event.target.value.trim() }))} placeholder="Minimum 4 characters" />
+          </label>
+          <label className="toggle-row">
+            <input type="checkbox" checked={staffForm.isManager} onChange={(event) => setStaffForm((current) => ({ ...current, isManager: event.target.checked, role: event.target.checked && current.role === 'staff' ? 'manager' : current.role }))} />
+            Manager
+          </label>
+          <label className="toggle-row">
+            <input type="checkbox" checked={staffForm.needsName} onChange={(event) => setStaffForm((current) => ({ ...current, needsName: event.target.checked }))} />
+            Ask for real first name
+          </label>
+          <label className="toggle-row">
+            <input type="checkbox" checked={staffForm.active} onChange={(event) => setStaffForm((current) => ({ ...current, active: event.target.checked }))} />
+            Active
+          </label>
+          <div className="inline-actions">
+            <button type="submit" className="primary-button compact-button">{staffForm.id ? 'Save staff user' : 'Add staff user'}</button>
+            <button type="button" className="ghost-button compact-button" onClick={() => setStaffForm((current) => ({ ...current, code: generateStaffCode(staffUsers) }))}>Generate code</button>
+            {staffForm.id && <button type="button" className="ghost-button compact-button" onClick={resetStaffForm}>Cancel edit</button>}
+          </div>
+        </form>
+      </section>
+
       <section className="manager-list">
         <h2>Shift responsible</h2>
         <form className="editor-form compact-editor" onSubmit={assignResponsible}>
@@ -1825,7 +2041,7 @@ function ManagerDashboard({
               placeholder="Name"
             />
             <datalist id="staff-names">
-              {staffCodes.map((staff) => <option key={staff.code} value={staff.name} />)}
+              {staffUsers.map((staff) => <option key={staff.id} value={staff.name} />)}
               {staffNames.map((name) => <option key={name} value={name} />)}
             </datalist>
           </label>
@@ -2121,6 +2337,7 @@ export default function App() {
   const [showGlobalAlert, setShowGlobalAlert] = useState(false);
   const [logs, setLogs] = useState(() => normalizeLogs(readStorage(LOG_KEY, [])));
   const [routines, setRoutines] = useState(() => normalizeRoutines(readStorage(ROUTINE_KEY, defaultRoutines)));
+  const [staffUsers, setStaffUsers] = useState(() => normalizeStaffUsers(readStorage(STAFF_KEY, staffCodes)));
   const [handoverNotes, setHandoverNotes] = useState(() => normalizeHandovers(readStorage(HANDOVER_KEY, {})));
   const [finishRecords, setFinishRecords] = useState(() => normalizeArray(readStorage(FINISH_KEY, [])));
   const [alerts, setAlerts] = useState(() => normalizeAlerts(readStorage(ALERT_KEY, [])));
@@ -2131,6 +2348,7 @@ export default function App() {
 
   useEffect(() => saveStorage(LOG_KEY, logs), [logs]);
   useEffect(() => saveStorage(ROUTINE_KEY, routines), [routines]);
+  useEffect(() => saveStorage(STAFF_KEY, staffUsers), [staffUsers]);
   useEffect(() => saveStorage(HANDOVER_KEY, handoverNotes), [handoverNotes]);
   useEffect(() => saveStorage(FINISH_KEY, finishRecords), [finishRecords]);
   useEffect(() => saveStorage(ALERT_KEY, alerts), [alerts]);
@@ -2174,7 +2392,7 @@ export default function App() {
   if (!user) {
     return (
       <>
-        <Login onLogin={setUser} />
+        <Login onLogin={setUser} staffUsers={staffUsers} />
         {!pilotAccepted && (
           <PilotNotice
             onAccept={() => {
@@ -2255,6 +2473,8 @@ export default function App() {
           user={user}
           routines={routines}
           setRoutines={setRoutines}
+          staffUsers={staffUsers}
+          setStaffUsers={setStaffUsers}
           logs={logs}
           setLogs={setLogs}
           handoverNotes={handoverNotes}

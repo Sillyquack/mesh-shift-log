@@ -1242,6 +1242,19 @@ textarea {
   padding-right: 4px;
 }
 
+.staff-code-list {
+  display: grid;
+  max-height: 360px;
+  overflow: auto;
+  gap: 8px;
+  padding-right: 4px;
+}
+
+.staff-code-manager .toggle-row {
+  width: max-content;
+  max-width: 100%;
+}
+
 .inactive-task {
   opacity: 0.5;
 }

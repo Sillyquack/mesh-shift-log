@@ -41,6 +41,7 @@ The app includes a basic PWA manifest and service worker.
 - Local Alert manager logging with clear limitations
 - Manager-assigned Shift responsible role
 - Responsible closing control section
+- Manager-only staff code management
 - Basic manager-only routine editor
 - JSON export/import for backups and moving local data between browsers
 
@@ -51,20 +52,16 @@ The app includes a basic PWA manifest and service worker.
 - Alert manager creates local alerts visible in this browser/app only.
 - Managers can acknowledge or resolve local alerts.
 - Managers can assign a Shift responsible for a date and shift.
+- Managers can manage staff codes from the manager dashboard after login.
 - Closing shift includes Responsible closing control tasks.
 
 Local alerts do not vibrate Bobby's phone or notify another device. Real alerts require a future Slack, email, SMS, push notification or backend integration.
 
-## Demo Codes
+## Staff Codes
 
-- `1001` Bobby / manager
-- `1002` Ivana
-- `1003` Vlad
-- `1004` Rebekka
-- `1005` Mircea
-- `OPEN` Time2Staff Opening
-- `CLOSE` Time2Staff Closing
-- `EVENT` Time2Staff Event Responsible
+Staff codes are not shown on the login page. Managers can view, add, edit, mask/show, copy, deactivate and generate local staff codes from the manager dashboard.
+
+The default local setup still includes Bobby, Ivana, Vlad, Rebekka, Mircea and Time2Staff Opening/Closing/Event Responsible so development and pilot installs continue to work. Treat these as local client-side access codes, not real authentication.
 
 ## Time2Staff Name Capture
 
@@ -92,12 +89,13 @@ Manager dashboard export backs up:
 - Finish records
 - Local alerts
 - Responsible assignments
+- Staff/user code configuration
 
 Use import to restore a backup or copy data to another browser/device. Bad JSON is rejected with an error message.
 
 The routine editor also has separate routine export/import controls for moving just the routine setup.
 
-`Clear test logs` removes local logs, handover notes, finish records, alerts and responsible assignments only. It keeps routines and routine edits.
+`Clear test logs` removes local logs, handover notes, finish records, alerts and responsible assignments only. It keeps routines, routine edits and staff/user code configuration.
 
 ## Diagnostics
 
@@ -133,6 +131,7 @@ Before deploying, make sure GitHub Pages is enabled for the `gh-pages` branch in
 - Local alerts are not real push notifications
 - Export/import is needed for backup and sharing data
 - Manager routine edits are local until exported/imported elsewhere
-- No real authentication; staff codes are client-side demo access only
+- No real authentication; staff codes are client-side local access only
+- Real security will need backend authentication later
 - No live multi-device sync
 - Offline app shell may require one successful online visit first
