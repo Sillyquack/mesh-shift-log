@@ -118,6 +118,15 @@ function hasDeviation(log) {
   return ['number', 'text', 'comment'].includes(log.inputType);
 }
 
+function criticalConfirmMessage(task) {
+  const seriousAreas = ['security', 'pos', 'salto', 'kitchen', 'event'];
+  const isSerious = seriousAreas.includes(task.area) || task.section.toLowerCase().includes('security');
+  const warning = isSerious
+    ? 'This is a critical closing/security, financial or food safety task. Confirm only when you have physically checked it.'
+    : 'This is a critical task. Confirm only when you have physically checked it.';
+  return `${task.title}\n\n${warning}`;
+}
+
 function normalizeLogs(logs) {
   if (!Array.isArray(logs)) return [];
   return logs
@@ -317,6 +326,7 @@ function TaskInput({ task, value, onChange }) {
 }
 
 function HandoverNotes({ user, shiftType, notes, setNotes }) {
+  const [savedAt, setSavedAt] = useState('');
   const date = todayKey();
   const key = `${date}-${shiftType}-${user.name}`;
   const value = notes[key] || {
@@ -339,28 +349,30 @@ function HandoverNotes({ user, shiftType, notes, setNotes }) {
     const nextNotes = { ...notes, [key]: next };
     setNotes(nextNotes);
     saveStorage(HANDOVER_KEY, nextNotes);
+    setSavedAt('Saved just now');
   }
 
   return (
-    <section className="handover-panel">
+    <section className="handover-panel" id="handover-notes">
       <div className="section-heading static-heading">
         <p className="eyebrow">Handover</p>
         <h2>Handover notes</h2>
+        <span>{savedAt || (value.updatedAt ? `Saved ${formatDateTime(value.updatedAt)}` : 'Auto-saves while you type')}</span>
       </div>
       <label>
         Notes for next shift
         <textarea rows="3" value={value.nextShift} onChange={(event) => update('nextShift', event.target.value)} />
       </label>
       <label>
-        Low stock
+        Low stock / order soon
         <textarea rows="2" value={value.lowStock} onChange={(event) => update('lowStock', event.target.value)} />
       </label>
       <label>
-        Maintenance/issues
+        Maintenance or issues
         <textarea rows="2" value={value.maintenance} onChange={(event) => update('maintenance', event.target.value)} />
       </label>
       <label>
-        Member/event notes
+        Member or event notes
         <textarea rows="2" value={value.memberEvent} onChange={(event) => update('memberEvent', event.target.value)} />
       </label>
     </section>
@@ -389,6 +401,7 @@ function Checklist({ user, shiftType, routines, logs, setLogs, handoverNotes, se
     return true;
   });
   const grouped = groupBy(visibleTasks, (task) => task.section);
+  const allGrouped = groupBy(tasks, (task) => task.section);
 
   function saveTaskStatus(task, status) {
     const input = drafts[task.id] || '';
@@ -398,13 +411,11 @@ function Checklist({ user, shiftType, routines, logs, setLogs, handoverNotes, se
       return;
     }
     if (status === 'not_relevant' && ['important', 'critical'].includes(task.priority) && !comment.trim()) {
-      alert('Please add a comment when marking important or critical tasks as not relevant.');
+      alert(`Please add a reason before marking this ${task.priority} task as not relevant.`);
       return;
     }
     if (status === 'done' && task.criticalConfirm) {
-      const confirmed = window.confirm(
-        `${task.title}\n\nThis is a critical closing/security task. Confirm only when you have physically checked it.`,
-      );
+      const confirmed = window.confirm(criticalConfirmMessage(task));
       if (!confirmed) return;
     }
 
@@ -474,10 +485,11 @@ function Checklist({ user, shiftType, routines, logs, setLogs, handoverNotes, se
           <span>{importantRemaining} important left</span>
         </div>
         {criticalRemaining > 0 ? (
-          <p className="critical-warning">Critical tasks still incomplete.</p>
+          <p className="critical-warning">{criticalRemaining} critical {criticalRemaining === 1 ? 'task is' : 'tasks are'} still incomplete.</p>
         ) : (
           <p className="all-clear">All critical tasks are handled.</p>
         )}
+        <a className="handover-jump" href="#handover-notes">Jump to handover notes</a>
         <div className="checklist-controls">
           <label className="toggle-row">
             <input type="checkbox" checked={hideCompleted} onChange={(event) => setHideCompleted(event.target.checked)} />
@@ -496,11 +508,15 @@ function Checklist({ user, shiftType, routines, logs, setLogs, handoverNotes, se
       </section>
 
       {Object.entries(grouped).map(([section, sectionTasks]) => (
-        <section key={section} className="task-section">
+        <section key={section} className={`task-section ${section.toLowerCase().includes('critical final') ? 'final-checks-section' : ''}`}>
           <div className="section-heading">
-            <p className="eyebrow">Time block</p>
+            <p className="eyebrow">{section.toLowerCase().includes('critical final') ? 'Final checks' : 'Time block'}</p>
             <h2>{section}</h2>
-            <span>{sectionTasks.length} visible</span>
+            <span>
+              {allGrouped[section].filter((task) => isHandled(logsByTask[task.id])).length}/{allGrouped[section].length} handled
+              {' | '}
+              {allGrouped[section].filter((task) => task.priority === 'critical' && !isHandled(logsByTask[task.id])).length} critical remaining
+            </span>
           </div>
           {sectionTasks.map((task) => {
             const log = logsByTask[task.id];
@@ -525,23 +541,42 @@ function Checklist({ user, shiftType, routines, logs, setLogs, handoverNotes, se
 
                 {!handled && (
                   <div className="task-inputs">
-                    <TaskInput
-                      task={task}
-                      value={drafts[task.id] || ''}
-                      onChange={(value) => setDrafts((current) => ({ ...current, [task.id]: value }))}
-                    />
-                    <textarea
-                      rows="2"
-                      value={comments[task.id] || ''}
-                      onChange={(event) => setComments((current) => ({ ...current, [task.id]: event.target.value }))}
-                      placeholder={task.requiresComment ? 'Required comment' : 'Optional comment'}
-                    />
+                    {taskNeedsInput(task) && task.inputType !== 'comment' && (
+                      <TaskInput
+                        task={task}
+                        value={drafts[task.id] || ''}
+                        onChange={(value) => setDrafts((current) => ({ ...current, [task.id]: value }))}
+                      />
+                    )}
+                    {(task.requiresComment || task.inputType === 'comment') ? (
+                      <textarea
+                        rows="2"
+                        value={comments[task.id] || drafts[task.id] || ''}
+                        onChange={(event) => {
+                          setComments((current) => ({ ...current, [task.id]: event.target.value }));
+                          if (task.inputType === 'comment') {
+                            setDrafts((current) => ({ ...current, [task.id]: event.target.value }));
+                          }
+                        }}
+                        placeholder={task.requiresComment ? 'Required reason or comment' : 'Add note if needed'}
+                      />
+                    ) : (
+                      <details className="optional-note">
+                        <summary>Add note / reason</summary>
+                        <textarea
+                          rows="2"
+                          value={comments[task.id] || ''}
+                          onChange={(event) => setComments((current) => ({ ...current, [task.id]: event.target.value }))}
+                          placeholder="Optional note or not relevant reason"
+                        />
+                      </details>
+                    )}
                   </div>
                 )}
 
                 {handled && (
                   <div className="completion-box">
-                    <strong>{log.status === 'done' ? 'Completed' : 'Marked not relevant'}</strong>
+                    <strong>{log.status === 'done' ? 'Done' : 'Not relevant'}</strong>
                     <span>{log.completedBy} | {formatDateTime(log.completedAt)}</span>
                     {log.input && <p>Input: {log.input}</p>}
                     {log.comment && <p>Comment: {log.comment}</p>}
@@ -560,7 +595,7 @@ function Checklist({ user, shiftType, routines, logs, setLogs, handoverNotes, se
                     </>
                   ) : (
                     <button type="button" className="ghost-button compact-button" onClick={() => clearTask(task)}>
-                      Reopen
+                      Change status
                     </button>
                   )}
                   {!handled && <span className="save-as">Will save as {user.name}</span>}
@@ -619,13 +654,49 @@ function ManagerDashboard({ routines, setRoutines, logs, setLogs, handoverNotes,
     if (staffFilter !== 'all' && note.completedBy !== staffFilter) return false;
     return [note.nextShift, note.lowStock, note.maintenance, note.memberEvent].some(Boolean);
   });
+  const handoverGroups = groupBy(visibleHandovers, (note) => note.shiftType);
+  const attentionItems = [
+    ...criticalMissing.slice(0, 4).map((task) => ({
+      id: task.id,
+      title: task.title,
+      detail: `${shiftLabels[task.shiftType]} | ${task.section}`,
+      type: 'Critical missing',
+    })),
+    ...notRelevantLogs.slice(0, 3).map((log) => ({
+      id: `${log.id}-na`,
+      title: log.taskTitle,
+      detail: `${log.completedBy}: ${log.comment || 'No reason added'}`,
+      type: 'Not relevant',
+    })),
+    ...inputDeviationLogs.slice(0, 3).map((log) => ({
+      id: `${log.id}-input`,
+      title: log.taskTitle,
+      detail: `${log.inputType}: ${log.input || log.comment}`,
+      type: 'Input/deviation',
+    })),
+    ...time2StaffLogs.slice(0, 2).map((log) => ({
+      id: `${log.id}-t2s`,
+      title: log.taskTitle,
+      detail: `${log.completedBy} | ${shiftLabels[log.shiftType]}`,
+      type: 'Time2Staff',
+    })),
+    ...visibleHandovers.slice(0, 3).map((note) => ({
+      id: `${note.date}-${note.shiftType}-${note.completedBy}`,
+      title: `${shiftLabels[note.shiftType]} handover`,
+      detail: note.completedBy,
+      type: 'Handover',
+    })),
+  ];
 
   function progressForShift(shiftType) {
     const shiftTasks = flattenTasks(routines, shiftType, date);
     const shiftLogs = dateLogs.filter((log) => log.shiftType === shiftType);
     const done = shiftLogs.filter((log) => log.status === 'done').length;
     const notRelevant = shiftLogs.filter((log) => log.status === 'not_relevant').length;
-    return { done, notRelevant, total: shiftTasks.length };
+    const handled = done + notRelevant;
+    const missing = Math.max(shiftTasks.length - handled, 0);
+    const criticalMissingCount = shiftTasks.filter((task) => task.priority === 'critical' && !handledIds.has(task.id)).length;
+    return { done, notRelevant, missing, criticalMissing: criticalMissingCount, total: shiftTasks.length };
   }
 
   function exportData() {
@@ -809,7 +880,8 @@ function ManagerDashboard({ routines, setRoutines, logs, setLogs, handoverNotes,
             <article key={shift.id} className="summary-card">
               <span>{shift.label}</span>
               <strong>{handled}/{progress.total}</strong>
-              <small>{progress.done} done | {progress.notRelevant} N/A</small>
+              <small>Done {progress.done} | N/A {progress.notRelevant}</small>
+              <small>Missing {progress.missing} | Critical {progress.criticalMissing}</small>
               <div className="mini-progress" aria-label={`${shift.label} progress`}>
                 <i style={{ width: `${percent}%` }} />
               </div>
@@ -847,48 +919,43 @@ function ManagerDashboard({ routines, setRoutines, logs, setLogs, handoverNotes,
         <h2>Needs attention</h2>
         <div className="attention-grid">
           <article><strong>{criticalMissing.length}</strong><span>Incomplete critical</span></article>
-          <article><strong>{commentLogs.length}</strong><span>Comments</span></article>
-          <article><strong>{inputDeviationLogs.length}</strong><span>Inputs/deviations</span></article>
-          <article><strong>{time2StaffLogs.length}</strong><span>Time2Staff logs</span></article>
+          <article><strong>{commentLogs.length}</strong><span>With comments</span></article>
+          <article><strong>{inputDeviationLogs.length}</strong><span>Inputs or deviations</span></article>
           <article><strong>{notRelevantLogs.length}</strong><span>Not relevant</span></article>
         </div>
-        {[...criticalMissing.slice(0, 4).map((task) => ({
-          id: task.id,
-          title: task.title,
-          detail: `${shiftLabels[task.shiftType]} | ${task.section}`,
-        })),
-        ...notRelevantLogs.slice(0, 3).map((log) => ({
-          id: `${log.id}-na`,
-          title: log.taskTitle,
-          detail: `Not relevant | ${log.completedBy}: ${log.comment || 'No comment'}`,
-        })),
-        ...inputDeviationLogs.slice(0, 3).map((log) => ({
-          id: `${log.id}-input`,
-          title: log.taskTitle,
-          detail: `${log.inputType}: ${log.input || log.comment}`,
-        }))].map((item) => (
-          <p key={item.id} className="attention-line">{item.title}<span>{item.detail}</span></p>
+        {attentionItems.length === 0 && <p className="muted">All clear for this filter/date.</p>}
+        {attentionItems.map((item) => (
+          <p key={item.id} className="attention-line">
+            <small>{item.type}</small>
+            {item.title}
+            <span>{item.detail}</span>
+          </p>
         ))}
       </section>
 
       <section className="manager-list">
         <h2>Handover notes</h2>
-        {visibleHandovers.length === 0 && <p className="muted">No handover notes match these filters.</p>}
-        {visibleHandovers.map((note) => (
-          <article key={`${note.date}-${note.shiftType}-${note.completedBy}`} className="log-row">
-            <strong>{note.completedBy}</strong>
-            <span>{shiftLabels[note.shiftType]} | {formatDateTime(note.updatedAt)}</span>
-            {note.nextShift && <small>Next shift: {note.nextShift}</small>}
-            {note.lowStock && <small>Low stock: {note.lowStock}</small>}
-            {note.maintenance && <small>Maintenance: {note.maintenance}</small>}
-            {note.memberEvent && <small>Member/event: {note.memberEvent}</small>}
-          </article>
+        {visibleHandovers.length === 0 && <p className="muted">No handover notes for this date/filter.</p>}
+        {Object.entries(handoverGroups).map(([shiftType, notes]) => (
+          <div key={shiftType} className="handover-group">
+            <h3>{shiftLabels[shiftType]}</h3>
+            {notes.map((note) => (
+              <article key={`${note.date}-${note.shiftType}-${note.completedBy}`} className="log-row">
+                <strong>{note.completedBy}</strong>
+                <span>{formatDateTime(note.updatedAt)}</span>
+                {note.nextShift && <small>Next shift: {note.nextShift}</small>}
+                {note.lowStock && <small>Low stock: {note.lowStock}</small>}
+                {note.maintenance && <small>Maintenance: {note.maintenance}</small>}
+                {note.memberEvent && <small>Member/event: {note.memberEvent}</small>}
+              </article>
+            ))}
+          </div>
         ))}
       </section>
 
       <section className="manager-list">
         <h2>Completed and handled tasks</h2>
-        {filteredLogs.length === 0 && <p className="muted">No handled tasks match these filters.</p>}
+        {filteredLogs.length === 0 && <p className="muted">No completed tasks yet for this filter.</p>}
         {filteredLogs.map((log) => (
           <article key={log.id} className={`log-row priority-${log.priority}`}>
             <strong>{log.taskTitle}</strong>
@@ -958,11 +1025,12 @@ function ManagerDashboard({ routines, setRoutines, logs, setLogs, handoverNotes,
           {normalizeRoutines(routines).flatMap((routine) => routine.tasks).map((task) => (
             <article key={task.id} className={`log-row priority-${task.priority} ${task.active === false ? 'inactive-task' : ''}`}>
               <strong>{task.title}</strong>
-              <span>{shiftLabels[task.shiftType]} | {task.section} | {task.area}</span>
+              <span>{shiftLabels[task.shiftType]} | {task.section} | {priorityLabels[task.priority]} | {task.active === false ? 'Inactive' : 'Active'}</span>
+              <small>{task.area}</small>
               <div className="inline-actions">
                 <button type="button" className="ghost-button compact-button" onClick={() => editTask(task)}>Edit</button>
                 {task.active !== false && (
-                  <button type="button" className="ghost-button compact-button" onClick={() => deactivateTask(task)}>Deactivate</button>
+                  <button type="button" className="ghost-button compact-button" onClick={() => deactivateTask(task)}>Deactivate task</button>
                 )}
               </div>
             </article>
@@ -979,7 +1047,7 @@ function ManagerDashboard({ routines, setRoutines, logs, setLogs, handoverNotes,
             <textarea rows="2" value={editorTask.description} onChange={(event) => setEditorTask((current) => ({ ...current, description: event.target.value }))} />
           </label>
           <label>
-            Shift
+            Shift type
             <select value={editorTask.shiftType} onChange={(event) => setEditorTask((current) => ({ ...current, shiftType: event.target.value }))}>
               {activeShifts.map((shift) => <option key={shift.id} value={shift.id}>{shift.label}</option>)}
             </select>
@@ -1015,8 +1083,8 @@ function ManagerDashboard({ routines, setRoutines, logs, setLogs, handoverNotes,
           <label className="toggle-row"><input type="checkbox" checked={editorTask.active} onChange={(event) => setEditorTask((current) => ({ ...current, active: event.target.checked }))} /> Active</label>
           <label className="toggle-row"><input type="checkbox" checked={editorTask.criticalConfirm} onChange={(event) => setEditorTask((current) => ({ ...current, criticalConfirm: event.target.checked }))} /> Critical confirmation</label>
           <label className="toggle-row"><input type="checkbox" checked={editorTask.requiresComment} onChange={(event) => setEditorTask((current) => ({ ...current, requiresComment: event.target.checked }))} /> Requires comment</label>
-          <button type="submit" className="primary-button">Save task</button>
-          <button type="button" className="ghost-button" onClick={() => setEditorTask(blankTask)}>Clear form</button>
+          <button type="submit" className="primary-button">{editorTask.id ? 'Save changes' : 'Add task'}</button>
+          <button type="button" className="ghost-button" onClick={() => setEditorTask(blankTask)}>Cancel</button>
         </form>
       </section>
     </main>

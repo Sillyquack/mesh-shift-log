@@ -52,6 +52,16 @@ button {
   cursor: pointer;
 }
 
+button:focus-visible,
+input:focus-visible,
+select:focus-visible,
+textarea:focus-visible,
+summary:focus-visible,
+a:focus-visible {
+  outline: 3px solid color-mix(in srgb, var(--brand) 65%, transparent);
+  outline-offset: 2px;
+}
+
 .login-shell {
   display: grid;
   min-height: 100vh;
@@ -291,8 +301,8 @@ textarea {
 }
 
 .progress-panel {
-  margin-bottom: 20px;
-  padding: 18px;
+  margin-bottom: 24px;
+  padding: 16px;
 }
 
 .progress-panel h1 {
@@ -342,7 +352,7 @@ textarea {
 .all-clear {
   margin: 12px 0 0;
   border-radius: 8px;
-  padding: 10px 12px;
+  padding: 9px 11px;
   font-weight: 850;
 }
 
@@ -360,6 +370,21 @@ textarea {
   display: grid;
   gap: 10px;
   margin-top: 14px;
+}
+
+.handover-jump {
+  display: inline-grid;
+  min-height: 38px;
+  align-items: center;
+  width: max-content;
+  margin-top: 12px;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  color: var(--brand-strong);
+  padding: 0 12px;
+  font-size: 0.84rem;
+  font-weight: 850;
+  text-decoration: none;
 }
 
 .toggle-row {
@@ -382,18 +407,21 @@ textarea {
 }
 
 .task-section {
-  margin-bottom: 34px;
+  margin-bottom: 38px;
+  padding-top: 6px;
 }
 
 .section-heading {
   position: sticky;
   top: 71px;
   z-index: 4;
-  margin: 0 -14px 14px;
-  border-top: 1px solid var(--line);
+  margin: 0 -6px 16px;
+  border: 1px solid var(--line);
   border-bottom: 1px solid var(--line);
-  background: var(--bg);
-  padding: 13px 14px;
+  border-radius: 8px;
+  background: color-mix(in srgb, var(--bg) 86%, var(--surface));
+  padding: 12px;
+  box-shadow: 0 8px 18px rgba(22, 32, 29, 0.06);
 }
 
 .section-heading .eyebrow,
@@ -403,8 +431,13 @@ textarea {
 
 .section-heading span {
   color: var(--muted);
-  font-size: 0.78rem;
+  font-size: 0.82rem;
   font-weight: 800;
+}
+
+.final-checks-section .section-heading {
+  border-color: color-mix(in srgb, var(--critical) 35%, var(--line));
+  background: color-mix(in srgb, var(--critical) 8%, var(--surface));
 }
 
 .static-heading {
@@ -416,9 +449,9 @@ textarea {
 
 .task-card {
   display: grid;
-  gap: 12px;
-  margin-bottom: 12px;
-  padding: 15px;
+  gap: 10px;
+  margin-bottom: 10px;
+  padding: 13px;
   border-left-width: 6px;
 }
 
@@ -435,9 +468,13 @@ textarea {
 }
 
 .task-card.priority-critical {
-  border-color: color-mix(in srgb, var(--critical) 36%, var(--line));
+  border-color: color-mix(in srgb, var(--critical) 30%, var(--line));
   border-left-color: var(--critical);
-  background: color-mix(in srgb, var(--critical) 7%, var(--surface));
+  background: color-mix(in srgb, var(--critical) 5%, var(--surface));
+}
+
+.task-card.priority-important {
+  background: color-mix(in srgb, var(--important) 5%, var(--surface));
 }
 
 .task-card.priority-critical .checkbox {
@@ -467,14 +504,14 @@ textarea {
 
 .checkbox {
   display: grid;
-  width: 52px;
-  height: 52px;
+  width: 48px;
+  height: 48px;
   place-items: center;
   border: 2px solid var(--line);
   border-radius: 8px;
   background: var(--surface-strong);
   color: var(--brand);
-  font-size: 1.6rem;
+  font-size: 1.1rem;
   font-weight: 900;
 }
 
@@ -541,7 +578,7 @@ textarea {
   background: var(--surface-strong);
   color: var(--muted);
   padding: 5px 8px;
-  font-size: 0.73rem;
+  font-size: 0.76rem;
   font-weight: 800;
 }
 
@@ -616,12 +653,31 @@ textarea {
 }
 
 .task-card.status-done {
-  opacity: 0.82;
+  opacity: 0.78;
+  background: color-mix(in srgb, var(--surface) 86%, var(--surface-strong));
 }
 
 .task-card.status-not_relevant {
   opacity: 0.74;
   border-left-color: var(--muted);
+}
+
+.optional-note {
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  background: color-mix(in srgb, var(--surface-strong) 55%, transparent);
+  padding: 9px 10px;
+}
+
+.optional-note summary {
+  color: var(--muted);
+  font-size: 0.84rem;
+  font-weight: 850;
+  cursor: pointer;
+}
+
+.optional-note textarea {
+  margin-top: 9px;
 }
 
 .empty-state {
@@ -650,12 +706,17 @@ textarea {
 .routine-editor {
   display: grid;
   gap: 12px;
-  margin-top: 22px;
+  margin-top: 28px;
   border: 1px solid var(--line);
   border-radius: 8px;
   background: var(--surface);
   box-shadow: 0 8px 24px rgba(22, 32, 29, 0.06);
   padding: 16px;
+}
+
+.handover-panel {
+  border-color: color-mix(in srgb, var(--brand) 32%, var(--line));
+  background: color-mix(in srgb, var(--brand) 5%, var(--surface));
 }
 
 .manager-controls {
@@ -670,12 +731,12 @@ textarea {
 }
 
 .summary-card {
-  padding: 15px;
+  padding: 13px;
 }
 
 .summary-card span {
   display: block;
-  min-height: 36px;
+  min-height: 30px;
   color: var(--muted);
   font-size: 0.82rem;
   font-weight: 800;
@@ -683,7 +744,7 @@ textarea {
 
 .summary-card strong {
   display: block;
-  margin-bottom: 9px;
+  margin-bottom: 7px;
   font-size: 1.45rem;
 }
 
@@ -721,7 +782,7 @@ textarea {
 
 .critical-panel {
   border-color: color-mix(in srgb, var(--critical) 50%, var(--line));
-  background: color-mix(in srgb, var(--critical) 9%, var(--surface));
+  background: color-mix(in srgb, var(--critical) 7%, var(--surface));
 }
 
 .critical-panel p {
@@ -749,6 +810,8 @@ textarea {
 
 .critical-group {
   margin-top: 14px;
+  border-top: 1px solid color-mix(in srgb, var(--critical) 22%, var(--line));
+  padding-top: 10px;
 }
 
 .critical-group h3 {
@@ -800,6 +863,15 @@ textarea {
   font-weight: 850;
 }
 
+.attention-line small {
+  display: block;
+  margin-bottom: 3px;
+  color: var(--brand);
+  font-size: 0.72rem;
+  font-weight: 900;
+  text-transform: uppercase;
+}
+
 .log-row {
   display: grid;
   gap: 5px;
@@ -819,7 +891,12 @@ textarea {
   margin-top: 14px;
 }
 
-.missing-group h3 {
+.handover-group {
+  margin-top: 14px;
+}
+
+.missing-group h3,
+.handover-group h3 {
   margin: 0 0 8px;
   color: var(--muted);
   font-size: 0.9rem;
@@ -907,14 +984,15 @@ textarea {
 @media (max-width: 520px) {
   .top-bar {
     align-items: flex-start;
+    gap: 8px;
   }
 
   .top-actions {
-    max-width: 190px;
+    max-width: 185px;
   }
 
   .ghost-button {
-    min-height: 32px;
+    min-height: 34px;
     border-color: transparent;
     padding-inline: 6px;
   }
@@ -922,6 +1000,28 @@ textarea {
   .shift-pill {
     order: -1;
     width: 100%;
-    max-width: 190px;
+    max-width: 185px;
+  }
+
+  .page {
+    padding-inline: 12px;
+  }
+
+  .task-main {
+    grid-template-columns: 44px 1fr;
+    gap: 10px;
+  }
+
+  .checkbox {
+    width: 44px;
+    height: 44px;
+  }
+
+  .task-actions {
+    align-items: stretch;
+  }
+
+  .task-actions .compact-button {
+    flex: 1 1 130px;
   }
 }
