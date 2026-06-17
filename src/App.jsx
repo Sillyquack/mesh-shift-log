@@ -1636,30 +1636,26 @@ function ManagerDashboard({
   }
 
   function updateAlert(alertId, status) {
-    const currentAlert = alerts.find((alert) => alert.id === alertId);
+    const latestAlerts = normalizeAlerts(readStorage(ALERT_KEY, alerts));
+    const currentAlert = latestAlerts.find((alert) => String(alert.id) === String(alertId));
     if (!currentAlert) {
       setMessage('Alert not found.');
       return;
     }
-    const noteResponse = window.prompt(`Optional manager note for ${status}:`, currentAlert.managerNote || '');
-    const managerNote = noteResponse === null
-      ? currentAlert.managerNote || ''
-      : noteResponse.trim() || currentAlert.managerNote || '';
     const timestamp = new Date().toISOString();
     const statusFields = status === 'acknowledged'
       ? { acknowledgedBy: user.name, acknowledgedAt: timestamp }
       : { resolvedBy: user.name, resolvedAt: timestamp };
-    const nextAlerts = alerts.map((alert) => alert.id === alertId
+    const nextAlerts = latestAlerts.map((alert) => String(alert.id) === String(alertId)
       ? {
         ...alert,
         status,
         ...statusFields,
-        managerNote,
         updatedAt: timestamp,
       }
       : alert);
-    setAlerts(nextAlerts);
     saveStorage(ALERT_KEY, nextAlerts);
+    setAlerts(nextAlerts);
     setMessage(status === 'acknowledged' ? 'Alert acknowledged.' : 'Alert resolved.');
   }
 
