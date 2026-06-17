@@ -4,6 +4,16 @@ Mobile-first internal shift operations tool for Mesh Youngstorget hospitality st
 
 The app is currently a local-only MVP. It has no backend and stores shift logs, handover notes and manager routine edits in the browser with `localStorage`.
 
+## Pilot Use
+
+- This is a local-only pilot tool.
+- Data stays in the current browser/device.
+- Managers should export backups regularly from the dashboard.
+- Use `Clear test logs` before starting a real pilot if test data should be removed.
+- Time2Staff workers must enter their actual first name before using a checklist.
+- Critical tasks should only be confirmed after a real physical check.
+- There is no backend or live sync yet.
+
 ## What The App Does
 
 - Staff-code login for named staff and Time2Staff roles
@@ -12,6 +22,7 @@ The app is currently a local-only MVP. It has no backend and stores shift logs, 
 - Done and Not relevant task statuses
 - Handover notes per date, shift and user
 - Manager dashboard with progress, missing tasks, critical tasks, handover notes and history
+- Local data status, backup reminder and daily report copy for managers
 - Basic manager-only routine editor
 - JSON export/import for backups and moving local data between browsers
 
@@ -53,6 +64,8 @@ Manager dashboard export backs up:
 Use import to restore a backup or copy data to another browser/device. Bad JSON is rejected with an error message.
 
 The routine editor also has separate routine export/import controls for moving just the routine setup.
+
+`Clear test logs` removes local logs and handover notes only. It keeps routines and routine edits.
 
 ## Run Locally
 

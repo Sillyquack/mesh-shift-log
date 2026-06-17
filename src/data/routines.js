@@ -123,7 +123,7 @@ export const defaultRoutines = [
     ['Place coffee in members lounge and remove used cups', { area: 'lounge' }],
     ['Refill milk and oat milk in coffee machine', { area: 'workbar', priority: 'important' }],
     ['Refill Workbar milk fridge', { area: 'workbar' }],
-    ['Open POS/register and count cash drawer, expected 1000 NOK', { area: 'pos', priority: 'critical', inputType: 'number', criticalConfirm: true }],
+    ['Open POS/register and count cash drawer', { description: 'Expected cash drawer: 1000 NOK.', area: 'pos', priority: 'critical', inputType: 'number', criticalConfirm: true }],
     ['Turn on music and check Q-SYS/Soundtrack', { area: 'general', priority: 'important' }],
     ['Turn on Workbar dishwasher', { area: 'workbar' }],
     ['Check cleaning station', { area: 'general' }],
@@ -222,7 +222,7 @@ export const defaultRoutines = [
     ['Make sure Kitchen/Atrium, Atrium/Workbar, Cornerbar/Atrium and garbage hallway/Atrium doors are closed and locked', { area: 'security', priority: 'critical', criticalConfirm: true }],
     ['Check Salto after events/manual overrides', { area: 'salto', priority: 'critical', criticalConfirm: true, inputType: 'yesno' }],
     ['Set alarm before leaving', { area: 'security', priority: 'critical', criticalConfirm: true }],
-    ['CRITICAL: Manually lock Cornerbar street door upper lock', { area: 'cornerbar', priority: 'critical', criticalConfirm: true }],
+    ['Manually lock Cornerbar street door upper lock', { area: 'cornerbar', priority: 'critical', criticalConfirm: true }],
   ]),
   section('event-before', 'event', 'Event before', [
     ['Check Google Calendar for Atrium, Bar, Workbar and project rooms', { area: 'event', priority: 'important' }],

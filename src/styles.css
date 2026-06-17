@@ -78,6 +78,34 @@ a:focus-visible {
   box-shadow: var(--shadow);
 }
 
+.modal-backdrop {
+  position: fixed;
+  inset: 0;
+  z-index: 100;
+  display: grid;
+  place-items: center;
+  background: rgba(0, 0, 0, 0.58);
+  padding: 18px;
+}
+
+.pilot-modal {
+  width: min(100%, 440px);
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  background: var(--surface);
+  box-shadow: var(--shadow);
+  padding: 24px;
+}
+
+.pilot-modal h1 {
+  font-size: clamp(1.7rem, 7vw, 2.4rem);
+}
+
+.pilot-modal p {
+  color: var(--muted);
+  line-height: 1.45;
+}
+
 .eyebrow {
   margin: 0 0 8px;
   color: var(--brand);
@@ -385,6 +413,29 @@ textarea {
   font-size: 0.84rem;
   font-weight: 850;
   text-decoration: none;
+}
+
+.identity-reminder,
+.readiness-card {
+  margin: 12px 0 0;
+  border-radius: 8px;
+  background: var(--surface-strong);
+  color: var(--muted);
+  padding: 10px 12px;
+  font-size: 0.88rem;
+  font-weight: 800;
+}
+
+.readiness-card {
+  display: grid;
+  gap: 4px;
+  border: 1px solid color-mix(in srgb, var(--critical) 22%, var(--line));
+  background: color-mix(in srgb, var(--critical) 6%, var(--surface));
+}
+
+.readiness-card span {
+  color: var(--muted);
+  font-size: 0.82rem;
 }
 
 .toggle-row {
@@ -719,10 +770,82 @@ textarea {
   background: color-mix(in srgb, var(--brand) 5%, var(--surface));
 }
 
+.end-shift-summary {
+  display: grid;
+  gap: 12px;
+  margin-top: 18px;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  background: var(--surface);
+  box-shadow: 0 8px 24px rgba(22, 32, 29, 0.06);
+  padding: 16px;
+}
+
+.summary-metrics,
+.status-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 8px;
+}
+
+.summary-metrics span,
+.status-grid span {
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  background: var(--surface-strong);
+  padding: 10px;
+  color: var(--muted);
+  font-size: 0.82rem;
+  font-weight: 850;
+}
+
+.status-grid strong {
+  display: block;
+  color: var(--text);
+  font-size: 1.05rem;
+}
+
 .manager-controls {
   display: grid;
   gap: 12px;
   margin-bottom: 16px;
+}
+
+.local-status-card,
+.daily-report-panel,
+.danger-zone {
+  display: grid;
+  gap: 12px;
+  margin-bottom: 16px;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  background: var(--surface);
+  box-shadow: 0 8px 24px rgba(22, 32, 29, 0.06);
+  padding: 16px;
+}
+
+.local-status-card h2,
+.daily-report-panel h2,
+.danger-zone h2 {
+  margin-bottom: 4px;
+}
+
+.daily-report-panel pre {
+  max-height: 360px;
+  overflow: auto;
+  margin: 0;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  background: var(--surface-strong);
+  color: var(--text);
+  padding: 12px;
+  white-space: pre-wrap;
+  font: 0.86rem/1.45 ui-monospace, SFMono-Regular, Consolas, "Liberation Mono", monospace;
+}
+
+.danger-zone {
+  border-color: color-mix(in srgb, var(--critical) 32%, var(--line));
+  background: color-mix(in srgb, var(--critical) 5%, var(--surface));
 }
 
 .summary-grid {
@@ -973,6 +1096,11 @@ textarea {
   .panel-title-row {
     grid-template-columns: 1fr auto;
     align-items: center;
+  }
+
+  .status-grid,
+  .summary-metrics {
+    grid-template-columns: repeat(4, minmax(0, 1fr));
   }
 
   .task-title-row {

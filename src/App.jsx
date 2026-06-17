@@ -13,6 +13,8 @@ const LOG_KEY = 'mesh-shift-logs-v1';
 const ROUTINE_KEY = 'mesh-routines-v1';
 const SESSION_KEY = 'mesh-current-user-v1';
 const HANDOVER_KEY = 'mesh-handover-notes-v1';
+const PILOT_NOTICE_KEY = 'mesh-pilot-notice-accepted-v1';
+const LAST_EXPORT_KEY = 'mesh-last-export-at-v1';
 
 const priorityLabels = {
   normal: 'Normal',
@@ -145,6 +147,10 @@ function normalizeHandovers(notes) {
   return notes && typeof notes === 'object' && !Array.isArray(notes) ? notes : {};
 }
 
+function handoverHasContent(note) {
+  return Boolean(note && [note.nextShift, note.lowStock, note.maintenance, note.memberEvent].some((value) => value?.trim()));
+}
+
 function validateHandoverImport(notes) {
   if (!notes || typeof notes !== 'object' || Array.isArray(notes)) {
     throw new Error('Handover notes must be an object.');
@@ -170,6 +176,26 @@ function slug(text) {
     .slice(0, 64);
 }
 
+function routinesUseDefaults(routines) {
+  return JSON.stringify(normalizeRoutines(routines)) === JSON.stringify(normalizeRoutines(defaultRoutines));
+}
+
+function PilotNotice({ onAccept }) {
+  return (
+    <div className="modal-backdrop" role="dialog" aria-modal="true" aria-labelledby="pilot-title">
+      <section className="pilot-modal">
+        <p className="eyebrow">Pilot</p>
+        <h1 id="pilot-title">Mesh Shift Log pilot</h1>
+        <p>
+          This is a local pilot version. Shift logs are saved only in this browser on this device.
+          Manager should export backups regularly.
+        </p>
+        <button type="button" className="primary-button" onClick={onAccept}>I understand</button>
+      </section>
+    </div>
+  );
+}
+
 function Login({ onLogin }) {
   const [code, setCode] = useState('');
   const [workerName, setWorkerName] = useState('');
@@ -186,14 +212,15 @@ function Login({ onLogin }) {
     setError('');
 
     if (pendingUser) {
-      if (!workerName.trim()) {
-        setError('Please add the name of the person working this shift.');
+      const trimmedName = workerName.trim().replace(/\s+/g, ' ');
+      if (trimmedName.length < 2) {
+        setError('Please add your real first name before continuing.');
         return;
       }
       finishLogin({
         ...pendingUser,
-        name: `${workerName.trim()} / ${pendingUser.name}`,
-        staffName: workerName.trim(),
+        name: `${trimmedName} / ${pendingUser.name}`,
+        staffName: trimmedName,
         baseName: pendingUser.name,
       });
       return;
@@ -217,7 +244,7 @@ function Login({ onLogin }) {
         <p className="eyebrow">Mesh Youngstorget</p>
         <h1>Shift checklist</h1>
         <p className="muted">
-          {pendingUser ? 'Add the actual staff name for accountability.' : 'Sign in with your staff code to start today.'}
+          {pendingUser ? 'Use your real first name. This is saved with completed tasks.' : 'Sign in with your staff code to start today.'}
         </p>
         <form onSubmit={submit} className="login-form">
           {!pendingUser ? (
@@ -239,7 +266,7 @@ function Login({ onLogin }) {
                 autoFocus
                 value={workerName}
                 onChange={(event) => setWorkerName(event.target.value)}
-                placeholder="Ana"
+                placeholder="First name"
               />
               <button type="button" className="text-button" onClick={() => setPendingUser(null)}>
                 Use another code
@@ -386,12 +413,18 @@ function Checklist({ user, shiftType, routines, logs, setLogs, handoverNotes, se
   const [taskFilter, setTaskFilter] = useState('all');
   const date = todayKey();
   const tasks = useMemo(() => flattenTasks(routines, shiftType, date), [routines, shiftType, date]);
+  const handoverKey = `${date}-${shiftType}-${user.name}`;
+  const currentHandover = handoverNotes[handoverKey];
+  const hasHandover = handoverHasContent(currentHandover);
   const logsByTask = Object.fromEntries(logs.filter((log) => log.date === date).map((log) => [log.taskId, log]));
   const doneCount = tasks.filter((task) => logsByTask[task.id]?.status === 'done').length;
   const notRelevantCount = tasks.filter((task) => logsByTask[task.id]?.status === 'not_relevant').length;
   const handledCount = doneCount + notRelevantCount;
   const criticalRemaining = tasks.filter((task) => task.priority === 'critical' && !isHandled(logsByTask[task.id])).length;
   const importantRemaining = tasks.filter((task) => task.priority === 'important' && !isHandled(logsByTask[task.id])).length;
+  const missingCount = Math.max(tasks.length - handledCount, 0);
+  const securityRemaining = tasks.filter((task) => ['security', 'salto', 'cornerbar'].includes(task.area) && !isHandled(logsByTask[task.id])).length;
+  const posRemaining = tasks.filter((task) => task.area === 'pos' && !isHandled(logsByTask[task.id])).length;
   const visibleTasks = tasks.filter((task) => {
     const log = logsByTask[task.id];
     if (hideCompleted && isHandled(log)) return false;
@@ -488,6 +521,17 @@ function Checklist({ user, shiftType, routines, logs, setLogs, handoverNotes, se
           <p className="critical-warning">{criticalRemaining} critical {criticalRemaining === 1 ? 'task is' : 'tasks are'} still incomplete.</p>
         ) : (
           <p className="all-clear">All critical tasks are handled.</p>
+        )}
+        {user.baseName?.startsWith('Time2Staff') && (
+          <p className="identity-reminder">You are logged as {user.name}.</p>
+        )}
+        {shiftType === 'closing' && (
+          <section className="readiness-card">
+            <strong>
+              Closing readiness: {criticalRemaining > 0 ? `${criticalRemaining} critical tasks remaining` : 'critical tasks handled'}
+            </strong>
+            <span>{securityRemaining} security | {posRemaining} register/POS | handover {hasHandover ? 'present' : 'missing'}</span>
+          </section>
         )}
         <a className="handover-jump" href="#handover-notes">Jump to handover notes</a>
         <div className="checklist-controls">
@@ -614,17 +658,38 @@ function Checklist({ user, shiftType, routines, logs, setLogs, handoverNotes, se
       )}
 
       <HandoverNotes user={user} shiftType={shiftType} notes={handoverNotes} setNotes={setHandoverNotes} />
+
+      <section className="end-shift-summary">
+        <div className="section-heading static-heading">
+          <p className="eyebrow">Review</p>
+          <h2>End shift summary</h2>
+          <span>{hasHandover ? 'Handover notes present' : 'Handover notes missing'}</span>
+        </div>
+        <div className="summary-metrics">
+          <span>Done {doneCount}</span>
+          <span>Not relevant {notRelevantCount}</span>
+          <span>Missing {missingCount}</span>
+          <span>Critical missing {criticalRemaining}</span>
+        </div>
+        {criticalRemaining > 0 ? (
+          <p className="critical-warning">Critical tasks still missing. Review before leaving.</p>
+        ) : (
+          <p className="all-clear">No critical tasks missing.</p>
+        )}
+      </section>
     </main>
   );
 }
 
-function ManagerDashboard({ routines, setRoutines, logs, setLogs, handoverNotes, setHandoverNotes }) {
+function ManagerDashboard({ routines, setRoutines, logs, setLogs, handoverNotes, setHandoverNotes, onResetPilotNotice }) {
   const [date, setDate] = useState(todayKey());
   const [staffFilter, setStaffFilter] = useState('all');
   const [shiftFilter, setShiftFilter] = useState('all');
   const [showAllCritical, setShowAllCritical] = useState(false);
   const [editorTask, setEditorTask] = useState(blankTask);
   const [message, setMessage] = useState('');
+  const [clearPhrase, setClearPhrase] = useState('');
+  const [lastExportAt, setLastExportAt] = useState(() => readStorage(LAST_EXPORT_KEY, ''));
 
   const activeShifts = shiftOptions.filter((shift) => shift.id !== 'guides');
   const allTasks = activeShifts.flatMap((shift) => flattenTasks(routines, shift.id, date));
@@ -655,6 +720,10 @@ function ManagerDashboard({ routines, setRoutines, logs, setLogs, handoverNotes,
     return [note.nextShift, note.lowStock, note.maintenance, note.memberEvent].some(Boolean);
   });
   const handoverGroups = groupBy(visibleHandovers, (note) => note.shiftType);
+  const allHandoversWithContent = Object.values(handoverNotes).filter(handoverHasContent);
+  const loggedDates = [...new Set([...logs.map((log) => log.date), ...allHandoversWithContent.map((note) => note.date)])].length;
+  const handledRecords = logs.filter(isHandled).length;
+  const usingDefaultRoutines = routinesUseDefaults(routines);
   const attentionItems = [
     ...criticalMissing.slice(0, 4).map((task) => ({
       id: task.id,
@@ -688,6 +757,55 @@ function ManagerDashboard({ routines, setRoutines, logs, setLogs, handoverNotes,
     })),
   ];
 
+  function buildDailyReport() {
+    const lines = [
+      'Mesh Shift Log - Daily report',
+      `Date: ${date}`,
+      '',
+    ];
+    activeShifts.forEach((shift) => {
+      const shiftTasks = flattenTasks(routines, shift.id, date);
+      const shiftLogs = dateLogs.filter((log) => log.shiftType === shift.id);
+      const done = shiftLogs.filter((log) => log.status === 'done').length;
+      const notRelevant = shiftLogs.filter((log) => log.status === 'not_relevant').length;
+      const handled = done + notRelevant;
+      const missing = Math.max(shiftTasks.length - handled, 0);
+      const criticalMissingCount = shiftTasks.filter((task) => task.priority === 'critical' && !handledIds.has(task.id)).length;
+      const staff = [...new Set(shiftLogs.map((log) => log.completedBy))];
+      const shiftHandovers = visibleHandovers.filter((note) => note.shiftType === shift.id);
+      if (handled === 0 && shiftHandovers.length === 0 && missing === shiftTasks.length) return;
+      lines.push(shift.label);
+      lines.push(`Handled: ${handled} / ${shiftTasks.length}`);
+      lines.push(`Done: ${done}`);
+      lines.push(`Not relevant: ${notRelevant}`);
+      lines.push(`Missing: ${missing}`);
+      lines.push(`Critical missing: ${criticalMissingCount}`);
+      lines.push(`Staff: ${staff.length ? staff.join(', ') : 'None logged'}`);
+      if (shiftHandovers.length) {
+        lines.push('');
+        lines.push('Handover:');
+        shiftHandovers.forEach((note) => {
+          lines.push(`- ${note.completedBy}`);
+          if (note.nextShift) lines.push(`  Next shift: ${note.nextShift}`);
+          if (note.lowStock) lines.push(`  Low stock: ${note.lowStock}`);
+          if (note.maintenance) lines.push(`  Maintenance: ${note.maintenance}`);
+          if (note.memberEvent) lines.push(`  Member/event: ${note.memberEvent}`);
+        });
+      }
+      const shiftAttention = shiftLogs.filter((log) => log.status === 'not_relevant' || log.comment || log.input);
+      if (shiftAttention.length) {
+        lines.push('');
+        lines.push('Attention:');
+        shiftAttention.forEach((log) => {
+          const detail = log.comment || log.input || log.status;
+          lines.push(`- ${log.taskTitle}: ${detail}`);
+        });
+      }
+      lines.push('');
+    });
+    return lines.join('\n').trim();
+  }
+
   function progressForShift(shiftType) {
     const shiftTasks = flattenTasks(routines, shiftType, date);
     const shiftLogs = dateLogs.filter((log) => log.shiftType === shiftType);
@@ -713,7 +831,37 @@ function ManagerDashboard({ routines, setRoutines, logs, setLogs, handoverNotes,
     link.download = `mesh-shift-log-${todayKey()}.json`;
     link.click();
     URL.revokeObjectURL(url);
+    const exportedAt = new Date().toISOString();
+    setLastExportAt(exportedAt);
+    saveStorage(LAST_EXPORT_KEY, exportedAt);
     setMessage('Backup exported.');
+  }
+
+  function clearTestLogs() {
+    if (clearPhrase !== 'CLEAR') {
+      setMessage('Type CLEAR to confirm clearing test logs.');
+      return;
+    }
+    const confirmed = window.confirm(
+      'This clears local shift logs and handover notes from this browser only. Routine setup will stay. Export a backup first if needed.',
+    );
+    if (!confirmed) return;
+    setLogs([]);
+    setHandoverNotes({});
+    saveStorage(LOG_KEY, []);
+    saveStorage(HANDOVER_KEY, {});
+    setClearPhrase('');
+    setMessage('Test logs cleared from this browser.');
+  }
+
+  async function copyDailyReport() {
+    const report = buildDailyReport();
+    try {
+      await navigator.clipboard.writeText(report);
+      setMessage('Daily report copied.');
+    } catch {
+      setMessage('Could not copy automatically. Select the report text below and copy it manually.');
+    }
   }
 
   function importData(event) {
@@ -871,6 +1019,27 @@ function ManagerDashboard({ routines, setRoutines, logs, setLogs, handoverNotes,
         </label>
       </section>
 
+      <section className="local-status-card">
+        <div>
+          <p className="eyebrow">Pilot data</p>
+          <h2>Local data status</h2>
+          <p className="muted">Saved in this browser on this device.</p>
+        </div>
+        <div className="status-grid">
+          <span><strong>{loggedDates}</strong> logged dates</span>
+          <span><strong>{handledRecords}</strong> handled records</span>
+          <span><strong>{allHandoversWithContent.length}</strong> handover notes</span>
+          <span><strong>{usingDefaultRoutines ? 'Default' : 'Local edits'}</strong> routines</span>
+        </div>
+        <p className="muted">
+          {lastExportAt ? `Last backup: ${formatDateTime(lastExportAt)}` : 'No backup exported yet.'}
+        </p>
+        <div className="backup-actions">
+          <button type="button" className="primary-button compact-button" onClick={exportData}>Export backup</button>
+          <button type="button" className="ghost-button compact-button" onClick={onResetPilotNotice}>Show pilot notice again</button>
+        </div>
+      </section>
+
       <section className="summary-grid">
         {activeShifts.map((shift) => {
           const progress = progressForShift(shift.id);
@@ -931,6 +1100,17 @@ function ManagerDashboard({ routines, setRoutines, logs, setLogs, handoverNotes,
             <span>{item.detail}</span>
           </p>
         ))}
+      </section>
+
+      <section className="daily-report-panel">
+        <div className="panel-title-row">
+          <div>
+            <p className="eyebrow">Report</p>
+            <h2>Daily report</h2>
+          </div>
+          <button type="button" className="primary-button compact-button" onClick={copyDailyReport}>Copy daily report</button>
+        </div>
+        <pre>{buildDailyReport()}</pre>
       </section>
 
       <section className="manager-list">
@@ -1007,6 +1187,19 @@ function ManagerDashboard({ routines, setRoutines, logs, setLogs, handoverNotes,
             <input type="file" accept="application/json" onChange={importData} />
           </label>
         </div>
+      </section>
+
+      <section className="danger-zone">
+        <p className="eyebrow">Pilot reset</p>
+        <h2>Clear test logs</h2>
+        <p className="muted">
+          Clears local shift logs and handover notes from this browser only. Routine setup will stay.
+        </p>
+        <label>
+          Type CLEAR to confirm
+          <input value={clearPhrase} onChange={(event) => setClearPhrase(event.target.value)} placeholder="CLEAR" />
+        </label>
+        <button type="button" className="ghost-button compact-button" onClick={clearTestLogs}>Clear test logs</button>
       </section>
 
       <section className="routine-editor">
@@ -1098,12 +1291,27 @@ export default function App() {
   const [logs, setLogs] = useState(() => normalizeLogs(readStorage(LOG_KEY, [])));
   const [routines, setRoutines] = useState(() => normalizeRoutines(readStorage(ROUTINE_KEY, defaultRoutines)));
   const [handoverNotes, setHandoverNotes] = useState(() => normalizeHandovers(readStorage(HANDOVER_KEY, {})));
+  const [pilotAccepted, setPilotAccepted] = useState(() => readStorage(PILOT_NOTICE_KEY, false));
 
   useEffect(() => saveStorage(LOG_KEY, logs), [logs]);
   useEffect(() => saveStorage(ROUTINE_KEY, routines), [routines]);
   useEffect(() => saveStorage(HANDOVER_KEY, handoverNotes), [handoverNotes]);
 
-  if (!user) return <Login onLogin={setUser} />;
+  if (!user) {
+    return (
+      <>
+        <Login onLogin={setUser} />
+        {!pilotAccepted && (
+          <PilotNotice
+            onAccept={() => {
+              saveStorage(PILOT_NOTICE_KEY, true);
+              setPilotAccepted(true);
+            }}
+          />
+        )}
+      </>
+    );
+  }
 
   function logout() {
     localStorage.removeItem(SESSION_KEY);
@@ -1145,6 +1353,18 @@ export default function App() {
           setLogs={setLogs}
           handoverNotes={handoverNotes}
           setHandoverNotes={setHandoverNotes}
+          onResetPilotNotice={() => {
+            localStorage.removeItem(PILOT_NOTICE_KEY);
+            setPilotAccepted(false);
+          }}
+        />
+      )}
+      {!pilotAccepted && (
+        <PilotNotice
+          onAccept={() => {
+            saveStorage(PILOT_NOTICE_KEY, true);
+            setPilotAccepted(true);
+          }}
         />
       )}
     </>
