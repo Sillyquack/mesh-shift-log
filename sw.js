@@ -1,4 +1,4 @@
-const CACHE_NAME = 'mesh-shift-log-v0.6.1';
+const CACHE_NAME = 'mesh-shift-log-v0.6.2';
 const APP_SHELL = ['./', './index.html', './manifest.webmanifest', './icon.svg'];
 const APP_ORIGIN = self.location.origin;
 
