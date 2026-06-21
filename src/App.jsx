@@ -423,8 +423,9 @@ function normalizeAlerts(value) {
     .filter((alert) => alert && typeof alert === 'object')
     .map((alert, index) => ({
       ...alert,
-      id: alert.id || `imported-alert-${index}-${Date.now()}`,
-      backendId: alert.backendId || '',
+      id: alert.id || alert.backendId || alert.localId || alert.local_id || `imported-alert-${index}-${Date.now()}`,
+      backendId: alert.backendId || alert.backend_id || '',
+      localId: alert.localId || alert.local_id || alert.id || `imported-alert-${index}-${Date.now()}`,
       date: alert.date || todayKey(),
       createdAt: alert.createdAt || `${alert.date || todayKey()}T00:00:00`,
       createdBy: alert.createdBy || 'Unknown',
@@ -440,13 +441,17 @@ function normalizeAlerts(value) {
       resolvedBy: alert.resolvedBy || '',
       resolvedAt: alert.resolvedAt || '',
       updatedAt: alert.updatedAt || '',
+      syncStatus: alert.syncStatus || (isSupabaseConfigured && !(alert.backendId || alert.backend_id) ? 'pending' : 'synced'),
+      lastSyncError: alert.lastSyncError || '',
+      lastSyncAttemptAt: alert.lastSyncAttemptAt || '',
     }));
 }
 
 function alertFromSupabase(row) {
   return {
-    id: row.local_id || row.id,
+    id: row.id,
     backendId: row.id,
+    localId: row.local_id || row.id,
     date: row.alert_date,
     createdAt: row.created_at,
     createdBy: row.created_by,
@@ -462,12 +467,15 @@ function alertFromSupabase(row) {
     resolvedBy: row.resolved_by || '',
     resolvedAt: row.resolved_at || '',
     updatedAt: row.updated_at || '',
+    syncStatus: 'synced',
+    lastSyncError: '',
+    lastSyncAttemptAt: '',
   };
 }
 
 function alertToSupabase(alert) {
   return {
-    local_id: alert.id,
+    local_id: alert.localId || alert.id,
     alert_date: alert.date,
     created_at: alert.createdAt,
     created_by: alert.createdBy,
@@ -483,6 +491,48 @@ function alertToSupabase(alert) {
     resolved_by: alert.resolvedBy || null,
     resolved_at: alert.resolvedAt || null,
   };
+}
+
+function alertIdentity(alert) {
+  return String(alert.backendId || alert.localId || alert.id);
+}
+
+function mergeAlertCaches(localAlerts, backendAlerts) {
+  const merged = new Map();
+  normalizeAlerts(localAlerts).forEach((alert) => {
+    merged.set(alertIdentity(alert), alert);
+  });
+  normalizeAlerts(backendAlerts).forEach((backendAlert) => {
+    const matchingKey = [...merged.keys()].find((key) => {
+      const localAlert = merged.get(key);
+      return localAlert.backendId === backendAlert.backendId || localAlert.localId === backendAlert.localId;
+    });
+    const localAlert = matchingKey ? merged.get(matchingKey) : null;
+    if (localAlert?.syncStatus === 'pending') {
+      merged.set(matchingKey, localAlert);
+      return;
+    }
+    if (matchingKey) merged.delete(matchingKey);
+    merged.set(alertIdentity(backendAlert), backendAlert);
+  });
+  return [...merged.values()].sort((a, b) => new Date(b.createdAt) - new Date(a.createdAt));
+}
+
+function alertSyncCounts(alertList) {
+  const normalized = normalizeAlerts(alertList);
+  return {
+    localCachedAlertCount: normalized.length,
+    unsyncedLocalAlertCount: normalized.filter((alert) => alert.syncStatus === 'pending').length,
+  };
+}
+
+function backendSourceLabel(source) {
+  return {
+    supabase: 'Supabase',
+    local_cache: 'Local cache',
+    local_fallback: 'Local only',
+    sync_error: 'Sync error',
+  }[source] || source || 'Unknown';
 }
 
 function normalizeSiteSettings(value) {
@@ -756,7 +806,7 @@ function AlertManagerModal({ user, onClose, onSave }) {
           Needs immediate help
         </label>
         <div className="backup-actions">
-          <button type="submit" className="primary-button">Save local alert</button>
+          <button type="submit" className="primary-button">Save alert</button>
           <button type="button" className="ghost-button" onClick={onClose}>Cancel</button>
         </div>
       </form>
@@ -788,6 +838,10 @@ function AlertCard({ alert, isManager = false, onAction }) {
         <small>Resolved by {alert.resolvedBy} at {formatDateTime(alert.resolvedAt)}</small>
       )}
       {alert.managerNote && <small>Manager note: {alert.managerNote}</small>}
+      {alert.syncStatus === 'pending' && (
+        <small className="sync-note">Pending backend sync{alert.lastSyncAttemptAt ? ` since ${formatDateTime(alert.lastSyncAttemptAt)}` : ''}</small>
+      )}
+      {alert.lastSyncError && <small className="sync-note error">Backend sync: {alert.lastSyncError}</small>}
       {isManager && status !== 'resolved' && (
         <div className="inline-actions">
           {status !== 'acknowledged' && (
@@ -1033,7 +1087,21 @@ function HandoverNotes({ user, shiftType, notes, setNotes }) {
   );
 }
 
-function StaffDashboard({ user, routines, logs, handoverNotes, finishRecords, alerts, responsibleAssignments, events, cashSignoffs, assetChecks, onAlert }) {
+function StaffDashboard({
+  user,
+  routines,
+  logs,
+  handoverNotes,
+  finishRecords,
+  alerts,
+  responsibleAssignments,
+  events,
+  cashSignoffs,
+  assetChecks,
+  alertBackendStatus,
+  refreshAlerts,
+  onAlert,
+}) {
   const date = todayKey();
   const todayLogs = logs.filter((log) => log.date === date);
   const todayHandovers = Object.values(handoverNotes).filter((note) => note.date === date && handoverHasContent(note));
@@ -1048,6 +1116,10 @@ function StaffDashboard({ user, routines, logs, handoverNotes, finishRecords, al
   const cashIssues = cashSignoffs.filter((record) => record.date === date && (record.invoiceSent !== 'yes' || record.salesPunched !== 'yes' || record.settlementPerformed !== 'yes'));
   const assetIssues = assetChecks.filter((record) => record.date === date && assetHasIssue(record));
 
+  useEffect(() => {
+    refreshAlerts({ feedback: false });
+  }, []);
+
   return (
     <main className="page">
       <section className="intro compact">
@@ -1055,7 +1127,15 @@ function StaffDashboard({ user, routines, logs, handoverNotes, finishRecords, al
         <h1>Today's overview</h1>
         <p className="muted">Active user: {user.name}</p>
         <p className="muted">Thanks to everyone keeping the day moving. Completed tasks are shown for transparency, not competition.</p>
-        <button type="button" className="ghost-button compact-button" onClick={onAlert}>Alert manager</button>
+        <div className="inline-actions">
+          <button type="button" className="ghost-button compact-button" onClick={onAlert}>Alert manager</button>
+          <button type="button" className="ghost-button compact-button" onClick={() => refreshAlerts({ feedback: true })}>Refresh alerts</button>
+        </div>
+        <p className="muted sync-inline">
+          Alerts: {backendSourceLabel(alertBackendStatus.source)}
+          {alertBackendStatus.message ? ` | ${alertBackendStatus.message}` : ''}
+          {alertBackendStatus.unsyncedLocalAlertCount > 0 ? ` | ${alertBackendStatus.unsyncedLocalAlertCount} waiting to sync` : ''}
+        </p>
       </section>
 
       <section className="summary-grid">
@@ -1108,7 +1188,7 @@ function StaffDashboard({ user, routines, logs, handoverNotes, finishRecords, al
 
       <section className="attention-panel">
         <h2>Needs attention</h2>
-        {openAlerts.length === 0 && <p className="muted">No open local alerts today.</p>}
+        {openAlerts.length === 0 && <p className="muted">No open alerts today.</p>}
         {openAlerts.map((alert) => (
           <AlertCard key={alert.id} alert={alert} />
         ))}
@@ -1569,7 +1649,7 @@ function Checklist({
     setShowAlert(false);
     window.alert(result.ok
       ? 'Alert saved.\n\nPilot note: real phone notifications require Slack/email/backend integration later.'
-      : 'Saved locally. Backend sync failed.');
+      : 'Saved locally. Backend sync pending.');
   }
 
   async function finishShift() {
@@ -1896,6 +1976,8 @@ function ManagerDashboard({
   siteAccess,
   alertBackendStatus,
   updateAlertRecord,
+  refreshAlerts,
+  retryAlertSync,
   checkLocation,
   requestWriteAccess,
   onResetPilotNotice,
@@ -1916,6 +1998,7 @@ function ManagerDashboard({
   const [overrideForm, setOverrideForm] = useState({ duration: '15', reason: '' });
   const [eventForm, setEventForm] = useState(blankEventForm);
   const [assetForm, setAssetForm] = useState(blankAssetForm);
+  const [showBackendDetails, setShowBackendDetails] = useState(false);
 
   const activeShifts = shiftOptions.filter((shift) => shift.id !== 'guides');
   const todayEvents = events.filter((event) => event.date === date);
@@ -1993,6 +2076,11 @@ function ManagerDashboard({
         ? 'Backup recommended.'
         : 'Backup up to date.'
     : 'No shift data yet.';
+
+  useEffect(() => {
+    refreshAlerts({ feedback: false });
+  }, []);
+
   const attentionItems = [
     ...criticalMissing.slice(0, 4).map((task) => ({
       id: task.id,
@@ -2099,7 +2187,7 @@ function ManagerDashboard({
         ['Acknowledged alerts', dateAlertGroups.acknowledged],
         ['Resolved alerts', dateAlertGroups.resolved],
       ];
-      lines.push('Local alerts:');
+      lines.push('Alerts:');
       reportAlertGroups.forEach(([title, alertList]) => {
         lines.push(title);
         if (alertList.length === 0) {
@@ -2144,9 +2232,13 @@ function ManagerDashboard({
       'Mesh Shift Log diagnostics',
       `Version: ${APP_VERSION}`,
       `Supabase configured: ${isSupabaseConfigured ? 'yes' : 'no'}`,
-      `Alerts source: ${alertBackendStatus.source}`,
-      `Alert sync status: ${alertBackendStatus.lastSyncStatus}`,
+      `Alerts source: ${backendSourceLabel(alertBackendStatus.source)}`,
+      `Last alert sync attempt: ${alertBackendStatus.lastSyncAttemptAt || 'none'}`,
+      `Last successful alert sync: ${alertBackendStatus.lastSuccessfulSyncAt || 'none'}`,
       `Alert sync error: ${alertBackendStatus.lastSyncError || 'none'}`,
+      `Supabase alert count: ${alertBackendStatus.supabaseAlertCount}`,
+      `Local cached alert count: ${alertBackendStatus.localCachedAlertCount}`,
+      `Unsynced local alerts: ${alertBackendStatus.unsyncedLocalAlertCount}`,
       `Users: ${staffUsers.length}`,
       `Sections: ${normalizedRoutineList.length}`,
       `Active tasks: ${activeTaskCount}`,
@@ -2515,7 +2607,11 @@ function ManagerDashboard({
   async function updateAlert(alertId, status) {
     if (!(await requestWriteAccess())) return;
     const latestAlerts = normalizeAlerts(readStorage(ALERT_KEY, alerts));
-    const currentAlert = latestAlerts.find((alert) => String(alert.id) === String(alertId));
+    const currentAlert = latestAlerts.find((alert) => (
+      String(alert.id) === String(alertId)
+      || String(alert.backendId) === String(alertId)
+      || String(alert.localId) === String(alertId)
+    ));
     if (!currentAlert) {
       setMessage('Alert not found.');
       return;
@@ -2529,9 +2625,10 @@ function ManagerDashboard({
       ...statusFields,
       updatedAt: timestamp,
     });
+    await refreshAlerts({ feedback: false });
     setMessage(result.ok
       ? (status === 'acknowledged' ? 'Alert acknowledged.' : 'Alert resolved.')
-      : `${status === 'acknowledged' ? 'Alert acknowledged locally.' : 'Alert resolved locally.'} Backend sync failed.`);
+      : 'Saved locally. Backend sync pending.');
   }
 
   function resetStaffForm() {
@@ -2844,18 +2941,35 @@ function ManagerDashboard({
       </section>
 
       <section className="local-status-card">
-        <div>
-          <p className="eyebrow">Backend</p>
-          <h2>Backend status</h2>
-          <p className="muted">Phase 1 syncs alerts only. localStorage remains fallback/cache.</p>
+        <div className="panel-title-row">
+          <div>
+            <p className="eyebrow">Backend</p>
+            <h2>Backend status</h2>
+            <p className="muted">Phase 1 syncs alerts only. localStorage remains fallback/cache.</p>
+          </div>
+          <div className="inline-actions">
+            <button type="button" className="ghost-button compact-button" onClick={() => refreshAlerts({ feedback: true })}>Refresh alerts</button>
+            <button type="button" className="ghost-button compact-button" onClick={retryAlertSync}>Retry alert sync</button>
+          </div>
         </div>
         <div className="status-grid">
           <span><strong>{isSupabaseConfigured ? 'Yes' : 'No'}</strong> Supabase configured</span>
-          <span><strong>{alertBackendStatus.source}</strong> Alerts source</span>
-          <span><strong>{alertBackendStatus.lastSyncStatus}</strong> Last sync</span>
+          <span><strong>{backendSourceLabel(alertBackendStatus.source)}</strong> Alerts source</span>
+          <span><strong>{alertBackendStatus.localCachedAlertCount}</strong> Local cached alerts</span>
+          <span><strong>{alertBackendStatus.unsyncedLocalAlertCount}</strong> Waiting to sync</span>
+          <span><strong>{alertBackendStatus.supabaseAlertCount}</strong> Supabase alerts</span>
+          <span><strong>{alertBackendStatus.lastSuccessfulSyncAt ? formatDateTime(alertBackendStatus.lastSuccessfulSyncAt) : 'Not yet'}</strong> Last successful sync</span>
+          <span><strong>{alertBackendStatus.lastSyncAttemptAt ? formatDateTime(alertBackendStatus.lastSyncAttemptAt) : 'Not yet'}</strong> Last attempt</span>
           <span><strong>{alertBackendStatus.lastSyncError ? 'Yes' : 'No'}</strong> Sync error</span>
         </div>
+        <p className={alertBackendStatus.lastSyncError ? 'critical-warning' : 'muted'}>{alertBackendStatus.message}</p>
         {alertBackendStatus.lastSyncError && <p className="critical-warning">{alertBackendStatus.lastSyncError}</p>}
+        <button type="button" className="text-button" onClick={() => setShowBackendDetails((current) => !current)}>
+          {showBackendDetails ? 'Hide technical details' : 'Show technical details'}
+        </button>
+        {showBackendDetails && (
+          <pre className="backend-details">{JSON.stringify(alertBackendStatus, null, 2)}</pre>
+        )}
       </section>
 
       <section className="manager-list">
@@ -2900,9 +3014,9 @@ function ManagerDashboard({
 
       <section className="alert-dashboard-panel">
         <div>
-          <p className="eyebrow">Local alerts</p>
+          <p className="eyebrow">Alerts</p>
           <h2>Open alerts</h2>
-          <p className="muted">Visible in this app/browser. Real notifications require backend or Slack integration later.</p>
+          <p className="muted">Synced through Supabase when configured. Real phone notifications require Slack, email or push integration later.</p>
         </div>
         {alertGroups.openUrgent.length + alertGroups.openNormal.length === 0 && <p className="muted">No open alerts.</p>}
         <div className="alert-group">
@@ -3525,9 +3639,14 @@ export default function App() {
   const [eventTaskChecks, setEventTaskChecks] = useState(() => normalizeRecords(readStorage(EVENT_TASK_CHECK_KEY, [])));
   const [siteAccess, setSiteAccess] = useState({ status: siteSettings.locationCheckEnabled ? 'unknown' : 'off', distance: null, message: '' });
   const [alertBackendStatus, setAlertBackendStatus] = useState({
-    source: isSupabaseConfigured ? 'Supabase' : 'localStorage fallback',
-    lastSyncStatus: isSupabaseConfigured ? 'Not synced yet' : 'Supabase not configured',
+    source: isSupabaseConfigured ? 'local_cache' : 'local_fallback',
+    message: isSupabaseConfigured ? 'Using local alert cache until first sync.' : 'Supabase not configured. Using localStorage fallback.',
+    lastSuccessfulSyncAt: '',
+    lastSyncAttemptAt: '',
     lastSyncError: '',
+    supabaseAlertCount: 0,
+    localCachedAlertCount: normalizeAlerts(readStorage(ALERT_KEY, [])).length,
+    unsyncedLocalAlertCount: normalizeAlerts(readStorage(ALERT_KEY, [])).filter((alert) => alert.syncStatus === 'pending').length,
   });
   const [pilotAccepted, setPilotAccepted] = useState(() => readStorage(PILOT_NOTICE_KEY, false));
   const [isOnline, setIsOnline] = useState(() => navigator.onLine);
@@ -3600,76 +3719,199 @@ export default function App() {
     const normalized = normalizeAlerts(nextAlerts);
     setAlerts(normalized);
     saveStorage(ALERT_KEY, normalized);
+    setAlertBackendStatus((current) => ({
+      ...current,
+      ...alertSyncCounts(normalized),
+    }));
   }
 
-  async function loadSupabaseAlerts() {
-    if (!isSupabaseConfigured) return;
+  async function syncPendingAlerts(alertList = readStorage(ALERT_KEY, [])) {
+    if (!isSupabaseConfigured) return normalizeAlerts(alertList);
+    let workingAlerts = normalizeAlerts(alertList);
+    const pendingAlerts = workingAlerts.filter((alert) => alert.syncStatus === 'pending');
+    for (const pendingAlert of pendingAlerts) {
+      const attemptAt = new Date().toISOString();
+      try {
+        let row = null;
+        if (pendingAlert.backendId) {
+          row = await supabase.updateAlert({
+            backendId: pendingAlert.backendId,
+            localId: pendingAlert.localId,
+            changes: alertToSupabase({ ...pendingAlert, lastSyncAttemptAt: attemptAt }),
+          });
+        } else {
+          row = await supabase.updateAlert({
+            localId: pendingAlert.localId || pendingAlert.id,
+            changes: alertToSupabase({ ...pendingAlert, lastSyncAttemptAt: attemptAt }),
+          });
+          if (!row) {
+            row = await supabase.insertAlert(alertToSupabase({ ...pendingAlert, lastSyncAttemptAt: attemptAt }));
+          }
+        }
+        const syncedAlert = row ? alertFromSupabase(row) : { ...pendingAlert, syncStatus: 'synced', lastSyncError: '', lastSyncAttemptAt: attemptAt };
+        workingAlerts = workingAlerts.map((alert) => (alertIdentity(alert) === alertIdentity(pendingAlert) ? syncedAlert : alert));
+      } catch (error) {
+        workingAlerts = workingAlerts.map((alert) => (alertIdentity(alert) === alertIdentity(pendingAlert)
+          ? { ...alert, syncStatus: 'pending', lastSyncError: error.message, lastSyncAttemptAt: attemptAt }
+          : alert));
+      }
+    }
+    cacheAlerts(workingAlerts);
+    return workingAlerts;
+  }
+
+  async function loadSupabaseAlerts({ feedback = false } = {}) {
+    const attemptAt = new Date().toISOString();
+    if (!isSupabaseConfigured) {
+      const localAlerts = normalizeAlerts(readStorage(ALERT_KEY, alerts));
+      cacheAlerts(localAlerts);
+      setAlertBackendStatus((current) => ({
+        ...current,
+        source: 'local_fallback',
+        message: feedback ? 'Alerts refreshed from localStorage.' : 'Supabase not configured. Using localStorage fallback.',
+        lastSyncAttemptAt: attemptAt,
+        lastSyncError: '',
+        supabaseAlertCount: 0,
+        ...alertSyncCounts(localAlerts),
+      }));
+      return { ok: true, localOnly: true };
+    }
     try {
+      const afterPending = await syncPendingAlerts(readStorage(ALERT_KEY, alerts));
       const rows = await supabase.selectAlerts();
       const backendAlerts = normalizeAlerts(rows.map(alertFromSupabase));
-      cacheAlerts(backendAlerts);
-      setAlertBackendStatus({ source: 'Supabase', lastSyncStatus: `Loaded ${backendAlerts.length} alerts`, lastSyncError: '' });
+      const mergedAlerts = mergeAlertCaches(afterPending, backendAlerts);
+      cacheAlerts(mergedAlerts);
+      setAlertBackendStatus((current) => ({
+        ...current,
+        source: 'supabase',
+        message: feedback ? 'Alerts refreshed.' : 'Alerts synced with Supabase.',
+        lastSuccessfulSyncAt: new Date().toISOString(),
+        lastSyncAttemptAt: attemptAt,
+        lastSyncError: '',
+        supabaseAlertCount: backendAlerts.length,
+        ...alertSyncCounts(mergedAlerts),
+      }));
+      return { ok: true };
     } catch (error) {
-      setAlertBackendStatus({
-        source: 'localStorage fallback',
-        lastSyncStatus: 'Backend read failed. Using local cache.',
+      const localAlerts = normalizeAlerts(readStorage(ALERT_KEY, alerts));
+      cacheAlerts(localAlerts);
+      setAlertBackendStatus((current) => ({
+        ...current,
+        source: 'sync_error',
+        message: feedback ? 'Could not refresh alerts. Showing local cache.' : 'Using local cache. Backend read failed.',
+        lastSyncAttemptAt: attemptAt,
         lastSyncError: error.message,
-      });
+        ...alertSyncCounts(localAlerts),
+      }));
+      return { ok: false, error };
     }
   }
 
   async function saveAlertRecord(alertRecord) {
-    const localRecord = normalizeAlerts([alertRecord])[0];
+    const attemptAt = new Date().toISOString();
+    const localRecord = normalizeAlerts([{ ...alertRecord, syncStatus: isSupabaseConfigured ? 'pending' : 'synced', lastSyncAttemptAt: attemptAt }])[0];
     const localNext = [...alerts.filter((alert) => alert.id !== localRecord.id), localRecord];
     cacheAlerts(localNext);
     if (!isSupabaseConfigured) {
-      setAlertBackendStatus({ source: 'localStorage fallback', lastSyncStatus: 'Saved locally', lastSyncError: '' });
+      setAlertBackendStatus((current) => ({
+        ...current,
+        source: 'local_fallback',
+        message: 'Saved locally.',
+        lastSyncAttemptAt: attemptAt,
+        lastSyncError: '',
+        ...alertSyncCounts(localNext),
+      }));
       return { ok: true, localOnly: true };
     }
     try {
       const row = await supabase.insertAlert(alertToSupabase(localRecord));
       const syncedAlert = row ? alertFromSupabase(row) : localRecord;
-      const nextAlerts = [...localNext.filter((alert) => alert.id !== syncedAlert.id), syncedAlert];
+      const nextAlerts = [...localNext.filter((alert) => alert.localId !== syncedAlert.localId && alert.backendId !== syncedAlert.backendId), syncedAlert];
       cacheAlerts(nextAlerts);
-      setAlertBackendStatus({ source: 'Supabase', lastSyncStatus: 'Alert synced to Supabase', lastSyncError: '' });
+      setAlertBackendStatus((current) => ({
+        ...current,
+        source: 'supabase',
+        message: 'Alerts synced with Supabase.',
+        lastSuccessfulSyncAt: new Date().toISOString(),
+        lastSyncAttemptAt: attemptAt,
+        lastSyncError: '',
+        ...alertSyncCounts(nextAlerts),
+      }));
+      loadSupabaseAlerts();
       return { ok: true };
     } catch (error) {
-      setAlertBackendStatus({
-        source: 'localStorage fallback',
-        lastSyncStatus: 'Saved locally. Backend sync failed.',
+      const pendingAlerts = localNext.map((alert) => (alert.id === localRecord.id
+        ? { ...alert, syncStatus: 'pending', lastSyncError: error.message, lastSyncAttemptAt: attemptAt }
+        : alert));
+      cacheAlerts(pendingAlerts);
+      setAlertBackendStatus((current) => ({
+        ...current,
+        source: 'local_cache',
+        message: 'Saved locally. Backend sync pending.',
+        lastSyncAttemptAt: attemptAt,
         lastSyncError: error.message,
-      });
+        ...alertSyncCounts(pendingAlerts),
+      }));
       return { ok: false, error };
     }
   }
 
   async function updateAlertRecord(alertId, changes) {
+    const attemptAt = new Date().toISOString();
     const latestAlerts = normalizeAlerts(readStorage(ALERT_KEY, alerts));
-    const currentAlert = latestAlerts.find((alert) => String(alert.id) === String(alertId) || String(alert.backendId) === String(alertId));
+    const currentAlert = latestAlerts.find((alert) => (
+      String(alert.id) === String(alertId)
+      || String(alert.backendId) === String(alertId)
+      || String(alert.localId) === String(alertId)
+    ));
     if (!currentAlert) return { ok: false, error: new Error('Alert not found.') };
-    const updatedAlert = { ...currentAlert, ...changes };
+    const updatedAlert = { ...currentAlert, ...changes, syncStatus: isSupabaseConfigured ? 'pending' : 'synced', lastSyncAttemptAt: attemptAt };
     const localNext = latestAlerts.map((alert) => (alert.id === currentAlert.id ? updatedAlert : alert));
     cacheAlerts(localNext);
     if (!isSupabaseConfigured) {
-      setAlertBackendStatus({ source: 'localStorage fallback', lastSyncStatus: 'Updated locally', lastSyncError: '' });
+      setAlertBackendStatus((current) => ({
+        ...current,
+        source: 'local_fallback',
+        message: 'Updated locally.',
+        lastSyncAttemptAt: attemptAt,
+        lastSyncError: '',
+        ...alertSyncCounts(localNext),
+      }));
       return { ok: true, localOnly: true };
     }
     try {
       const row = await supabase.updateAlert({
         backendId: currentAlert.backendId,
-        localId: currentAlert.id,
+        localId: currentAlert.localId || currentAlert.id,
         changes: alertToSupabase(updatedAlert),
       });
       const syncedAlert = row ? alertFromSupabase(row) : updatedAlert;
-      cacheAlerts(localNext.map((alert) => (alert.id === currentAlert.id ? syncedAlert : alert)));
-      setAlertBackendStatus({ source: 'Supabase', lastSyncStatus: 'Alert update synced to Supabase', lastSyncError: '' });
+      const syncedAlerts = localNext.map((alert) => (alert.id === currentAlert.id ? syncedAlert : alert));
+      cacheAlerts(syncedAlerts);
+      setAlertBackendStatus((current) => ({
+        ...current,
+        source: 'supabase',
+        message: 'Alerts synced with Supabase.',
+        lastSuccessfulSyncAt: new Date().toISOString(),
+        lastSyncAttemptAt: attemptAt,
+        lastSyncError: '',
+        ...alertSyncCounts(syncedAlerts),
+      }));
       return { ok: true };
     } catch (error) {
-      setAlertBackendStatus({
-        source: 'localStorage fallback',
-        lastSyncStatus: 'Updated locally. Backend sync failed.',
+      const pendingAlerts = localNext.map((alert) => (alert.id === currentAlert.id
+        ? { ...alert, syncStatus: 'pending', lastSyncError: error.message, lastSyncAttemptAt: attemptAt }
+        : alert));
+      cacheAlerts(pendingAlerts);
+      setAlertBackendStatus((current) => ({
+        ...current,
+        source: 'local_cache',
+        message: 'Saved locally. Backend sync pending.',
+        lastSyncAttemptAt: attemptAt,
         lastSyncError: error.message,
-      });
+        ...alertSyncCounts(pendingAlerts),
+      }));
       return { ok: false, error };
     }
   }
@@ -3688,6 +3930,18 @@ export default function App() {
 
   useEffect(() => {
     loadSupabaseAlerts();
+    if (!isSupabaseConfigured) return undefined;
+    const intervalId = window.setInterval(() => {
+      loadSupabaseAlerts();
+    }, 15000);
+    function refreshWhenVisible() {
+      if (document.visibilityState === 'visible') loadSupabaseAlerts();
+    }
+    document.addEventListener('visibilitychange', refreshWhenVisible);
+    return () => {
+      window.clearInterval(intervalId);
+      document.removeEventListener('visibilitychange', refreshWhenVisible);
+    };
     // TODO: Add Supabase Realtime subscription for alert inserts/updates after auth and channel policy are finalized.
   }, []);
 
@@ -3797,6 +4051,8 @@ export default function App() {
             events={events}
             cashSignoffs={cashSignoffs}
             assetChecks={assetChecks}
+            alertBackendStatus={alertBackendStatus}
+            refreshAlerts={loadSupabaseAlerts}
             onAlert={() => setShowGlobalAlert(true)}
           />
         ) : (
@@ -3861,6 +4117,8 @@ export default function App() {
           siteAccess={siteAccess}
           alertBackendStatus={alertBackendStatus}
           updateAlertRecord={updateAlertRecord}
+          refreshAlerts={loadSupabaseAlerts}
+          retryAlertSync={() => loadSupabaseAlerts({ feedback: true })}
           checkLocation={checkLocation}
           requestWriteAccess={requestWriteAccess}
           onResetPilotNotice={() => {
@@ -3887,7 +4145,7 @@ export default function App() {
             setShowGlobalAlert(false);
             window.alert(result.ok
               ? 'Alert saved.\n\nPilot note: real phone notifications require Slack/email/backend integration later.'
-              : 'Saved locally. Backend sync failed.');
+              : 'Saved locally. Backend sync pending.');
           }}
         />
       )}

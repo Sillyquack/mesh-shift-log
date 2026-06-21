@@ -55,8 +55,8 @@ The app includes a basic PWA manifest and service worker.
 
 - Staff can finish a shift and see a local summary.
 - Today's overview is visible to all users for transparent team status.
-- Alert manager creates local alerts visible in this browser/app only.
-- Managers can acknowledge or resolve local alerts.
+- Alert manager creates alerts that sync to Supabase when configured and fall back to localStorage when not.
+- Managers can acknowledge or resolve alerts.
 - Managers can assign role-based responsibilities for shifts and events.
 - Managers can manage staff codes from the manager dashboard after login.
 - Managers can configure a local Youngs on-site check and temporary override.
@@ -152,9 +152,9 @@ The routine editor has separate routine export/import controls for moving just t
 
 `Clear test logs` removes local logs, handover notes, finish records, alerts, responsible assignments, events, signoffs, asset checks and override history. It keeps routines, routine edits, staff/user code configuration, site settings and the asset registry.
 
-## Supabase Phase 1
+## Supabase Phase 1.5
 
-Phase 1 migrates alerts only. The app still works without Supabase env vars and keeps localStorage as fallback/cache.
+Phase 1/1.5 migrates alerts only. The app still works without Supabase env vars and keeps localStorage as fallback/cache.
 
 Environment setup:
 
@@ -167,9 +167,10 @@ Then fill:
 ```bash
 VITE_SUPABASE_URL=
 VITE_SUPABASE_ANON_KEY=
+VITE_SUPABASE_ORGANIZATION_ID=
 ```
 
-`VITE_SUPABASE_PUBLISHABLE_KEY` is also supported as an alternative to `VITE_SUPABASE_ANON_KEY`. No service role or secret key should be used in the frontend.
+`VITE_SUPABASE_PUBLISHABLE_KEY` is also supported as an alternative to `VITE_SUPABASE_ANON_KEY`. `VITE_SUPABASE_ORGANIZATION_ID` is optional but recommended for keeping pilot alerts scoped to one organization and avoiding duplicate local alert IDs. No service role or secret key should be used in the frontend.
 
 Schema setup:
 
@@ -182,11 +183,15 @@ The pilot RLS policies are not production security. Replace them with authentica
 Alert behavior:
 
 - If Supabase is configured, alerts load from Supabase and writes try Supabase first.
+- Alerts poll Supabase every 15 seconds, refresh when the app tab becomes visible, and can be refreshed manually from Manager Dashboard or Staff Dashboard.
 - localStorage remains a cache/fallback.
-- If Supabase read/write fails, the app continues locally and shows backend status in Manager Dashboard.
+- If Supabase read/write fails, the app continues locally, marks affected alerts as pending backend sync, and shows calm backend status in Manager Dashboard.
+- Pending local alerts retry syncing when alerts are refreshed or the backend becomes available again.
 - JSON backup/export still includes alerts and does not depend on Supabase.
 
-Next backend phase should add real auth, roles, organizations and production RLS before moving more operational records.
+This is still not production security. The pilot RLS policies allow anonymous alert reads/writes for testing, and staff codes are not real authentication.
+
+Next backend phase should add urgent alert email notifications or real auth/users, roles, organizations and production RLS before moving more operational records.
 
 ## Diagnostics
 

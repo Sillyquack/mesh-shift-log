@@ -39,7 +39,8 @@ export const supabase = {
     return rows?.[0] || null;
   },
   async updateAlert({ backendId, localId, changes }) {
-    const target = backendId ? `id=eq.${backendId}` : `local_id=eq.${encodeURIComponent(localId)}`;
+    const organizationFilter = organizationId && !backendId ? `&organization_id=eq.${organizationId}` : '';
+    const target = backendId ? `id=eq.${backendId}` : `local_id=eq.${encodeURIComponent(localId)}${organizationFilter}`;
     const rows = await request(`alerts?${target}&select=*`, {
       method: 'PATCH',
       headers: { Prefer: 'return=representation' },

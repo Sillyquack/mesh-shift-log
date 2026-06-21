@@ -1035,6 +1035,31 @@ textarea {
   color: var(--muted);
 }
 
+.sync-note {
+  width: max-content;
+  max-width: 100%;
+  border-radius: 8px;
+  background: color-mix(in srgb, var(--important) 10%, var(--surface));
+  padding: 6px 8px;
+}
+
+.sync-inline {
+  margin: 0;
+}
+
+.backend-details {
+  max-height: 260px;
+  overflow: auto;
+  margin: 0;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  background: var(--surface-strong);
+  color: var(--text);
+  padding: 12px;
+  white-space: pre-wrap;
+  font: 0.82rem/1.45 ui-monospace, SFMono-Regular, Consolas, "Liberation Mono", monospace;
+}
+
 .alert-row.severity-urgent,
 .alert-row.needs-help {
   border-left-color: var(--critical);
