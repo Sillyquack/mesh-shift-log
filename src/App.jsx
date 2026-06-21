@@ -8,6 +8,7 @@ import {
   shiftOptions,
   staffCodes,
 } from './data/routines.js';
+import { isSupabaseConfigured, supabase } from './lib/supabaseClient.js';
 
 const APP_VERSION = '0.6.0';
 const LOG_KEY = 'mesh-shift-logs-v1';
@@ -423,6 +424,7 @@ function normalizeAlerts(value) {
     .map((alert, index) => ({
       ...alert,
       id: alert.id || `imported-alert-${index}-${Date.now()}`,
+      backendId: alert.backendId || '',
       date: alert.date || todayKey(),
       createdAt: alert.createdAt || `${alert.date || todayKey()}T00:00:00`,
       createdBy: alert.createdBy || 'Unknown',
@@ -439,6 +441,48 @@ function normalizeAlerts(value) {
       resolvedAt: alert.resolvedAt || '',
       updatedAt: alert.updatedAt || '',
     }));
+}
+
+function alertFromSupabase(row) {
+  return {
+    id: row.local_id || row.id,
+    backendId: row.id,
+    date: row.alert_date,
+    createdAt: row.created_at,
+    createdBy: row.created_by,
+    category: row.category,
+    severity: row.severity,
+    area: row.area,
+    message: row.message,
+    needsImmediateHelp: Boolean(row.needs_immediate_help),
+    status: row.status || 'open',
+    managerNote: row.manager_note || '',
+    acknowledgedBy: row.acknowledged_by || '',
+    acknowledgedAt: row.acknowledged_at || '',
+    resolvedBy: row.resolved_by || '',
+    resolvedAt: row.resolved_at || '',
+    updatedAt: row.updated_at || '',
+  };
+}
+
+function alertToSupabase(alert) {
+  return {
+    local_id: alert.id,
+    alert_date: alert.date,
+    created_at: alert.createdAt,
+    created_by: alert.createdBy,
+    category: alert.category,
+    severity: alert.severity,
+    area: alert.area,
+    message: alert.message,
+    needs_immediate_help: Boolean(alert.needsImmediateHelp),
+    status: alert.status || 'open',
+    manager_note: alert.managerNote || null,
+    acknowledged_by: alert.acknowledgedBy || null,
+    acknowledged_at: alert.acknowledgedAt || null,
+    resolved_by: alert.resolvedBy || null,
+    resolved_at: alert.resolvedAt || null,
+  };
 }
 
 function normalizeSiteSettings(value) {
@@ -1424,6 +1468,7 @@ function Checklist({
   setFinishRecords,
   alerts,
   setAlerts,
+  saveAlertRecord,
   responsibleAssignments,
   cashSignoffs,
   setCashSignoffs,
@@ -1520,11 +1565,11 @@ function Checklist({
 
   async function saveAlert(alertRecord) {
     if (!(await requestWriteAccess())) return;
-    const nextAlerts = [...alerts, alertRecord];
-    setAlerts(nextAlerts);
-    saveStorage(ALERT_KEY, nextAlerts);
+    const result = await saveAlertRecord(alertRecord);
     setShowAlert(false);
-    window.alert('Alert saved locally.\n\nPilot note: real phone notifications require Slack/email/backend integration later.');
+    window.alert(result.ok
+      ? 'Alert saved.\n\nPilot note: real phone notifications require Slack/email/backend integration later.'
+      : 'Saved locally. Backend sync failed.');
   }
 
   async function finishShift() {
@@ -1849,6 +1894,8 @@ function ManagerDashboard({
   eventTaskChecks,
   setEventTaskChecks,
   siteAccess,
+  alertBackendStatus,
+  updateAlertRecord,
   checkLocation,
   requestWriteAccess,
   onResetPilotNotice,
@@ -2096,6 +2143,10 @@ function ManagerDashboard({
     return [
       'Mesh Shift Log diagnostics',
       `Version: ${APP_VERSION}`,
+      `Supabase configured: ${isSupabaseConfigured ? 'yes' : 'no'}`,
+      `Alerts source: ${alertBackendStatus.source}`,
+      `Alert sync status: ${alertBackendStatus.lastSyncStatus}`,
+      `Alert sync error: ${alertBackendStatus.lastSyncError || 'none'}`,
       `Users: ${staffUsers.length}`,
       `Sections: ${normalizedRoutineList.length}`,
       `Active tasks: ${activeTaskCount}`,
@@ -2473,17 +2524,14 @@ function ManagerDashboard({
     const statusFields = status === 'acknowledged'
       ? { acknowledgedBy: user.name, acknowledgedAt: timestamp }
       : { resolvedBy: user.name, resolvedAt: timestamp };
-    const nextAlerts = latestAlerts.map((alert) => String(alert.id) === String(alertId)
-      ? {
-        ...alert,
-        status,
-        ...statusFields,
-        updatedAt: timestamp,
-      }
-      : alert);
-    saveStorage(ALERT_KEY, nextAlerts);
-    setAlerts(nextAlerts);
-    setMessage(status === 'acknowledged' ? 'Alert acknowledged.' : 'Alert resolved.');
+    const result = await updateAlertRecord(alertId, {
+      status,
+      ...statusFields,
+      updatedAt: timestamp,
+    });
+    setMessage(result.ok
+      ? (status === 'acknowledged' ? 'Alert acknowledged.' : 'Alert resolved.')
+      : `${status === 'acknowledged' ? 'Alert acknowledged locally.' : 'Alert resolved locally.'} Backend sync failed.`);
   }
 
   function resetStaffForm() {
@@ -2793,6 +2841,21 @@ function ManagerDashboard({
             {activeShifts.map((shift) => <option key={shift.id} value={shift.id}>{shift.label}</option>)}
           </select>
         </label>
+      </section>
+
+      <section className="local-status-card">
+        <div>
+          <p className="eyebrow">Backend</p>
+          <h2>Backend status</h2>
+          <p className="muted">Phase 1 syncs alerts only. localStorage remains fallback/cache.</p>
+        </div>
+        <div className="status-grid">
+          <span><strong>{isSupabaseConfigured ? 'Yes' : 'No'}</strong> Supabase configured</span>
+          <span><strong>{alertBackendStatus.source}</strong> Alerts source</span>
+          <span><strong>{alertBackendStatus.lastSyncStatus}</strong> Last sync</span>
+          <span><strong>{alertBackendStatus.lastSyncError ? 'Yes' : 'No'}</strong> Sync error</span>
+        </div>
+        {alertBackendStatus.lastSyncError && <p className="critical-warning">{alertBackendStatus.lastSyncError}</p>}
       </section>
 
       <section className="manager-list">
@@ -3461,6 +3524,11 @@ export default function App() {
   const [assetChecks, setAssetChecks] = useState(() => normalizeRecords(readStorage(ASSET_CHECK_KEY, [])));
   const [eventTaskChecks, setEventTaskChecks] = useState(() => normalizeRecords(readStorage(EVENT_TASK_CHECK_KEY, [])));
   const [siteAccess, setSiteAccess] = useState({ status: siteSettings.locationCheckEnabled ? 'unknown' : 'off', distance: null, message: '' });
+  const [alertBackendStatus, setAlertBackendStatus] = useState({
+    source: isSupabaseConfigured ? 'Supabase' : 'localStorage fallback',
+    lastSyncStatus: isSupabaseConfigured ? 'Not synced yet' : 'Supabase not configured',
+    lastSyncError: '',
+  });
   const [pilotAccepted, setPilotAccepted] = useState(() => readStorage(PILOT_NOTICE_KEY, false));
   const [isOnline, setIsOnline] = useState(() => navigator.onLine);
   const [waitingWorker, setWaitingWorker] = useState(null);
@@ -3528,6 +3596,84 @@ export default function App() {
     return false;
   }
 
+  function cacheAlerts(nextAlerts) {
+    const normalized = normalizeAlerts(nextAlerts);
+    setAlerts(normalized);
+    saveStorage(ALERT_KEY, normalized);
+  }
+
+  async function loadSupabaseAlerts() {
+    if (!isSupabaseConfigured) return;
+    try {
+      const rows = await supabase.selectAlerts();
+      const backendAlerts = normalizeAlerts(rows.map(alertFromSupabase));
+      cacheAlerts(backendAlerts);
+      setAlertBackendStatus({ source: 'Supabase', lastSyncStatus: `Loaded ${backendAlerts.length} alerts`, lastSyncError: '' });
+    } catch (error) {
+      setAlertBackendStatus({
+        source: 'localStorage fallback',
+        lastSyncStatus: 'Backend read failed. Using local cache.',
+        lastSyncError: error.message,
+      });
+    }
+  }
+
+  async function saveAlertRecord(alertRecord) {
+    const localRecord = normalizeAlerts([alertRecord])[0];
+    const localNext = [...alerts.filter((alert) => alert.id !== localRecord.id), localRecord];
+    cacheAlerts(localNext);
+    if (!isSupabaseConfigured) {
+      setAlertBackendStatus({ source: 'localStorage fallback', lastSyncStatus: 'Saved locally', lastSyncError: '' });
+      return { ok: true, localOnly: true };
+    }
+    try {
+      const row = await supabase.insertAlert(alertToSupabase(localRecord));
+      const syncedAlert = row ? alertFromSupabase(row) : localRecord;
+      const nextAlerts = [...localNext.filter((alert) => alert.id !== syncedAlert.id), syncedAlert];
+      cacheAlerts(nextAlerts);
+      setAlertBackendStatus({ source: 'Supabase', lastSyncStatus: 'Alert synced to Supabase', lastSyncError: '' });
+      return { ok: true };
+    } catch (error) {
+      setAlertBackendStatus({
+        source: 'localStorage fallback',
+        lastSyncStatus: 'Saved locally. Backend sync failed.',
+        lastSyncError: error.message,
+      });
+      return { ok: false, error };
+    }
+  }
+
+  async function updateAlertRecord(alertId, changes) {
+    const latestAlerts = normalizeAlerts(readStorage(ALERT_KEY, alerts));
+    const currentAlert = latestAlerts.find((alert) => String(alert.id) === String(alertId) || String(alert.backendId) === String(alertId));
+    if (!currentAlert) return { ok: false, error: new Error('Alert not found.') };
+    const updatedAlert = { ...currentAlert, ...changes };
+    const localNext = latestAlerts.map((alert) => (alert.id === currentAlert.id ? updatedAlert : alert));
+    cacheAlerts(localNext);
+    if (!isSupabaseConfigured) {
+      setAlertBackendStatus({ source: 'localStorage fallback', lastSyncStatus: 'Updated locally', lastSyncError: '' });
+      return { ok: true, localOnly: true };
+    }
+    try {
+      const row = await supabase.updateAlert({
+        backendId: currentAlert.backendId,
+        localId: currentAlert.id,
+        changes: alertToSupabase(updatedAlert),
+      });
+      const syncedAlert = row ? alertFromSupabase(row) : updatedAlert;
+      cacheAlerts(localNext.map((alert) => (alert.id === currentAlert.id ? syncedAlert : alert)));
+      setAlertBackendStatus({ source: 'Supabase', lastSyncStatus: 'Alert update synced to Supabase', lastSyncError: '' });
+      return { ok: true };
+    } catch (error) {
+      setAlertBackendStatus({
+        source: 'localStorage fallback',
+        lastSyncStatus: 'Updated locally. Backend sync failed.',
+        lastSyncError: error.message,
+      });
+      return { ok: false, error };
+    }
+  }
+
   useEffect(() => {
     function updateOnlineStatus() {
       setIsOnline(navigator.onLine);
@@ -3538,6 +3684,11 @@ export default function App() {
       window.removeEventListener('online', updateOnlineStatus);
       window.removeEventListener('offline', updateOnlineStatus);
     };
+  }, []);
+
+  useEffect(() => {
+    loadSupabaseAlerts();
+    // TODO: Add Supabase Realtime subscription for alert inserts/updates after auth and channel policy are finalized.
   }, []);
 
   useEffect(() => {
@@ -3661,6 +3812,7 @@ export default function App() {
             setFinishRecords={setFinishRecords}
             alerts={alerts}
             setAlerts={setAlerts}
+            saveAlertRecord={saveAlertRecord}
             responsibleAssignments={responsibleAssignments}
             cashSignoffs={cashSignoffs}
             setCashSignoffs={setCashSignoffs}
@@ -3707,6 +3859,8 @@ export default function App() {
           eventTaskChecks={eventTaskChecks}
           setEventTaskChecks={setEventTaskChecks}
           siteAccess={siteAccess}
+          alertBackendStatus={alertBackendStatus}
+          updateAlertRecord={updateAlertRecord}
           checkLocation={checkLocation}
           requestWriteAccess={requestWriteAccess}
           onResetPilotNotice={() => {
@@ -3729,11 +3883,11 @@ export default function App() {
           onClose={() => setShowGlobalAlert(false)}
           onSave={async (alertRecord) => {
             if (!(await requestWriteAccess())) return;
-            const nextAlerts = [...alerts, alertRecord];
-            setAlerts(nextAlerts);
-            saveStorage(ALERT_KEY, nextAlerts);
+            const result = await saveAlertRecord(alertRecord);
             setShowGlobalAlert(false);
-            window.alert('Alert saved locally.\n\nPilot note: real phone notifications require Slack/email/backend integration later.');
+            window.alert(result.ok
+              ? 'Alert saved.\n\nPilot note: real phone notifications require Slack/email/backend integration later.'
+              : 'Saved locally. Backend sync failed.');
           }}
         />
       )}

@@ -152,6 +152,42 @@ The routine editor has separate routine export/import controls for moving just t
 
 `Clear test logs` removes local logs, handover notes, finish records, alerts, responsible assignments, events, signoffs, asset checks and override history. It keeps routines, routine edits, staff/user code configuration, site settings and the asset registry.
 
+## Supabase Phase 1
+
+Phase 1 migrates alerts only. The app still works without Supabase env vars and keeps localStorage as fallback/cache.
+
+Environment setup:
+
+```bash
+cp .env.example .env.local
+```
+
+Then fill:
+
+```bash
+VITE_SUPABASE_URL=
+VITE_SUPABASE_ANON_KEY=
+```
+
+`VITE_SUPABASE_PUBLISHABLE_KEY` is also supported as an alternative to `VITE_SUPABASE_ANON_KEY`. No service role or secret key should be used in the frontend.
+
+Schema setup:
+
+1. Open Supabase SQL editor.
+2. Run [supabase/schema.sql](supabase/schema.sql).
+3. For this pilot phase, the schema includes anon read/insert/update policies for alerts.
+
+The pilot RLS policies are not production security. Replace them with authenticated, role-aware RLS before using this as real multi-user operations software.
+
+Alert behavior:
+
+- If Supabase is configured, alerts load from Supabase and writes try Supabase first.
+- localStorage remains a cache/fallback.
+- If Supabase read/write fails, the app continues locally and shows backend status in Manager Dashboard.
+- JSON backup/export still includes alerts and does not depend on Supabase.
+
+Next backend phase should add real auth, roles, organizations and production RLS before moving more operational records.
+
 ## Diagnostics
 
 Manager dashboard includes a data health/diagnostics card showing app version, task counts, log counts, handover count, routine source, and localStorage size estimate. Use `Copy diagnostics` when debugging pilot issues.
