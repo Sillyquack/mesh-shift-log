@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import {
   areas,
   defaultRoutines,
@@ -10,7 +10,9 @@ import {
 } from './data/routines.js';
 import { isSupabaseConfigured, supabase } from './lib/supabaseClient.js';
 
-const APP_VERSION = '0.6.0';
+const APP_VERSION = '0.6.2';
+const ALERT_SYNC_BUILD = 'phase-1.5-sync-fix-1';
+const ALERT_POLL_INTERVAL_SECONDS = 15;
 const LOG_KEY = 'mesh-shift-logs-v1';
 const ROUTINE_KEY = 'mesh-routines-v1';
 const SESSION_KEY = 'mesh-current-user-v1';
@@ -497,6 +499,20 @@ function alertIdentity(alert) {
   return String(alert.backendId || alert.localId || alert.id);
 }
 
+function alertMatch(a, b) {
+  const aIds = [a.backendId, a.id, a.localId].filter(Boolean).map(String);
+  const bIds = [b.backendId, b.id, b.localId].filter(Boolean).map(String);
+  return aIds.some((id) => bIds.includes(id));
+}
+
+function alertFreshness(alert) {
+  return Math.max(
+    new Date(alert.updatedAt || 0).getTime() || 0,
+    new Date(alert.createdAt || 0).getTime() || 0,
+    new Date(alert.lastSyncAttemptAt || 0).getTime() || 0,
+  );
+}
+
 function mergeAlertCaches(localAlerts, backendAlerts) {
   const merged = new Map();
   normalizeAlerts(localAlerts).forEach((alert) => {
@@ -505,10 +521,10 @@ function mergeAlertCaches(localAlerts, backendAlerts) {
   normalizeAlerts(backendAlerts).forEach((backendAlert) => {
     const matchingKey = [...merged.keys()].find((key) => {
       const localAlert = merged.get(key);
-      return localAlert.backendId === backendAlert.backendId || localAlert.localId === backendAlert.localId;
+      return alertMatch(localAlert, backendAlert);
     });
     const localAlert = matchingKey ? merged.get(matchingKey) : null;
-    if (localAlert?.syncStatus === 'pending') {
+    if (localAlert?.syncStatus === 'pending' && alertFreshness(localAlert) > alertFreshness(backendAlert)) {
       merged.set(matchingKey, localAlert);
       return;
     }
@@ -1117,7 +1133,7 @@ function StaffDashboard({
   const assetIssues = assetChecks.filter((record) => record.date === date && assetHasIssue(record));
 
   useEffect(() => {
-    refreshAlerts({ feedback: false });
+    refreshAlerts({ reason: 'staff_dashboard_open' });
   }, []);
 
   return (
@@ -1129,7 +1145,7 @@ function StaffDashboard({
         <p className="muted">Thanks to everyone keeping the day moving. Completed tasks are shown for transparency, not competition.</p>
         <div className="inline-actions">
           <button type="button" className="ghost-button compact-button" onClick={onAlert}>Alert manager</button>
-          <button type="button" className="ghost-button compact-button" onClick={() => refreshAlerts({ feedback: true })}>Refresh alerts</button>
+          <button type="button" className="ghost-button compact-button" onClick={() => refreshAlerts({ reason: 'manual' })}>Refresh alerts</button>
         </div>
         <p className="muted sync-inline">
           Alerts: {backendSourceLabel(alertBackendStatus.source)}
@@ -2078,7 +2094,7 @@ function ManagerDashboard({
     : 'No shift data yet.';
 
   useEffect(() => {
-    refreshAlerts({ feedback: false });
+    refreshAlerts({ reason: 'manager_dashboard_open' });
   }, []);
 
   const attentionItems = [
@@ -2231,12 +2247,26 @@ function ManagerDashboard({
     return [
       'Mesh Shift Log diagnostics',
       `Version: ${APP_VERSION}`,
+      `Alert sync build: ${ALERT_SYNC_BUILD}`,
       `Supabase configured: ${isSupabaseConfigured ? 'yes' : 'no'}`,
       `Alerts source: ${backendSourceLabel(alertBackendStatus.source)}`,
+      `Polling enabled: ${alertBackendStatus.pollingEnabled ? 'yes' : 'no'}`,
+      `Polling interval seconds: ${alertBackendStatus.pollingIntervalSeconds}`,
+      `Last refresh reason: ${alertBackendStatus.lastRefreshReason}`,
       `Last alert sync attempt: ${alertBackendStatus.lastSyncAttemptAt || 'none'}`,
       `Last successful alert sync: ${alertBackendStatus.lastSuccessfulSyncAt || 'none'}`,
+      `Last poll started: ${alertBackendStatus.lastPollStartedAt || 'none'}`,
+      `Last poll completed: ${alertBackendStatus.lastPollCompletedAt || 'none'}`,
+      `Last alert poll attempt: ${alertBackendStatus.lastPollAttemptAt || 'none'}`,
+      `Last successful alert poll: ${alertBackendStatus.lastSuccessfulPollAt || 'none'}`,
+      `Last manual refresh: ${alertBackendStatus.lastManualRefreshAt || 'none'}`,
+      `Last successful Supabase read: ${alertBackendStatus.lastSuccessfulSupabaseReadAt || 'none'}`,
       `Alert sync error: ${alertBackendStatus.lastSyncError || 'none'}`,
       `Supabase alert count: ${alertBackendStatus.supabaseAlertCount}`,
+      `Supabase rows fetched: ${alertBackendStatus.supabaseRowsFetched}`,
+      `Merged alerts count: ${alertBackendStatus.mergedAlertsCount}`,
+      `Current visible alerts count: ${alertBackendStatus.visibleAlertsCount}`,
+      `Current visible open alerts count: ${alertBackendStatus.visibleOpenAlertsCount}`,
       `Local cached alert count: ${alertBackendStatus.localCachedAlertCount}`,
       `Unsynced local alerts: ${alertBackendStatus.unsyncedLocalAlertCount}`,
       `Users: ${staffUsers.length}`,
@@ -2606,7 +2636,7 @@ function ManagerDashboard({
 
   async function updateAlert(alertId, status) {
     if (!(await requestWriteAccess())) return;
-    const latestAlerts = normalizeAlerts(readStorage(ALERT_KEY, alerts));
+    const latestAlerts = normalizeAlerts(alerts);
     const currentAlert = latestAlerts.find((alert) => (
       String(alert.id) === String(alertId)
       || String(alert.backendId) === String(alertId)
@@ -2625,7 +2655,7 @@ function ManagerDashboard({
       ...statusFields,
       updatedAt: timestamp,
     });
-    await refreshAlerts({ feedback: false });
+    await refreshAlerts({ reason: `alert_${status}` });
     setMessage(result.ok
       ? (status === 'acknowledged' ? 'Alert acknowledged.' : 'Alert resolved.')
       : 'Saved locally. Backend sync pending.');
@@ -2948,27 +2978,44 @@ function ManagerDashboard({
             <p className="muted">Phase 1 syncs alerts only. localStorage remains fallback/cache.</p>
           </div>
           <div className="inline-actions">
-            <button type="button" className="ghost-button compact-button" onClick={() => refreshAlerts({ feedback: true })}>Refresh alerts</button>
+            <button type="button" className="ghost-button compact-button" onClick={() => refreshAlerts({ reason: 'manual' })}>Refresh alerts</button>
             <button type="button" className="ghost-button compact-button" onClick={retryAlertSync}>Retry alert sync</button>
           </div>
         </div>
         <div className="status-grid">
+          <span><strong>{alertBackendStatus.alertSyncBuild}</strong> Alert sync build</span>
           <span><strong>{isSupabaseConfigured ? 'Yes' : 'No'}</strong> Supabase configured</span>
           <span><strong>{backendSourceLabel(alertBackendStatus.source)}</strong> Alerts source</span>
+          <span><strong>{alertBackendStatus.pollingEnabled ? 'Yes' : 'No'}</strong> Polling enabled</span>
+          <span><strong>{alertBackendStatus.pollingIntervalSeconds}</strong> Poll interval seconds</span>
+          <span><strong>{alertBackendStatus.lastRefreshReason}</strong> Last refresh reason</span>
           <span><strong>{alertBackendStatus.localCachedAlertCount}</strong> Local cached alerts</span>
           <span><strong>{alertBackendStatus.unsyncedLocalAlertCount}</strong> Waiting to sync</span>
           <span><strong>{alertBackendStatus.supabaseAlertCount}</strong> Supabase alerts</span>
+          <span><strong>{alertBackendStatus.supabaseRowsFetched}</strong> Rows fetched</span>
+          <span><strong>{alertBackendStatus.mergedAlertsCount}</strong> Merged alerts</span>
+          <span><strong>{alertBackendStatus.visibleAlertsCount}</strong> Visible alerts</span>
+          <span><strong>{alertBackendStatus.visibleOpenAlertsCount}</strong> Visible open alerts</span>
           <span><strong>{alertBackendStatus.lastSuccessfulSyncAt ? formatDateTime(alertBackendStatus.lastSuccessfulSyncAt) : 'Not yet'}</strong> Last successful sync</span>
           <span><strong>{alertBackendStatus.lastSyncAttemptAt ? formatDateTime(alertBackendStatus.lastSyncAttemptAt) : 'Not yet'}</strong> Last attempt</span>
+          <span><strong>{alertBackendStatus.lastPollStartedAt ? formatDateTime(alertBackendStatus.lastPollStartedAt) : 'Not yet'}</strong> Last poll started</span>
+          <span><strong>{alertBackendStatus.lastPollCompletedAt ? formatDateTime(alertBackendStatus.lastPollCompletedAt) : 'Not yet'}</strong> Last poll completed</span>
+          <span><strong>{alertBackendStatus.lastPollAttemptAt ? formatDateTime(alertBackendStatus.lastPollAttemptAt) : 'Not yet'}</strong> Last poll attempt</span>
+          <span><strong>{alertBackendStatus.lastSuccessfulPollAt ? formatDateTime(alertBackendStatus.lastSuccessfulPollAt) : 'Not yet'}</strong> Last successful poll</span>
+          <span><strong>{alertBackendStatus.lastManualRefreshAt ? formatDateTime(alertBackendStatus.lastManualRefreshAt) : 'Not yet'}</strong> Last manual refresh</span>
+          <span><strong>{alertBackendStatus.lastSuccessfulSupabaseReadAt ? formatDateTime(alertBackendStatus.lastSuccessfulSupabaseReadAt) : 'Not yet'}</strong> Last Supabase read</span>
           <span><strong>{alertBackendStatus.lastSyncError ? 'Yes' : 'No'}</strong> Sync error</span>
         </div>
         <p className={alertBackendStatus.lastSyncError ? 'critical-warning' : 'muted'}>{alertBackendStatus.message}</p>
         {alertBackendStatus.lastSyncError && <p className="critical-warning">{alertBackendStatus.lastSyncError}</p>}
         <button type="button" className="text-button" onClick={() => setShowBackendDetails((current) => !current)}>
-          {showBackendDetails ? 'Hide technical details' : 'Show technical details'}
+          {showBackendDetails ? 'Hide Alert sync debug' : 'Show Alert sync debug'}
         </button>
         {showBackendDetails && (
-          <pre className="backend-details">{JSON.stringify(alertBackendStatus, null, 2)}</pre>
+          <div className="backend-details">
+            <strong>Alert sync debug</strong>
+            <pre>{JSON.stringify(alertBackendStatus, null, 2)}</pre>
+          </div>
         )}
       </section>
 
@@ -3643,8 +3690,22 @@ export default function App() {
     message: isSupabaseConfigured ? 'Using local alert cache until first sync.' : 'Supabase not configured. Using localStorage fallback.',
     lastSuccessfulSyncAt: '',
     lastSyncAttemptAt: '',
+    lastPollAttemptAt: '',
+    lastPollStartedAt: '',
+    lastPollCompletedAt: '',
+    lastSuccessfulPollAt: '',
+    lastManualRefreshAt: '',
+    lastSuccessfulSupabaseReadAt: '',
+    lastRefreshReason: 'initial',
     lastSyncError: '',
+    pollingEnabled: isSupabaseConfigured,
+    pollingIntervalSeconds: ALERT_POLL_INTERVAL_SECONDS,
+    alertSyncBuild: ALERT_SYNC_BUILD,
     supabaseAlertCount: 0,
+    supabaseRowsFetched: 0,
+    mergedAlertsCount: normalizeAlerts(readStorage(ALERT_KEY, [])).length,
+    visibleAlertsCount: normalizeAlerts(readStorage(ALERT_KEY, [])).length,
+    visibleOpenAlertsCount: normalizeAlerts(readStorage(ALERT_KEY, [])).filter(isOpenAlert).length,
     localCachedAlertCount: normalizeAlerts(readStorage(ALERT_KEY, [])).length,
     unsyncedLocalAlertCount: normalizeAlerts(readStorage(ALERT_KEY, [])).filter((alert) => alert.syncStatus === 'pending').length,
   });
@@ -3666,6 +3727,12 @@ export default function App() {
   useEffect(() => saveStorage(ASSET_REGISTRY_KEY, assets), [assets]);
   useEffect(() => saveStorage(ASSET_CHECK_KEY, assetChecks), [assetChecks]);
   useEffect(() => saveStorage(EVENT_TASK_CHECK_KEY, eventTaskChecks), [eventTaskChecks]);
+
+  const alertsRef = useRef(alerts);
+
+  useEffect(() => {
+    alertsRef.current = alerts;
+  }, [alerts]);
 
   const activeOverride = isOverrideActive(siteOverrides);
   const siteAccessStatus = activeOverride ? 'override' : siteAccess.status;
@@ -3717,15 +3784,22 @@ export default function App() {
 
   function cacheAlerts(nextAlerts) {
     const normalized = normalizeAlerts(nextAlerts);
+    alertsRef.current = normalized;
     setAlerts(normalized);
     saveStorage(ALERT_KEY, normalized);
     setAlertBackendStatus((current) => ({
       ...current,
+      mergedAlertsCount: normalized.length,
+      visibleAlertsCount: normalized.length,
+      visibleOpenAlertsCount: normalized.filter(isOpenAlert).length,
+      alertSyncBuild: ALERT_SYNC_BUILD,
+      pollingEnabled: isSupabaseConfigured,
+      pollingIntervalSeconds: ALERT_POLL_INTERVAL_SECONDS,
       ...alertSyncCounts(normalized),
     }));
   }
 
-  async function syncPendingAlerts(alertList = readStorage(ALERT_KEY, [])) {
+  async function syncPendingAlerts(alertList = readStorage(ALERT_KEY, []), { commit = true } = {}) {
     if (!isSupabaseConfigured) return normalizeAlerts(alertList);
     let workingAlerts = normalizeAlerts(alertList);
     const pendingAlerts = workingAlerts.filter((alert) => alert.syncStatus === 'pending');
@@ -3756,62 +3830,120 @@ export default function App() {
           : alert));
       }
     }
-    cacheAlerts(workingAlerts);
+    if (commit) cacheAlerts(workingAlerts);
     return workingAlerts;
   }
 
-  async function loadSupabaseAlerts({ feedback = false } = {}) {
+  async function refreshAlertsFromBackend(reason = 'poll') {
     const attemptAt = new Date().toISOString();
+    const currentAlerts = normalizeAlerts(alertsRef.current.length ? alertsRef.current : readStorage(ALERT_KEY, []));
+    const isManual = reason === 'manual' || reason === 'retry';
     if (!isSupabaseConfigured) {
-      const localAlerts = normalizeAlerts(readStorage(ALERT_KEY, alerts));
+      const localAlerts = normalizeAlerts(currentAlerts.length ? currentAlerts : readStorage(ALERT_KEY, []));
       cacheAlerts(localAlerts);
       setAlertBackendStatus((current) => ({
         ...current,
         source: 'local_fallback',
-        message: feedback ? 'Alerts refreshed from localStorage.' : 'Supabase not configured. Using localStorage fallback.',
+        message: isManual ? `Fetched 0 alerts from Supabase. Showing ${localAlerts.length} alerts.` : 'Supabase not configured. Using localStorage fallback.',
         lastSyncAttemptAt: attemptAt,
+        lastPollAttemptAt: attemptAt,
+        lastPollStartedAt: attemptAt,
+        lastPollCompletedAt: new Date().toISOString(),
+        lastManualRefreshAt: isManual ? attemptAt : current.lastManualRefreshAt,
+        lastRefreshReason: reason,
         lastSyncError: '',
+        pollingEnabled: false,
+        pollingIntervalSeconds: ALERT_POLL_INTERVAL_SECONDS,
+        alertSyncBuild: ALERT_SYNC_BUILD,
         supabaseAlertCount: 0,
+        supabaseRowsFetched: 0,
+        mergedAlertsCount: localAlerts.length,
+        visibleAlertsCount: localAlerts.length,
+        visibleOpenAlertsCount: localAlerts.filter(isOpenAlert).length,
         ...alertSyncCounts(localAlerts),
       }));
       return { ok: true, localOnly: true };
     }
     try {
-      const afterPending = await syncPendingAlerts(readStorage(ALERT_KEY, alerts));
+      setAlertBackendStatus((current) => ({
+        ...current,
+        lastSyncAttemptAt: attemptAt,
+        lastPollAttemptAt: attemptAt,
+        lastPollStartedAt: attemptAt,
+        lastManualRefreshAt: isManual ? attemptAt : current.lastManualRefreshAt,
+        lastRefreshReason: reason,
+        pollingEnabled: true,
+        pollingIntervalSeconds: ALERT_POLL_INTERVAL_SECONDS,
+        alertSyncBuild: ALERT_SYNC_BUILD,
+      }));
+      const afterPending = await syncPendingAlerts(currentAlerts, { commit: false });
       const rows = await supabase.selectAlerts();
       const backendAlerts = normalizeAlerts(rows.map(alertFromSupabase));
-      const mergedAlerts = mergeAlertCaches(afterPending, backendAlerts);
-      cacheAlerts(mergedAlerts);
+      let mergedAlerts = mergeAlertCaches(mergeAlertCaches(currentAlerts, afterPending), backendAlerts);
+      setAlerts((previousAlerts) => {
+        mergedAlerts = mergeAlertCaches(mergeAlertCaches(previousAlerts, afterPending), backendAlerts);
+        alertsRef.current = mergedAlerts;
+        saveStorage(ALERT_KEY, mergedAlerts);
+        return mergedAlerts;
+      });
       setAlertBackendStatus((current) => ({
         ...current,
         source: 'supabase',
-        message: feedback ? 'Alerts refreshed.' : 'Alerts synced with Supabase.',
+        message: isManual ? `Fetched ${backendAlerts.length} alerts from Supabase. Showing ${mergedAlerts.length} alerts.` : 'Alerts synced with Supabase.',
         lastSuccessfulSyncAt: new Date().toISOString(),
+        lastSuccessfulPollAt: new Date().toISOString(),
+        lastSuccessfulSupabaseReadAt: new Date().toISOString(),
         lastSyncAttemptAt: attemptAt,
+        lastPollAttemptAt: attemptAt,
+        lastPollCompletedAt: new Date().toISOString(),
+        lastManualRefreshAt: isManual ? attemptAt : current.lastManualRefreshAt,
+        lastRefreshReason: reason,
         lastSyncError: '',
+        pollingEnabled: true,
+        pollingIntervalSeconds: ALERT_POLL_INTERVAL_SECONDS,
+        alertSyncBuild: ALERT_SYNC_BUILD,
         supabaseAlertCount: backendAlerts.length,
+        supabaseRowsFetched: backendAlerts.length,
+        mergedAlertsCount: mergedAlerts.length,
+        visibleAlertsCount: mergedAlerts.length,
+        visibleOpenAlertsCount: mergedAlerts.filter(isOpenAlert).length,
         ...alertSyncCounts(mergedAlerts),
       }));
       return { ok: true };
     } catch (error) {
-      const localAlerts = normalizeAlerts(readStorage(ALERT_KEY, alerts));
+      const localAlerts = normalizeAlerts(alertsRef.current.length ? alertsRef.current : readStorage(ALERT_KEY, []));
       cacheAlerts(localAlerts);
       setAlertBackendStatus((current) => ({
         ...current,
         source: 'sync_error',
-        message: feedback ? 'Could not refresh alerts. Showing local cache.' : 'Using local cache. Backend read failed.',
+        message: isManual ? 'Supabase refresh failed. Showing local cache.' : 'Using local cache. Backend read failed.',
         lastSyncAttemptAt: attemptAt,
+        lastPollAttemptAt: attemptAt,
+        lastPollCompletedAt: new Date().toISOString(),
+        lastManualRefreshAt: isManual ? attemptAt : current.lastManualRefreshAt,
+        lastRefreshReason: reason,
         lastSyncError: error.message,
+        pollingEnabled: true,
+        pollingIntervalSeconds: ALERT_POLL_INTERVAL_SECONDS,
+        alertSyncBuild: ALERT_SYNC_BUILD,
+        mergedAlertsCount: localAlerts.length,
+        visibleAlertsCount: localAlerts.length,
+        visibleOpenAlertsCount: localAlerts.filter(isOpenAlert).length,
         ...alertSyncCounts(localAlerts),
       }));
       return { ok: false, error };
     }
   }
 
+  function loadSupabaseAlerts({ feedback = false, reason } = {}) {
+    return refreshAlertsFromBackend(reason || (feedback ? 'manual' : 'poll'));
+  }
+
   async function saveAlertRecord(alertRecord) {
     const attemptAt = new Date().toISOString();
     const localRecord = normalizeAlerts([{ ...alertRecord, syncStatus: isSupabaseConfigured ? 'pending' : 'synced', lastSyncAttemptAt: attemptAt }])[0];
-    const localNext = [...alerts.filter((alert) => alert.id !== localRecord.id), localRecord];
+    const latestAlerts = normalizeAlerts(alertsRef.current.length ? alertsRef.current : alerts);
+    const localNext = [...latestAlerts.filter((alert) => alert.id !== localRecord.id), localRecord];
     cacheAlerts(localNext);
     if (!isSupabaseConfigured) {
       setAlertBackendStatus((current) => ({
@@ -3838,7 +3970,7 @@ export default function App() {
         lastSyncError: '',
         ...alertSyncCounts(nextAlerts),
       }));
-      loadSupabaseAlerts();
+      refreshAlertsFromBackend('after_create');
       return { ok: true };
     } catch (error) {
       const pendingAlerts = localNext.map((alert) => (alert.id === localRecord.id
@@ -3859,7 +3991,7 @@ export default function App() {
 
   async function updateAlertRecord(alertId, changes) {
     const attemptAt = new Date().toISOString();
-    const latestAlerts = normalizeAlerts(readStorage(ALERT_KEY, alerts));
+    const latestAlerts = normalizeAlerts(alertsRef.current.length ? alertsRef.current : readStorage(ALERT_KEY, []));
     const currentAlert = latestAlerts.find((alert) => (
       String(alert.id) === String(alertId)
       || String(alert.backendId) === String(alertId)
@@ -3929,13 +4061,13 @@ export default function App() {
   }, []);
 
   useEffect(() => {
-    loadSupabaseAlerts();
+    refreshAlertsFromBackend('app_mount');
     if (!isSupabaseConfigured) return undefined;
     const intervalId = window.setInterval(() => {
-      loadSupabaseAlerts();
-    }, 15000);
+      refreshAlertsFromBackend('poll');
+    }, ALERT_POLL_INTERVAL_SECONDS * 1000);
     function refreshWhenVisible() {
-      if (document.visibilityState === 'visible') loadSupabaseAlerts();
+      if (document.visibilityState === 'visible') refreshAlertsFromBackend('visible');
     }
     document.addEventListener('visibilitychange', refreshWhenVisible);
     return () => {
@@ -3944,6 +4076,10 @@ export default function App() {
     };
     // TODO: Add Supabase Realtime subscription for alert inserts/updates after auth and channel policy are finalized.
   }, []);
+
+  useEffect(() => {
+    if (user) refreshAlertsFromBackend('login');
+  }, [user?.id]);
 
   useEffect(() => {
     if (!('serviceWorker' in navigator) || import.meta.env.DEV) return undefined;
@@ -4118,7 +4254,7 @@ export default function App() {
           alertBackendStatus={alertBackendStatus}
           updateAlertRecord={updateAlertRecord}
           refreshAlerts={loadSupabaseAlerts}
-          retryAlertSync={() => loadSupabaseAlerts({ feedback: true })}
+          retryAlertSync={() => refreshAlertsFromBackend('retry')}
           checkLocation={checkLocation}
           requestWriteAccess={requestWriteAccess}
           onResetPilotNotice={() => {

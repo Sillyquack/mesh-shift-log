@@ -8,10 +8,13 @@ async function request(path, options = {}) {
   if (!isSupabaseConfigured) throw new Error('Supabase is not configured.');
   const response = await fetch(`${supabaseUrl.replace(/\/$/, '')}/rest/v1/${path}`, {
     ...options,
+    cache: options.cache || 'no-store',
     headers: {
       apikey: supabaseAnonKey,
       Authorization: `Bearer ${supabaseAnonKey}`,
       'Content-Type': 'application/json',
+      'Cache-Control': 'no-cache',
+      Pragma: 'no-cache',
       ...options.headers,
     },
   });
@@ -26,7 +29,7 @@ async function request(path, options = {}) {
 export const supabase = {
   organizationId,
   async selectAlerts() {
-    const filters = organizationId ? `organization_id=eq.${organizationId}&` : '';
+    const filters = organizationId ? `or=(organization_id.eq.${organizationId},organization_id.is.null)&` : '';
     return request(`alerts?${filters}select=*&order=created_at.desc`);
   },
   async insertAlert(row) {
