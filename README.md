@@ -191,7 +191,33 @@ Alert behavior:
 
 This is still not production security. The pilot RLS policies allow anonymous alert reads/writes for testing, and staff codes are not real authentication.
 
-Next backend phase should add urgent alert email notifications or real auth/users, roles, organizations and production RLS before moving more operational records.
+## Supabase Phase 2 urgent email notifications
+
+Urgent alerts and alerts marked `Needs immediate help` can trigger an email notification to the manager. Email is sent by a Supabase Edge Function, not by the frontend directly.
+
+The frontend never stores the Resend API key, Supabase service role key, or email secrets. These belong in Supabase Edge Function secrets only:
+
+```bash
+supabase secrets set RESEND_API_KEY=...
+supabase secrets set ALERT_EMAIL_TO=...
+supabase secrets set ALERT_EMAIL_FROM=...
+```
+
+Deploy the function:
+
+```bash
+supabase functions deploy send-alert-email
+```
+
+The function lives at [supabase/functions/send-alert-email/index.ts](supabase/functions/send-alert-email/index.ts). It uses `RESEND_API_KEY`, `ALERT_EMAIL_TO`, and `ALERT_EMAIL_FROM`, and sends through Resend with plain `fetch`.
+
+If the Supabase CLI is not installed yet, the function can be deployed later after CLI setup. Resend sender domains should be verified before production use.
+
+During this no-auth pilot, the frontend calls the Edge Function with the Supabase anon/publishable key. If JWT verification blocks browser invocation during pilot testing, deploy the function with the appropriate Supabase CLI option for the pilot, for example `--no-verify-jwt`, but do not treat that as production security.
+
+Email failure does not block alert creation. Failed urgent/immediate-help email notifications can be retried by managers from the alert card.
+
+Next backend phase should add real auth/users, roles, organizations and production RLS before moving more operational records.
 
 ## Diagnostics
 

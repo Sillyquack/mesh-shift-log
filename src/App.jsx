@@ -446,6 +446,9 @@ function normalizeAlerts(value) {
       syncStatus: alert.syncStatus || (isSupabaseConfigured && !(alert.backendId || alert.backend_id) ? 'pending' : 'synced'),
       lastSyncError: alert.lastSyncError || '',
       lastSyncAttemptAt: alert.lastSyncAttemptAt || '',
+      emailNotificationStatus: alert.emailNotificationStatus || alert.email_notification_status || 'not_required',
+      emailNotificationAttemptedAt: alert.emailNotificationAttemptedAt || alert.email_notification_attempted_at || '',
+      emailNotificationError: alert.emailNotificationError || alert.email_notification_error || '',
     }));
 }
 
@@ -472,6 +475,9 @@ function alertFromSupabase(row) {
     syncStatus: 'synced',
     lastSyncError: '',
     lastSyncAttemptAt: '',
+    emailNotificationStatus: row.email_notification_status || 'not_required',
+    emailNotificationAttemptedAt: row.email_notification_attempted_at || '',
+    emailNotificationError: row.email_notification_error || '',
   };
 }
 
@@ -492,6 +498,9 @@ function alertToSupabase(alert) {
     acknowledged_at: alert.acknowledgedAt || null,
     resolved_by: alert.resolvedBy || null,
     resolved_at: alert.resolvedAt || null,
+    email_notification_status: alert.emailNotificationStatus || 'not_required',
+    email_notification_attempted_at: alert.emailNotificationAttemptedAt || null,
+    email_notification_error: alert.emailNotificationError || null,
   };
 }
 
@@ -713,6 +722,20 @@ function isUrgentAlert(alert) {
   return alert.severity === 'Urgent' || alert.needsImmediateHelp;
 }
 
+function alertNeedsEmail(alert) {
+  return alert.severity === 'Urgent' || alert.needsImmediateHelp === true;
+}
+
+function emailStatusLabel(alert) {
+  if (!alertNeedsEmail(alert)) return '';
+  return {
+    sent: 'Email notification sent',
+    pending: 'Email notification pending',
+    failed: 'Email notification failed',
+    not_required: 'Email not configured / failed',
+  }[alert.emailNotificationStatus] || 'Email not configured / failed';
+}
+
 function groupAlerts(alerts) {
   return {
     openUrgent: alerts.filter((alert) => isOpenAlert(alert) && isUrgentAlert(alert)),
@@ -786,15 +809,18 @@ function AlertManagerModal({ user, onClose, onSave }) {
       message: form.message.trim(),
       status: 'open',
       managerNote: '',
+      emailNotificationStatus: alertNeedsEmail(form) ? 'pending' : 'not_required',
+      emailNotificationAttemptedAt: '',
+      emailNotificationError: '',
     });
   }
 
   return (
     <div className="modal-backdrop" role="dialog" aria-modal="true" aria-labelledby="alert-title">
       <form className="pilot-modal alert-modal" onSubmit={submit}>
-        <p className="eyebrow">Local alert</p>
+        <p className="eyebrow">Alert</p>
         <h1 id="alert-title">Alert manager</h1>
-        <p>Visible in this app/browser. Real phone notifications require Slack/email/backend integration later.</p>
+        <p>Urgent alerts and immediate-help alerts can email the manager when the Supabase function is configured.</p>
         <label>
           Category
           <select value={form.category} onChange={(event) => setForm((current) => ({ ...current, category: event.target.value }))}>
@@ -830,9 +856,10 @@ function AlertManagerModal({ user, onClose, onSave }) {
   );
 }
 
-function AlertCard({ alert, isManager = false, onAction }) {
+function AlertCard({ alert, isManager = false, onAction, onRetryEmail }) {
   const status = alertStatus(alert);
   const isImmediate = isUrgentAlert(alert);
+  const emailLabel = emailStatusLabel(alert);
 
   return (
     <article className={`alert-row severity-${alert.severity.toLowerCase()} status-${status} ${isImmediate ? 'needs-help' : ''}`}>
@@ -858,12 +885,24 @@ function AlertCard({ alert, isManager = false, onAction }) {
         <small className="sync-note">Pending backend sync{alert.lastSyncAttemptAt ? ` since ${formatDateTime(alert.lastSyncAttemptAt)}` : ''}</small>
       )}
       {alert.lastSyncError && <small className="sync-note error">Backend sync: {alert.lastSyncError}</small>}
-      {isManager && status !== 'resolved' && (
+      {emailLabel && (
+        <small className={`sync-note email-${alert.emailNotificationStatus || 'failed'}`}>
+          {emailLabel}
+          {alert.emailNotificationAttemptedAt ? ` at ${formatDateTime(alert.emailNotificationAttemptedAt)}` : ''}
+          {alert.emailNotificationError ? ` | ${alert.emailNotificationError}` : ''}
+        </small>
+      )}
+      {isManager && (status !== 'resolved' || (alertNeedsEmail(alert) && alert.emailNotificationStatus === 'failed')) && (
         <div className="inline-actions">
-          {status !== 'acknowledged' && (
+          {status !== 'resolved' && status !== 'acknowledged' && (
             <button type="button" className="ghost-button compact-button" onClick={() => onAction(alert.id, 'acknowledged')}>Acknowledge</button>
           )}
-          <button type="button" className="primary-button compact-button" onClick={() => onAction(alert.id, 'resolved')}>Resolve</button>
+          {status !== 'resolved' && (
+            <button type="button" className="primary-button compact-button" onClick={() => onAction(alert.id, 'resolved')}>Resolve</button>
+          )}
+          {alertNeedsEmail(alert) && alert.emailNotificationStatus === 'failed' && onRetryEmail && (
+            <button type="button" className="ghost-button compact-button" onClick={() => onRetryEmail(alert.id)}>Retry email notification</button>
+          )}
         </div>
       )}
     </article>
@@ -1663,9 +1702,10 @@ function Checklist({
     if (!(await requestWriteAccess())) return;
     const result = await saveAlertRecord(alertRecord);
     setShowAlert(false);
+    const emailNote = result.emailResult?.ok === false ? '\n\nEmail notification failed. Alert is still saved.' : '';
     window.alert(result.ok
-      ? 'Alert saved.\n\nPilot note: real phone notifications require Slack/email/backend integration later.'
-      : 'Saved locally. Backend sync pending.');
+      ? `Alert saved.${emailNote}`
+      : `Saved locally. Backend sync pending.${emailNote}`);
   }
 
   async function finishShift() {
@@ -1992,6 +2032,7 @@ function ManagerDashboard({
   siteAccess,
   alertBackendStatus,
   updateAlertRecord,
+  retryAlertEmailNotification,
   refreshAlerts,
   retryAlertSync,
   checkLocation,
@@ -2216,6 +2257,7 @@ function ManagerDashboard({
           lines.push(`  Created by: ${alert.createdBy} at ${formatDateTime(alert.createdAt)}`);
           lines.push(`  Status: ${alertStatus(alert)}`);
           if (alert.needsImmediateHelp) lines.push('  Needs immediate help: yes');
+          if (alertNeedsEmail(alert)) lines.push(`  Email notification: ${emailStatusLabel(alert) || 'not required'}`);
           if (alert.acknowledgedBy) lines.push(`  Acknowledged by: ${alert.acknowledgedBy} at ${formatDateTime(alert.acknowledgedAt)}`);
           if (alert.resolvedBy) lines.push(`  Resolved by: ${alert.resolvedBy} at ${formatDateTime(alert.resolvedAt)}`);
           if (alert.managerNote) lines.push(`  Manager note: ${alert.managerNote}`);
@@ -2262,6 +2304,9 @@ function ManagerDashboard({
       `Last manual refresh: ${alertBackendStatus.lastManualRefreshAt || 'none'}`,
       `Last successful Supabase read: ${alertBackendStatus.lastSuccessfulSupabaseReadAt || 'none'}`,
       `Alert sync error: ${alertBackendStatus.lastSyncError || 'none'}`,
+      `Last email notification attempt: ${alertBackendStatus.lastEmailNotificationAttemptAt || 'none'}`,
+      `Last email notification result: ${alertBackendStatus.lastEmailNotificationResult || 'none'}`,
+      `Last email notification error: ${alertBackendStatus.lastEmailNotificationError || 'none'}`,
       `Supabase alert count: ${alertBackendStatus.supabaseAlertCount}`,
       `Supabase rows fetched: ${alertBackendStatus.supabaseRowsFetched}`,
       `Merged alerts count: ${alertBackendStatus.mergedAlertsCount}`,
@@ -2661,6 +2706,22 @@ function ManagerDashboard({
       : 'Saved locally. Backend sync pending.');
   }
 
+  async function retryEmail(alertId) {
+    if (!(await requestWriteAccess())) return;
+    const latestAlerts = normalizeAlerts(alerts);
+    const currentAlert = latestAlerts.find((alert) => (
+      String(alert.id) === String(alertId)
+      || String(alert.backendId) === String(alertId)
+      || String(alert.localId) === String(alertId)
+    ));
+    if (!currentAlert) {
+      setMessage('Alert not found.');
+      return;
+    }
+    const result = await retryAlertEmailNotification(currentAlert);
+    setMessage(result.ok ? 'Email notification sent.' : 'Email notification failed. Alert is still saved.');
+  }
+
   function resetStaffForm() {
     setStaffForm(blankStaffForm);
   }
@@ -3005,6 +3066,8 @@ function ManagerDashboard({
           <span><strong>{alertBackendStatus.lastManualRefreshAt ? formatDateTime(alertBackendStatus.lastManualRefreshAt) : 'Not yet'}</strong> Last manual refresh</span>
           <span><strong>{alertBackendStatus.lastSuccessfulSupabaseReadAt ? formatDateTime(alertBackendStatus.lastSuccessfulSupabaseReadAt) : 'Not yet'}</strong> Last Supabase read</span>
           <span><strong>{alertBackendStatus.lastSyncError ? 'Yes' : 'No'}</strong> Sync error</span>
+          <span><strong>{alertBackendStatus.lastEmailNotificationAttemptAt ? formatDateTime(alertBackendStatus.lastEmailNotificationAttemptAt) : 'Not yet'}</strong> Last email attempt</span>
+          <span><strong>{alertBackendStatus.lastEmailNotificationResult || 'None'}</strong> Last email result</span>
         </div>
         <p className={alertBackendStatus.lastSyncError ? 'critical-warning' : 'muted'}>{alertBackendStatus.message}</p>
         {alertBackendStatus.lastSyncError && <p className="critical-warning">{alertBackendStatus.lastSyncError}</p>}
@@ -3063,28 +3126,28 @@ function ManagerDashboard({
         <div>
           <p className="eyebrow">Alerts</p>
           <h2>Open alerts</h2>
-          <p className="muted">Synced through Supabase when configured. Real phone notifications require Slack, email or push integration later.</p>
+          <p className="muted">Synced through Supabase when configured. Urgent alerts can email the manager when the Edge Function and Resend secrets are deployed.</p>
         </div>
         {alertGroups.openUrgent.length + alertGroups.openNormal.length === 0 && <p className="muted">No open alerts.</p>}
         <div className="alert-group">
           <h3>Open urgent alerts</h3>
           {alertGroups.openUrgent.length === 0 && <p className="muted">None.</p>}
           {alertGroups.openUrgent.map((alert) => (
-            <AlertCard key={alert.id} alert={alert} isManager onAction={updateAlert} />
+            <AlertCard key={alert.id} alert={alert} isManager onAction={updateAlert} onRetryEmail={retryEmail} />
           ))}
         </div>
         <div className="alert-group">
           <h3>Open normal alerts</h3>
           {alertGroups.openNormal.length === 0 && <p className="muted">None.</p>}
           {alertGroups.openNormal.map((alert) => (
-            <AlertCard key={alert.id} alert={alert} isManager onAction={updateAlert} />
+            <AlertCard key={alert.id} alert={alert} isManager onAction={updateAlert} onRetryEmail={retryEmail} />
           ))}
         </div>
         {alertGroups.acknowledged.length > 0 && (
           <div className="alert-group acknowledged-group">
             <h3>Acknowledged alerts</h3>
             {alertGroups.acknowledged.map((alert) => (
-              <AlertCard key={alert.id} alert={alert} isManager onAction={updateAlert} />
+              <AlertCard key={alert.id} alert={alert} isManager onAction={updateAlert} onRetryEmail={retryEmail} />
             ))}
           </div>
         )}
@@ -3092,7 +3155,7 @@ function ManagerDashboard({
           <details className="alert-group resolved-group">
             <summary>Resolved alerts ({alertGroups.resolved.length})</summary>
             {alertGroups.resolved.map((alert) => (
-              <AlertCard key={alert.id} alert={alert} isManager onAction={updateAlert} />
+              <AlertCard key={alert.id} alert={alert} isManager onAction={updateAlert} onRetryEmail={retryEmail} />
             ))}
           </details>
         )}
@@ -3326,13 +3389,13 @@ function ManagerDashboard({
       <section className="manager-list">
         <h2>Real alert notifications</h2>
         <p className="muted">
-          Current alerts are local to this browser/device. To make Bobby's phone vibrate immediately, this app will need integration with Slack, email, SMS, push notifications or a backend service.
+          Phase 2 adds manager email for urgent/immediate-help alerts through a Supabase Edge Function. Push, SMS and Slack can still be added later.
         </p>
         <div className="task-labels">
           <span>Slack webhook</span>
-          <span>Email notification</span>
+          <span>Email notification via Resend</span>
           <span>Push notification service</span>
-          <span>Supabase/Firebase backend</span>
+          <span>Supabase Edge Function</span>
           <span>SMS gateway</span>
         </div>
       </section>
@@ -3698,6 +3761,9 @@ export default function App() {
     lastSuccessfulSupabaseReadAt: '',
     lastRefreshReason: 'initial',
     lastSyncError: '',
+    lastEmailNotificationAttemptAt: '',
+    lastEmailNotificationResult: '',
+    lastEmailNotificationError: '',
     pollingEnabled: isSupabaseConfigured,
     pollingIntervalSeconds: ALERT_POLL_INTERVAL_SECONDS,
     alertSyncBuild: ALERT_SYNC_BUILD,
@@ -3939,9 +4005,69 @@ export default function App() {
     return refreshAlertsFromBackend(reason || (feedback ? 'manual' : 'poll'));
   }
 
+  async function attemptAlertEmailNotification(alert, { reason = 'create' } = {}) {
+    if (!alertNeedsEmail(alert)) {
+      return { ok: true, skipped: true };
+    }
+    if (alert.emailNotificationStatus === 'sent' && reason !== 'retry') {
+      return { ok: true, skipped: true };
+    }
+
+    const attemptedAt = new Date().toISOString();
+    const targetId = alert.id || alert.backendId || alert.localId;
+    setAlertBackendStatus((current) => ({
+      ...current,
+      lastEmailNotificationAttemptAt: attemptedAt,
+      lastEmailNotificationResult: 'pending',
+      lastEmailNotificationError: '',
+    }));
+    await updateAlertRecord(targetId, {
+      emailNotificationStatus: 'pending',
+      emailNotificationAttemptedAt: attemptedAt,
+      emailNotificationError: '',
+    });
+
+    try {
+      await supabase.sendAlertEmail({
+        ...alert,
+        appUrl: window.location.origin + window.location.pathname,
+      });
+      await updateAlertRecord(targetId, {
+        emailNotificationStatus: 'sent',
+        emailNotificationAttemptedAt: attemptedAt,
+        emailNotificationError: '',
+      });
+      setAlertBackendStatus((current) => ({
+        ...current,
+        lastEmailNotificationAttemptAt: attemptedAt,
+        lastEmailNotificationResult: 'sent',
+        lastEmailNotificationError: '',
+      }));
+      return { ok: true };
+    } catch (error) {
+      await updateAlertRecord(targetId, {
+        emailNotificationStatus: 'failed',
+        emailNotificationAttemptedAt: attemptedAt,
+        emailNotificationError: error.message,
+      });
+      setAlertBackendStatus((current) => ({
+        ...current,
+        lastEmailNotificationAttemptAt: attemptedAt,
+        lastEmailNotificationResult: 'failed',
+        lastEmailNotificationError: error.message,
+      }));
+      return { ok: false, error };
+    }
+  }
+
   async function saveAlertRecord(alertRecord) {
     const attemptAt = new Date().toISOString();
-    const localRecord = normalizeAlerts([{ ...alertRecord, syncStatus: isSupabaseConfigured ? 'pending' : 'synced', lastSyncAttemptAt: attemptAt }])[0];
+    const localRecord = normalizeAlerts([{
+      ...alertRecord,
+      syncStatus: isSupabaseConfigured ? 'pending' : 'synced',
+      lastSyncAttemptAt: attemptAt,
+      emailNotificationStatus: alertRecord.emailNotificationStatus || (alertNeedsEmail(alertRecord) ? 'pending' : 'not_required'),
+    }])[0];
     const latestAlerts = normalizeAlerts(alertsRef.current.length ? alertsRef.current : alerts);
     const localNext = [...latestAlerts.filter((alert) => alert.id !== localRecord.id), localRecord];
     cacheAlerts(localNext);
@@ -3954,7 +4080,8 @@ export default function App() {
         lastSyncError: '',
         ...alertSyncCounts(localNext),
       }));
-      return { ok: true, localOnly: true };
+      const emailResult = await attemptAlertEmailNotification(localRecord, { reason: 'create' });
+      return { ok: true, localOnly: true, alert: localRecord, emailResult };
     }
     try {
       const row = await supabase.insertAlert(alertToSupabase(localRecord));
@@ -3971,7 +4098,8 @@ export default function App() {
         ...alertSyncCounts(nextAlerts),
       }));
       refreshAlertsFromBackend('after_create');
-      return { ok: true };
+      const emailResult = await attemptAlertEmailNotification(syncedAlert, { reason: 'create' });
+      return { ok: true, alert: syncedAlert, emailResult };
     } catch (error) {
       const pendingAlerts = localNext.map((alert) => (alert.id === localRecord.id
         ? { ...alert, syncStatus: 'pending', lastSyncError: error.message, lastSyncAttemptAt: attemptAt }
@@ -3985,7 +4113,8 @@ export default function App() {
         lastSyncError: error.message,
         ...alertSyncCounts(pendingAlerts),
       }));
-      return { ok: false, error };
+      const emailResult = await attemptAlertEmailNotification(localRecord, { reason: 'create' });
+      return { ok: false, error, alert: localRecord, emailResult };
     }
   }
 
@@ -4253,6 +4382,7 @@ export default function App() {
           siteAccess={siteAccess}
           alertBackendStatus={alertBackendStatus}
           updateAlertRecord={updateAlertRecord}
+          retryAlertEmailNotification={(alert) => attemptAlertEmailNotification(alert, { reason: 'retry' })}
           refreshAlerts={loadSupabaseAlerts}
           retryAlertSync={() => refreshAlertsFromBackend('retry')}
           checkLocation={checkLocation}
@@ -4279,9 +4409,10 @@ export default function App() {
             if (!(await requestWriteAccess())) return;
             const result = await saveAlertRecord(alertRecord);
             setShowGlobalAlert(false);
+            const emailNote = result.emailResult?.ok === false ? '\n\nEmail notification failed. Alert is still saved.' : '';
             window.alert(result.ok
-              ? 'Alert saved.\n\nPilot note: real phone notifications require Slack/email/backend integration later.'
-              : 'Saved locally. Backend sync pending.');
+              ? `Alert saved.${emailNote}`
+              : `Saved locally. Backend sync pending.${emailNote}`);
           }}
         />
       )}

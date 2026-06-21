@@ -51,4 +51,22 @@ export const supabase = {
     });
     return rows?.[0] || null;
   },
+  async sendAlertEmail(alert) {
+    if (!isSupabaseConfigured) throw new Error('Supabase is not configured.');
+    const response = await fetch(`${supabaseUrl.replace(/\/$/, '')}/functions/v1/send-alert-email`, {
+      method: 'POST',
+      cache: 'no-store',
+      headers: {
+        apikey: supabaseAnonKey,
+        Authorization: `Bearer ${supabaseAnonKey}`,
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify(alert),
+    });
+    const body = await response.json().catch(() => ({}));
+    if (!response.ok) {
+      throw new Error(body.error || `Email function failed with ${response.status}`);
+    }
+    return body;
+  },
 };

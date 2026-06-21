@@ -28,8 +28,15 @@ create table if not exists public.alerts (
   resolved_by text,
   resolved_at timestamptz,
   manager_note text,
+  email_notification_status text default 'not_required',
+  email_notification_attempted_at timestamptz,
+  email_notification_error text,
   updated_at timestamptz default now()
 );
+
+alter table public.alerts add column if not exists email_notification_status text default 'not_required';
+alter table public.alerts add column if not exists email_notification_attempted_at timestamptz;
+alter table public.alerts add column if not exists email_notification_error text;
 
 create index if not exists alerts_organization_id_idx on public.alerts (organization_id);
 create index if not exists alerts_alert_date_idx on public.alerts (alert_date);
