@@ -1,5 +1,6 @@
-const CACHE_NAME = 'mesh-shift-log-v0.5.0';
+const CACHE_NAME = 'mesh-shift-log-v0.6.1';
 const APP_SHELL = ['./', './index.html', './manifest.webmanifest', './icon.svg'];
+const APP_ORIGIN = self.location.origin;
 
 // Simple app-shell caching for the local pilot.
 // localStorage data is never cached or copied by this service worker.
@@ -25,6 +26,12 @@ self.addEventListener('message', (event) => {
 
 self.addEventListener('fetch', (event) => {
   if (event.request.method !== 'GET') return;
+  const requestUrl = new URL(event.request.url);
+
+  if (requestUrl.origin !== APP_ORIGIN) {
+    event.respondWith(fetch(event.request));
+    return;
+  }
 
   if (event.request.mode === 'navigate') {
     event.respondWith(
