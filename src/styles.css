@@ -424,6 +424,14 @@ textarea {
   color: var(--brand-strong);
 }
 
+.page-status {
+  display: block;
+  width: min(100% - 24px, 980px);
+  margin: 12px auto 0;
+  border-radius: 8px;
+  white-space: normal;
+}
+
 .critical-warning,
 .all-clear {
   margin: 12px 0 0;
@@ -1202,6 +1210,44 @@ textarea {
   font-size: 0.72rem;
   font-weight: 900;
   text-transform: uppercase;
+}
+
+.check-row {
+  display: grid;
+  grid-template-columns: 44px 1fr;
+  align-items: center;
+  gap: 10px;
+  min-height: 48px;
+  margin-bottom: 8px;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  background: var(--surface);
+  color: var(--text);
+  padding: 8px 10px;
+  text-align: left;
+  font-weight: 850;
+}
+
+.check-row span {
+  display: grid;
+  width: 34px;
+  height: 34px;
+  place-items: center;
+  border-radius: 8px;
+  background: var(--surface-strong);
+  color: var(--brand);
+  font-size: 0.78rem;
+  font-weight: 900;
+}
+
+.check-row.is-checked {
+  border-color: color-mix(in srgb, var(--brand) 36%, var(--line));
+  background: color-mix(in srgb, var(--brand) 7%, var(--surface));
+}
+
+.asset-check-grid {
+  border-top: 0;
+  padding-top: 8px;
 }
 
 .log-row {

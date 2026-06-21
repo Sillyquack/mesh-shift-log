@@ -9,7 +9,7 @@ import {
   staffCodes,
 } from './data/routines.js';
 
-const APP_VERSION = '0.5.0';
+const APP_VERSION = '0.6.0';
 const LOG_KEY = 'mesh-shift-logs-v1';
 const ROUTINE_KEY = 'mesh-routines-v1';
 const SESSION_KEY = 'mesh-current-user-v1';
@@ -20,6 +20,13 @@ const FINISH_KEY = 'mesh-shift-finish-records-v1';
 const ALERT_KEY = 'mesh-local-alerts-v1';
 const RESPONSIBLE_KEY = 'mesh-shift-responsible-v1';
 const STAFF_KEY = 'mesh-staff-users-v1';
+const SITE_SETTINGS_KEY = 'mesh-site-settings-v1';
+const SITE_OVERRIDE_KEY = 'mesh-site-override-history-v1';
+const EVENTS_KEY = 'mesh-event-records-v1';
+const CASH_SIGNOFF_KEY = 'mesh-cash-invoice-signoffs-v1';
+const ASSET_REGISTRY_KEY = 'mesh-asset-registry-v1';
+const ASSET_CHECK_KEY = 'mesh-asset-check-records-v1';
+const EVENT_TASK_CHECK_KEY = 'mesh-event-floor-task-checks-v1';
 const weakCodes = new Set(['0000', '1111', '1234', '12345', '123456', 'PASSWORD', 'ADMIN', 'MANAGER', 'BOBBY']);
 
 const priorityLabels = {
@@ -33,6 +40,146 @@ const shiftLabels = Object.fromEntries(shiftOptions.map((shift) => [shift.id, sh
 const alertCategories = ['Stock empty', 'Equipment broken', 'Technical issue', 'Safety/security', 'POS/register', 'Cleaning/maintenance', 'Lost/found item', 'Other'];
 const alertSeverities = ['Low', 'Medium', 'Urgent'];
 const alertAreas = ['Workbar', 'Cornerbar', 'Atrium', 'Kitchen', 'Toilets', 'Entrance', 'POS', 'Salto/security', 'Other'];
+const responsibilityTypes = [
+  ['overall_shift_lead', 'Overall shift lead'],
+  ['event_responsible', 'Event responsible'],
+  ['closing_responsible', 'Closing responsible'],
+  ['cash_invoice_responsible', 'Cash/invoice responsible'],
+  ['locking_alarm_responsible', 'Locking/alarm responsible'],
+  ['asset_check_responsible', 'Asset check responsible'],
+];
+const responsibilityLabels = Object.fromEntries(responsibilityTypes);
+const eventVenues = ['Atrium', 'Cornerbar', 'Workbar', 'Project rooms', 'Multiple'];
+const assetTypes = ['payment_terminal', 'ipad_pos', 'charger', 'adapter', 'other'];
+const assetConditions = ['ok', 'unstable', 'missing', 'needs_repair'];
+const siteStatuses = {
+  on_site: 'On site',
+  away: 'Away from site',
+  unknown: 'Location unknown',
+  off: 'Location check off',
+  override: 'Manager override active',
+};
+
+const defaultSiteSettings = {
+  siteName: 'Youngs / Mesh Youngstorget',
+  latitude: '',
+  longitude: '',
+  radiusMeters: 150,
+  locationCheckEnabled: false,
+  allowReadOnlyRemoteAccess: true,
+  managerOverrideEnabled: true,
+};
+
+const defaultAssets = [
+  {
+    id: 'asset-adyen-workbar-1',
+    type: 'payment_terminal',
+    provider: 'Adyen',
+    model: 'AMS1',
+    serialNumber: '168231212456',
+    expectedVenue: 'Workbar',
+    expectedStation: 'Workbar 1',
+    notes: 'Switches off / turns black and must be dismantled/aired before it turns on again. Looping issue.',
+    active: true,
+    condition: 'unstable',
+    defaultRequiredForClosing: true,
+  },
+  {
+    id: 'asset-adyen-workbar-2',
+    type: 'payment_terminal',
+    provider: 'Adyen',
+    model: 'AMS1',
+    serialNumber: '168231212451',
+    expectedVenue: 'Workbar',
+    expectedStation: 'Workbar 2',
+    notes: 'Switches off / turns black and must be dismantled/aired before it turns on again. Looping issue.',
+    active: true,
+    condition: 'unstable',
+    defaultRequiredForClosing: true,
+  },
+  {
+    id: 'asset-adyen-cornerbar-1',
+    type: 'payment_terminal',
+    provider: 'Adyen',
+    model: 'AMS1',
+    serialNumber: 'TBD',
+    expectedVenue: 'Cornerbar',
+    expectedStation: 'Bar 1',
+    notes: 'Missing in migration backlog.',
+    active: true,
+    condition: 'missing',
+    defaultRequiredForClosing: true,
+  },
+  {
+    id: 'asset-zettle-bar-1',
+    type: 'payment_terminal',
+    provider: 'Zettle / PayPal',
+    model: 'Terminal',
+    serialNumber: '2121051670',
+    expectedVenue: 'Cornerbar',
+    expectedStation: 'Bar 1',
+    notes: 'Youngs Bar 1',
+    active: true,
+    condition: 'ok',
+    defaultRequiredForClosing: true,
+  },
+  {
+    id: 'asset-zettle-bar-2',
+    type: 'payment_terminal',
+    provider: 'Zettle / PayPal',
+    model: 'Terminal',
+    serialNumber: '2120006747',
+    expectedVenue: 'Cornerbar',
+    expectedStation: 'Bar 2',
+    notes: 'Youngs Bar 2',
+    active: true,
+    condition: 'ok',
+    defaultRequiredForClosing: true,
+  },
+  {
+    id: 'asset-zettle-popup',
+    type: 'payment_terminal',
+    provider: 'Zettle / PayPal',
+    model: 'Terminal',
+    serialNumber: '2121051649',
+    expectedVenue: 'Pop-up',
+    expectedStation: 'Pop-up',
+    notes: 'Youngs Pop-up',
+    active: true,
+    condition: 'ok',
+    defaultRequiredForClosing: true,
+  },
+  ...['Workbar iPad/POS 1', 'Workbar iPad/POS 2', 'Cornerbar iPad/POS 1', 'Cornerbar iPad/POS 2', 'Pop-up iPad/POS'].map((name) => ({
+    id: `asset-${slug(name)}`,
+    type: 'ipad_pos',
+    provider: 'Apple',
+    model: name,
+    serialNumber: 'TBD',
+    expectedVenue: name.startsWith('Cornerbar') ? 'Cornerbar' : name.startsWith('Pop-up') ? 'Pop-up' : 'Workbar',
+    expectedStation: name,
+    notes: 'Placeholder iPad/POS asset.',
+    active: true,
+    condition: 'ok',
+    defaultRequiredForClosing: true,
+  })),
+];
+
+const weeklyEventTasks = [
+  'Check microphone batteries and charging',
+  'Check HDMI/adapters/event cables',
+  'Check event signage',
+  'Check event storage',
+  'Check bar/event fridge layout',
+  'Check missing/damaged tech list',
+  'Check that event iPads/terminals are where expected',
+];
+const monthlyEventTasks = [
+  'Test full event tech flow',
+  'Review event equipment inventory',
+  'Review recurring event issues',
+  'Check spare batteries/cables/adapters',
+  'Review venue reset standards',
+];
 
 const blankTask = {
   title: '',
@@ -57,6 +204,46 @@ const blankStaffForm = {
   isManager: false,
   needsName: false,
   active: true,
+};
+
+const blankEventForm = {
+  id: '',
+  eventName: '',
+  client: '',
+  venue: 'Atrium',
+  startTime: '',
+  endTime: '',
+  expectedGuests: '',
+  eventResponsible: '',
+  closingResponsible: '',
+  cashInvoiceResponsible: '',
+  lockingResponsible: '',
+  julieLeads: false,
+  notes: '',
+};
+
+const blankCashForm = {
+  tableCreated: '',
+  salesPunched: '',
+  invoiceSent: '',
+  settlementPerformed: '',
+  settlementPerformedBy: '',
+  signedOffBy: '',
+  comments: '',
+};
+
+const blankAssetForm = {
+  id: '',
+  type: 'payment_terminal',
+  provider: '',
+  model: '',
+  serialNumber: '',
+  expectedVenue: 'Workbar',
+  expectedStation: '',
+  notes: '',
+  active: true,
+  condition: 'ok',
+  defaultRequiredForClosing: true,
 };
 
 function todayKey() {
@@ -254,6 +441,86 @@ function normalizeAlerts(value) {
     }));
 }
 
+function normalizeSiteSettings(value) {
+  return {
+    ...defaultSiteSettings,
+    ...(value && typeof value === 'object' && !Array.isArray(value) ? value : {}),
+    radiusMeters: Number(value?.radiusMeters || defaultSiteSettings.radiusMeters),
+    locationCheckEnabled: Boolean(value?.locationCheckEnabled),
+    allowReadOnlyRemoteAccess: value?.allowReadOnlyRemoteAccess !== false,
+    managerOverrideEnabled: value?.managerOverrideEnabled !== false,
+  };
+}
+
+function normalizeAssets(value) {
+  const storedAssets = Array.isArray(value) && value.length ? value : [];
+  const source = storedAssets.length
+    ? [
+      ...storedAssets,
+      ...defaultAssets.filter((defaultAsset) => !storedAssets.some((asset) => asset.id === defaultAsset.id || (
+        asset.serialNumber && defaultAsset.serialNumber !== 'TBD' && asset.serialNumber === defaultAsset.serialNumber
+      ))),
+    ]
+    : defaultAssets;
+  return source.map((asset, index) => ({
+    ...asset,
+    id: asset.id || `asset-${index}-${Date.now()}`,
+    type: asset.type || 'other',
+    provider: asset.provider || '',
+    model: asset.model || '',
+    serialNumber: asset.serialNumber || '',
+    expectedVenue: asset.expectedVenue || 'Storage',
+    expectedStation: asset.expectedStation || asset.expectedStationRegister || '',
+    notes: asset.notes || '',
+    active: asset.active !== false,
+    condition: asset.condition || 'ok',
+    defaultRequiredForClosing: asset.defaultRequiredForClosing !== false,
+  }));
+}
+
+function normalizeEvents(value) {
+  return normalizeArray(value).map((event, index) => ({
+    ...blankEventForm,
+    ...event,
+    id: event.id || `event-${index}-${Date.now()}`,
+    date: event.date || todayKey(),
+  }));
+}
+
+function normalizeRecords(value) {
+  return normalizeArray(value).filter((record) => record && typeof record === 'object');
+}
+
+function isOverrideActive(history) {
+  const activeOverride = normalizeRecords(history)
+    .filter((entry) => entry.expiresAt && new Date(entry.expiresAt).getTime() > Date.now())
+    .sort((a, b) => new Date(b.expiresAt) - new Date(a.expiresAt))[0];
+  return activeOverride || null;
+}
+
+function toRadians(value) {
+  return (Number(value) * Math.PI) / 180;
+}
+
+function distanceMeters(fromLat, fromLng, toLat, toLng) {
+  const earthRadius = 6371000;
+  const dLat = toRadians(toLat - fromLat);
+  const dLng = toRadians(toLng - fromLng);
+  const lat1 = toRadians(fromLat);
+  const lat2 = toRadians(toLat);
+  const a = Math.sin(dLat / 2) ** 2 + Math.cos(lat1) * Math.cos(lat2) * Math.sin(dLng / 2) ** 2;
+  return earthRadius * 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
+}
+
+function assetHasIssue(check) {
+  return check && (
+    check.present === 'no'
+    || check.correctLocation === 'no'
+    || ['damaged', 'not_working', 'missing'].includes(check.condition)
+    || check.charging === 'no'
+  );
+}
+
 function handoverHasContent(note) {
   return Boolean(note && [note.nextShift, note.lowStock, note.maintenance, note.memberEvent].some((value) => value?.trim()));
 }
@@ -397,10 +664,10 @@ function AlertManagerModal({ user, onClose, onSave }) {
     needsImmediateHelp: false,
   });
 
-  function submit(event) {
+  async function submit(event) {
     event.preventDefault();
     if (!form.message.trim()) return;
-    onSave({
+    await onSave({
       id: `alert-${Date.now()}`,
       date: todayKey(),
       createdAt: new Date().toISOString(),
@@ -574,7 +841,7 @@ function Login({ onLogin, staffUsers }) {
   );
 }
 
-function TopBar({ user, selectedShift, onBack, onLogout, isOnline }) {
+function TopBar({ user, selectedShift, onBack, onLogout, isOnline, siteAccessStatus }) {
   const shiftLabel = selectedShift === 'manager'
     ? 'Manager dashboard'
     : shiftOptions.find((shift) => shift.id === selectedShift)?.label || 'Select shift';
@@ -588,6 +855,7 @@ function TopBar({ user, selectedShift, onBack, onLogout, isOnline }) {
         <span className={`pilot-status ${isOnline ? 'online' : 'offline'}`}>
           Local pilot | {isOnline ? 'Online' : 'Offline - local data available'}
         </span>
+        <span className={`shift-pill site-${siteAccessStatus}`}>{siteStatuses[siteAccessStatus] || 'Location unknown'}</span>
         {selectedShift && <span className="shift-pill">{shiftLabel}</span>}
         {selectedShift && <button type="button" className="ghost-button" onClick={onBack}>Change shift</button>}
         <button type="button" className="ghost-button" onClick={onLogout}>Log out</button>
@@ -721,7 +989,7 @@ function HandoverNotes({ user, shiftType, notes, setNotes }) {
   );
 }
 
-function StaffDashboard({ user, routines, logs, handoverNotes, finishRecords, alerts, responsibleAssignments, onAlert }) {
+function StaffDashboard({ user, routines, logs, handoverNotes, finishRecords, alerts, responsibleAssignments, events, cashSignoffs, assetChecks, onAlert }) {
   const date = todayKey();
   const todayLogs = logs.filter((log) => log.date === date);
   const todayHandovers = Object.values(handoverNotes).filter((note) => note.date === date && handoverHasContent(note));
@@ -731,6 +999,10 @@ function StaffDashboard({ user, routines, logs, handoverNotes, finishRecords, al
   const contributors = [...new Set(todayLogs.map((log) => log.completedBy))].sort();
   const recentLogs = [...todayLogs].sort((a, b) => new Date(b.completedAt) - new Date(a.completedAt)).slice(0, 8);
   const shifts = shiftOptions.filter((shift) => shift.id !== 'guides');
+  const todayResponsibilities = responsibleAssignments.filter((item) => item.date === date);
+  const todayEvents = events.filter((event) => event.date === date);
+  const cashIssues = cashSignoffs.filter((record) => record.date === date && (record.invoiceSent !== 'yes' || record.salesPunched !== 'yes' || record.settlementPerformed !== 'yes'));
+  const assetIssues = assetChecks.filter((record) => record.date === date && assetHasIssue(record));
 
   return (
     <main className="page">
@@ -761,14 +1033,32 @@ function StaffDashboard({ user, routines, logs, handoverNotes, finishRecords, al
       </section>
 
       <section className="manager-list">
-        <h2>Shift responsible</h2>
-        {responsibleAssignments.filter((item) => item.date === date).length === 0 && <p className="muted">No responsible assignments today.</p>}
-        {responsibleAssignments.filter((item) => item.date === date).map((item) => (
+        <h2>Responsibility roles</h2>
+        <p className="muted">Responsibility is role-based. Event lead, closing lead, cash/invoice lead and locking lead may be different people.</p>
+        {todayResponsibilities.length === 0 && <p className="muted">No responsible assignments today.</p>}
+        {todayResponsibilities.map((item) => (
           <article key={item.id} className="log-row">
-            <strong>{shiftLabels[item.shiftType]}</strong>
+            <strong>{responsibilityLabels[item.roleType] || 'Overall shift lead'}</strong>
             <span>{item.responsibleName} | assigned by {item.assignedBy}</span>
-            {item.note && <small>{item.note}</small>}
+            <small>{shiftLabels[item.shiftType] || item.shiftType}{item.eventId ? ' | event role' : ''}{item.note ? ` | ${item.note}` : ''}</small>
           </article>
+        ))}
+      </section>
+
+      <section className="manager-list">
+        <h2>Event / cash / asset issues</h2>
+        {todayEvents.length === 0 && cashIssues.length === 0 && assetIssues.length === 0 && <p className="muted">No event, cash or asset issues logged today.</p>}
+        {todayEvents.map((event) => (
+          <article key={event.id} className="log-row">
+            <strong>{event.eventName}</strong>
+            <span>{event.venue} | {event.startTime}-{event.endTime} | Event lead {event.eventResponsible || 'Unassigned'}</span>
+          </article>
+        ))}
+        {cashIssues.map((record) => (
+          <p key={record.id} className="attention-line"><small>Cash/invoice</small>{record.shiftType}<span>{record.comments || 'Missing signoff item'}</span></p>
+        ))}
+        {assetIssues.map((record) => (
+          <p key={record.id} className="attention-line"><small>Asset</small>{record.assetLabel}<span>{record.condition} | {record.comment || 'Needs attention'}</span></p>
         ))}
       </section>
 
@@ -827,6 +1117,301 @@ function StaffDashboard({ user, routines, logs, handoverNotes, finishRecords, al
   );
 }
 
+function CashInvoicePanel({ user, date, shiftType = 'event', eventId = '', cashSignoffs, setCashSignoffs, staffUsers, requestWriteAccess }) {
+  const existing = cashSignoffs.find((record) => record.date === date && record.shiftType === shiftType && (record.eventId || '') === eventId);
+  const [form, setForm] = useState(existing || blankCashForm);
+
+  async function saveCashSignoff(event) {
+    event.preventDefault();
+    if (!(await requestWriteAccess())) return;
+    if (form.settlementPerformed !== 'yes' || form.invoiceSent !== 'yes' || form.salesPunched !== 'yes') {
+      if (!form.comments.trim()) {
+        alert('Add a reason/comment if cash or invoice closeout is not complete.');
+        return;
+      }
+    }
+    const record = {
+      ...form,
+      id: `${date}-${shiftType}-${eventId || 'shift'}-cash`,
+      date,
+      shiftType,
+      eventId,
+      signedOffBy: form.signedOffBy || user.name,
+      signedOffAt: new Date().toISOString(),
+    };
+    const nextRecords = [
+      ...cashSignoffs.filter((item) => item.id !== record.id),
+      record,
+    ];
+    setCashSignoffs(nextRecords);
+    saveStorage(CASH_SIGNOFF_KEY, nextRecords);
+  }
+
+  return (
+    <section className="manager-list">
+      <h2>Cash / invoice responsibility</h2>
+      <p className="muted">The responsible person signs off that settlement and invoice/report work was completed, even if someone else performed settlement.</p>
+      <form className="editor-form compact-editor" onSubmit={saveCashSignoff}>
+        {[
+          ['tableCreated', 'Customer/table created today'],
+          ['salesPunched', 'All sales punched correctly'],
+          ['invoiceSent', 'Invoice/receipt/report sent'],
+          ['settlementPerformed', 'Cash/register settlement performed'],
+        ].map(([field, label]) => (
+          <label key={field}>
+            {label}
+            <select value={form[field]} onChange={(event) => setForm((current) => ({ ...current, [field]: event.target.value }))}>
+              <option value="">Select</option>
+              <option value="yes">Yes</option>
+              <option value="no">No</option>
+            </select>
+          </label>
+        ))}
+        <label>
+          Settlement performed by
+          <input list="cash-staff-list" value={form.settlementPerformedBy} onChange={(event) => setForm((current) => ({ ...current, settlementPerformedBy: event.target.value }))} />
+        </label>
+        <label>
+          Sign-off by
+          <input list="cash-staff-list" value={form.signedOffBy || user.name} onChange={(event) => setForm((current) => ({ ...current, signedOffBy: event.target.value }))} />
+        </label>
+        <datalist id="cash-staff-list">
+          {staffUsers.map((staff) => <option key={staff.id} value={staff.name} />)}
+        </datalist>
+        <label>
+          Comments / missing reason
+          <textarea rows="2" value={form.comments} onChange={(event) => setForm((current) => ({ ...current, comments: event.target.value }))} />
+        </label>
+        <button type="submit" className="primary-button compact-button">Save cash/invoice sign-off</button>
+      </form>
+    </section>
+  );
+}
+
+function AssetCheckPanel({ user, date, shiftType = 'closing', eventId = '', assets, assetChecks, setAssetChecks, requestWriteAccess }) {
+  const requiredAssets = assets.filter((asset) => asset.active !== false && asset.defaultRequiredForClosing !== false);
+  const checksByAsset = Object.fromEntries(assetChecks
+    .filter((check) => check.date === date && check.shiftType === shiftType && (check.eventId || '') === eventId)
+    .map((check) => [check.assetId, check]));
+  const [drafts, setDrafts] = useState({});
+
+  function valueFor(assetId, field, fallback = '') {
+    return drafts[assetId]?.[field] ?? checksByAsset[assetId]?.[field] ?? fallback;
+  }
+
+  async function saveAssetCheck(asset) {
+    if (!(await requestWriteAccess())) return;
+    const draft = drafts[asset.id] || {};
+    const record = {
+      id: `${date}-${shiftType}-${eventId || 'shift'}-${asset.id}`,
+      date,
+      shiftType,
+      eventId,
+      assetId: asset.id,
+      assetLabel: `${asset.provider} ${asset.model}`.trim(),
+      expectedVenue: asset.expectedVenue,
+      expectedStation: asset.expectedStation,
+      present: draft.present ?? checksByAsset[asset.id]?.present ?? '',
+      correctLocation: draft.correctLocation ?? checksByAsset[asset.id]?.correctLocation ?? '',
+      condition: draft.condition ?? checksByAsset[asset.id]?.condition ?? asset.condition,
+      charging: draft.charging ?? checksByAsset[asset.id]?.charging ?? '',
+      serialChecked: draft.serialChecked ?? checksByAsset[asset.id]?.serialChecked ?? '',
+      serialLast4: draft.serialLast4 ?? checksByAsset[asset.id]?.serialLast4 ?? '',
+      comment: draft.comment ?? checksByAsset[asset.id]?.comment ?? '',
+      signedOffBy: user.name,
+      signedOffAt: new Date().toISOString(),
+    };
+    if (assetHasIssue(record) && !record.comment.trim()) {
+      alert('Add a comment for missing, damaged, not charging or wrong-location assets.');
+      return;
+    }
+    const nextChecks = [
+      ...assetChecks.filter((check) => check.id !== record.id),
+      record,
+    ];
+    setAssetChecks(nextChecks);
+    saveStorage(ASSET_CHECK_KEY, nextChecks);
+  }
+
+  return (
+    <section className="manager-list">
+      <h2>Payment terminals and POS devices</h2>
+      <p className="muted">Asset check responsible: I confirm payment terminals and POS devices have been checked.</p>
+      {requiredAssets.map((asset) => (
+        <article key={asset.id} className={`log-row priority-${asset.condition === 'missing' ? 'critical' : 'normal'}`}>
+          <strong>{asset.provider} {asset.model}</strong>
+          <span>{asset.expectedVenue} | {asset.expectedStation} | Serial {asset.serialNumber || 'TBD'}</span>
+          {asset.notes && <small>{asset.notes}</small>}
+          <div className="editor-form compact-editor asset-check-grid">
+            {[
+              ['present', 'Present'],
+              ['correctLocation', 'Correct location'],
+              ['charging', 'Charging'],
+              ['serialChecked', 'Serial checked'],
+            ].map(([field, label]) => (
+              <label key={field}>
+                {label}
+                <select value={valueFor(asset.id, field)} onChange={(event) => setDrafts((current) => ({ ...current, [asset.id]: { ...current[asset.id], [field]: event.target.value } }))}>
+                  <option value="">Select</option>
+                  <option value="yes">Yes</option>
+                  <option value="no">No</option>
+                </select>
+              </label>
+            ))}
+            <label>
+              Condition
+              <select value={valueFor(asset.id, 'condition', asset.condition)} onChange={(event) => setDrafts((current) => ({ ...current, [asset.id]: { ...current[asset.id], condition: event.target.value } }))}>
+                <option value="ok">OK</option>
+                <option value="damaged">Damaged</option>
+                <option value="not_working">Not working</option>
+                <option value="missing">Missing</option>
+              </select>
+            </label>
+            <label>
+              Last 4 serial digits
+              <input value={valueFor(asset.id, 'serialLast4')} onChange={(event) => setDrafts((current) => ({ ...current, [asset.id]: { ...current[asset.id], serialLast4: event.target.value } }))} />
+            </label>
+            <label>
+              Comment
+              <textarea rows="2" value={valueFor(asset.id, 'comment')} onChange={(event) => setDrafts((current) => ({ ...current, [asset.id]: { ...current[asset.id], comment: event.target.value } }))} />
+            </label>
+            <button type="button" className="primary-button compact-button" onClick={() => saveAssetCheck(asset)}>Save asset check</button>
+          </div>
+        </article>
+      ))}
+    </section>
+  );
+}
+
+function EventFloorDashboard({
+  user,
+  events,
+  responsibleAssignments,
+  cashSignoffs,
+  setCashSignoffs,
+  assets,
+  assetChecks,
+  setAssetChecks,
+  eventTaskChecks,
+  setEventTaskChecks,
+  staffUsers,
+  requestWriteAccess,
+  onShowOverview,
+  onGuides,
+}) {
+  const date = todayKey();
+  const todayEvents = events.filter((event) => event.date === date);
+  const [activeEventId, setActiveEventId] = useState(todayEvents[0]?.id || '');
+  const activeEvent = todayEvents.find((event) => event.id === activeEventId) || todayEvents[0];
+  const activeEventIdValue = activeEvent?.id || '';
+  const eventAssignments = responsibleAssignments.filter((assignment) => assignment.date === date && assignment.eventId === activeEventIdValue);
+  const isEventResponsible = eventAssignments.some((assignment) => assignment.roleType === 'event_responsible' && isResponsibleUser(user, assignment));
+  const checksForEvent = eventTaskChecks.filter((check) => check.date === date && (check.eventId || '') === activeEventIdValue);
+  const checkedIds = new Set(checksForEvent.map((check) => check.taskId));
+
+  async function toggleEventTask(taskId, title, group) {
+    if (!(await requestWriteAccess())) return;
+    const existing = eventTaskChecks.find((check) => check.date === date && (check.eventId || '') === activeEventIdValue && check.taskId === taskId);
+    const nextChecks = existing
+      ? eventTaskChecks.filter((check) => check.id !== existing.id)
+      : [
+        ...eventTaskChecks,
+        {
+          id: `${date}-${activeEventIdValue || 'general'}-${taskId}`,
+          date,
+          eventId: activeEventIdValue,
+          taskId,
+          title,
+          group,
+          completedBy: user.name,
+          completedAt: new Date().toISOString(),
+        },
+      ];
+    setEventTaskChecks(nextChecks);
+    saveStorage(EVENT_TASK_CHECK_KEY, nextChecks);
+  }
+
+  function renderTaskGroup(title, tasks, group) {
+    return (
+      <section className="manager-list">
+        <h2>{title}</h2>
+        {tasks.map((task) => {
+          const taskId = slug(`${group}-${task}`);
+          return (
+            <button key={taskId} type="button" className={`check-row ${checkedIds.has(taskId) ? 'is-checked' : ''}`} onClick={() => toggleEventTask(taskId, task, group)}>
+              <span>{checkedIds.has(taskId) ? 'OK' : ''}</span>
+              {task}
+            </button>
+          );
+        })}
+      </section>
+    );
+  }
+
+  return (
+    <main className="page">
+      <section className="intro compact">
+        <p className="eyebrow">Youngs</p>
+        <h1>Event Floor Manager</h1>
+        <p className="muted">{user.name}</p>
+        <div className="backup-actions">
+          <button type="button" className="ghost-button compact-button" onClick={onShowOverview}>Today's overview</button>
+          <button type="button" className="ghost-button compact-button" onClick={onGuides}>Guides</button>
+        </div>
+      </section>
+
+      <section className="manager-list">
+        <h2>Today's events</h2>
+        {todayEvents.length === 0 && <p className="muted">No event cards created for today yet.</p>}
+        {todayEvents.length > 0 && (
+          <label>
+            Active event
+            <select value={activeEventIdValue} onChange={(event) => setActiveEventId(event.target.value)}>
+              {todayEvents.map((event) => <option key={event.id} value={event.id}>{event.eventName}</option>)}
+            </select>
+          </label>
+        )}
+        {activeEvent && (
+          <article className="log-row">
+            <strong>{activeEvent.eventName}</strong>
+            <span>{activeEvent.client} | {activeEvent.venue} | {activeEvent.startTime}-{activeEvent.endTime} | {activeEvent.expectedGuests} guests</span>
+            <small>Event: {activeEvent.eventResponsible || 'Unassigned'} | Closing: {activeEvent.closingResponsible || 'Unassigned'} | Cash/invoice: {activeEvent.cashInvoiceResponsible || 'Unassigned'} | Locking: {activeEvent.lockingResponsible || 'Unassigned'}</small>
+            {activeEvent.notes && <small>{activeEvent.notes}</small>}
+            {isEventResponsible && <p className="all-clear">You are event responsible for this event.</p>}
+          </article>
+        )}
+      </section>
+
+      {renderTaskGroup('Event readiness', ['Tech ready', 'Room setup ready', 'Food/catering ready', 'Bar ready', 'Allergy info ready', 'Signage ready', 'Host/contact confirmed'], 'readiness')}
+      {renderTaskGroup('During event', ['Breaks handled', 'Water/coffee refreshed', 'Toilets checked', 'Client updated', 'Issues logged'], 'during')}
+      {renderTaskGroup('Event closeout', ['Client happy / goodbye done', 'All sales punched', 'Open customer/table checked', 'Invoice/receipt/report sent', 'Payment terminal/iPads checked', 'Venue reset', 'Trash/glass/pant handled', 'Handover note written'], 'closeout')}
+      {renderTaskGroup('Weekly event floor tasks', weeklyEventTasks, 'weekly')}
+      {renderTaskGroup('Monthly event floor tasks', monthlyEventTasks, 'monthly')}
+
+      <CashInvoicePanel
+        user={user}
+        date={date}
+        shiftType="event"
+        eventId={activeEventIdValue}
+        cashSignoffs={cashSignoffs}
+        setCashSignoffs={setCashSignoffs}
+        staffUsers={staffUsers}
+        requestWriteAccess={requestWriteAccess}
+      />
+      <AssetCheckPanel
+        user={user}
+        date={date}
+        shiftType="event"
+        eventId={activeEventIdValue}
+        assets={assets}
+        assetChecks={assetChecks}
+        setAssetChecks={setAssetChecks}
+        requestWriteAccess={requestWriteAccess}
+      />
+    </main>
+  );
+}
+
 function Checklist({
   user,
   shiftType,
@@ -840,6 +1425,13 @@ function Checklist({
   alerts,
   setAlerts,
   responsibleAssignments,
+  cashSignoffs,
+  setCashSignoffs,
+  assets,
+  assetChecks,
+  setAssetChecks,
+  staffUsers,
+  requestWriteAccess,
   onShowOverview,
   onChangeShift,
   onLogout,
@@ -879,7 +1471,8 @@ function Checklist({
   const grouped = groupBy(visibleTasks, (task) => task.section);
   const allGrouped = groupBy(tasks, (task) => task.section);
 
-  function saveTaskStatus(task, status) {
+  async function saveTaskStatus(task, status) {
+    if (!(await requestWriteAccess())) return;
     const input = drafts[task.id] || '';
     const comment = comments[task.id] || '';
     if (status === 'done' && task.requiresComment && !comment.trim()) {
@@ -925,7 +1518,8 @@ function Checklist({
     saveStorage(LOG_KEY, nextLogs);
   }
 
-  function saveAlert(alertRecord) {
+  async function saveAlert(alertRecord) {
+    if (!(await requestWriteAccess())) return;
     const nextAlerts = [...alerts, alertRecord];
     setAlerts(nextAlerts);
     saveStorage(ALERT_KEY, nextAlerts);
@@ -933,7 +1527,8 @@ function Checklist({
     window.alert('Alert saved locally.\n\nPilot note: real phone notifications require Slack/email/backend integration later.');
   }
 
-  function finishShift() {
+  async function finishShift() {
+    if (!(await requestWriteAccess())) return;
     if (criticalRemaining > 0 && !window.confirm('There are still critical tasks missing. Are you sure you want to finish this shift?')) {
       return;
     }
@@ -1197,6 +1792,28 @@ function Checklist({
         <p className="muted">Use this when you are done with this shift on this device.</p>
         <button type="button" className="primary-button" onClick={finishShift}>Finish shift</button>
       </section>
+      {['closing', 'event'].includes(shiftType) && (
+        <>
+          <CashInvoicePanel
+            user={user}
+            date={date}
+            shiftType={shiftType}
+            cashSignoffs={cashSignoffs}
+            setCashSignoffs={setCashSignoffs}
+            staffUsers={staffUsers}
+            requestWriteAccess={requestWriteAccess}
+          />
+          <AssetCheckPanel
+            user={user}
+            date={date}
+            shiftType={shiftType}
+            assets={assets}
+            assetChecks={assetChecks}
+            setAssetChecks={setAssetChecks}
+            requestWriteAccess={requestWriteAccess}
+          />
+        </>
+      )}
       {showAlert && <AlertManagerModal user={user} onClose={() => setShowAlert(false)} onSave={saveAlert} />}
     </main>
   );
@@ -1217,6 +1834,23 @@ function ManagerDashboard({
   setAlerts,
   responsibleAssignments,
   setResponsibleAssignments,
+  siteSettings,
+  setSiteSettings,
+  siteOverrides,
+  setSiteOverrides,
+  events,
+  setEvents,
+  cashSignoffs,
+  setCashSignoffs,
+  assets,
+  setAssets,
+  assetChecks,
+  setAssetChecks,
+  eventTaskChecks,
+  setEventTaskChecks,
+  siteAccess,
+  checkLocation,
+  requestWriteAccess,
   onResetPilotNotice,
   user,
 }) {
@@ -1228,11 +1862,21 @@ function ManagerDashboard({
   const [message, setMessage] = useState('');
   const [clearPhrase, setClearPhrase] = useState('');
   const [lastExportAt, setLastExportAt] = useState(() => readStorage(LAST_EXPORT_KEY, ''));
-  const [responsibleForm, setResponsibleForm] = useState({ shiftType: 'closing', responsibleName: '', note: '' });
+  const [responsibleForm, setResponsibleForm] = useState({ shiftType: 'closing', roleType: 'overall_shift_lead', eventId: '', responsibleName: '', note: '' });
   const [showStaffCodes, setShowStaffCodes] = useState(false);
   const [staffForm, setStaffForm] = useState(blankStaffForm);
+  const [siteForm, setSiteForm] = useState(siteSettings);
+  const [overrideForm, setOverrideForm] = useState({ duration: '15', reason: '' });
+  const [eventForm, setEventForm] = useState(blankEventForm);
+  const [assetForm, setAssetForm] = useState(blankAssetForm);
 
   const activeShifts = shiftOptions.filter((shift) => shift.id !== 'guides');
+  const todayEvents = events.filter((event) => event.date === date);
+  const dateCashSignoffs = cashSignoffs.filter((record) => record.date === date);
+  const dateAssetChecks = assetChecks.filter((record) => record.date === date);
+  const assetIssues = dateAssetChecks.filter(assetHasIssue);
+  const activeAssets = assets.filter((asset) => asset.active !== false);
+  const activeSiteOverride = isOverrideActive(siteOverrides);
   const allTasks = activeShifts.flatMap((shift) => flattenTasks(routines, shift.id, date));
   const visibleTasks = allTasks.filter((task) => shiftFilter === 'all' || task.shiftType === shiftFilter);
   const dateLogs = logs.filter((log) => log.date === date);
@@ -1339,8 +1983,25 @@ function ManagerDashboard({
     const lines = [
       'Mesh Shift Log - Daily report',
       `Date: ${date}`,
+      `Site override used: ${siteOverrides.some((entry) => entry.overrideAt?.startsWith(date)) ? 'yes' : 'no'}`,
       '',
     ];
+    if (dateResponsible.length) {
+      lines.push('Responsibility assignments:');
+      dateResponsible.forEach((assignment) => {
+        const eventName = assignment.eventId ? todayEvents.find((event) => event.id === assignment.eventId)?.eventName : '';
+        lines.push(`- ${responsibilityLabels[assignment.roleType] || 'Overall shift lead'}: ${assignment.responsibleName} (${eventName || shiftLabels[assignment.shiftType] || assignment.shiftType})`);
+      });
+      lines.push('');
+    }
+    if (todayEvents.length) {
+      lines.push('Events:');
+      todayEvents.forEach((event) => {
+        lines.push(`- ${event.eventName} | ${event.client} | ${event.venue} | ${event.startTime}-${event.endTime}`);
+        lines.push(`  Event: ${event.eventResponsible || 'Unassigned'} | Cash/invoice: ${event.cashInvoiceResponsible || 'Unassigned'} | Locking: ${event.lockingResponsible || 'Unassigned'}`);
+      });
+      lines.push('');
+    }
     activeShifts.forEach((shift) => {
       const shiftTasks = flattenTasks(routines, shift.id, date);
       const shiftLogs = dateLogs.filter((log) => log.shiftType === shift.id);
@@ -1411,6 +2072,23 @@ function ManagerDashboard({
       });
       lines.push('');
     }
+    if (dateCashSignoffs.length) {
+      lines.push('Cash/invoice signoffs:');
+      dateCashSignoffs.forEach((record) => {
+        lines.push(`- ${record.shiftType}${record.eventId ? ' event' : ''}: invoice/report ${record.invoiceSent || 'missing'}, sales ${record.salesPunched || 'missing'}, settlement ${record.settlementPerformed || 'missing'}`);
+        lines.push(`  Performed by: ${record.settlementPerformedBy || 'Missing'} | Signed off by: ${record.signedOffBy || 'Missing'}`);
+        if (record.comments) lines.push(`  Comment: ${record.comments}`);
+      });
+      lines.push('');
+    }
+    if (assetIssues.length) {
+      lines.push('Asset check issues:');
+      assetIssues.forEach((record) => {
+        lines.push(`- ${record.assetLabel}: ${record.condition} | present ${record.present || 'missing'} | charging ${record.charging || 'missing'}`);
+        if (record.comment) lines.push(`  Comment: ${record.comment}`);
+      });
+      lines.push('');
+    }
     return lines.join('\n').trim();
   }
 
@@ -1432,6 +2110,13 @@ function ManagerDashboard({
       `Acknowledged alerts: ${alerts.filter((alert) => alertStatus(alert) === 'acknowledged').length}`,
       `Resolved alerts: ${alerts.filter((alert) => alertStatus(alert) === 'resolved').length}`,
       `Responsible assignments: ${responsibleAssignments.length}`,
+      `Assets: ${assets.length}`,
+      `Active assets: ${activeAssets.length}`,
+      `Asset issues today: ${assetIssues.length}`,
+      `Events: ${events.length}`,
+      `Cash/invoice signoffs: ${cashSignoffs.length}`,
+      `Site check: ${siteSettings.locationCheckEnabled ? 'enabled' : 'disabled'}`,
+      `Location overrides: ${siteOverrides.length}`,
       `Routine source: ${usingDefaultRoutines ? 'default routines' : 'local edited/imported routines'}`,
       `LocalStorage estimate: ${estimateLocalStorageSize()}`,
       `Last backup: ${lastExportAt ? formatBackupTime(lastExportAt) : 'none'}`,
@@ -1478,6 +2163,13 @@ function ManagerDashboard({
       finishRecords,
       alerts,
       responsibleAssignments,
+      siteSettings,
+      siteOverrides,
+      events,
+      cashSignoffs,
+      assets,
+      assetChecks,
+      eventTaskChecks,
       lastExportAt: exportedAt,
       settings: {
         pilotNoticeAccepted: readStorage(PILOT_NOTICE_KEY, false),
@@ -1501,7 +2193,7 @@ function ManagerDashboard({
       return;
     }
     const confirmed = window.confirm(
-      'This clears local shift logs, handover notes, alerts, finish records and responsible assignments from this browser only. Routine setup will stay. Export a backup first if needed.',
+      'This clears local shift logs, handover notes, alerts, finish records, responsible assignments, events, signoffs, asset checks and override history from this browser only. Routine setup, site settings, staff codes and asset registry will stay. Export a backup first if needed.',
     );
     if (!confirmed) return;
     setLogs([]);
@@ -1509,11 +2201,21 @@ function ManagerDashboard({
     setFinishRecords([]);
     setAlerts([]);
     setResponsibleAssignments([]);
+    setSiteOverrides([]);
+    setEvents([]);
+    setCashSignoffs([]);
+    setAssetChecks([]);
+    setEventTaskChecks([]);
     saveStorage(LOG_KEY, []);
     saveStorage(HANDOVER_KEY, {});
     saveStorage(FINISH_KEY, []);
     saveStorage(ALERT_KEY, []);
     saveStorage(RESPONSIBLE_KEY, []);
+    saveStorage(SITE_OVERRIDE_KEY, []);
+    saveStorage(EVENTS_KEY, []);
+    saveStorage(CASH_SIGNOFF_KEY, []);
+    saveStorage(ASSET_CHECK_KEY, []);
+    saveStorage(EVENT_TASK_CHECK_KEY, []);
     setClearPhrase('');
     setMessage('Test logs cleared from this browser.');
   }
@@ -1559,6 +2261,12 @@ function ManagerDashboard({
         if (data.alerts && !Array.isArray(data.alerts)) throw new Error('Alerts must be an array.');
         if (data.responsibleAssignments && !Array.isArray(data.responsibleAssignments)) throw new Error('Responsible assignments must be an array.');
         if (data.staffUsers) validateStaffUsers(data.staffUsers);
+        if (data.siteOverrides && !Array.isArray(data.siteOverrides)) throw new Error('Site overrides must be an array.');
+        if (data.events && !Array.isArray(data.events)) throw new Error('Events must be an array.');
+        if (data.cashSignoffs && !Array.isArray(data.cashSignoffs)) throw new Error('Cash signoffs must be an array.');
+        if (data.assets && !Array.isArray(data.assets)) throw new Error('Assets must be an array.');
+        if (data.assetChecks && !Array.isArray(data.assetChecks)) throw new Error('Asset checks must be an array.');
+        if (data.eventTaskChecks && !Array.isArray(data.eventTaskChecks)) throw new Error('Event task checks must be an array.');
         const previewLogs = Array.isArray(data.logs) ? data.logs : [];
         const previewHandovers = normalizeHandovers(data.handoverNotes || {});
         const previewDates = new Set([
@@ -1574,6 +2282,8 @@ function ManagerDashboard({
           `Finish records: ${Array.isArray(data.finishRecords) ? data.finishRecords.length : 0}`,
           `Routines included: ${Array.isArray(data.routines) ? 'yes' : 'no'}`,
           `Staff config included: ${Array.isArray(data.staffUsers) ? 'yes' : 'no'}`,
+          `Events: ${Array.isArray(data.events) ? data.events.length : 0}`,
+          `Assets: ${Array.isArray(data.assets) ? data.assets.length : 0}`,
           '',
           'Import this backup into this browser?',
         ].join('\n');
@@ -1612,6 +2322,38 @@ function ManagerDashboard({
         if (data.responsibleAssignments) {
           setResponsibleAssignments(data.responsibleAssignments);
           saveStorage(RESPONSIBLE_KEY, data.responsibleAssignments);
+        }
+        if (data.siteSettings) {
+          const normalizedSite = normalizeSiteSettings(data.siteSettings);
+          setSiteSettings(normalizedSite);
+          setSiteForm(normalizedSite);
+          saveStorage(SITE_SETTINGS_KEY, normalizedSite);
+        }
+        if (data.siteOverrides) {
+          setSiteOverrides(data.siteOverrides);
+          saveStorage(SITE_OVERRIDE_KEY, data.siteOverrides);
+        }
+        if (data.events) {
+          const normalizedEvents = normalizeEvents(data.events);
+          setEvents(normalizedEvents);
+          saveStorage(EVENTS_KEY, normalizedEvents);
+        }
+        if (data.cashSignoffs) {
+          setCashSignoffs(data.cashSignoffs);
+          saveStorage(CASH_SIGNOFF_KEY, data.cashSignoffs);
+        }
+        if (data.assets) {
+          const normalizedAssets = normalizeAssets(data.assets);
+          setAssets(normalizedAssets);
+          saveStorage(ASSET_REGISTRY_KEY, normalizedAssets);
+        }
+        if (data.assetChecks) {
+          setAssetChecks(data.assetChecks);
+          saveStorage(ASSET_CHECK_KEY, data.assetChecks);
+        }
+        if (data.eventTaskChecks) {
+          setEventTaskChecks(data.eventTaskChecks);
+          saveStorage(EVENT_TASK_CHECK_KEY, data.eventTaskChecks);
         }
         if (data.lastExportAt || data.exportedAt) {
           const importedExportAt = data.lastExportAt || data.exportedAt;
@@ -1658,8 +2400,9 @@ function ManagerDashboard({
     event.target.value = '';
   }
 
-  function saveEditorTask(event) {
+  async function saveEditorTask(event) {
     event.preventDefault();
+    if (!(await requestWriteAccess())) return;
     if (!editorTask.title.trim()) {
       setMessage('Task title is required.');
       return;
@@ -1707,7 +2450,8 @@ function ManagerDashboard({
     window.scrollTo({ top: document.body.scrollHeight, behavior: 'smooth' });
   }
 
-  function deactivateTask(task) {
+  async function deactivateTask(task) {
+    if (!(await requestWriteAccess())) return;
     const next = normalizeRoutines(routines).map((routine) => ({
       ...routine,
       tasks: routine.tasks.map((item) => (item.id === task.id ? { ...item, active: false } : item)),
@@ -1717,7 +2461,8 @@ function ManagerDashboard({
     setMessage('Task deactivated.');
   }
 
-  function updateAlert(alertId, status) {
+  async function updateAlert(alertId, status) {
+    if (!(await requestWriteAccess())) return;
     const latestAlerts = normalizeAlerts(readStorage(ALERT_KEY, alerts));
     const currentAlert = latestAlerts.find((alert) => String(alert.id) === String(alertId));
     if (!currentAlert) {
@@ -1757,8 +2502,9 @@ function ManagerDashboard({
     });
   }
 
-  function saveStaffUser(event) {
+  async function saveStaffUser(event) {
     event.preventDefault();
+    if (!(await requestWriteAccess())) return;
     const name = staffForm.name.trim();
     const code = staffForm.code.trim();
     if (!name) {
@@ -1800,7 +2546,8 @@ function ManagerDashboard({
     setMessage('Staff code saved.');
   }
 
-  function toggleStaffActive(staff) {
+  async function toggleStaffActive(staff) {
+    if (!(await requestWriteAccess())) return;
     const isCurrentUser = staff.id === user.id || staff.code === user.code || staff.name === user.name;
     if (staff.active !== false && isCurrentUser) {
       const confirmed = window.confirm('This is the currently logged-in manager. Deactivate anyway? Make sure another manager code works first.');
@@ -1866,16 +2613,144 @@ function ManagerDashboard({
     event.target.value = '';
   }
 
-  function assignResponsible(event) {
+  async function saveSiteSettings(event) {
     event.preventDefault();
+    if (!(await requestWriteAccess())) return;
+    const nextSettings = normalizeSiteSettings(siteForm);
+    setSiteSettings(nextSettings);
+    saveStorage(SITE_SETTINGS_KEY, nextSettings);
+    setMessage('Site access settings saved.');
+  }
+
+  function setSiteFromDevice() {
+    if (!navigator.geolocation) {
+      setMessage('Location is not available in this browser.');
+      return;
+    }
+    navigator.geolocation.getCurrentPosition(
+      (position) => {
+        const nextForm = {
+          ...siteForm,
+          latitude: String(position.coords.latitude),
+          longitude: String(position.coords.longitude),
+        };
+        setSiteForm(nextForm);
+        setMessage('Site location filled from this device. Save settings to apply it.');
+      },
+      () => setMessage('Could not get browser location.'),
+      { enableHighAccuracy: true, timeout: 9000, maximumAge: 60000 },
+    );
+  }
+
+  async function activateOverride() {
+    if (!siteSettings.managerOverrideEnabled) {
+      setMessage('Manager override is disabled in site settings.');
+      return;
+    }
+    const confirmed = window.confirm('This allows operational changes from this browser even if location check fails. Use only when needed.');
+    if (!confirmed) return;
+    const now = new Date();
+    const duration = overrideForm.duration === 'day'
+      ? new Date(`${todayKey()}T23:59:59`)
+      : new Date(now.getTime() + Number(overrideForm.duration) * 60000);
+    const override = {
+      id: `override-${Date.now()}`,
+      overrideBy: user.name,
+      overrideAt: now.toISOString(),
+      expiresAt: duration.toISOString(),
+      reason: overrideForm.reason.trim(),
+    };
+    const nextOverrides = [...siteOverrides, override];
+    setSiteOverrides(nextOverrides);
+    saveStorage(SITE_OVERRIDE_KEY, nextOverrides);
+    setOverrideForm({ duration: '15', reason: '' });
+    setMessage('Manager override active.');
+  }
+
+  async function saveEvent(event) {
+    event.preventDefault();
+    if (!(await requestWriteAccess())) return;
+    if (!eventForm.eventName.trim()) {
+      setMessage('Event name is required.');
+      return;
+    }
+    const julie = staffUsers.find((staff) => staff.name.toLowerCase() === 'julie');
+    const savedEvent = {
+      ...eventForm,
+      id: eventForm.id || `event-${Date.now()}`,
+      date,
+      eventName: eventForm.eventName.trim(),
+      eventResponsible: eventForm.julieLeads && julie ? julie.name : eventForm.eventResponsible,
+      createdBy: eventForm.createdBy || user.name,
+      updatedAt: new Date().toISOString(),
+    };
+    const nextEvents = [
+      ...events.filter((item) => item.id !== savedEvent.id),
+      savedEvent,
+    ];
+    setEvents(nextEvents);
+    saveStorage(EVENTS_KEY, nextEvents);
+    const roleAssignments = [
+      ['event_responsible', savedEvent.eventResponsible],
+      ['closing_responsible', savedEvent.closingResponsible],
+      ['cash_invoice_responsible', savedEvent.cashInvoiceResponsible],
+      ['locking_alarm_responsible', savedEvent.lockingResponsible],
+    ].filter(([, person]) => person);
+    const nextAssignments = [
+      ...responsibleAssignments.filter((item) => item.eventId !== savedEvent.id),
+      ...roleAssignments.map(([roleType, person]) => ({
+        id: `${date}-${savedEvent.id}-${roleType}`,
+        date,
+        shiftType: 'event',
+        eventId: savedEvent.id,
+        roleType,
+        responsibleName: person,
+        assignedBy: user.name,
+        assignedAt: new Date().toISOString(),
+        note: savedEvent.eventName,
+      })),
+    ];
+    setResponsibleAssignments(nextAssignments);
+    saveStorage(RESPONSIBLE_KEY, nextAssignments);
+    setEventForm(blankEventForm);
+    setMessage('Event saved.');
+  }
+
+  async function saveAsset(event) {
+    event.preventDefault();
+    if (!(await requestWriteAccess())) return;
+    if (!assetForm.model.trim() && !assetForm.serialNumber.trim()) {
+      setMessage('Asset needs a model/name or serial number.');
+      return;
+    }
+    const savedAsset = {
+      ...assetForm,
+      id: assetForm.id || `asset-${Date.now()}`,
+      updatedAt: new Date().toISOString(),
+    };
+    const nextAssets = [
+      ...assets.filter((asset) => asset.id !== savedAsset.id),
+      savedAsset,
+    ];
+    setAssets(nextAssets);
+    saveStorage(ASSET_REGISTRY_KEY, nextAssets);
+    setAssetForm(blankAssetForm);
+    setMessage('Asset saved.');
+  }
+
+  async function assignResponsible(event) {
+    event.preventDefault();
+    if (!(await requestWriteAccess())) return;
     if (!responsibleForm.responsibleName.trim()) {
       setMessage('Responsible person name is required.');
       return;
     }
     const assignment = {
-      id: `${date}-${responsibleForm.shiftType}`,
+      id: `${date}-${responsibleForm.shiftType}-${responsibleForm.eventId || 'shift'}-${responsibleForm.roleType}`,
       date,
       shiftType: responsibleForm.shiftType,
+      roleType: responsibleForm.roleType,
+      eventId: responsibleForm.eventId,
       responsibleName: responsibleForm.responsibleName.trim(),
       assignedBy: user.name,
       assignedAt: new Date().toISOString(),
@@ -1918,6 +2793,46 @@ function ManagerDashboard({
             {activeShifts.map((shift) => <option key={shift.id} value={shift.id}>{shift.label}</option>)}
           </select>
         </label>
+      </section>
+
+      <section className="manager-list">
+        <div className="panel-title-row">
+          <div>
+            <p className="eyebrow">Youngs site mode</p>
+            <h2>Site access</h2>
+          </div>
+          <span className={`shift-pill site-${activeSiteOverride ? 'override' : siteAccess.status}`}>{siteStatuses[activeSiteOverride ? 'override' : siteAccess.status]}</span>
+        </div>
+        <p className="muted">Local on-site check. This is a practical browser guardrail, not real security.</p>
+        {siteAccess.status === 'away' && <p className="critical-warning">You appear to be away from Youngs. You can view the app, but operational changes require being on site.</p>}
+        <form className="editor-form compact-editor" onSubmit={saveSiteSettings}>
+          <label>Site name<input value={siteForm.siteName} onChange={(event) => setSiteForm((current) => ({ ...current, siteName: event.target.value }))} /></label>
+          <label>Latitude<input value={siteForm.latitude} onChange={(event) => setSiteForm((current) => ({ ...current, latitude: event.target.value }))} /></label>
+          <label>Longitude<input value={siteForm.longitude} onChange={(event) => setSiteForm((current) => ({ ...current, longitude: event.target.value }))} /></label>
+          <label>Allowed radius meters<input type="number" value={siteForm.radiusMeters} onChange={(event) => setSiteForm((current) => ({ ...current, radiusMeters: event.target.value }))} /></label>
+          <label className="toggle-row"><input type="checkbox" checked={siteForm.locationCheckEnabled} onChange={(event) => setSiteForm((current) => ({ ...current, locationCheckEnabled: event.target.checked }))} /> Location check enabled</label>
+          <label className="toggle-row"><input type="checkbox" checked={siteForm.allowReadOnlyRemoteAccess} onChange={(event) => setSiteForm((current) => ({ ...current, allowReadOnlyRemoteAccess: event.target.checked }))} /> Allow read-only remote access</label>
+          <label className="toggle-row"><input type="checkbox" checked={siteForm.managerOverrideEnabled} onChange={(event) => setSiteForm((current) => ({ ...current, managerOverrideEnabled: event.target.checked }))} /> Manager override enabled</label>
+          <div className="inline-actions">
+            <button type="button" className="ghost-button compact-button" onClick={setSiteFromDevice}>Set site location from this device</button>
+            <button type="button" className="ghost-button compact-button" onClick={checkLocation}>Check my location</button>
+            <button type="submit" className="primary-button compact-button">Save site settings</button>
+          </div>
+        </form>
+        <div className="editor-form compact-editor">
+          <h3>Manager override</h3>
+          {activeSiteOverride && <p className="all-clear">Override active until {formatDateTime(activeSiteOverride.expiresAt)} by {activeSiteOverride.overrideBy}.</p>}
+          <label>
+            Duration
+            <select value={overrideForm.duration} onChange={(event) => setOverrideForm((current) => ({ ...current, duration: event.target.value }))}>
+              <option value="15">15 minutes</option>
+              <option value="60">1 hour</option>
+              <option value="day">Rest of day</option>
+            </select>
+          </label>
+          <label>Reason/comment<input value={overrideForm.reason} onChange={(event) => setOverrideForm((current) => ({ ...current, reason: event.target.value }))} /></label>
+          <button type="button" className="primary-button compact-button" onClick={activateOverride}>Enable temporary override</button>
+        </div>
       </section>
 
       <section className="alert-dashboard-panel">
@@ -2014,6 +2929,52 @@ function ManagerDashboard({
         </article>
       </section>
 
+      <section className="manager-list">
+        <h2>Events</h2>
+        <p className="muted">Create local event cards for Event Floor Manager overview. Julie can be event responsible without becoming cash/invoice or locking responsible.</p>
+        {todayEvents.length === 0 && <p className="muted">No event cards for this date.</p>}
+        {todayEvents.map((event) => (
+          <article key={event.id} className="log-row">
+            <strong>{event.eventName}</strong>
+            <span>{event.client} | {event.venue} | {event.startTime}-{event.endTime} | {event.expectedGuests} guests</span>
+            <small>Event: {event.eventResponsible || 'Unassigned'} | Closing: {event.closingResponsible || 'Unassigned'} | Cash/invoice: {event.cashInvoiceResponsible || 'Unassigned'} | Locking: {event.lockingResponsible || 'Unassigned'}</small>
+            <div className="inline-actions">
+              <button type="button" className="ghost-button compact-button" onClick={() => setEventForm(event)}>Edit event</button>
+            </div>
+          </article>
+        ))}
+        <form className="editor-form compact-editor" onSubmit={saveEvent}>
+          <label>Event name<input value={eventForm.eventName} onChange={(event) => setEventForm((current) => ({ ...current, eventName: event.target.value }))} /></label>
+          <label>Client/company<input value={eventForm.client} onChange={(event) => setEventForm((current) => ({ ...current, client: event.target.value }))} /></label>
+          <label>
+            Venue
+            <select value={eventForm.venue} onChange={(event) => setEventForm((current) => ({ ...current, venue: event.target.value }))}>
+              {eventVenues.map((venue) => <option key={venue} value={venue}>{venue}</option>)}
+            </select>
+          </label>
+          <label>Start time<input type="time" value={eventForm.startTime} onChange={(event) => setEventForm((current) => ({ ...current, startTime: event.target.value }))} /></label>
+          <label>End time<input type="time" value={eventForm.endTime} onChange={(event) => setEventForm((current) => ({ ...current, endTime: event.target.value }))} /></label>
+          <label>Expected guests<input type="number" value={eventForm.expectedGuests} onChange={(event) => setEventForm((current) => ({ ...current, expectedGuests: event.target.value }))} /></label>
+          <label className="toggle-row"><input type="checkbox" checked={eventForm.julieLeads} onChange={(event) => setEventForm((current) => ({ ...current, julieLeads: event.target.checked }))} /> Julie leads this event</label>
+          {[
+            ['eventResponsible', 'Event responsible'],
+            ['closingResponsible', 'Closing responsible'],
+            ['cashInvoiceResponsible', 'Cash/invoice responsible'],
+            ['lockingResponsible', 'Locking responsible'],
+          ].map(([field, label]) => (
+            <label key={field}>
+              {label}
+              <input list="staff-names" value={eventForm[field]} onChange={(event) => setEventForm((current) => ({ ...current, [field]: event.target.value }))} />
+            </label>
+          ))}
+          <label>Notes<textarea rows="2" value={eventForm.notes} onChange={(event) => setEventForm((current) => ({ ...current, notes: event.target.value }))} /></label>
+          <div className="inline-actions">
+            <button type="submit" className="primary-button compact-button">{eventForm.id ? 'Save event' : 'Add event'}</button>
+            {eventForm.id && <button type="button" className="ghost-button compact-button" onClick={() => setEventForm(blankEventForm)}>Cancel edit</button>}
+          </div>
+        </form>
+      </section>
+
       <section className="manager-list staff-code-manager">
         <div className="panel-title-row">
           <div>
@@ -2086,12 +3047,26 @@ function ManagerDashboard({
       </section>
 
       <section className="manager-list">
-        <h2>Shift responsible</h2>
+        <h2>Responsibility roles</h2>
+        <p className="muted">Responsibility is role-based. Event lead, closing lead, cash/invoice lead and locking lead may be different people.</p>
         <form className="editor-form compact-editor" onSubmit={assignResponsible}>
           <label>
             Shift
             <select value={responsibleForm.shiftType} onChange={(event) => setResponsibleForm((current) => ({ ...current, shiftType: event.target.value }))}>
               {activeShifts.map((shift) => <option key={shift.id} value={shift.id}>{shift.label}</option>)}
+            </select>
+          </label>
+          <label>
+            Role
+            <select value={responsibleForm.roleType} onChange={(event) => setResponsibleForm((current) => ({ ...current, roleType: event.target.value }))}>
+              {responsibilityTypes.map(([value, label]) => <option key={value} value={value}>{label}</option>)}
+            </select>
+          </label>
+          <label>
+            Event
+            <select value={responsibleForm.eventId} onChange={(event) => setResponsibleForm((current) => ({ ...current, eventId: event.target.value }))}>
+              <option value="">Shift-level</option>
+              {todayEvents.map((event) => <option key={event.id} value={event.id}>{event.eventName}</option>)}
             </select>
           </label>
           <label>
@@ -2116,8 +3091,9 @@ function ManagerDashboard({
         {dateResponsible.length === 0 && <p className="muted">No responsible assignments for this date.</p>}
         {dateResponsible.map((assignment) => (
           <article key={assignment.id} className="log-row">
-            <strong>{shiftLabels[assignment.shiftType]}</strong>
+            <strong>{responsibilityLabels[assignment.roleType] || 'Overall shift lead'}</strong>
             <span>{assignment.responsibleName} | assigned {formatDateTime(assignment.assignedAt)}</span>
+            <small>{shiftLabels[assignment.shiftType] || assignment.shiftType}{assignment.eventId ? ` | ${todayEvents.find((event) => event.id === assignment.eventId)?.eventName || 'Event'}` : ''}</small>
             {assignment.note && <small>{assignment.note}</small>}
           </article>
         ))}
@@ -2190,6 +3166,8 @@ function ManagerDashboard({
           <article><strong>{commentLogs.length}</strong><span>With comments</span></article>
           <article><strong>{inputDeviationLogs.length}</strong><span>Inputs or deviations</span></article>
           <article><strong>{notRelevantLogs.length}</strong><span>Not relevant</span></article>
+          <article><strong>{todayEvents.length}</strong><span>Events</span></article>
+          <article><strong>{assetIssues.length}</strong><span>Asset issues</span></article>
         </div>
         {attentionItems.length === 0 && <p className="muted">All clear for this filter/date.</p>}
         {attentionItems.map((item) => (
@@ -2197,6 +3175,20 @@ function ManagerDashboard({
             <small>{item.type}</small>
             {item.title}
             <span>{item.detail}</span>
+          </p>
+        ))}
+        {dateCashSignoffs.filter((record) => record.invoiceSent !== 'yes' || record.salesPunched !== 'yes' || record.settlementPerformed !== 'yes').map((record) => (
+          <p key={record.id} className="attention-line">
+            <small>Cash/invoice</small>
+            {record.shiftType}
+            <span>{record.comments || 'Missing cash/invoice signoff item'}</span>
+          </p>
+        ))}
+        {assetIssues.map((record) => (
+          <p key={record.id} className="attention-line">
+            <small>Asset issue</small>
+            {record.assetLabel}
+            <span>{record.condition} | {record.comment || 'Needs attention'}</span>
           </p>
         ))}
       </section>
@@ -2253,6 +3245,63 @@ function ManagerDashboard({
             {log.comment && <small>Comment: {log.comment}</small>}
           </article>
         ))}
+      </section>
+
+      <section className="manager-list">
+        <h2>Asset registry</h2>
+        <p className="muted">Youngs payment terminals and POS/iPad devices only. Clear test logs does not delete this registry.</p>
+        <div className="routine-task-list">
+          {assets.map((asset) => (
+            <article key={asset.id} className={`log-row ${asset.active === false ? 'inactive-task' : ''}`}>
+              <strong>{asset.provider} {asset.model}</strong>
+              <span>{asset.type} | {asset.expectedVenue} | {asset.expectedStation} | {asset.condition}</span>
+              <small>Serial: {asset.serialNumber || 'TBD'}{asset.defaultRequiredForClosing ? ' | required for closing' : ''}</small>
+              {asset.notes && <small>{asset.notes}</small>}
+              <div className="inline-actions">
+                <button type="button" className="ghost-button compact-button" onClick={() => setAssetForm(asset)}>Edit</button>
+                <button
+                  type="button"
+                  className="ghost-button compact-button"
+                  onClick={async () => {
+                    if (!(await requestWriteAccess())) return;
+                    const nextAssets = assets.map((item) => (item.id === asset.id ? { ...item, active: item.active === false } : item));
+                    setAssets(nextAssets);
+                    saveStorage(ASSET_REGISTRY_KEY, nextAssets);
+                    setMessage(asset.active === false ? 'Asset reactivated.' : 'Asset deactivated.');
+                  }}
+                >
+                  {asset.active === false ? 'Reactivate' : 'Deactivate'}
+                </button>
+              </div>
+            </article>
+          ))}
+        </div>
+        <form className="editor-form compact-editor" onSubmit={saveAsset}>
+          <label>
+            Type
+            <select value={assetForm.type} onChange={(event) => setAssetForm((current) => ({ ...current, type: event.target.value }))}>
+              {assetTypes.map((type) => <option key={type} value={type}>{type}</option>)}
+            </select>
+          </label>
+          <label>Provider/brand<input value={assetForm.provider} onChange={(event) => setAssetForm((current) => ({ ...current, provider: event.target.value }))} /></label>
+          <label>Model<input value={assetForm.model} onChange={(event) => setAssetForm((current) => ({ ...current, model: event.target.value }))} /></label>
+          <label>Serial number<input value={assetForm.serialNumber} onChange={(event) => setAssetForm((current) => ({ ...current, serialNumber: event.target.value }))} /></label>
+          <label>Expected venue<input value={assetForm.expectedVenue} onChange={(event) => setAssetForm((current) => ({ ...current, expectedVenue: event.target.value }))} /></label>
+          <label>Expected station/register<input value={assetForm.expectedStation} onChange={(event) => setAssetForm((current) => ({ ...current, expectedStation: event.target.value }))} /></label>
+          <label>
+            Condition
+            <select value={assetForm.condition} onChange={(event) => setAssetForm((current) => ({ ...current, condition: event.target.value }))}>
+              {assetConditions.map((condition) => <option key={condition} value={condition}>{condition}</option>)}
+            </select>
+          </label>
+          <label className="toggle-row"><input type="checkbox" checked={assetForm.active} onChange={(event) => setAssetForm((current) => ({ ...current, active: event.target.checked }))} /> Active</label>
+          <label className="toggle-row"><input type="checkbox" checked={assetForm.defaultRequiredForClosing} onChange={(event) => setAssetForm((current) => ({ ...current, defaultRequiredForClosing: event.target.checked }))} /> Required for closing</label>
+          <label>Notes<textarea rows="2" value={assetForm.notes} onChange={(event) => setAssetForm((current) => ({ ...current, notes: event.target.value }))} /></label>
+          <div className="inline-actions">
+            <button type="submit" className="primary-button compact-button">{assetForm.id ? 'Save asset' : 'Add asset'}</button>
+            {assetForm.id && <button type="button" className="ghost-button compact-button" onClick={() => setAssetForm(blankAssetForm)}>Cancel edit</button>}
+          </div>
+        </form>
       </section>
 
       <section className="manager-list">
@@ -2404,6 +3453,14 @@ export default function App() {
   const [finishRecords, setFinishRecords] = useState(() => normalizeArray(readStorage(FINISH_KEY, [])));
   const [alerts, setAlerts] = useState(() => normalizeAlerts(readStorage(ALERT_KEY, [])));
   const [responsibleAssignments, setResponsibleAssignments] = useState(() => normalizeArray(readStorage(RESPONSIBLE_KEY, [])));
+  const [siteSettings, setSiteSettings] = useState(() => normalizeSiteSettings(readStorage(SITE_SETTINGS_KEY, defaultSiteSettings)));
+  const [siteOverrides, setSiteOverrides] = useState(() => normalizeRecords(readStorage(SITE_OVERRIDE_KEY, [])));
+  const [events, setEvents] = useState(() => normalizeEvents(readStorage(EVENTS_KEY, [])));
+  const [cashSignoffs, setCashSignoffs] = useState(() => normalizeRecords(readStorage(CASH_SIGNOFF_KEY, [])));
+  const [assets, setAssets] = useState(() => normalizeAssets(readStorage(ASSET_REGISTRY_KEY, defaultAssets)));
+  const [assetChecks, setAssetChecks] = useState(() => normalizeRecords(readStorage(ASSET_CHECK_KEY, [])));
+  const [eventTaskChecks, setEventTaskChecks] = useState(() => normalizeRecords(readStorage(EVENT_TASK_CHECK_KEY, [])));
+  const [siteAccess, setSiteAccess] = useState({ status: siteSettings.locationCheckEnabled ? 'unknown' : 'off', distance: null, message: '' });
   const [pilotAccepted, setPilotAccepted] = useState(() => readStorage(PILOT_NOTICE_KEY, false));
   const [isOnline, setIsOnline] = useState(() => navigator.onLine);
   const [waitingWorker, setWaitingWorker] = useState(null);
@@ -2415,6 +3472,61 @@ export default function App() {
   useEffect(() => saveStorage(FINISH_KEY, finishRecords), [finishRecords]);
   useEffect(() => saveStorage(ALERT_KEY, alerts), [alerts]);
   useEffect(() => saveStorage(RESPONSIBLE_KEY, responsibleAssignments), [responsibleAssignments]);
+  useEffect(() => saveStorage(SITE_SETTINGS_KEY, siteSettings), [siteSettings]);
+  useEffect(() => saveStorage(SITE_OVERRIDE_KEY, siteOverrides), [siteOverrides]);
+  useEffect(() => saveStorage(EVENTS_KEY, events), [events]);
+  useEffect(() => saveStorage(CASH_SIGNOFF_KEY, cashSignoffs), [cashSignoffs]);
+  useEffect(() => saveStorage(ASSET_REGISTRY_KEY, assets), [assets]);
+  useEffect(() => saveStorage(ASSET_CHECK_KEY, assetChecks), [assetChecks]);
+  useEffect(() => saveStorage(EVENT_TASK_CHECK_KEY, eventTaskChecks), [eventTaskChecks]);
+
+  const activeOverride = isOverrideActive(siteOverrides);
+  const siteAccessStatus = activeOverride ? 'override' : siteAccess.status;
+
+  function checkLocation() {
+    return new Promise((resolve) => {
+      if (!siteSettings.locationCheckEnabled) {
+        const result = { status: 'off', distance: null, message: 'Location check off' };
+        setSiteAccess(result);
+        resolve(result);
+        return;
+      }
+      if (!siteSettings.latitude || !siteSettings.longitude || !navigator.geolocation) {
+        const result = { status: 'unknown', distance: null, message: 'Location unavailable' };
+        setSiteAccess(result);
+        resolve(result);
+        return;
+      }
+      navigator.geolocation.getCurrentPosition(
+        (position) => {
+          const distance = distanceMeters(
+            position.coords.latitude,
+            position.coords.longitude,
+            Number(siteSettings.latitude),
+            Number(siteSettings.longitude),
+          );
+          const status = distance <= Number(siteSettings.radiusMeters || 150) ? 'on_site' : 'away';
+          const result = { status, distance, message: status === 'on_site' ? 'On site' : 'Away from site' };
+          setSiteAccess(result);
+          resolve(result);
+        },
+        () => {
+          const result = { status: 'unknown', distance: null, message: 'Location denied or unavailable' };
+          setSiteAccess(result);
+          resolve(result);
+        },
+        { enableHighAccuracy: true, timeout: 9000, maximumAge: 60000 },
+      );
+    });
+  }
+
+  async function requestWriteAccess() {
+    if (!siteSettings.locationCheckEnabled || activeOverride) return true;
+    const result = await checkLocation();
+    if (result.status === 'on_site') return true;
+    window.alert('On-site required\n\nThis action changes operational records. Please use it at Youngs or ask manager for override.');
+    return false;
+  }
 
   useEffect(() => {
     function updateOnlineStatus() {
@@ -2481,22 +3593,45 @@ export default function App() {
         user={user}
         selectedShift={showManager ? 'manager' : selectedShift}
         isOnline={isOnline}
+        siteAccessStatus={siteAccessStatus}
         onBack={() => {
           setSelectedShift(null);
           setShowManager(false);
         }}
         onLogout={logout}
       />
+      {siteSettings.locationCheckEnabled && ['away', 'unknown'].includes(siteAccess.status) && !activeOverride && (
+        <p className="status-message page-status">You appear to be away from Youngs. You can view the app, but operational changes require being on site.</p>
+      )}
       {!selectedShift && !showManager && (
-        <ShiftPicker
-          user={user}
-          onSelect={setSelectedShift}
-          onManager={() => setShowManager(true)}
-          routines={routines}
-          logs={logs}
-          handoverNotes={handoverNotes}
-          responsibleAssignments={responsibleAssignments}
-        />
+        user.role === 'event_floor_manager' ? (
+          <EventFloorDashboard
+            user={user}
+            events={events}
+            responsibleAssignments={responsibleAssignments}
+            cashSignoffs={cashSignoffs}
+            setCashSignoffs={setCashSignoffs}
+            assets={assets}
+            assetChecks={assetChecks}
+            setAssetChecks={setAssetChecks}
+            eventTaskChecks={eventTaskChecks}
+            setEventTaskChecks={setEventTaskChecks}
+            staffUsers={staffUsers}
+            requestWriteAccess={requestWriteAccess}
+            onShowOverview={() => setSelectedShift('overview')}
+            onGuides={() => setSelectedShift('guides')}
+          />
+        ) : (
+          <ShiftPicker
+            user={user}
+            onSelect={setSelectedShift}
+            onManager={() => setShowManager(true)}
+            routines={routines}
+            logs={logs}
+            handoverNotes={handoverNotes}
+            responsibleAssignments={responsibleAssignments}
+          />
+        )
       )}
       {selectedShift && !showManager && (
         selectedShift === 'overview' ? (
@@ -2508,6 +3643,9 @@ export default function App() {
             finishRecords={finishRecords}
             alerts={alerts}
             responsibleAssignments={responsibleAssignments}
+            events={events}
+            cashSignoffs={cashSignoffs}
+            assetChecks={assetChecks}
             onAlert={() => setShowGlobalAlert(true)}
           />
         ) : (
@@ -2524,6 +3662,13 @@ export default function App() {
             alerts={alerts}
             setAlerts={setAlerts}
             responsibleAssignments={responsibleAssignments}
+            cashSignoffs={cashSignoffs}
+            setCashSignoffs={setCashSignoffs}
+            assets={assets}
+            assetChecks={assetChecks}
+            setAssetChecks={setAssetChecks}
+            staffUsers={staffUsers}
+            requestWriteAccess={requestWriteAccess}
             onShowOverview={() => setSelectedShift('overview')}
             onChangeShift={() => setSelectedShift(null)}
             onLogout={logout}
@@ -2547,6 +3692,23 @@ export default function App() {
           setAlerts={setAlerts}
           responsibleAssignments={responsibleAssignments}
           setResponsibleAssignments={setResponsibleAssignments}
+          siteSettings={siteSettings}
+          setSiteSettings={setSiteSettings}
+          siteOverrides={siteOverrides}
+          setSiteOverrides={setSiteOverrides}
+          events={events}
+          setEvents={setEvents}
+          cashSignoffs={cashSignoffs}
+          setCashSignoffs={setCashSignoffs}
+          assets={assets}
+          setAssets={setAssets}
+          assetChecks={assetChecks}
+          setAssetChecks={setAssetChecks}
+          eventTaskChecks={eventTaskChecks}
+          setEventTaskChecks={setEventTaskChecks}
+          siteAccess={siteAccess}
+          checkLocation={checkLocation}
+          requestWriteAccess={requestWriteAccess}
           onResetPilotNotice={() => {
             localStorage.removeItem(PILOT_NOTICE_KEY);
             setPilotAccepted(false);
@@ -2565,7 +3727,8 @@ export default function App() {
         <AlertManagerModal
           user={user}
           onClose={() => setShowGlobalAlert(false)}
-          onSave={(alertRecord) => {
+          onSave={async (alertRecord) => {
+            if (!(await requestWriteAccess())) return;
             const nextAlerts = [...alerts, alertRecord];
             setAlerts(nextAlerts);
             saveStorage(ALERT_KEY, nextAlerts);
