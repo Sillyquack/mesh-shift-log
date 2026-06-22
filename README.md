@@ -217,7 +217,42 @@ During this no-auth pilot, the frontend calls the Edge Function with the Supabas
 
 Email failure does not block alert creation. Failed urgent/immediate-help email notifications can be retried by managers from the alert card.
 
-Next backend phase should add real auth/users, roles, organizations and production RLS before moving more operational records.
+## Supabase Phase 3A Auth foundation
+
+Email/password Supabase Auth login is now supported alongside the old staff-code pilot login. Staff-code login remains available during transition, so Bobby is not locked out while Auth profiles are being set up.
+
+There is no public signup, no public password reset, and no service role key in the frontend. Users must be created in Supabase first, then matched with a profile row in `public.user_profiles`.
+
+Setup:
+
+1. In Supabase Dashboard -> Authentication -> Users, create or invite the user.
+2. Find the Auth user id.
+3. Insert a matching profile row in SQL editor:
+
+```sql
+insert into public.user_profiles
+(id, organization_id, display_name, role, active)
+values
+('AUTH_USER_ID_HERE', null, 'Bobby', 'manager', true);
+```
+
+Allowed profile roles:
+
+- `manager`
+- `shift_lead`
+- `event_floor_manager`
+- `staff`
+- `time2staff`
+
+`organization_id` can stay `null` during the pilot while existing alert rows are still unscoped/null. Later we should create/fill the real organization id and backfill records.
+
+If login succeeds but no profile row exists, the app shows: `Login succeeded, but no Mesh Shift Log profile exists for this user.` If a profile is inactive, access is blocked with `This user is inactive. Contact manager.`
+
+The app uses the official `@supabase/supabase-js` client for Auth session persistence and profile loading. The older REST wrapper remains only for the existing alert sync path.
+
+Phase 3B will tighten RLS and replace pilot anon alert policies with authenticated role-aware policies. Existing anon alert policies remain in Phase 3A so live alert sync and email notifications keep working during transition.
+
+Next backend phase should add production Auth/RLS lockdown before moving more operational records.
 
 ## Diagnostics
 

@@ -9,6 +9,13 @@ import {
   staffCodes,
 } from './data/routines.js';
 import { isSupabaseConfigured, supabase } from './lib/supabaseClient.js';
+import {
+  fetchCurrentUserProfile,
+  getCurrentSession,
+  isSupabaseAuthConfigured,
+  signInWithEmailPassword,
+  signOutSupabase,
+} from './lib/supabaseAuthClient.js';
 
 const APP_VERSION = '0.6.2';
 const ALERT_SYNC_BUILD = 'phase-1.5-sync-fix-1';
@@ -403,6 +410,34 @@ function normalizeStaffUsers(value) {
       needsName: Boolean(staff.needsName),
       active: staff.active !== false,
     }));
+}
+
+function appUserFromProfile(profile, authUser) {
+  const role = profile.role || 'staff';
+  const displayName = profile.display_name || authUser?.email || 'Supabase user';
+  return {
+    id: `auth-${profile.id}`,
+    name: displayName,
+    role,
+    code: profile.staff_code_alias || '',
+    isManager: role === 'manager',
+    isEventFloorManager: role === 'event_floor_manager',
+    needsName: role === 'time2staff',
+    active: profile.active !== false,
+    backendUserId: profile.id,
+    authUserId: authUser?.id || profile.id,
+    organizationId: profile.organization_id || '',
+    organization_id: profile.organization_id || '',
+    profileActive: profile.active !== false,
+    loginSource: 'supabase_auth',
+    email: authUser?.email || '',
+  };
+}
+
+function shortId(value) {
+  const text = String(value || '');
+  if (text.length <= 12) return text || 'None';
+  return `${text.slice(0, 8)}...${text.slice(-4)}`;
 }
 
 function validateStaffUsers(users) {
@@ -909,20 +944,36 @@ function AlertCard({ alert, isManager = false, onAction, onRetryEmail }) {
   );
 }
 
-function Login({ onLogin, staffUsers }) {
+function Login({ onLogin, staffUsers, onSupabaseLogin, authStatus, onAuthSignOut }) {
+  const [mode, setMode] = useState('staff_code');
   const [code, setCode] = useState('');
+  const [email, setEmail] = useState('');
+  const [password, setPassword] = useState('');
   const [workerName, setWorkerName] = useState('');
   const [pendingUser, setPendingUser] = useState(null);
   const [error, setError] = useState('');
+  const [isSubmitting, setIsSubmitting] = useState(false);
 
   function finishLogin(user) {
     saveStorage(SESSION_KEY, user);
     onLogin(user);
   }
 
-  function submit(event) {
+  async function submit(event) {
     event.preventDefault();
     setError('');
+
+    if (mode === 'email') {
+      if (!email.trim() || !password) {
+        setError('Add email and password.');
+        return;
+      }
+      setIsSubmitting(true);
+      const result = await onSupabaseLogin(email.trim(), password);
+      setIsSubmitting(false);
+      if (!result.ok) setError(result.error);
+      return;
+    }
 
     if (pendingUser) {
       const trimmedName = workerName.trim().replace(/\s+/g, ' ');
@@ -935,6 +986,7 @@ function Login({ onLogin, staffUsers }) {
         name: `${trimmedName} / ${pendingUser.name}`,
         staffName: trimmedName,
         baseName: pendingUser.name,
+        loginSource: 'staff_code',
       });
       return;
     }
@@ -948,7 +1000,7 @@ function Login({ onLogin, staffUsers }) {
       setPendingUser(user);
       return;
     }
-    finishLogin(user);
+    finishLogin({ ...user, loginSource: 'staff_code' });
   }
 
   return (
@@ -959,8 +1011,34 @@ function Login({ onLogin, staffUsers }) {
         <p className="muted">
           {pendingUser ? 'Use your real first name. This is saved with completed tasks.' : 'Enter your staff code. Ask manager if you need access.'}
         </p>
+        <div className="login-mode-tabs" role="tablist" aria-label="Login mode">
+          <button type="button" className={mode === 'staff_code' ? 'active' : ''} onClick={() => { setMode('staff_code'); setError(''); }}>Staff code login</button>
+          <button type="button" className={mode === 'email' ? 'active' : ''} onClick={() => { setMode('email'); setPendingUser(null); setError(''); }}>Email login</button>
+        </div>
         <form onSubmit={submit} className="login-form">
-          {!pendingUser ? (
+          {mode === 'email' ? (
+            <>
+              <label htmlFor="auth-email">Email</label>
+              <input
+                id="auth-email"
+                type="email"
+                autoComplete="email"
+                value={email}
+                onChange={(event) => setEmail(event.target.value)}
+                placeholder="name@example.com"
+              />
+              <label htmlFor="auth-password">Password</label>
+              <input
+                id="auth-password"
+                type="password"
+                autoComplete="current-password"
+                value={password}
+                onChange={(event) => setPassword(event.target.value)}
+                placeholder="Password"
+              />
+              {!isSupabaseAuthConfigured && <p className="error">Supabase Auth is not configured. Use staff code login for now.</p>}
+            </>
+          ) : !pendingUser ? (
             <>
               <label htmlFor="staff-code">Enter your staff code</label>
               <input
@@ -986,8 +1064,13 @@ function Login({ onLogin, staffUsers }) {
               </button>
             </>
           )}
-          {error && <p className="error">{error}</p>}
-          <button type="submit" className="primary-button">Log in</button>
+          {(error || (mode === 'email' && authStatus.profileFetchError)) && <p className="error">{error || authStatus.profileFetchError}</p>}
+          {mode === 'email' && authStatus.profileFetchError && (
+            <button type="button" className="ghost-button" onClick={onAuthSignOut}>Sign out Supabase session</button>
+          )}
+          <button type="submit" className="primary-button" disabled={isSubmitting}>
+            {mode === 'email' ? (isSubmitting ? 'Signing in...' : 'Sign in with email') : 'Log in'}
+          </button>
         </form>
       </section>
     </main>
@@ -2031,6 +2114,7 @@ function ManagerDashboard({
   setEventTaskChecks,
   siteAccess,
   alertBackendStatus,
+  authStatus,
   updateAlertRecord,
   retryAlertEmailNotification,
   refreshAlerts,
@@ -3082,6 +3166,28 @@ function ManagerDashboard({
         )}
       </section>
 
+      <section className="local-status-card">
+        <div>
+          <p className="eyebrow">Auth</p>
+          <h2>Auth status</h2>
+          <p className="muted">Phase 3A keeps staff-code login while adding Supabase Auth profiles.</p>
+        </div>
+        <div className="status-grid">
+          <span><strong>{authStatus.configured ? 'Yes' : 'No'}</strong> Auth configured</span>
+          <span><strong>{authStatus.loginSource === 'supabase_auth' ? 'Supabase Auth' : 'Staff code'}</strong> Current login source</span>
+          <span><strong>{authStatus.authSessionPresent ? 'Yes' : 'No'}</strong> Auth session present</span>
+          <span><strong>{shortId(authStatus.authUserId)}</strong> Auth user id</span>
+          <span><strong>{authStatus.profileRole || user.role || 'None'}</strong> Profile role</span>
+          <span><strong>{shortId(authStatus.organizationId)}</strong> Organization id</span>
+          <span><strong>{authStatus.profileActive === false ? 'No' : 'Yes'}</strong> Profile active</span>
+          <span><strong>{authStatus.profileFetchStatus || 'not_loaded'}</strong> Profile fetch status</span>
+          <span><strong>{authStatus.lastProfileFetchAt ? formatDateTime(authStatus.lastProfileFetchAt) : 'Not yet'}</strong> Last profile fetch</span>
+          <span><strong>{authStatus.profileFetchErrorCode || 'None'}</strong> Profile error code</span>
+        </div>
+        {authStatus.profileFetchError && <p className="critical-warning">{authStatus.profileFetchError}</p>}
+        {authStatus.profileFetchErrorMessage && <p className="muted">Technical detail: {authStatus.profileFetchErrorMessage}</p>}
+      </section>
+
       <section className="manager-list">
         <div className="panel-title-row">
           <div>
@@ -3775,6 +3881,20 @@ export default function App() {
     localCachedAlertCount: normalizeAlerts(readStorage(ALERT_KEY, [])).length,
     unsyncedLocalAlertCount: normalizeAlerts(readStorage(ALERT_KEY, [])).filter((alert) => alert.syncStatus === 'pending').length,
   });
+  const [authStatus, setAuthStatus] = useState({
+    configured: isSupabaseAuthConfigured,
+    loginSource: user?.loginSource || 'staff_code',
+    authUserId: user?.authUserId || user?.backendUserId || '',
+    profileRole: user?.role || '',
+    organizationId: user?.organizationId || user?.organization_id || '',
+    profileActive: user?.profileActive ?? user?.active ?? true,
+    authSessionPresent: user?.loginSource === 'supabase_auth',
+    profileFetchStatus: user?.loginSource === 'supabase_auth' ? 'profile_loaded' : 'not_loaded',
+    profileFetchErrorCode: '',
+    profileFetchErrorMessage: '',
+    profileFetchError: '',
+    lastProfileFetchAt: '',
+  });
   const [pilotAccepted, setPilotAccepted] = useState(() => readStorage(PILOT_NOTICE_KEY, false));
   const [isOnline, setIsOnline] = useState(() => navigator.onLine);
   const [waitingWorker, setWaitingWorker] = useState(null);
@@ -3846,6 +3966,100 @@ export default function App() {
     if (result.status === 'on_site') return true;
     window.alert('On-site required\n\nThis action changes operational records. Please use it at Youngs or ask manager for override.');
     return false;
+  }
+
+  function updateAuthStatusFromUser(nextUser, error = '', details = {}) {
+    setAuthStatus({
+      configured: isSupabaseAuthConfigured,
+      loginSource: nextUser?.loginSource || 'staff_code',
+      authUserId: nextUser?.authUserId || nextUser?.backendUserId || '',
+      profileRole: nextUser?.role || '',
+      organizationId: nextUser?.organizationId || nextUser?.organization_id || '',
+      profileActive: nextUser?.profileActive ?? nextUser?.active ?? true,
+      authSessionPresent: Boolean(details.authSessionPresent ?? nextUser?.loginSource === 'supabase_auth'),
+      profileFetchStatus: details.profileFetchStatus || (nextUser?.loginSource === 'supabase_auth' ? 'profile_loaded' : 'not_loaded'),
+      profileFetchErrorCode: details.profileFetchErrorCode || '',
+      profileFetchErrorMessage: details.profileFetchErrorMessage || '',
+      profileFetchError: error,
+      lastProfileFetchAt: new Date().toISOString(),
+    });
+  }
+
+  async function applySupabaseSession(session) {
+    if (!session?.user) return { ok: false, error: 'No Supabase Auth session found.' };
+    const profileResult = await fetchCurrentUserProfile(session);
+    if (!profileResult.ok) {
+      if (profileResult.status === 'profile_inactive') {
+        await signOutSupabase();
+      }
+      const message = profileResult.message || 'Login succeeded, but profile could not be loaded.';
+      updateAuthStatusFromUser({
+        authUserId: session.user.id,
+        backendUserId: session.user.id,
+        email: session.user.email,
+        loginSource: 'supabase_auth',
+        profileActive: profileResult.status !== 'profile_inactive',
+        role: profileResult.profile?.role || '',
+        organizationId: profileResult.profile?.organization_id || '',
+      }, message, {
+        authSessionPresent: true,
+        profileFetchStatus: profileResult.status,
+        profileFetchErrorCode: profileResult.errorCode || profileResult.status,
+        profileFetchErrorMessage: profileResult.errorMessage || profileResult.error?.message || '',
+      });
+      return { ok: false, error: message, status: profileResult.status };
+    }
+
+    const authUser = appUserFromProfile(profileResult.profile, profileResult.user || session.user);
+    saveStorage(SESSION_KEY, authUser);
+    setUser(authUser);
+    updateAuthStatusFromUser(authUser, '', {
+      authSessionPresent: true,
+      profileFetchStatus: profileResult.status,
+    });
+    return { ok: true, user: authUser };
+  }
+
+  async function handleSupabaseLogin(email, password) {
+    try {
+      const session = await signInWithEmailPassword(email, password);
+      return applySupabaseSession(session);
+    } catch (error) {
+      const message = error.message === 'Failed to fetch'
+        ? 'Supabase Auth login failed. Check connection and Supabase configuration.'
+        : error.message;
+      setAuthStatus((current) => ({
+        ...current,
+        configured: isSupabaseAuthConfigured,
+        loginSource: 'supabase_auth',
+        authSessionPresent: false,
+        profileFetchStatus: 'auth_login_failed',
+        profileFetchErrorCode: error.name || 'auth_login_failed',
+        profileFetchErrorMessage: error.message,
+        profileFetchError: message,
+        lastProfileFetchAt: new Date().toISOString(),
+      }));
+      return { ok: false, error: message };
+    }
+  }
+
+  async function clearSupabaseAuthSession() {
+    await signOutSupabase();
+    localStorage.removeItem(SESSION_KEY);
+    setUser(null);
+    setSelectedShift(null);
+    setShowManager(false);
+    setAuthStatus((current) => ({
+      ...current,
+      configured: isSupabaseAuthConfigured,
+      loginSource: 'staff_code',
+      authUserId: '',
+      profileRole: '',
+      organizationId: '',
+      profileActive: true,
+      profileFetchError: '',
+      lastProfileFetchAt: new Date().toISOString(),
+    }));
   }
 
   function cacheAlerts(nextAlerts) {
@@ -4178,6 +4392,26 @@ export default function App() {
   }
 
   useEffect(() => {
+    let cancelled = false;
+    async function restoreSupabaseUser() {
+      if (!isSupabaseAuthConfigured) {
+        setAuthStatus((current) => ({ ...current, configured: false }));
+        return;
+      }
+      const session = await getCurrentSession();
+      if (!session?.user || cancelled) return;
+      const result = await applySupabaseSession(session);
+      if (!result.ok && !cancelled && !user?.loginSource) {
+        setUser(null);
+      }
+    }
+    restoreSupabaseUser();
+    return () => {
+      cancelled = true;
+    };
+  }, []);
+
+  useEffect(() => {
     function updateOnlineStatus() {
       setIsOnline(navigator.onLine);
     }
@@ -4236,7 +4470,17 @@ export default function App() {
   if (!user) {
     return (
       <>
-        <Login onLogin={setUser} staffUsers={staffUsers} />
+        <Login
+          onLogin={(nextUser) => {
+            saveStorage(SESSION_KEY, nextUser);
+            setUser(nextUser);
+            updateAuthStatusFromUser(nextUser);
+          }}
+          staffUsers={staffUsers}
+          onSupabaseLogin={handleSupabaseLogin}
+          authStatus={authStatus}
+          onAuthSignOut={clearSupabaseAuthSession}
+        />
         {!pilotAccepted && (
           <PilotNotice
             onAccept={() => {
@@ -4250,11 +4494,23 @@ export default function App() {
     );
   }
 
-  function logout() {
+  async function logout() {
+    if (user?.loginSource === 'supabase_auth') {
+      await signOutSupabase();
+    }
     localStorage.removeItem(SESSION_KEY);
     setUser(null);
     setSelectedShift(null);
     setShowManager(false);
+    setAuthStatus((current) => ({
+      ...current,
+      loginSource: 'staff_code',
+      authUserId: '',
+      profileRole: '',
+      organizationId: '',
+      profileActive: true,
+      profileFetchError: '',
+    }));
   }
 
   return (
@@ -4381,6 +4637,7 @@ export default function App() {
           setEventTaskChecks={setEventTaskChecks}
           siteAccess={siteAccess}
           alertBackendStatus={alertBackendStatus}
+          authStatus={authStatus}
           updateAlertRecord={updateAlertRecord}
           retryAlertEmailNotification={(alert) => attemptAlertEmailNotification(alert, { reason: 'retry' })}
           refreshAlerts={loadSupabaseAlerts}
