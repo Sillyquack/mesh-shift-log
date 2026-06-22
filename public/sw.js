@@ -1,8 +1,8 @@
-const CACHE_NAME = 'mesh-shift-log-v0.6.2';
+const CACHE_NAME = 'mesh-shift-log-v0.7.0-auth-backend';
 const APP_SHELL = ['./', './index.html', './manifest.webmanifest', './icon.svg'];
 const APP_ORIGIN = self.location.origin;
 
-// Simple app-shell caching for the local pilot.
+// Simple app-shell caching for the auth-backed internal release.
 // localStorage data is never cached or copied by this service worker.
 self.addEventListener('install', (event) => {
   event.waitUntil(

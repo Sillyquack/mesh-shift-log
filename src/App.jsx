@@ -26,8 +26,10 @@ import {
   canViewAuthProfiles,
 } from './lib/permissions.js';
 
-const APP_VERSION = '0.6.2';
-const ALERT_SYNC_BUILD = 'phase-1.5-sync-fix-1';
+const APP_VERSION = '0.7.0';
+const RELEASE_LABEL = 'v0.7.0-auth-backend';
+const RELEASE_SUMMARY = 'auth backend transition';
+const ALERT_SYNC_BUILD = 'v0.7.0-auth-backend';
 const ALERT_POLL_INTERVAL_SECONDS = 15;
 const LOG_KEY = 'mesh-shift-logs-v1';
 const ROUTINE_KEY = 'mesh-routines-v1';
@@ -834,8 +836,8 @@ function PilotNotice({ onAccept }) {
         <p className="eyebrow">Pilot</p>
         <h1 id="pilot-title">Mesh Shift Log pilot</h1>
         <p>
-          This is a local pilot version. Shift logs are saved only in this browser on this device.
-          Manager should export backups regularly.
+          Alerts can sync through Supabase when Email login is active. Checklists and local fallback data
+          are still saved in this browser, so managers should export backups regularly.
         </p>
         <button type="button" className="primary-button" onClick={onAccept}>I understand</button>
       </section>
@@ -2421,6 +2423,8 @@ function ManagerDashboard({
     return [
       'Mesh Shift Log diagnostics',
       `Version: ${APP_VERSION}`,
+      `Release: ${RELEASE_LABEL}`,
+      `Release summary: ${RELEASE_SUMMARY}`,
       `Alert sync build: ${ALERT_SYNC_BUILD}`,
       `Supabase configured: ${isSupabaseConfigured ? 'yes' : 'no'}`,
       `Phase: 3C Auth lockdown transition`,
@@ -3214,6 +3218,8 @@ function ManagerDashboard({
         </div>
         <div className="status-grid">
           <span><strong>{alertBackendStatus.alertSyncBuild}</strong> Alert sync build</span>
+          <span><strong>{APP_VERSION}</strong> App version</span>
+          <span><strong>{RELEASE_SUMMARY}</strong> Release</span>
           <span><strong>3C Auth lockdown transition</strong> Phase</span>
           <span><strong>{isSupabaseConfigured ? 'Yes' : 'No'}</strong> Supabase configured</span>
           <span><strong>{isBackendAuthRequired ? 'Yes' : 'No'}</strong> Require auth for backend</span>
@@ -3221,6 +3227,7 @@ function ManagerDashboard({
           <span><strong>{alertBackendStatus.backendRequestMode || 'unknown'}</strong> Backend request mode</span>
           <span><strong>{alertBackendStatus.alertsUsingAuthenticatedToken ? 'Yes' : 'No'}</strong> Authenticated alert token</span>
           <span><strong>{alertBackendStatus.anonBackendAccessLikely ? 'Enabled' : 'Disabled/blocked'}</strong> Anon backend access</span>
+          <span><strong>Yes</strong> Staff-code fallback enabled</span>
           <span><strong>{shortId(alertBackendStatus.backendAuthUserId)}</strong> Backend auth user</span>
           <span><strong>{alertBackendStatus.backendProfileRole || user.role || 'None'}</strong> Backend profile role</span>
           <span><strong>{alertBackendStatus.pollingEnabled ? 'Yes' : 'No'}</strong> Polling enabled</span>
@@ -3247,7 +3254,9 @@ function ManagerDashboard({
           <span><strong>{alertBackendStatus.lastEmailNotificationAttemptAt ? formatDateTime(alertBackendStatus.lastEmailNotificationAttemptAt) : 'Not yet'}</strong> Last email attempt</span>
           <span><strong>{alertBackendStatus.lastEmailNotificationResult || 'None'}</strong> Last email result</span>
         </div>
-        <p className={alertBackendStatus.lastSyncError ? 'critical-warning' : 'muted'}>{alertBackendStatus.message}</p>
+        <p className={alertBackendStatus.lastSyncError ? 'critical-warning' : 'muted'}>
+          {alertBackendStatus.message || (alertBackendStatus.alertsUsingAuthenticatedToken ? 'Authenticated backend sync active.' : 'Staff-code fallback mode.')}
+        </p>
         {alertBackendStatus.lastSyncError && <p className="critical-warning">{alertBackendStatus.lastSyncError}</p>}
         <button type="button" className="text-button" onClick={() => setShowBackendDetails((current) => !current)}>
           {showBackendDetails ? 'Hide Alert sync debug' : 'Show Alert sync debug'}
@@ -4769,7 +4778,7 @@ export default function App() {
         });
       });
     }).catch(() => {
-      // PWA support is helpful but not required for the local pilot.
+      // PWA support is helpful but not required for backend sync.
     });
     return () => {
       registrationRef?.update?.();

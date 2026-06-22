@@ -2,19 +2,34 @@
 
 Mobile-first internal shift operations tool for Mesh Youngstorget hospitality staff.
 
-Current app version: `0.6.2`.
+Current app version: `0.7.0`.
 
-The app is currently a local-only MVP. It has no backend and stores shift logs, handover notes and manager routine edits in the browser with `localStorage`.
+Release: `v0.7.0-auth-backend`.
+
+Mesh Shift Log now supports Supabase-backed alerts with Supabase Auth email/password login. Staff-code login remains available as a local fallback/emergency pilot mode. Checklists, routines, handover notes, events, assets and several manager tools still use localStorage until later backend migration phases.
 
 ## Pilot Use
 
-- This is a local-only pilot tool.
-- Data stays in the current browser/device.
+- Email login is the intended path for backend alert sync.
+- Staff-code login is still useful for local fallback, but it is not real authentication.
+- Alert data can sync through Supabase when backend access is configured and allowed.
+- Urgent alerts can send email through a Supabase Edge Function and Resend.
+- Local checklist data still stays in the current browser/device.
 - Managers should export backups regularly from the dashboard.
 - Use `Clear test logs` before starting a real pilot if test data should be removed.
 - Time2Staff workers must enter their actual first name before using a checklist.
 - Critical tasks should only be confirmed after a real physical check.
-- There is no backend or live sync yet.
+- This is not fully production-ready until all operational data and user management are migrated.
+
+## Current Architecture
+
+- React + Vite frontend
+- GitHub Pages deployment
+- Supabase Postgres for backend alert records
+- Supabase Auth for email/password sessions and user profiles
+- Supabase Edge Functions for urgent alert email notification
+- Resend email delivery
+- localStorage fallback/cache for local app data and non-migrated modules
 
 ## Install / Offline
 
@@ -51,11 +66,13 @@ The app includes a basic PWA manifest and service worker.
 - Basic manager-only routine editor
 - JSON export/import for backups and moving local data between browsers
 
-## v0.6 Operational Flow
+## v0.7 Operational Flow
 
 - Staff can finish a shift and see a local summary.
 - Today's overview is visible to all users for transparent team status.
-- Alert manager creates alerts that sync to Supabase when configured and fall back to localStorage when not.
+- Alert manager creates alerts that sync to Supabase when authenticated/configured and fall back to localStorage when not.
+- Phase 3C can require Email login for backend alert sync.
+- Staff-code mode remains local-only/pending-auth when backend auth is required.
 - Managers can acknowledge or resolve alerts.
 - Managers can assign role-based responsibilities for shifts and events.
 - Managers can manage staff codes from the manager dashboard after login.
@@ -64,7 +81,7 @@ The app includes a basic PWA manifest and service worker.
 - Closing and event flows can record cash/invoice signoff and asset checks.
 - Closing shift includes Responsible closing control tasks.
 
-Local alerts do not vibrate Bobby's phone or notify another device. Real alerts require a future Slack, email, SMS, push notification or backend integration.
+Urgent alerts can send email through the configured Supabase Edge Function and Resend. There are no real push notifications yet.
 
 ## Staff Codes
 
@@ -342,6 +359,29 @@ Organization safety:
 - Phase 3C policies still allow null organization rows so Bobby does not lose visibility.
 - Later, create a Mesh Youngstorget organization row, set Bobby/profile `organization_id`, backfill existing alerts, then tighten RLS to organization-only.
 
+## Backend Schema Notes
+
+- [supabase/schema.sql](supabase/schema.sql) is the current source of truth for Supabase tables, policies, triggers and helper functions.
+- Keep a copy of the current schema before future destructive changes.
+- Phase 3C removes anon alert table policies and expects Supabase Auth for backend alert access.
+- An emergency anon-policy rollback snippet is included at the bottom of `supabase/schema.sql`.
+- Organization scoping is intentionally loose during the pilot because old alert/profile rows may still have `organization_id = null`.
+
+## Production Readiness Checklist
+
+- All staff should use Supabase Email login.
+- Create `user_profiles` rows for all staff.
+- Assign roles for manager, shift lead, event floor manager, staff and Time2Staff users.
+- Confirm Phase 3C lockdown is active.
+- Confirm anon alert database policies are removed.
+- Confirm urgent email notifications work.
+- Confirm backup/export still works.
+- Confirm manager has emergency recovery and rollback instructions.
+- Later: migrate checklists, tasks, events and assets to backend.
+- Later: remove or restrict staff-code fallback.
+- Later: backfill `organization_id`.
+- Later: tighten RLS fully by `organization_id`.
+
 ## Diagnostics
 
 Manager dashboard includes a data health/diagnostics card showing app version, task counts, log counts, handover count, routine source, and localStorage size estimate. Use `Copy diagnostics` when debugging pilot issues.
@@ -371,13 +411,15 @@ Before deploying, make sure GitHub Pages is enabled for the `gh-pages` branch in
 
 ## Known Limitations
 
-- No backend yet
-- Data is local per browser/device
-- Local alerts are not real push notifications
+- Checklists/tasks remain mostly local.
+- Events, assets and routines are not fully backend-migrated yet.
+- Staff-code login is not real security.
+- There is no full backend admin user creation flow yet.
+- There are no push notifications yet.
+- There is no full event/calendar integration yet.
+- There is no full organization backfill yet.
 - Geolocation check is a local pilot guardrail, not real security
 - Export/import is needed for backup and sharing data
 - Manager routine edits are local until exported/imported elsewhere
-- No real authentication; staff codes are client-side local access only
-- Real security will need backend authentication later
-- No live multi-device sync
+- localStorage remains fallback/cache for local data
 - Offline app shell may require one successful online visit first
