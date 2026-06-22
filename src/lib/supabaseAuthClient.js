@@ -118,3 +118,48 @@ export async function fetchCurrentUserProfile(session = null) {
     });
   }
 }
+
+export async function fetchUserProfiles() {
+  if (!supabaseAuthClient) {
+    return {
+      ok: false,
+      status: 'auth_not_configured',
+      message: 'Supabase Auth is not configured.',
+      profiles: [],
+    };
+  }
+
+  try {
+    const { data, error } = await supabaseAuthClient
+      .from('user_profiles')
+      .select('id, organization_id, display_name, role, active, staff_code_alias, created_at, updated_at')
+      .order('display_name', { ascending: true });
+
+    if (error) {
+      return {
+        ok: false,
+        status: 'profile_list_failed',
+        message: 'Could not load backend user profiles.',
+        profiles: [],
+        error,
+        errorMessage: error.message,
+      };
+    }
+
+    return {
+      ok: true,
+      status: 'profiles_loaded',
+      message: `Loaded ${data?.length || 0} backend profiles.`,
+      profiles: data || [],
+    };
+  } catch (error) {
+    return {
+      ok: false,
+      status: 'profile_list_failed',
+      message: 'Could not load backend user profiles.',
+      profiles: [],
+      error,
+      errorMessage: error.message,
+    };
+  }
+}

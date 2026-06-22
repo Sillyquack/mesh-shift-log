@@ -2,7 +2,7 @@
 
 Mobile-first internal shift operations tool for Mesh Youngstorget hospitality staff.
 
-Current app version: `0.6.0`.
+Current app version: `0.6.2`.
 
 The app is currently a local-only MVP. It has no backend and stores shift logs, handover notes and manager routine edits in the browser with `localStorage`.
 
@@ -250,9 +250,51 @@ If login succeeds but no profile row exists, the app shows: `Login succeeded, bu
 
 The app uses the official `@supabase/supabase-js` client for Auth session persistence and profile loading. The older REST wrapper remains only for the existing alert sync path.
 
-Phase 3B will tighten RLS and replace pilot anon alert policies with authenticated role-aware policies. Existing anon alert policies remain in Phase 3A so live alert sync and email notifications keep working during transition.
+Phase 3B adds authenticated, role-aware alert policies while keeping the existing anon pilot alert policies active so live alert sync and email notifications keep working during transition.
 
 Next backend phase should add production Auth/RLS lockdown before moving more operational records.
+
+## Supabase Phase 3B Auth-aware backend transition
+
+Alerts now use authenticated Supabase backend requests when an email/password Supabase Auth session exists. The frontend still sends the anon/publishable key in the `apikey` header, but uses the signed-in user's session access token as the `Authorization` bearer token. Staff-code users continue to use the pilot anon backend path during this transition.
+
+Alert rows now support optional Auth audit fields:
+
+- `created_by_auth_user_id`
+- `acknowledged_by_auth_user_id`
+- `resolved_by_auth_user_id`
+- `last_updated_by_auth_user_id`
+
+The readable text fields such as `created_by`, `acknowledged_by`, and `resolved_by` remain in place for reports and daily operations.
+
+Manager Dashboard now shows:
+
+- backend request mode: `authenticated`, `pilot_anon`, or `local_fallback`
+- whether alert requests are using an authenticated token
+- current Auth user id and profile role when available
+- a manager-only `Backend users / Supabase profiles` view for checking `public.user_profiles`
+
+Run the updated schema before testing Phase 3B:
+
+```sql
+-- In Supabase SQL editor
+-- Run the full contents of supabase/schema.sql
+```
+
+Create users in Supabase Dashboard -> Authentication -> Users, then insert matching profile rows:
+
+```sql
+insert into public.user_profiles
+(id, organization_id, display_name, role, active)
+values
+('AUTH_USER_ID_HERE', null, 'Name', 'staff', true);
+```
+
+Use `manager`, `shift_lead`, `event_floor_manager`, `staff`, or `time2staff` for `role`.
+
+Phase 3B intentionally keeps the anonymous pilot alert policies enabled so staff-code fallback, live alert sync, and urgent email notifications keep working while Auth is tested. Phase 3C should remove or limit anonymous alert read/write policies and require Supabase Auth for backend writes.
+
+Before tightening RLS, test both Bobby staff-code login and Bobby Supabase email login, create an urgent alert, acknowledge/resolve it, retry email notification if needed, and confirm alerts still poll between mobile and PC.
 
 ## Diagnostics
 

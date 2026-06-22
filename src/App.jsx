@@ -11,11 +11,20 @@ import {
 import { isSupabaseConfigured, supabase } from './lib/supabaseClient.js';
 import {
   fetchCurrentUserProfile,
+  fetchUserProfiles,
   getCurrentSession,
   isSupabaseAuthConfigured,
   signInWithEmailPassword,
   signOutSupabase,
 } from './lib/supabaseAuthClient.js';
+import {
+  canAccessManagerDashboard,
+  canAcknowledgeAlerts,
+  canResolveAlerts,
+  canRetryEmailNotification,
+  canUseEventFloorDashboard,
+  canViewAuthProfiles,
+} from './lib/permissions.js';
 
 const APP_VERSION = '0.6.2';
 const ALERT_SYNC_BUILD = 'phase-1.5-sync-fix-1';
@@ -478,6 +487,10 @@ function normalizeAlerts(value) {
       resolvedBy: alert.resolvedBy || '',
       resolvedAt: alert.resolvedAt || '',
       updatedAt: alert.updatedAt || '',
+      createdByAuthUserId: alert.createdByAuthUserId || alert.created_by_auth_user_id || '',
+      acknowledgedByAuthUserId: alert.acknowledgedByAuthUserId || alert.acknowledged_by_auth_user_id || '',
+      resolvedByAuthUserId: alert.resolvedByAuthUserId || alert.resolved_by_auth_user_id || '',
+      lastUpdatedByAuthUserId: alert.lastUpdatedByAuthUserId || alert.last_updated_by_auth_user_id || '',
       syncStatus: alert.syncStatus || (isSupabaseConfigured && !(alert.backendId || alert.backend_id) ? 'pending' : 'synced'),
       lastSyncError: alert.lastSyncError || '',
       lastSyncAttemptAt: alert.lastSyncAttemptAt || '',
@@ -507,6 +520,10 @@ function alertFromSupabase(row) {
     resolvedBy: row.resolved_by || '',
     resolvedAt: row.resolved_at || '',
     updatedAt: row.updated_at || '',
+    createdByAuthUserId: row.created_by_auth_user_id || '',
+    acknowledgedByAuthUserId: row.acknowledged_by_auth_user_id || '',
+    resolvedByAuthUserId: row.resolved_by_auth_user_id || '',
+    lastUpdatedByAuthUserId: row.last_updated_by_auth_user_id || '',
     syncStatus: 'synced',
     lastSyncError: '',
     lastSyncAttemptAt: '',
@@ -533,6 +550,10 @@ function alertToSupabase(alert) {
     acknowledged_at: alert.acknowledgedAt || null,
     resolved_by: alert.resolvedBy || null,
     resolved_at: alert.resolvedAt || null,
+    created_by_auth_user_id: alert.createdByAuthUserId || null,
+    acknowledged_by_auth_user_id: alert.acknowledgedByAuthUserId || null,
+    resolved_by_auth_user_id: alert.resolvedByAuthUserId || null,
+    last_updated_by_auth_user_id: alert.lastUpdatedByAuthUserId || null,
     email_notification_status: alert.emailNotificationStatus || 'not_required',
     email_notification_attempted_at: alert.emailNotificationAttemptedAt || null,
     email_notification_error: alert.emailNotificationError || null,
@@ -1133,7 +1154,7 @@ function ShiftPicker({ user, onSelect, onManager, routines, logs, handoverNotes,
             <small>{shiftStatus(shift.id)}</small>
           </button>
         ))}
-        {user.isManager && (
+        {canAccessManagerDashboard(user) && (
           <button className="shift-card manager-card" type="button" onClick={onManager}>
             <span>Manager dashboard</span>
             <small>Reports</small>
@@ -2115,6 +2136,7 @@ function ManagerDashboard({
   siteAccess,
   alertBackendStatus,
   authStatus,
+  fetchAuthProfiles,
   updateAlertRecord,
   retryAlertEmailNotification,
   refreshAlerts,
@@ -2140,6 +2162,9 @@ function ManagerDashboard({
   const [eventForm, setEventForm] = useState(blankEventForm);
   const [assetForm, setAssetForm] = useState(blankAssetForm);
   const [showBackendDetails, setShowBackendDetails] = useState(false);
+  const [showAuthDetails, setShowAuthDetails] = useState(false);
+  const [authProfiles, setAuthProfiles] = useState([]);
+  const [authProfilesMessage, setAuthProfilesMessage] = useState('');
 
   const activeShifts = shiftOptions.filter((shift) => shift.id !== 'guides');
   const todayEvents = events.filter((event) => event.date === date);
@@ -2376,6 +2401,10 @@ function ManagerDashboard({
       `Alert sync build: ${ALERT_SYNC_BUILD}`,
       `Supabase configured: ${isSupabaseConfigured ? 'yes' : 'no'}`,
       `Alerts source: ${backendSourceLabel(alertBackendStatus.source)}`,
+      `Backend request mode: ${alertBackendStatus.backendRequestMode || 'unknown'}`,
+      `Alerts using authenticated token: ${alertBackendStatus.alertsUsingAuthenticatedToken ? 'yes' : 'no'}`,
+      `Backend auth user id: ${alertBackendStatus.backendAuthUserId || 'none'}`,
+      `Backend profile role: ${alertBackendStatus.backendProfileRole || 'none'}`,
       `Polling enabled: ${alertBackendStatus.pollingEnabled ? 'yes' : 'no'}`,
       `Polling interval seconds: ${alertBackendStatus.pollingIntervalSeconds}`,
       `Last refresh reason: ${alertBackendStatus.lastRefreshReason}`,
@@ -2764,6 +2793,14 @@ function ManagerDashboard({
   }
 
   async function updateAlert(alertId, status) {
+    if (status === 'acknowledged' && !canAcknowledgeAlerts(user)) {
+      setMessage('Only managers can acknowledge alerts.');
+      return;
+    }
+    if (status === 'resolved' && !canResolveAlerts(user)) {
+      setMessage('Only managers can resolve alerts.');
+      return;
+    }
     if (!(await requestWriteAccess())) return;
     const latestAlerts = normalizeAlerts(alerts);
     const currentAlert = latestAlerts.find((alert) => (
@@ -2776,13 +2813,15 @@ function ManagerDashboard({
       return;
     }
     const timestamp = new Date().toISOString();
+    const authUserId = user?.loginSource === 'supabase_auth' ? (user.authUserId || user.backendUserId || '') : '';
     const statusFields = status === 'acknowledged'
-      ? { acknowledgedBy: user.name, acknowledgedAt: timestamp }
-      : { resolvedBy: user.name, resolvedAt: timestamp };
+      ? { acknowledgedBy: user.name, acknowledgedAt: timestamp, acknowledgedByAuthUserId: authUserId }
+      : { resolvedBy: user.name, resolvedAt: timestamp, resolvedByAuthUserId: authUserId };
     const result = await updateAlertRecord(alertId, {
       status,
       ...statusFields,
       updatedAt: timestamp,
+      lastUpdatedByAuthUserId: authUserId,
     });
     await refreshAlerts({ reason: `alert_${status}` });
     setMessage(result.ok
@@ -2791,6 +2830,10 @@ function ManagerDashboard({
   }
 
   async function retryEmail(alertId) {
+    if (!canRetryEmailNotification(user)) {
+      setMessage('Only managers can retry email notifications.');
+      return;
+    }
     if (!(await requestWriteAccess())) return;
     const latestAlerts = normalizeAlerts(alerts);
     const currentAlert = latestAlerts.find((alert) => (
@@ -2804,6 +2847,21 @@ function ManagerDashboard({
     }
     const result = await retryAlertEmailNotification(currentAlert);
     setMessage(result.ok ? 'Email notification sent.' : 'Email notification failed. Alert is still saved.');
+  }
+
+  async function loadAuthProfiles() {
+    if (!canViewAuthProfiles(user)) {
+      setAuthProfilesMessage('Only managers can view backend user profiles.');
+      return;
+    }
+    const result = await fetchAuthProfiles();
+    if (result.ok) {
+      setAuthProfiles(result.profiles);
+      setAuthProfilesMessage(result.message || `Loaded ${result.profiles.length} backend profiles.`);
+      return;
+    }
+    setAuthProfiles([]);
+    setAuthProfilesMessage(result.message || 'Could not load backend user profiles.');
   }
 
   function resetStaffForm() {
@@ -3131,6 +3189,10 @@ function ManagerDashboard({
           <span><strong>{alertBackendStatus.alertSyncBuild}</strong> Alert sync build</span>
           <span><strong>{isSupabaseConfigured ? 'Yes' : 'No'}</strong> Supabase configured</span>
           <span><strong>{backendSourceLabel(alertBackendStatus.source)}</strong> Alerts source</span>
+          <span><strong>{alertBackendStatus.backendRequestMode || 'unknown'}</strong> Backend request mode</span>
+          <span><strong>{alertBackendStatus.alertsUsingAuthenticatedToken ? 'Yes' : 'No'}</strong> Authenticated alert token</span>
+          <span><strong>{shortId(alertBackendStatus.backendAuthUserId)}</strong> Backend auth user</span>
+          <span><strong>{alertBackendStatus.backendProfileRole || user.role || 'None'}</strong> Backend profile role</span>
           <span><strong>{alertBackendStatus.pollingEnabled ? 'Yes' : 'No'}</strong> Polling enabled</span>
           <span><strong>{alertBackendStatus.pollingIntervalSeconds}</strong> Poll interval seconds</span>
           <span><strong>{alertBackendStatus.lastRefreshReason}</strong> Last refresh reason</span>
@@ -3170,12 +3232,14 @@ function ManagerDashboard({
         <div>
           <p className="eyebrow">Auth</p>
           <h2>Auth status</h2>
-          <p className="muted">Phase 3A keeps staff-code login while adding Supabase Auth profiles.</p>
+          <p className="muted">Phase 3B transition mode: staff-code login and pilot anon alert policies remain available while Supabase Auth is added.</p>
         </div>
         <div className="status-grid">
           <span><strong>{authStatus.configured ? 'Yes' : 'No'}</strong> Auth configured</span>
           <span><strong>{authStatus.loginSource === 'supabase_auth' ? 'Supabase Auth' : 'Staff code'}</strong> Current login source</span>
           <span><strong>{authStatus.authSessionPresent ? 'Yes' : 'No'}</strong> Auth session present</span>
+          <span><strong>{alertBackendStatus.backendRequestMode || 'unknown'}</strong> Backend request mode</span>
+          <span><strong>{alertBackendStatus.alertsUsingAuthenticatedToken ? 'Yes' : 'No'}</strong> Alerts using auth token</span>
           <span><strong>{shortId(authStatus.authUserId)}</strong> Auth user id</span>
           <span><strong>{authStatus.profileRole || user.role || 'None'}</strong> Profile role</span>
           <span><strong>{shortId(authStatus.organizationId)}</strong> Organization id</span>
@@ -3185,8 +3249,53 @@ function ManagerDashboard({
           <span><strong>{authStatus.profileFetchErrorCode || 'None'}</strong> Profile error code</span>
         </div>
         {authStatus.profileFetchError && <p className="critical-warning">{authStatus.profileFetchError}</p>}
-        {authStatus.profileFetchErrorMessage && <p className="muted">Technical detail: {authStatus.profileFetchErrorMessage}</p>}
+        <button type="button" className="text-button" onClick={() => setShowAuthDetails((current) => !current)}>
+          {showAuthDetails ? 'Hide auth debug' : 'Show auth debug'}
+        </button>
+        {showAuthDetails && (
+          <div className="backend-details">
+            <strong>Auth debug</strong>
+            {authStatus.profileFetchErrorMessage && <p className="muted">Technical detail: {authStatus.profileFetchErrorMessage}</p>}
+            <pre>{JSON.stringify(authStatus, null, 2)}</pre>
+          </div>
+        )}
       </section>
+
+      {canViewAuthProfiles(user) && (
+        <section className="manager-list">
+          <div className="panel-title-row">
+            <div>
+              <p className="eyebrow">Backend users</p>
+              <h2>Supabase profiles</h2>
+              <p className="muted">View-only profile check for the Auth migration. Manage users in Supabase for now.</p>
+            </div>
+            <button type="button" className="ghost-button compact-button" onClick={loadAuthProfiles}>Refresh profiles</button>
+          </div>
+          {authProfilesMessage && <p className={authProfilesMessage.startsWith('Could not') ? 'critical-warning' : 'status-message'}>{authProfilesMessage}</p>}
+          {authProfiles.length === 0 ? (
+            <p className="muted">No backend profiles loaded yet.</p>
+          ) : (
+            <div className="log-list">
+              {authProfiles.map((profile) => (
+                <article key={profile.id} className="log-row">
+                  <strong>{profile.display_name}</strong>
+                  <span>{profile.role} | {profile.active === false ? 'inactive' : 'active'}</span>
+                  <span>Auth id: {shortId(profile.id)}</span>
+                  <span>Org: {shortId(profile.organization_id)}</span>
+                  {profile.staff_code_alias && <span>Staff-code alias: {profile.staff_code_alias}</span>}
+                </article>
+              ))}
+            </div>
+          )}
+          <div className="backend-details">
+            <strong>Profile setup SQL example</strong>
+            <pre>{`insert into public.user_profiles
+(id, organization_id, display_name, role, active)
+values
+('AUTH_USER_ID_HERE', null, 'Name', 'staff', true);`}</pre>
+          </div>
+        </section>
+      )}
 
       <section className="manager-list">
         <div className="panel-title-row">
@@ -3870,6 +3979,10 @@ export default function App() {
     lastEmailNotificationAttemptAt: '',
     lastEmailNotificationResult: '',
     lastEmailNotificationError: '',
+    backendRequestMode: isSupabaseConfigured ? 'pilot_anon' : 'local_fallback',
+    backendAuthUserId: '',
+    backendProfileRole: user?.role || '',
+    alertsUsingAuthenticatedToken: false,
     pollingEnabled: isSupabaseConfigured,
     pollingIntervalSeconds: ALERT_POLL_INTERVAL_SECONDS,
     alertSyncBuild: ALERT_SYNC_BUILD,
@@ -3985,6 +4098,10 @@ export default function App() {
     });
   }
 
+  function currentAuthUserId() {
+    return user?.loginSource === 'supabase_auth' ? (user.authUserId || user.backendUserId || '') : '';
+  }
+
   async function applySupabaseSession(session) {
     if (!session?.user) return { ok: false, error: 'No Supabase Auth session found.' };
     const profileResult = await fetchCurrentUserProfile(session);
@@ -4075,6 +4192,7 @@ export default function App() {
       alertSyncBuild: ALERT_SYNC_BUILD,
       pollingEnabled: isSupabaseConfigured,
       pollingIntervalSeconds: ALERT_POLL_INTERVAL_SECONDS,
+      backendProfileRole: user?.role || current.backendProfileRole || '',
       ...alertSyncCounts(normalized),
     }));
   }
@@ -4135,6 +4253,10 @@ export default function App() {
         pollingEnabled: false,
         pollingIntervalSeconds: ALERT_POLL_INTERVAL_SECONDS,
         alertSyncBuild: ALERT_SYNC_BUILD,
+        backendRequestMode: 'local_fallback',
+        backendAuthUserId: '',
+        backendProfileRole: user?.role || '',
+        alertsUsingAuthenticatedToken: false,
         supabaseAlertCount: 0,
         supabaseRowsFetched: 0,
         mergedAlertsCount: localAlerts.length,
@@ -4145,6 +4267,7 @@ export default function App() {
       return { ok: true, localOnly: true };
     }
     try {
+      const requestAuth = await supabase.getRequestAuthContext();
       setAlertBackendStatus((current) => ({
         ...current,
         lastSyncAttemptAt: attemptAt,
@@ -4155,6 +4278,10 @@ export default function App() {
         pollingEnabled: true,
         pollingIntervalSeconds: ALERT_POLL_INTERVAL_SECONDS,
         alertSyncBuild: ALERT_SYNC_BUILD,
+        backendRequestMode: requestAuth.mode,
+        backendAuthUserId: requestAuth.authUserId,
+        backendProfileRole: user?.role || current.backendProfileRole || '',
+        alertsUsingAuthenticatedToken: requestAuth.isAuthenticated,
       }));
       const afterPending = await syncPendingAlerts(currentAlerts, { commit: false });
       const rows = await supabase.selectAlerts();
@@ -4182,6 +4309,10 @@ export default function App() {
         pollingEnabled: true,
         pollingIntervalSeconds: ALERT_POLL_INTERVAL_SECONDS,
         alertSyncBuild: ALERT_SYNC_BUILD,
+        backendRequestMode: requestAuth.mode,
+        backendAuthUserId: requestAuth.authUserId,
+        backendProfileRole: user?.role || current.backendProfileRole || '',
+        alertsUsingAuthenticatedToken: requestAuth.isAuthenticated,
         supabaseAlertCount: backendAlerts.length,
         supabaseRowsFetched: backendAlerts.length,
         mergedAlertsCount: mergedAlerts.length,
@@ -4206,6 +4337,7 @@ export default function App() {
         pollingEnabled: true,
         pollingIntervalSeconds: ALERT_POLL_INTERVAL_SECONDS,
         alertSyncBuild: ALERT_SYNC_BUILD,
+        backendProfileRole: user?.role || current.backendProfileRole || '',
         mergedAlertsCount: localAlerts.length,
         visibleAlertsCount: localAlerts.length,
         visibleOpenAlertsCount: localAlerts.filter(isOpenAlert).length,
@@ -4276,8 +4408,11 @@ export default function App() {
 
   async function saveAlertRecord(alertRecord) {
     const attemptAt = new Date().toISOString();
+    const authUserId = currentAuthUserId();
     const localRecord = normalizeAlerts([{
       ...alertRecord,
+      createdByAuthUserId: alertRecord.createdByAuthUserId || authUserId,
+      lastUpdatedByAuthUserId: alertRecord.lastUpdatedByAuthUserId || authUserId,
       syncStatus: isSupabaseConfigured ? 'pending' : 'synced',
       lastSyncAttemptAt: attemptAt,
       emailNotificationStatus: alertRecord.emailNotificationStatus || (alertNeedsEmail(alertRecord) ? 'pending' : 'not_required'),
@@ -4292,12 +4427,17 @@ export default function App() {
         message: 'Saved locally.',
         lastSyncAttemptAt: attemptAt,
         lastSyncError: '',
+        backendRequestMode: 'local_fallback',
+        backendAuthUserId: '',
+        backendProfileRole: user?.role || '',
+        alertsUsingAuthenticatedToken: false,
         ...alertSyncCounts(localNext),
       }));
       const emailResult = await attemptAlertEmailNotification(localRecord, { reason: 'create' });
       return { ok: true, localOnly: true, alert: localRecord, emailResult };
     }
     try {
+      const requestAuth = await supabase.getRequestAuthContext();
       const row = await supabase.insertAlert(alertToSupabase(localRecord));
       const syncedAlert = row ? alertFromSupabase(row) : localRecord;
       const nextAlerts = [...localNext.filter((alert) => alert.localId !== syncedAlert.localId && alert.backendId !== syncedAlert.backendId), syncedAlert];
@@ -4309,6 +4449,10 @@ export default function App() {
         lastSuccessfulSyncAt: new Date().toISOString(),
         lastSyncAttemptAt: attemptAt,
         lastSyncError: '',
+        backendRequestMode: requestAuth.mode,
+        backendAuthUserId: requestAuth.authUserId,
+        backendProfileRole: user?.role || current.backendProfileRole || '',
+        alertsUsingAuthenticatedToken: requestAuth.isAuthenticated,
         ...alertSyncCounts(nextAlerts),
       }));
       refreshAlertsFromBackend('after_create');
@@ -4325,6 +4469,7 @@ export default function App() {
         message: 'Saved locally. Backend sync pending.',
         lastSyncAttemptAt: attemptAt,
         lastSyncError: error.message,
+        backendProfileRole: user?.role || current.backendProfileRole || '',
         ...alertSyncCounts(pendingAlerts),
       }));
       const emailResult = await attemptAlertEmailNotification(localRecord, { reason: 'create' });
@@ -4334,6 +4479,7 @@ export default function App() {
 
   async function updateAlertRecord(alertId, changes) {
     const attemptAt = new Date().toISOString();
+    const authUserId = currentAuthUserId();
     const latestAlerts = normalizeAlerts(alertsRef.current.length ? alertsRef.current : readStorage(ALERT_KEY, []));
     const currentAlert = latestAlerts.find((alert) => (
       String(alert.id) === String(alertId)
@@ -4341,7 +4487,13 @@ export default function App() {
       || String(alert.localId) === String(alertId)
     ));
     if (!currentAlert) return { ok: false, error: new Error('Alert not found.') };
-    const updatedAlert = { ...currentAlert, ...changes, syncStatus: isSupabaseConfigured ? 'pending' : 'synced', lastSyncAttemptAt: attemptAt };
+    const updatedAlert = {
+      ...currentAlert,
+      ...changes,
+      lastUpdatedByAuthUserId: changes.lastUpdatedByAuthUserId || authUserId || currentAlert.lastUpdatedByAuthUserId || '',
+      syncStatus: isSupabaseConfigured ? 'pending' : 'synced',
+      lastSyncAttemptAt: attemptAt,
+    };
     const localNext = latestAlerts.map((alert) => (alert.id === currentAlert.id ? updatedAlert : alert));
     cacheAlerts(localNext);
     if (!isSupabaseConfigured) {
@@ -4351,11 +4503,16 @@ export default function App() {
         message: 'Updated locally.',
         lastSyncAttemptAt: attemptAt,
         lastSyncError: '',
+        backendRequestMode: 'local_fallback',
+        backendAuthUserId: '',
+        backendProfileRole: user?.role || '',
+        alertsUsingAuthenticatedToken: false,
         ...alertSyncCounts(localNext),
       }));
       return { ok: true, localOnly: true };
     }
     try {
+      const requestAuth = await supabase.getRequestAuthContext();
       const row = await supabase.updateAlert({
         backendId: currentAlert.backendId,
         localId: currentAlert.localId || currentAlert.id,
@@ -4371,6 +4528,10 @@ export default function App() {
         lastSuccessfulSyncAt: new Date().toISOString(),
         lastSyncAttemptAt: attemptAt,
         lastSyncError: '',
+        backendRequestMode: requestAuth.mode,
+        backendAuthUserId: requestAuth.authUserId,
+        backendProfileRole: user?.role || current.backendProfileRole || '',
+        alertsUsingAuthenticatedToken: requestAuth.isAuthenticated,
         ...alertSyncCounts(syncedAlerts),
       }));
       return { ok: true };
@@ -4385,6 +4546,7 @@ export default function App() {
         message: 'Saved locally. Backend sync pending.',
         lastSyncAttemptAt: attemptAt,
         lastSyncError: error.message,
+        backendProfileRole: user?.role || current.backendProfileRole || '',
         ...alertSyncCounts(pendingAlerts),
       }));
       return { ok: false, error };
@@ -4530,7 +4692,7 @@ export default function App() {
         <p className="status-message page-status">You appear to be away from Youngs. You can view the app, but operational changes require being on site.</p>
       )}
       {!selectedShift && !showManager && (
-        user.role === 'event_floor_manager' ? (
+        canUseEventFloorDashboard(user) ? (
           <EventFloorDashboard
             user={user}
             events={events}
@@ -4604,7 +4766,7 @@ export default function App() {
           />
         )
       )}
-      {showManager && user.isManager && (
+      {showManager && canAccessManagerDashboard(user) && (
         <ManagerDashboard
           user={user}
           routines={routines}
@@ -4638,6 +4800,7 @@ export default function App() {
           siteAccess={siteAccess}
           alertBackendStatus={alertBackendStatus}
           authStatus={authStatus}
+          fetchAuthProfiles={fetchUserProfiles}
           updateAlertRecord={updateAlertRecord}
           retryAlertEmailNotification={(alert) => attemptAlertEmailNotification(alert, { reason: 'retry' })}
           refreshAlerts={loadSupabaseAlerts}

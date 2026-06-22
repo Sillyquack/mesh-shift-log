@@ -1,17 +1,46 @@
+import { getCurrentSession } from './supabaseAuthClient.js';
+
 const supabaseUrl = import.meta.env.VITE_SUPABASE_URL || '';
 const supabaseAnonKey = import.meta.env.VITE_SUPABASE_ANON_KEY || import.meta.env.VITE_SUPABASE_PUBLISHABLE_KEY || '';
 const organizationId = import.meta.env.VITE_SUPABASE_ORGANIZATION_ID || '';
 
 export const isSupabaseConfigured = Boolean(supabaseUrl && supabaseAnonKey);
 
+export async function getSupabaseRequestAuthContext() {
+  if (!isSupabaseConfigured) {
+    return {
+      mode: 'local_fallback',
+      accessToken: '',
+      authUserId: '',
+      isAuthenticated: false,
+    };
+  }
+  const session = await getCurrentSession().catch(() => null);
+  if (session?.access_token && session?.user?.id) {
+    return {
+      mode: 'authenticated',
+      accessToken: session.access_token,
+      authUserId: session.user.id,
+      isAuthenticated: true,
+    };
+  }
+  return {
+    mode: 'pilot_anon',
+    accessToken: supabaseAnonKey,
+    authUserId: '',
+    isAuthenticated: false,
+  };
+}
+
 async function request(path, options = {}) {
   if (!isSupabaseConfigured) throw new Error('Supabase is not configured.');
+  const authContext = await getSupabaseRequestAuthContext();
   const response = await fetch(`${supabaseUrl.replace(/\/$/, '')}/rest/v1/${path}`, {
     ...options,
     cache: options.cache || 'no-store',
     headers: {
       apikey: supabaseAnonKey,
-      Authorization: `Bearer ${supabaseAnonKey}`,
+      Authorization: `Bearer ${authContext.accessToken || supabaseAnonKey}`,
       'Content-Type': 'application/json',
       'Cache-Control': 'no-cache',
       Pragma: 'no-cache',
@@ -28,6 +57,7 @@ async function request(path, options = {}) {
 
 export const supabase = {
   organizationId,
+  getRequestAuthContext: getSupabaseRequestAuthContext,
   async selectAlerts() {
     const filters = organizationId ? `or=(organization_id.eq.${organizationId},organization_id.is.null)&` : '';
     return request(`alerts?${filters}select=*&order=created_at.desc`);
@@ -53,12 +83,13 @@ export const supabase = {
   },
   async sendAlertEmail(alert) {
     if (!isSupabaseConfigured) throw new Error('Supabase is not configured.');
+    const authContext = await getSupabaseRequestAuthContext();
     const response = await fetch(`${supabaseUrl.replace(/\/$/, '')}/functions/v1/send-alert-email`, {
       method: 'POST',
       cache: 'no-store',
       headers: {
         apikey: supabaseAnonKey,
-        Authorization: `Bearer ${supabaseAnonKey}`,
+        Authorization: `Bearer ${authContext.accessToken || supabaseAnonKey}`,
         'Content-Type': 'application/json',
       },
       body: JSON.stringify(alert),

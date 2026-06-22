@@ -1,5 +1,5 @@
--- Mesh Shift Log Supabase Phase 1/2/3A schema.
--- This is pilot-only. Replace with authenticated RLS before production.
+-- Mesh Shift Log Supabase Phase 1/2/3B schema.
+-- Pilot anon alert policies remain during the Auth transition.
 
 create extension if not exists pgcrypto;
 
@@ -27,6 +27,10 @@ create table if not exists public.alerts (
   acknowledged_at timestamptz,
   resolved_by text,
   resolved_at timestamptz,
+  created_by_auth_user_id uuid references auth.users(id),
+  acknowledged_by_auth_user_id uuid references auth.users(id),
+  resolved_by_auth_user_id uuid references auth.users(id),
+  last_updated_by_auth_user_id uuid references auth.users(id),
   manager_note text,
   email_notification_status text default 'not_required',
   email_notification_attempted_at timestamptz,
@@ -34,8 +38,7 @@ create table if not exists public.alerts (
   updated_at timestamptz default now()
 );
 
--- Phase 3A: Supabase Auth profile foundation.
--- Phase 3B will replace pilot anon alert policies with authenticated role-aware RLS.
+-- Phase 3A/3B: Supabase Auth profile foundation and role-aware policy prep.
 create table if not exists public.user_profiles (
   id uuid primary key references auth.users(id) on delete cascade,
   organization_id uuid references public.organizations(id),
@@ -51,12 +54,18 @@ create table if not exists public.user_profiles (
 alter table public.alerts add column if not exists email_notification_status text default 'not_required';
 alter table public.alerts add column if not exists email_notification_attempted_at timestamptz;
 alter table public.alerts add column if not exists email_notification_error text;
+alter table public.alerts add column if not exists created_by_auth_user_id uuid references auth.users(id);
+alter table public.alerts add column if not exists acknowledged_by_auth_user_id uuid references auth.users(id);
+alter table public.alerts add column if not exists resolved_by_auth_user_id uuid references auth.users(id);
+alter table public.alerts add column if not exists last_updated_by_auth_user_id uuid references auth.users(id);
 
 create index if not exists alerts_organization_id_idx on public.alerts (organization_id);
 create index if not exists alerts_alert_date_idx on public.alerts (alert_date);
 create index if not exists alerts_status_idx on public.alerts (status);
 create index if not exists alerts_severity_idx on public.alerts (severity);
 create index if not exists alerts_created_at_idx on public.alerts (created_at);
+create index if not exists alerts_created_by_auth_user_id_idx on public.alerts (created_by_auth_user_id);
+create index if not exists alerts_last_updated_by_auth_user_id_idx on public.alerts (last_updated_by_auth_user_id);
 create unique index if not exists alerts_organization_local_id_idx on public.alerts (organization_id, local_id) where local_id is not null;
 create index if not exists user_profiles_organization_id_idx on public.user_profiles (organization_id);
 create index if not exists user_profiles_role_idx on public.user_profiles (role);
@@ -70,21 +79,50 @@ begin
 end;
 $$ language plpgsql;
 
+create or replace function public.current_user_profile_role()
+returns text
+security definer
+set search_path = public
+as $$
+  select role
+  from public.user_profiles
+  where id = auth.uid()
+    and active = true
+  limit 1;
+$$ language sql stable;
+
+create or replace function public.current_user_organization_id()
+returns uuid
+security definer
+set search_path = public
+as $$
+  select organization_id
+  from public.user_profiles
+  where id = auth.uid()
+    and active = true
+  limit 1;
+$$ language sql stable;
+
+create or replace function public.current_user_is_active()
+returns boolean
+security definer
+set search_path = public
+as $$
+  select exists (
+    select 1
+    from public.user_profiles
+    where id = auth.uid()
+      and active = true
+  );
+$$ language sql stable;
+
 create or replace function public.current_user_is_manager()
 returns boolean
 security definer
 set search_path = public
 as $$
-begin
-  return exists (
-    select 1
-    from public.user_profiles
-    where id = auth.uid()
-      and role = 'manager'
-      and active = true
-  );
-end;
-$$ language plpgsql;
+  select public.current_user_profile_role() = 'manager';
+$$ language sql stable;
 
 drop trigger if exists alerts_set_updated_at on public.alerts;
 create trigger alerts_set_updated_at
@@ -104,13 +142,21 @@ alter table public.user_profiles enable row level security;
 
 grant select on public.user_profiles to authenticated;
 grant update on public.user_profiles to authenticated;
+grant select, insert, update on public.alerts to authenticated;
+grant select on public.organizations to authenticated;
 
--- Pilot-only policies for testing without auth.
--- Replace with authenticated, role-aware RLS before production.
+-- Pilot-only anon policies for testing without auth.
+-- Keep these enabled during Phase 3B transition; remove them before production lockdown.
 drop policy if exists "pilot anon can read organizations" on public.organizations;
 create policy "pilot anon can read organizations"
 on public.organizations for select
 to anon
+using (true);
+
+drop policy if exists "authenticated users can read organizations" on public.organizations;
+create policy "authenticated users can read organizations"
+on public.organizations for select
+to authenticated
 using (true);
 
 drop policy if exists "pilot anon can read alerts" on public.alerts;
@@ -131,6 +177,53 @@ on public.alerts for update
 to anon
 using (true)
 with check (true);
+
+drop policy if exists "authenticated active users can read alerts" on public.alerts;
+create policy "authenticated active users can read alerts"
+on public.alerts for select
+to authenticated
+using (
+  public.current_user_is_active()
+  and (
+    organization_id is null
+    or public.current_user_organization_id() is null
+    or organization_id = public.current_user_organization_id()
+  )
+);
+
+drop policy if exists "authenticated active users can insert alerts" on public.alerts;
+create policy "authenticated active users can insert alerts"
+on public.alerts for insert
+to authenticated
+with check (
+  public.current_user_profile_role() in ('manager', 'shift_lead', 'event_floor_manager', 'staff', 'time2staff')
+  and (
+    organization_id is null
+    or public.current_user_organization_id() is null
+    or organization_id = public.current_user_organization_id()
+  )
+);
+
+drop policy if exists "authenticated managers can update alerts" on public.alerts;
+create policy "authenticated managers can update alerts"
+on public.alerts for update
+to authenticated
+using (
+  public.current_user_is_manager()
+  and (
+    organization_id is null
+    or public.current_user_organization_id() is null
+    or organization_id = public.current_user_organization_id()
+  )
+)
+with check (
+  public.current_user_is_manager()
+  and (
+    organization_id is null
+    or public.current_user_organization_id() is null
+    or organization_id = public.current_user_organization_id()
+  )
+);
 
 drop policy if exists "authenticated users can read own profile" on public.user_profiles;
 create policy "authenticated users can read own profile"
