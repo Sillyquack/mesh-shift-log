@@ -8,7 +8,7 @@ import {
   shiftOptions,
   staffCodes,
 } from './data/routines.js';
-import { isSupabaseConfigured, supabase } from './lib/supabaseClient.js';
+import { isBackendAuthRequired, isSupabaseConfigured, supabase } from './lib/supabaseClient.js';
 import {
   fetchCurrentUserProfile,
   fetchUserProfiles,
@@ -491,7 +491,7 @@ function normalizeAlerts(value) {
       acknowledgedByAuthUserId: alert.acknowledgedByAuthUserId || alert.acknowledged_by_auth_user_id || '',
       resolvedByAuthUserId: alert.resolvedByAuthUserId || alert.resolved_by_auth_user_id || '',
       lastUpdatedByAuthUserId: alert.lastUpdatedByAuthUserId || alert.last_updated_by_auth_user_id || '',
-      syncStatus: alert.syncStatus || (isSupabaseConfigured && !(alert.backendId || alert.backend_id) ? 'pending' : 'synced'),
+      syncStatus: alert.syncStatus || (isSupabaseConfigured && !(alert.backendId || alert.backend_id) ? (isBackendAuthRequired ? 'pending_auth' : 'pending') : 'synced'),
       lastSyncError: alert.lastSyncError || '',
       lastSyncAttemptAt: alert.lastSyncAttemptAt || '',
       emailNotificationStatus: alert.emailNotificationStatus || alert.email_notification_status || 'not_required',
@@ -604,6 +604,8 @@ function alertSyncCounts(alertList) {
   return {
     localCachedAlertCount: normalized.length,
     unsyncedLocalAlertCount: normalized.filter((alert) => alert.syncStatus === 'pending').length,
+    pendingAuthAlertCount: normalized.filter((alert) => alert.syncStatus === 'pending_auth').length,
+    localOnlyAlertCount: normalized.filter((alert) => alert.syncStatus === 'local_only').length,
   };
 }
 
@@ -612,8 +614,19 @@ function backendSourceLabel(source) {
     supabase: 'Supabase',
     local_cache: 'Local cache',
     local_fallback: 'Local only',
+    auth_required: 'Auth required',
     sync_error: 'Sync error',
   }[source] || source || 'Unknown';
+}
+
+function isBackendAuthError(error) {
+  const message = String(error?.message || '').toLowerCase();
+  return error?.code === 'backend_auth_required'
+    || message.includes('401')
+    || message.includes('403')
+    || message.includes('permission denied')
+    || message.includes('row-level security')
+    || message.includes('violates row-level security');
 }
 
 function normalizeSiteSettings(value) {
@@ -939,6 +952,12 @@ function AlertCard({ alert, isManager = false, onAction, onRetryEmail }) {
       {alert.managerNote && <small>Manager note: {alert.managerNote}</small>}
       {alert.syncStatus === 'pending' && (
         <small className="sync-note">Pending backend sync{alert.lastSyncAttemptAt ? ` since ${formatDateTime(alert.lastSyncAttemptAt)}` : ''}</small>
+      )}
+      {alert.syncStatus === 'pending_auth' && (
+        <small className="sync-note">Saved locally. Email login required for backend sync.</small>
+      )}
+      {alert.syncStatus === 'local_only' && (
+        <small className="sync-note">Saved locally only.</small>
       )}
       {alert.lastSyncError && <small className="sync-note error">Backend sync: {alert.lastSyncError}</small>}
       {emailLabel && (
@@ -1806,10 +1825,14 @@ function Checklist({
     if (!(await requestWriteAccess())) return;
     const result = await saveAlertRecord(alertRecord);
     setShowAlert(false);
-    const emailNote = result.emailResult?.ok === false ? '\n\nEmail notification failed. Alert is still saved.' : '';
-    window.alert(result.ok
-      ? `Alert saved.${emailNote}`
-      : `Saved locally. Backend sync pending.${emailNote}`);
+    const emailNote = result.emailResult?.authRequired
+      ? '\n\nEmail notification requires Email login.'
+      : result.emailResult?.ok === false ? '\n\nEmail notification failed. Alert is still saved.' : '';
+    window.alert(result.authRequired
+      ? `Saved locally. Email login required for backend sync.${emailNote}`
+      : result.ok
+        ? `Alert saved.${emailNote}`
+        : `Saved locally. Backend sync pending.${emailNote}`);
   }
 
   async function finishShift() {
@@ -2400,6 +2423,8 @@ function ManagerDashboard({
       `Version: ${APP_VERSION}`,
       `Alert sync build: ${ALERT_SYNC_BUILD}`,
       `Supabase configured: ${isSupabaseConfigured ? 'yes' : 'no'}`,
+      `Phase: 3C Auth lockdown transition`,
+      `Require auth for backend: ${isBackendAuthRequired ? 'yes' : 'no'}`,
       `Alerts source: ${backendSourceLabel(alertBackendStatus.source)}`,
       `Backend request mode: ${alertBackendStatus.backendRequestMode || 'unknown'}`,
       `Alerts using authenticated token: ${alertBackendStatus.alertsUsingAuthenticatedToken ? 'yes' : 'no'}`,
@@ -2427,6 +2452,8 @@ function ManagerDashboard({
       `Current visible open alerts count: ${alertBackendStatus.visibleOpenAlertsCount}`,
       `Local cached alert count: ${alertBackendStatus.localCachedAlertCount}`,
       `Unsynced local alerts: ${alertBackendStatus.unsyncedLocalAlertCount}`,
+      `Pending auth sync alerts: ${alertBackendStatus.pendingAuthAlertCount || 0}`,
+      `Local-only alerts: ${alertBackendStatus.localOnlyAlertCount || 0}`,
       `Users: ${staffUsers.length}`,
       `Sections: ${normalizedRoutineList.length}`,
       `Active tasks: ${activeTaskCount}`,
@@ -3178,7 +3205,7 @@ function ManagerDashboard({
           <div>
             <p className="eyebrow">Backend</p>
             <h2>Backend status</h2>
-            <p className="muted">Phase 1 syncs alerts only. localStorage remains fallback/cache.</p>
+            <p className="muted">Phase 3C Auth lockdown transition. localStorage remains fallback/cache.</p>
           </div>
           <div className="inline-actions">
             <button type="button" className="ghost-button compact-button" onClick={() => refreshAlerts({ reason: 'manual' })}>Refresh alerts</button>
@@ -3187,10 +3214,13 @@ function ManagerDashboard({
         </div>
         <div className="status-grid">
           <span><strong>{alertBackendStatus.alertSyncBuild}</strong> Alert sync build</span>
+          <span><strong>3C Auth lockdown transition</strong> Phase</span>
           <span><strong>{isSupabaseConfigured ? 'Yes' : 'No'}</strong> Supabase configured</span>
+          <span><strong>{isBackendAuthRequired ? 'Yes' : 'No'}</strong> Require auth for backend</span>
           <span><strong>{backendSourceLabel(alertBackendStatus.source)}</strong> Alerts source</span>
           <span><strong>{alertBackendStatus.backendRequestMode || 'unknown'}</strong> Backend request mode</span>
           <span><strong>{alertBackendStatus.alertsUsingAuthenticatedToken ? 'Yes' : 'No'}</strong> Authenticated alert token</span>
+          <span><strong>{alertBackendStatus.anonBackendAccessLikely ? 'Enabled' : 'Disabled/blocked'}</strong> Anon backend access</span>
           <span><strong>{shortId(alertBackendStatus.backendAuthUserId)}</strong> Backend auth user</span>
           <span><strong>{alertBackendStatus.backendProfileRole || user.role || 'None'}</strong> Backend profile role</span>
           <span><strong>{alertBackendStatus.pollingEnabled ? 'Yes' : 'No'}</strong> Polling enabled</span>
@@ -3198,6 +3228,8 @@ function ManagerDashboard({
           <span><strong>{alertBackendStatus.lastRefreshReason}</strong> Last refresh reason</span>
           <span><strong>{alertBackendStatus.localCachedAlertCount}</strong> Local cached alerts</span>
           <span><strong>{alertBackendStatus.unsyncedLocalAlertCount}</strong> Waiting to sync</span>
+          <span><strong>{alertBackendStatus.pendingAuthAlertCount || 0}</strong> Email login required</span>
+          <span><strong>{alertBackendStatus.localOnlyAlertCount || 0}</strong> Local-only alerts</span>
           <span><strong>{alertBackendStatus.supabaseAlertCount}</strong> Supabase alerts</span>
           <span><strong>{alertBackendStatus.supabaseRowsFetched}</strong> Rows fetched</span>
           <span><strong>{alertBackendStatus.mergedAlertsCount}</strong> Merged alerts</span>
@@ -3232,10 +3264,11 @@ function ManagerDashboard({
         <div>
           <p className="eyebrow">Auth</p>
           <h2>Auth status</h2>
-          <p className="muted">Phase 3B transition mode: staff-code login and pilot anon alert policies remain available while Supabase Auth is added.</p>
+          <p className="muted">Phase 3C transition mode: Supabase Auth is the intended backend path; staff-code login remains local fallback.</p>
         </div>
         <div className="status-grid">
           <span><strong>{authStatus.configured ? 'Yes' : 'No'}</strong> Auth configured</span>
+          <span><strong>{isBackendAuthRequired ? 'Yes' : 'No'}</strong> Require auth for backend</span>
           <span><strong>{authStatus.loginSource === 'supabase_auth' ? 'Supabase Auth' : 'Staff code'}</strong> Current login source</span>
           <span><strong>{authStatus.authSessionPresent ? 'Yes' : 'No'}</strong> Auth session present</span>
           <span><strong>{alertBackendStatus.backendRequestMode || 'unknown'}</strong> Backend request mode</span>
@@ -3964,8 +3997,10 @@ export default function App() {
   const [eventTaskChecks, setEventTaskChecks] = useState(() => normalizeRecords(readStorage(EVENT_TASK_CHECK_KEY, [])));
   const [siteAccess, setSiteAccess] = useState({ status: siteSettings.locationCheckEnabled ? 'unknown' : 'off', distance: null, message: '' });
   const [alertBackendStatus, setAlertBackendStatus] = useState({
-    source: isSupabaseConfigured ? 'local_cache' : 'local_fallback',
-    message: isSupabaseConfigured ? 'Using local alert cache until first sync.' : 'Supabase not configured. Using localStorage fallback.',
+    source: isSupabaseConfigured ? (isBackendAuthRequired ? 'auth_required' : 'local_cache') : 'local_fallback',
+    message: isSupabaseConfigured
+      ? (isBackendAuthRequired ? 'Backend requires email login. Staff-code mode is local-only while backend auth is required.' : 'Using local alert cache until first sync.')
+      : 'Supabase not configured. Using localStorage fallback.',
     lastSuccessfulSyncAt: '',
     lastSyncAttemptAt: '',
     lastPollAttemptAt: '',
@@ -3979,10 +4014,12 @@ export default function App() {
     lastEmailNotificationAttemptAt: '',
     lastEmailNotificationResult: '',
     lastEmailNotificationError: '',
-    backendRequestMode: isSupabaseConfigured ? 'pilot_anon' : 'local_fallback',
+    backendRequestMode: isSupabaseConfigured ? (isBackendAuthRequired ? 'auth_required' : 'pilot_anon') : 'local_fallback',
     backendAuthUserId: '',
     backendProfileRole: user?.role || '',
     alertsUsingAuthenticatedToken: false,
+    requireAuthForBackend: isBackendAuthRequired,
+    anonBackendAccessLikely: isSupabaseConfigured && !isBackendAuthRequired,
     pollingEnabled: isSupabaseConfigured,
     pollingIntervalSeconds: ALERT_POLL_INTERVAL_SECONDS,
     alertSyncBuild: ALERT_SYNC_BUILD,
@@ -3993,6 +4030,8 @@ export default function App() {
     visibleOpenAlertsCount: normalizeAlerts(readStorage(ALERT_KEY, [])).filter(isOpenAlert).length,
     localCachedAlertCount: normalizeAlerts(readStorage(ALERT_KEY, [])).length,
     unsyncedLocalAlertCount: normalizeAlerts(readStorage(ALERT_KEY, [])).filter((alert) => alert.syncStatus === 'pending').length,
+    pendingAuthAlertCount: normalizeAlerts(readStorage(ALERT_KEY, [])).filter((alert) => alert.syncStatus === 'pending_auth').length,
+    localOnlyAlertCount: normalizeAlerts(readStorage(ALERT_KEY, [])).filter((alert) => alert.syncStatus === 'local_only').length,
   });
   const [authStatus, setAuthStatus] = useState({
     configured: isSupabaseAuthConfigured,
@@ -4193,6 +4232,8 @@ export default function App() {
       pollingEnabled: isSupabaseConfigured,
       pollingIntervalSeconds: ALERT_POLL_INTERVAL_SECONDS,
       backendProfileRole: user?.role || current.backendProfileRole || '',
+      requireAuthForBackend: isBackendAuthRequired,
+      anonBackendAccessLikely: isSupabaseConfigured && !isBackendAuthRequired,
       ...alertSyncCounts(normalized),
     }));
   }
@@ -4224,7 +4265,7 @@ export default function App() {
         workingAlerts = workingAlerts.map((alert) => (alertIdentity(alert) === alertIdentity(pendingAlert) ? syncedAlert : alert));
       } catch (error) {
         workingAlerts = workingAlerts.map((alert) => (alertIdentity(alert) === alertIdentity(pendingAlert)
-          ? { ...alert, syncStatus: 'pending', lastSyncError: error.message, lastSyncAttemptAt: attemptAt }
+          ? { ...alert, syncStatus: isBackendAuthError(error) ? 'pending_auth' : 'pending', lastSyncError: error.message, lastSyncAttemptAt: attemptAt }
           : alert));
       }
     }
@@ -4257,6 +4298,8 @@ export default function App() {
         backendAuthUserId: '',
         backendProfileRole: user?.role || '',
         alertsUsingAuthenticatedToken: false,
+        requireAuthForBackend: isBackendAuthRequired,
+        anonBackendAccessLikely: false,
         supabaseAlertCount: 0,
         supabaseRowsFetched: 0,
         mergedAlertsCount: localAlerts.length,
@@ -4268,6 +4311,38 @@ export default function App() {
     }
     try {
       const requestAuth = await supabase.getRequestAuthContext();
+      if (requestAuth.mode === 'auth_required') {
+        const localAlerts = normalizeAlerts(currentAlerts.length ? currentAlerts : readStorage(ALERT_KEY, []));
+        cacheAlerts(localAlerts);
+        setAlertBackendStatus((current) => ({
+          ...current,
+          source: 'auth_required',
+          message: isManual
+            ? 'Backend sync requires Email login. Showing local cache.'
+            : 'Backend requires email login. Staff-code mode is local-only while backend auth is required.',
+          lastSyncAttemptAt: attemptAt,
+          lastPollAttemptAt: attemptAt,
+          lastPollStartedAt: attemptAt,
+          lastPollCompletedAt: new Date().toISOString(),
+          lastManualRefreshAt: isManual ? attemptAt : current.lastManualRefreshAt,
+          lastRefreshReason: reason,
+          lastSyncError: '',
+          pollingEnabled: false,
+          pollingIntervalSeconds: ALERT_POLL_INTERVAL_SECONDS,
+          alertSyncBuild: ALERT_SYNC_BUILD,
+          backendRequestMode: requestAuth.mode,
+          backendAuthUserId: '',
+          backendProfileRole: user?.role || current.backendProfileRole || '',
+          alertsUsingAuthenticatedToken: false,
+          requireAuthForBackend: isBackendAuthRequired,
+          anonBackendAccessLikely: false,
+          mergedAlertsCount: localAlerts.length,
+          visibleAlertsCount: localAlerts.length,
+          visibleOpenAlertsCount: localAlerts.filter(isOpenAlert).length,
+          ...alertSyncCounts(localAlerts),
+        }));
+        return { ok: true, localOnly: true, authRequired: true };
+      }
       setAlertBackendStatus((current) => ({
         ...current,
         lastSyncAttemptAt: attemptAt,
@@ -4282,6 +4357,8 @@ export default function App() {
         backendAuthUserId: requestAuth.authUserId,
         backendProfileRole: user?.role || current.backendProfileRole || '',
         alertsUsingAuthenticatedToken: requestAuth.isAuthenticated,
+        requireAuthForBackend: isBackendAuthRequired,
+        anonBackendAccessLikely: requestAuth.mode === 'pilot_anon',
       }));
       const afterPending = await syncPendingAlerts(currentAlerts, { commit: false });
       const rows = await supabase.selectAlerts();
@@ -4313,6 +4390,8 @@ export default function App() {
         backendAuthUserId: requestAuth.authUserId,
         backendProfileRole: user?.role || current.backendProfileRole || '',
         alertsUsingAuthenticatedToken: requestAuth.isAuthenticated,
+        requireAuthForBackend: isBackendAuthRequired,
+        anonBackendAccessLikely: requestAuth.mode === 'pilot_anon',
         supabaseAlertCount: backendAlerts.length,
         supabaseRowsFetched: backendAlerts.length,
         mergedAlertsCount: mergedAlerts.length,
@@ -4338,6 +4417,8 @@ export default function App() {
         pollingIntervalSeconds: ALERT_POLL_INTERVAL_SECONDS,
         alertSyncBuild: ALERT_SYNC_BUILD,
         backendProfileRole: user?.role || current.backendProfileRole || '',
+        requireAuthForBackend: isBackendAuthRequired,
+        anonBackendAccessLikely: current.backendRequestMode === 'pilot_anon',
         mergedAlertsCount: localAlerts.length,
         visibleAlertsCount: localAlerts.length,
         visibleOpenAlertsCount: localAlerts.filter(isOpenAlert).length,
@@ -4361,6 +4442,23 @@ export default function App() {
 
     const attemptedAt = new Date().toISOString();
     const targetId = alert.id || alert.backendId || alert.localId;
+    const requestAuth = isSupabaseConfigured ? await supabase.getRequestAuthContext() : { mode: 'local_fallback' };
+    if (requestAuth.mode === 'auth_required') {
+      await updateAlertRecord(targetId, {
+        emailNotificationStatus: 'failed',
+        emailNotificationAttemptedAt: attemptedAt,
+        emailNotificationError: 'Email notification requires Email login.',
+      });
+      setAlertBackendStatus((current) => ({
+        ...current,
+        lastEmailNotificationAttemptAt: attemptedAt,
+        lastEmailNotificationResult: 'auth_required',
+        lastEmailNotificationError: 'Email notification requires Email login.',
+        backendRequestMode: 'auth_required',
+        alertsUsingAuthenticatedToken: false,
+      }));
+      return { ok: false, authRequired: true, error: new Error('Email notification requires Email login.') };
+    }
     setAlertBackendStatus((current) => ({
       ...current,
       lastEmailNotificationAttemptAt: attemptedAt,
@@ -4409,11 +4507,13 @@ export default function App() {
   async function saveAlertRecord(alertRecord) {
     const attemptAt = new Date().toISOString();
     const authUserId = currentAuthUserId();
+    const requestAuth = isSupabaseConfigured ? await supabase.getRequestAuthContext() : { mode: 'local_fallback', isAuthenticated: false, authUserId: '' };
+    const authRequiredForWrite = requestAuth.mode === 'auth_required';
     const localRecord = normalizeAlerts([{
       ...alertRecord,
       createdByAuthUserId: alertRecord.createdByAuthUserId || authUserId,
       lastUpdatedByAuthUserId: alertRecord.lastUpdatedByAuthUserId || authUserId,
-      syncStatus: isSupabaseConfigured ? 'pending' : 'synced',
+      syncStatus: isSupabaseConfigured ? (authRequiredForWrite ? 'pending_auth' : 'pending') : 'synced',
       lastSyncAttemptAt: attemptAt,
       emailNotificationStatus: alertRecord.emailNotificationStatus || (alertNeedsEmail(alertRecord) ? 'pending' : 'not_required'),
     }])[0];
@@ -4431,13 +4531,32 @@ export default function App() {
         backendAuthUserId: '',
         backendProfileRole: user?.role || '',
         alertsUsingAuthenticatedToken: false,
+        requireAuthForBackend: isBackendAuthRequired,
+        anonBackendAccessLikely: false,
         ...alertSyncCounts(localNext),
       }));
       const emailResult = await attemptAlertEmailNotification(localRecord, { reason: 'create' });
       return { ok: true, localOnly: true, alert: localRecord, emailResult };
     }
+    if (authRequiredForWrite) {
+      setAlertBackendStatus((current) => ({
+        ...current,
+        source: 'auth_required',
+        message: 'Backend sync requires Email login. Saved locally.',
+        lastSyncAttemptAt: attemptAt,
+        lastSyncError: '',
+        backendRequestMode: requestAuth.mode,
+        backendAuthUserId: '',
+        backendProfileRole: user?.role || current.backendProfileRole || '',
+        alertsUsingAuthenticatedToken: false,
+        requireAuthForBackend: isBackendAuthRequired,
+        anonBackendAccessLikely: false,
+        ...alertSyncCounts(localNext),
+      }));
+      const emailResult = await attemptAlertEmailNotification(localRecord, { reason: 'create' });
+      return { ok: true, localOnly: true, authRequired: true, alert: localRecord, emailResult };
+    }
     try {
-      const requestAuth = await supabase.getRequestAuthContext();
       const row = await supabase.insertAlert(alertToSupabase(localRecord));
       const syncedAlert = row ? alertFromSupabase(row) : localRecord;
       const nextAlerts = [...localNext.filter((alert) => alert.localId !== syncedAlert.localId && alert.backendId !== syncedAlert.backendId), syncedAlert];
@@ -4460,16 +4579,20 @@ export default function App() {
       return { ok: true, alert: syncedAlert, emailResult };
     } catch (error) {
       const pendingAlerts = localNext.map((alert) => (alert.id === localRecord.id
-        ? { ...alert, syncStatus: 'pending', lastSyncError: error.message, lastSyncAttemptAt: attemptAt }
+        ? { ...alert, syncStatus: isBackendAuthError(error) ? 'pending_auth' : 'pending', lastSyncError: error.message, lastSyncAttemptAt: attemptAt }
         : alert));
       cacheAlerts(pendingAlerts);
       setAlertBackendStatus((current) => ({
         ...current,
-        source: 'local_cache',
-        message: 'Saved locally. Backend sync pending.',
+        source: isBackendAuthError(error) ? 'auth_required' : 'local_cache',
+        message: isBackendAuthError(error) ? 'Backend sync requires Email login. Saved locally.' : 'Saved locally. Backend sync pending.',
         lastSyncAttemptAt: attemptAt,
         lastSyncError: error.message,
         backendProfileRole: user?.role || current.backendProfileRole || '',
+        backendRequestMode: isBackendAuthError(error) ? 'auth_required' : current.backendRequestMode,
+        alertsUsingAuthenticatedToken: isBackendAuthError(error) ? false : current.alertsUsingAuthenticatedToken,
+        requireAuthForBackend: isBackendAuthRequired,
+        anonBackendAccessLikely: isBackendAuthError(error) ? false : current.anonBackendAccessLikely,
         ...alertSyncCounts(pendingAlerts),
       }));
       const emailResult = await attemptAlertEmailNotification(localRecord, { reason: 'create' });
@@ -4480,6 +4603,8 @@ export default function App() {
   async function updateAlertRecord(alertId, changes) {
     const attemptAt = new Date().toISOString();
     const authUserId = currentAuthUserId();
+    const requestAuth = isSupabaseConfigured ? await supabase.getRequestAuthContext() : { mode: 'local_fallback', isAuthenticated: false, authUserId: '' };
+    const authRequiredForWrite = requestAuth.mode === 'auth_required';
     const latestAlerts = normalizeAlerts(alertsRef.current.length ? alertsRef.current : readStorage(ALERT_KEY, []));
     const currentAlert = latestAlerts.find((alert) => (
       String(alert.id) === String(alertId)
@@ -4491,7 +4616,7 @@ export default function App() {
       ...currentAlert,
       ...changes,
       lastUpdatedByAuthUserId: changes.lastUpdatedByAuthUserId || authUserId || currentAlert.lastUpdatedByAuthUserId || '',
-      syncStatus: isSupabaseConfigured ? 'pending' : 'synced',
+      syncStatus: isSupabaseConfigured ? (authRequiredForWrite ? 'pending_auth' : 'pending') : 'synced',
       lastSyncAttemptAt: attemptAt,
     };
     const localNext = latestAlerts.map((alert) => (alert.id === currentAlert.id ? updatedAlert : alert));
@@ -4507,12 +4632,30 @@ export default function App() {
         backendAuthUserId: '',
         backendProfileRole: user?.role || '',
         alertsUsingAuthenticatedToken: false,
+        requireAuthForBackend: isBackendAuthRequired,
+        anonBackendAccessLikely: false,
         ...alertSyncCounts(localNext),
       }));
       return { ok: true, localOnly: true };
     }
+    if (authRequiredForWrite) {
+      setAlertBackendStatus((current) => ({
+        ...current,
+        source: 'auth_required',
+        message: 'Backend sync requires Email login. Saved locally.',
+        lastSyncAttemptAt: attemptAt,
+        lastSyncError: '',
+        backendRequestMode: requestAuth.mode,
+        backendAuthUserId: '',
+        backendProfileRole: user?.role || current.backendProfileRole || '',
+        alertsUsingAuthenticatedToken: false,
+        requireAuthForBackend: isBackendAuthRequired,
+        anonBackendAccessLikely: false,
+        ...alertSyncCounts(localNext),
+      }));
+      return { ok: true, localOnly: true, authRequired: true };
+    }
     try {
-      const requestAuth = await supabase.getRequestAuthContext();
       const row = await supabase.updateAlert({
         backendId: currentAlert.backendId,
         localId: currentAlert.localId || currentAlert.id,
@@ -4537,16 +4680,20 @@ export default function App() {
       return { ok: true };
     } catch (error) {
       const pendingAlerts = localNext.map((alert) => (alert.id === currentAlert.id
-        ? { ...alert, syncStatus: 'pending', lastSyncError: error.message, lastSyncAttemptAt: attemptAt }
+        ? { ...alert, syncStatus: isBackendAuthError(error) ? 'pending_auth' : 'pending', lastSyncError: error.message, lastSyncAttemptAt: attemptAt }
         : alert));
       cacheAlerts(pendingAlerts);
       setAlertBackendStatus((current) => ({
         ...current,
-        source: 'local_cache',
-        message: 'Saved locally. Backend sync pending.',
+        source: isBackendAuthError(error) ? 'auth_required' : 'local_cache',
+        message: isBackendAuthError(error) ? 'Backend sync requires Email login. Saved locally.' : 'Saved locally. Backend sync pending.',
         lastSyncAttemptAt: attemptAt,
         lastSyncError: error.message,
+        backendRequestMode: isBackendAuthError(error) ? 'auth_required' : current.backendRequestMode,
+        alertsUsingAuthenticatedToken: isBackendAuthError(error) ? false : current.alertsUsingAuthenticatedToken,
         backendProfileRole: user?.role || current.backendProfileRole || '',
+        requireAuthForBackend: isBackendAuthRequired,
+        anonBackendAccessLikely: isBackendAuthError(error) ? false : current.anonBackendAccessLikely,
         ...alertSyncCounts(pendingAlerts),
       }));
       return { ok: false, error };
@@ -4829,10 +4976,14 @@ export default function App() {
             if (!(await requestWriteAccess())) return;
             const result = await saveAlertRecord(alertRecord);
             setShowGlobalAlert(false);
-            const emailNote = result.emailResult?.ok === false ? '\n\nEmail notification failed. Alert is still saved.' : '';
-            window.alert(result.ok
-              ? `Alert saved.${emailNote}`
-              : `Saved locally. Backend sync pending.${emailNote}`);
+            const emailNote = result.emailResult?.authRequired
+              ? '\n\nEmail notification requires Email login.'
+              : result.emailResult?.ok === false ? '\n\nEmail notification failed. Alert is still saved.' : '';
+            window.alert(result.authRequired
+              ? `Saved locally. Email login required for backend sync.${emailNote}`
+              : result.ok
+                ? `Alert saved.${emailNote}`
+                : `Saved locally. Backend sync pending.${emailNote}`);
           }}
         />
       )}

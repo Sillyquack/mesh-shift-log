@@ -1,5 +1,5 @@
--- Mesh Shift Log Supabase Phase 1/2/3B schema.
--- Pilot anon alert policies remain during the Auth transition.
+-- Mesh Shift Log Supabase Phase 1/2/3C schema.
+-- Phase 3C prepares authenticated-only alert backend access.
 
 create extension if not exists pgcrypto;
 
@@ -145,8 +145,8 @@ grant update on public.user_profiles to authenticated;
 grant select, insert, update on public.alerts to authenticated;
 grant select on public.organizations to authenticated;
 
--- Pilot-only anon policies for testing without auth.
--- Keep these enabled during Phase 3B transition; remove them before production lockdown.
+-- Legacy pilot anon policies.
+-- The Phase 3C lockdown section near the end of this file removes anon alert table access.
 drop policy if exists "pilot anon can read organizations" on public.organizations;
 create policy "pilot anon can read organizations"
 on public.organizations for select
@@ -225,6 +225,30 @@ with check (
   )
 );
 
+drop policy if exists "authenticated creators can update own alerts" on public.alerts;
+create policy "authenticated creators can update own alerts"
+on public.alerts for update
+to authenticated
+using (
+  public.current_user_is_active()
+  and created_by_auth_user_id = auth.uid()
+  and status = 'open'
+  and (
+    organization_id is null
+    or public.current_user_organization_id() is null
+    or organization_id = public.current_user_organization_id()
+  )
+)
+with check (
+  public.current_user_is_active()
+  and created_by_auth_user_id = auth.uid()
+  and (
+    organization_id is null
+    or public.current_user_organization_id() is null
+    or organization_id = public.current_user_organization_id()
+  )
+);
+
 drop policy if exists "authenticated users can read own profile" on public.user_profiles;
 create policy "authenticated users can read own profile"
 on public.user_profiles for select
@@ -243,3 +267,33 @@ on public.user_profiles for update
 to authenticated
 using (public.current_user_is_manager())
 with check (public.current_user_is_manager());
+
+-- Phase 3C authenticated backend lockdown.
+-- Running this section means staff-code users no longer sync alerts to Supabase.
+-- Staff-code mode still works locally through localStorage, but backend reads/writes require Email login.
+drop policy if exists "pilot anon can read alerts" on public.alerts;
+drop policy if exists "pilot anon can insert alerts" on public.alerts;
+drop policy if exists "pilot anon can update alerts" on public.alerts;
+revoke select, insert, update on public.alerts from anon;
+
+-- Rollback snippet for emergency pilot fallback only:
+-- grant select, insert, update on public.alerts to anon;
+-- create policy "pilot anon can read alerts"
+-- on public.alerts for select
+-- to anon
+-- using (true);
+-- create policy "pilot anon can insert alerts"
+-- on public.alerts for insert
+-- to anon
+-- with check (true);
+-- create policy "pilot anon can update alerts"
+-- on public.alerts for update
+-- to anon
+-- using (true)
+-- with check (true);
+
+-- Organization transition notes:
+-- Current pilot profiles and alerts may have organization_id = null.
+-- Phase 3C policies intentionally allow null organization_id so existing pilot rows remain visible.
+-- Later, create a Mesh Youngstorget organization row, set user_profiles.organization_id,
+-- backfill alerts.organization_id, then tighten policies to organization-only.

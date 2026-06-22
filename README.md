@@ -168,6 +168,7 @@ Then fill:
 VITE_SUPABASE_URL=
 VITE_SUPABASE_ANON_KEY=
 VITE_SUPABASE_ORGANIZATION_ID=
+VITE_REQUIRE_SUPABASE_AUTH_FOR_BACKEND=false
 ```
 
 `VITE_SUPABASE_PUBLISHABLE_KEY` is also supported as an alternative to `VITE_SUPABASE_ANON_KEY`. `VITE_SUPABASE_ORGANIZATION_ID` is optional but recommended for keeping pilot alerts scoped to one organization and avoiding duplicate local alert IDs. No service role or secret key should be used in the frontend.
@@ -295,6 +296,51 @@ Use `manager`, `shift_lead`, `event_floor_manager`, `staff`, or `time2staff` for
 Phase 3B intentionally keeps the anonymous pilot alert policies enabled so staff-code fallback, live alert sync, and urgent email notifications keep working while Auth is tested. Phase 3C should remove or limit anonymous alert read/write policies and require Supabase Auth for backend writes.
 
 Before tightening RLS, test both Bobby staff-code login and Bobby Supabase email login, create an urgent alert, acknowledge/resolve it, retry email notification if needed, and confirm alerts still poll between mobile and PC.
+
+## Supabase Phase 3C authenticated backend lockdown
+
+Supabase Auth is now the intended backend path for alerts. Staff-code login remains available as a local/pilot fallback, but it may be local-only when backend auth is required.
+
+Set this frontend flag only after Bobby email login has been tested locally:
+
+```bash
+VITE_REQUIRE_SUPABASE_AUTH_FOR_BACKEND=true
+```
+
+When the flag is `false`, the app keeps Phase 3B transition behavior:
+
+- Supabase email users use authenticated backend requests.
+- Staff-code users may still use pilot anon backend access if the database policies allow it.
+
+When the flag is `true`:
+
+- Supabase backend alert read/write only runs when an Email login session exists.
+- Staff-code users can still use checklists and create local alerts.
+- Staff-code-created alerts show `Saved locally. Email login required for backend sync.`
+- Urgent email notifications require Email login.
+- localStorage fallback/cache remains in place.
+
+To lock down anonymous alert table access, run the updated [supabase/schema.sql](supabase/schema.sql). The Phase 3C section drops the pilot anon alert policies and revokes anon select/insert/update on `public.alerts`.
+
+Rollout checklist:
+
+1. Make sure Bobby email login works.
+2. Make sure Bobby has an active `public.user_profiles` row with `role = 'manager'`.
+3. Run the updated `supabase/schema.sql`.
+4. Test Email login alert create/acknowledge/resolve.
+5. Confirm `created_by_auth_user_id`, `acknowledged_by_auth_user_id`, and `resolved_by_auth_user_id` populate.
+6. Test urgent email while email-authenticated.
+7. Set `VITE_REQUIRE_SUPABASE_AUTH_FOR_BACKEND=true`.
+8. Test staff-code login falls back local-only without errors.
+
+Emergency rollback for anon alert access is included as a commented SQL snippet at the bottom of `supabase/schema.sql`.
+
+Organization safety:
+
+- Current pilot alerts may have `organization_id = null`.
+- Current profiles may have `organization_id = null`.
+- Phase 3C policies still allow null organization rows so Bobby does not lose visibility.
+- Later, create a Mesh Youngstorget organization row, set Bobby/profile `organization_id`, backfill existing alerts, then tighten RLS to organization-only.
 
 ## Diagnostics
 

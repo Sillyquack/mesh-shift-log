@@ -3,8 +3,16 @@ import { getCurrentSession } from './supabaseAuthClient.js';
 const supabaseUrl = import.meta.env.VITE_SUPABASE_URL || '';
 const supabaseAnonKey = import.meta.env.VITE_SUPABASE_ANON_KEY || import.meta.env.VITE_SUPABASE_PUBLISHABLE_KEY || '';
 const organizationId = import.meta.env.VITE_SUPABASE_ORGANIZATION_ID || '';
+const requireSupabaseAuthForBackend = String(import.meta.env.VITE_REQUIRE_SUPABASE_AUTH_FOR_BACKEND || '').toLowerCase() === 'true';
 
 export const isSupabaseConfigured = Boolean(supabaseUrl && supabaseAnonKey);
+export const isBackendAuthRequired = requireSupabaseAuthForBackend;
+
+function backendAuthRequiredError() {
+  const error = new Error('Backend sync requires Email login.');
+  error.code = 'backend_auth_required';
+  return error;
+}
 
 export async function getSupabaseRequestAuthContext() {
   if (!isSupabaseConfigured) {
@@ -22,6 +30,16 @@ export async function getSupabaseRequestAuthContext() {
       accessToken: session.access_token,
       authUserId: session.user.id,
       isAuthenticated: true,
+      authRequired: requireSupabaseAuthForBackend,
+    };
+  }
+  if (requireSupabaseAuthForBackend) {
+    return {
+      mode: 'auth_required',
+      accessToken: '',
+      authUserId: '',
+      isAuthenticated: false,
+      authRequired: true,
     };
   }
   return {
@@ -29,12 +47,14 @@ export async function getSupabaseRequestAuthContext() {
     accessToken: supabaseAnonKey,
     authUserId: '',
     isAuthenticated: false,
+    authRequired: false,
   };
 }
 
 async function request(path, options = {}) {
   if (!isSupabaseConfigured) throw new Error('Supabase is not configured.');
   const authContext = await getSupabaseRequestAuthContext();
+  if (authContext.mode === 'auth_required') throw backendAuthRequiredError();
   const response = await fetch(`${supabaseUrl.replace(/\/$/, '')}/rest/v1/${path}`, {
     ...options,
     cache: options.cache || 'no-store',
@@ -84,6 +104,7 @@ export const supabase = {
   async sendAlertEmail(alert) {
     if (!isSupabaseConfigured) throw new Error('Supabase is not configured.');
     const authContext = await getSupabaseRequestAuthContext();
+    if (authContext.mode === 'auth_required') throw backendAuthRequiredError();
     const response = await fetch(`${supabaseUrl.replace(/\/$/, '')}/functions/v1/send-alert-email`, {
       method: 'POST',
       cache: 'no-store',
