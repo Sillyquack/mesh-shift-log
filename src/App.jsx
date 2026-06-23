@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useRef, useState } from 'react';
+import { Component, useEffect, useMemo, useRef, useState } from 'react';
 import {
   areas,
   defaultRoutines,
@@ -25,6 +25,14 @@ import {
   canUseEventFloorDashboard,
   canViewAuthProfiles,
 } from './lib/permissions.js';
+import {
+  createOrUpdateShiftSession,
+  fetchHandoverNotesForDate,
+  fetchTaskCompletionsForDate,
+  getBackendShiftMode,
+  syncHandoverNote,
+  syncTaskCompletion,
+} from './lib/shiftDataClient.js';
 
 const APP_VERSION = '0.7.0';
 const RELEASE_LABEL = 'v0.7.0-auth-backend';
@@ -383,15 +391,39 @@ function normalizeLogs(logs) {
     .map((log) => ({
       ...log,
       status: log.status || 'done',
+      localId: log.localId || log.local_id || log.id || `${log.date}-${log.shiftType || 'shift'}-${log.taskId}`,
+      backendId: log.backendId || log.backend_id || '',
+      shiftSessionBackendId: log.shiftSessionBackendId || log.shift_session_id || '',
+      syncStatus: log.syncStatus || 'local_only',
+      syncError: log.syncError || '',
+      updatedAt: log.updatedAt || log.completedAt || `${log.date}T00:00:00`,
       completedAt: log.completedAt || `${log.date}T00:00:00`,
       completedBy: log.completedBy || 'Unknown',
+      completedByAuthUserId: log.completedByAuthUserId || log.completed_by_auth_user_id || '',
+      completedByProfileId: log.completedByProfileId || log.completed_by_profile_id || '',
+      criticalConfirmed: Boolean(log.criticalConfirmed),
       input: log.input ?? log.comment ?? '',
       comment: log.comment ?? '',
     }));
 }
 
 function normalizeHandovers(notes) {
-  return notes && typeof notes === 'object' && !Array.isArray(notes) ? notes : {};
+  if (!notes || typeof notes !== 'object' || Array.isArray(notes)) return {};
+  return Object.fromEntries(Object.entries(notes).map(([key, note]) => {
+    if (!note || typeof note !== 'object') return [key, note];
+    return [key, {
+      ...note,
+      id: note.id || note.localId || key,
+      localId: note.localId || note.local_id || note.id || key,
+      backendId: note.backendId || note.backend_id || '',
+      shiftSessionBackendId: note.shiftSessionBackendId || note.shift_session_id || '',
+      syncStatus: note.syncStatus || 'local_only',
+      syncError: note.syncError || '',
+      updatedAt: note.updatedAt || note.updated_at || '',
+      createdByAuthUserId: note.createdByAuthUserId || note.created_by_auth_user_id || '',
+      createdByProfileId: note.createdByProfileId || note.created_by_profile_id || '',
+    }];
+  }));
 }
 
 function normalizeArray(value) {
@@ -578,6 +610,56 @@ function alertFreshness(alert) {
     new Date(alert.createdAt || 0).getTime() || 0,
     new Date(alert.lastSyncAttemptAt || 0).getTime() || 0,
   );
+}
+
+export default function AppWithBoundary() {
+  return (
+    <AppErrorBoundary>
+      <App />
+    </AppErrorBoundary>
+  );
+}
+
+function recordFreshness(record) {
+  return Math.max(
+    new Date(record.updatedAt || 0).getTime() || 0,
+    new Date(record.completedAt || 0).getTime() || 0,
+    new Date(record.finishedAt || 0).getTime() || 0,
+  );
+}
+
+function mergeTaskLogs(localLogs, backendLogs) {
+  const merged = new Map();
+  normalizeLogs(localLogs).forEach((log) => {
+    merged.set(log.localId || log.id, log);
+  });
+  normalizeLogs(backendLogs).forEach((backendLog) => {
+    const key = backendLog.localId || backendLog.id;
+    const existing = merged.get(key);
+    if (existing && ['pending_backend', 'pending_auth', 'sync_error'].includes(existing.syncStatus) && recordFreshness(existing) > recordFreshness(backendLog)) {
+      return;
+    }
+    merged.set(key, { ...existing, ...backendLog, syncStatus: 'synced' });
+  });
+  return [...merged.values()];
+}
+
+function handoverIdentity(note) {
+  return note.localId || note.id || `${note.date}-${note.shiftType}-${note.completedBy}`;
+}
+
+function mergeHandoverNotes(localNotes, backendNotes) {
+  const merged = normalizeHandovers(localNotes);
+  backendNotes.forEach((backendNote) => {
+    const key = handoverIdentity(backendNote);
+    const existingKey = Object.keys(merged).find((itemKey) => handoverIdentity(merged[itemKey]) === key) || key;
+    const existing = merged[existingKey];
+    if (existing && ['pending_backend', 'pending_auth', 'sync_error'].includes(existing.syncStatus) && recordFreshness(existing) > recordFreshness(backendNote)) {
+      return;
+    }
+    merged[existingKey] = { ...existing, ...backendNote, syncStatus: 'synced' };
+  });
+  return merged;
 }
 
 function mergeAlertCaches(localAlerts, backendAlerts) {
@@ -1213,11 +1295,15 @@ function TaskInput({ task, value, onChange }) {
   return <textarea value={value} onChange={(event) => onChange(event.target.value)} placeholder="Add comment" rows="3" />;
 }
 
-function HandoverNotes({ user, shiftType, notes, setNotes }) {
+function HandoverNotes({ user, shiftType, notes, setNotes, onSync, backendShiftSessionId = '' }) {
   const [savedAt, setSavedAt] = useState('');
+  const syncTimerRef = useRef(null);
   const date = todayKey();
   const key = `${date}-${shiftType}-${user.name}`;
+  const syncUserKey = slug(user.authUserId || user.backendUserId || user.id || user.name);
   const value = notes[key] || {
+    id: key,
+      localId: `handover:${date}:${shiftType}:${syncUserKey}`,
     date,
     shiftType,
     completedBy: user.name,
@@ -1228,16 +1314,28 @@ function HandoverNotes({ user, shiftType, notes, setNotes }) {
     updatedAt: '',
   };
 
+  useEffect(() => () => {
+    if (syncTimerRef.current) window.clearTimeout(syncTimerRef.current);
+  }, []);
+
   function update(field, fieldValue) {
     const next = {
       ...value,
+      id: value.id || key,
+      localId: value.localId || `handover:${date}:${shiftType}:${syncUserKey}`,
+      shiftSessionBackendId: backendShiftSessionId,
       [field]: fieldValue,
+      syncStatus: user.loginSource === 'supabase_auth' ? 'pending_backend' : 'pending_auth',
       updatedAt: new Date().toISOString(),
     };
     const nextNotes = { ...notes, [key]: next };
     setNotes(nextNotes);
     saveStorage(HANDOVER_KEY, nextNotes);
     setSavedAt('Saved just now');
+    if (syncTimerRef.current) window.clearTimeout(syncTimerRef.current);
+    syncTimerRef.current = window.setTimeout(() => {
+      onSync?.(next);
+    }, 700);
   }
 
   return (
@@ -1600,6 +1698,9 @@ function EventFloorDashboard({
   setEventTaskChecks,
   staffUsers,
   requestWriteAccess,
+  onEnsureShiftSession,
+  onSyncTaskLog,
+  onSyncHandover,
   onShowOverview,
   onGuides,
 }) {
@@ -1737,6 +1838,9 @@ function Checklist({
   setAssetChecks,
   staffUsers,
   requestWriteAccess,
+  onEnsureShiftSession,
+  onSyncTaskLog,
+  onSyncHandover,
   onShowOverview,
   onChangeShift,
   onLogout,
@@ -1765,6 +1869,19 @@ function Checklist({
   const responsibleCriticalMissing = tasks.filter((task) => task.section === 'Responsible closing control' && task.priority === 'critical' && !isHandled(logsByTask[task.id])).length;
   const [finished, setFinished] = useState(false);
   const [showAlert, setShowAlert] = useState(false);
+  const [backendShiftSessionId, setBackendShiftSessionId] = useState('');
+  const syncUserKey = slug(user.authUserId || user.backendUserId || user.id || user.name);
+
+  useEffect(() => {
+    if (shiftType === 'guides') return undefined;
+    let cancelled = false;
+    onEnsureShiftSession?.(date, shiftType).then((result) => {
+      if (!cancelled && result?.ok && result.record?.backendId) setBackendShiftSessionId(result.record.backendId);
+    });
+    return () => {
+      cancelled = true;
+    };
+  }, [date, shiftType, user.id]);
   const visibleTasks = tasks.filter((task) => {
     const log = logsByTask[task.id];
     if (hideCompleted && isHandled(log)) return false;
@@ -1795,6 +1912,7 @@ function Checklist({
 
     const nextLog = {
       id: `${date}-${task.id}`,
+      localId: `task_completion:${date}:${task.shiftType}:${task.id}:${syncUserKey}`,
       taskId: task.id,
       taskTitle: task.title,
       date,
@@ -1810,14 +1928,46 @@ function Checklist({
       comment,
       status,
       completedAt: new Date().toISOString(),
+      criticalConfirmed: status === 'done' && Boolean(task.criticalConfirm),
+      completedByAuthUserId: user.loginSource === 'supabase_auth' ? (user.authUserId || user.backendUserId || '') : '',
+      completedByProfileId: user.loginSource === 'supabase_auth' ? (user.backendUserId || user.authUserId || '') : '',
+      shiftSessionBackendId: backendShiftSessionId,
+      syncStatus: user.loginSource === 'supabase_auth' ? 'pending_backend' : 'pending_auth',
+      updatedAt: new Date().toISOString(),
     };
     const nextLogs = logs.filter((log) => !(log.date === date && log.taskId === task.id));
     const savedLogs = [...nextLogs, nextLog];
     setLogs(savedLogs);
     saveStorage(LOG_KEY, savedLogs);
+    onSyncTaskLog?.(nextLog, { shiftSessionBackendId: backendShiftSessionId });
   }
 
   function clearTask(task) {
+    const resetLog = {
+      id: `${date}-${task.id}`,
+      localId: `task_completion:${date}:${task.shiftType}:${task.id}:${syncUserKey}`,
+      taskId: task.id,
+      taskTitle: task.title,
+      date,
+      completedBy: user.name,
+      staffRole: user.role,
+      shiftType: task.shiftType,
+      section: task.section,
+      timeBlock: task.timeBlock,
+      area: task.area,
+      priority: task.priority,
+      inputType: task.inputType,
+      input: '',
+      comment: '',
+      status: 'open',
+      completedAt: new Date().toISOString(),
+      completedByAuthUserId: user.loginSource === 'supabase_auth' ? (user.authUserId || user.backendUserId || '') : '',
+      completedByProfileId: user.loginSource === 'supabase_auth' ? (user.backendUserId || user.authUserId || '') : '',
+      shiftSessionBackendId: backendShiftSessionId,
+      syncStatus: user.loginSource === 'supabase_auth' ? 'pending_backend' : 'pending_auth',
+      updatedAt: new Date().toISOString(),
+    };
+    onSyncTaskLog?.(resetLog, { shiftSessionBackendId: backendShiftSessionId, updateLocal: false });
     const nextLogs = logs.filter((log) => !(log.date === date && log.taskId === task.id));
     setLogs(nextLogs);
     saveStorage(LOG_KEY, nextLogs);
@@ -1867,6 +2017,8 @@ function Checklist({
     ];
     setFinishRecords(nextRecords);
     saveStorage(FINISH_KEY, nextRecords);
+    const sessionResult = await onEnsureShiftSession?.(date, shiftType, { status: 'finished', finishedAt: record.finishedAt });
+    if (sessionResult?.ok && sessionResult.record?.backendId) setBackendShiftSessionId(sessionResult.record.backendId);
     setFinished(true);
   }
 
@@ -2077,7 +2229,14 @@ function Checklist({
         </section>
       )}
 
-      <HandoverNotes user={user} shiftType={shiftType} notes={handoverNotes} setNotes={setHandoverNotes} />
+      <HandoverNotes
+        user={user}
+        shiftType={shiftType}
+        notes={handoverNotes}
+        setNotes={setHandoverNotes}
+        onSync={onSyncHandover}
+        backendShiftSessionId={backendShiftSessionId}
+      />
 
       <section className="end-shift-summary">
         <div className="section-heading static-heading">
@@ -2160,8 +2319,11 @@ function ManagerDashboard({
   setEventTaskChecks,
   siteAccess,
   alertBackendStatus,
+  shiftDataStatus,
   authStatus,
+  refreshShiftData,
   fetchAuthProfiles,
+  onTestShiftBackendWrite,
   updateAlertRecord,
   retryAlertEmailNotification,
   refreshAlerts,
@@ -2271,6 +2433,10 @@ function ManagerDashboard({
   useEffect(() => {
     refreshAlerts({ reason: 'manager_dashboard_open' });
   }, []);
+
+  useEffect(() => {
+    refreshShiftData?.(date);
+  }, [date]);
 
   const attentionItems = [
     ...criticalMissing.slice(0, 4).map((task) => ({
@@ -2477,6 +2643,19 @@ function ManagerDashboard({
       `Asset issues today: ${assetIssues.length}`,
       `Events: ${events.length}`,
       `Cash/invoice signoffs: ${cashSignoffs.length}`,
+      `Shift data backend mode: ${shiftDataStatus.mode}`,
+      `Task completions source: ${shiftDataStatus.taskCompletionsSource}`,
+      `Handover notes source: ${shiftDataStatus.handoverNotesSource}`,
+      `Last Phase 4A action attempted: ${shiftDataStatus.lastPhase4Action || 'none'}`,
+      `Last Phase 4A action result: ${shiftDataStatus.lastPhase4Result || 'none'}`,
+      `Backend table write attempted: ${shiftDataStatus.backendTableWriteAttempted ? 'yes' : 'no'}`,
+      `Backend table write succeeded: ${shiftDataStatus.backendTableWriteSucceeded ? 'yes' : 'no'}`,
+      `Last shift data sync: ${shiftDataStatus.lastShiftDataSyncAt || 'none'}`,
+      `Pending local task completions: ${shiftDataStatus.pendingTaskCompletionsCount || 0}`,
+      `Pending handover notes: ${shiftDataStatus.pendingHandoverNotesCount || 0}`,
+      `Backend task rows loaded: ${shiftDataStatus.backendTaskRowsLoaded || 0}`,
+      `Backend handover rows loaded: ${shiftDataStatus.backendHandoverRowsLoaded || 0}`,
+      `Last Phase 4A error: ${shiftDataStatus.lastPhase4Error || shiftDataStatus.lastShiftSyncError || 'none'}`,
       `Site check: ${siteSettings.locationCheckEnabled ? 'enabled' : 'disabled'}`,
       `Location overrides: ${siteOverrides.length}`,
       `Routine source: ${usingDefaultRoutines ? 'default routines' : 'local edited/imported routines'}`,
@@ -3271,6 +3450,50 @@ function ManagerDashboard({
 
       <section className="local-status-card">
         <div>
+          <p className="eyebrow">Phase 4A</p>
+          <h2>Checklist backend status</h2>
+          <p className="muted">{shiftDataStatus.message || 'Showing local cache.'}</p>
+        </div>
+        <div className="status-grid">
+          <span><strong>{shiftDataStatus.mode || 'local_cache'}</strong> Shift data backend mode</span>
+          <span><strong>{shiftDataStatus.taskCompletionsSource || 'local_cache'}</strong> Task completions source</span>
+          <span><strong>{shiftDataStatus.handoverNotesSource || 'local_cache'}</strong> Handover notes source</span>
+          <span><strong>{shiftDataStatus.lastPhase4Action || 'None'}</strong> Last Phase 4A action</span>
+          <span><strong>{shiftDataStatus.lastPhase4Result || 'None'}</strong> Last Phase 4A result</span>
+          <span><strong>{shiftDataStatus.backendTableWriteAttempted ? 'Yes' : 'No'}</strong> Backend write attempted</span>
+          <span><strong>{shiftDataStatus.backendTableWriteSucceeded ? 'Yes' : 'No'}</strong> Backend write succeeded</span>
+          <span><strong>{shiftDataStatus.lastShiftDataSyncAt ? formatDateTime(shiftDataStatus.lastShiftDataSyncAt) : 'Not yet'}</strong> Last shift data sync</span>
+          <span><strong>{shiftDataStatus.pendingTaskCompletionsCount || 0}</strong> Pending task completions</span>
+          <span><strong>{shiftDataStatus.pendingHandoverNotesCount || 0}</strong> Pending handover notes</span>
+          <span><strong>{shiftDataStatus.backendTaskRowsLoaded || 0}</strong> Backend task rows loaded</span>
+          <span><strong>{shiftDataStatus.backendHandoverRowsLoaded || 0}</strong> Backend handover rows loaded</span>
+        </div>
+        {(shiftDataStatus.lastShiftSyncError || shiftDataStatus.lastPhase4Error) && (
+          <p className="critical-warning">{shiftDataStatus.lastShiftSyncError || shiftDataStatus.lastPhase4Error}</p>
+        )}
+        <div className="backup-actions">
+          <button
+            type="button"
+            className="ghost-button compact-button"
+            onClick={async () => {
+              const result = await onTestShiftBackendWrite?.();
+              setMessage(result?.ok ? 'Test checklist backend write succeeded.' : 'Test checklist backend write failed. Check Phase 4A diagnostics.');
+            }}
+          >
+            Test checklist backend write
+          </button>
+          <button
+            type="button"
+            className="ghost-button compact-button"
+            onClick={() => refreshShiftData?.(date)}
+          >
+            Refresh checklist backend
+          </button>
+        </div>
+      </section>
+
+      <section className="local-status-card">
+        <div>
           <p className="eyebrow">Auth</p>
           <h2>Auth status</h2>
           <p className="muted">Phase 3C transition mode: Supabase Auth is the intended backend path; staff-code login remains local fallback.</p>
@@ -3985,7 +4208,45 @@ values
   );
 }
 
-export default function App() {
+class AppErrorBoundary extends Component {
+  constructor(props) {
+    super(props);
+    this.state = { error: null, showDetails: false };
+  }
+
+  static getDerivedStateFromError(error) {
+    return { error, showDetails: false };
+  }
+
+  componentDidCatch(error, info) {
+    console.error('Mesh Shift Log view crashed:', error, info);
+  }
+
+  render() {
+    const { error, showDetails } = this.state;
+    if (!error) return this.props.children;
+    return (
+      <main className="page">
+        <section className="empty-state">
+          <p className="eyebrow">Recovery</p>
+          <h1>Something went wrong while loading this view.</h1>
+          <p className="muted">Your local data is still on this device. Return to the dashboard and try again.</p>
+          <div className="backup-actions">
+            <button type="button" className="primary-button" onClick={() => window.location.reload()}>Return to dashboard</button>
+            <button type="button" className="ghost-button" onClick={() => this.setState((current) => ({ showDetails: !current.showDetails }))}>
+              {showDetails ? 'Hide technical details' : 'Show technical details'}
+            </button>
+          </div>
+          {showDetails && (
+            <pre className="backend-details">{error.stack || error.message || String(error)}</pre>
+          )}
+        </section>
+      </main>
+    );
+  }
+}
+
+function App() {
   const [user, setUser] = useState(() => readStorage(SESSION_KEY, null));
   const [selectedShift, setSelectedShift] = useState(null);
   const [showManager, setShowManager] = useState(false);
@@ -4042,6 +4303,23 @@ export default function App() {
     pendingAuthAlertCount: normalizeAlerts(readStorage(ALERT_KEY, [])).filter((alert) => alert.syncStatus === 'pending_auth').length,
     localOnlyAlertCount: normalizeAlerts(readStorage(ALERT_KEY, [])).filter((alert) => alert.syncStatus === 'local_only').length,
   });
+  const [shiftDataStatus, setShiftDataStatus] = useState({
+    mode: 'initial',
+    message: 'Checklist data uses local cache until Email login sync is available.',
+    taskCompletionsSource: 'local_cache',
+    handoverNotesSource: 'local_cache',
+    lastPhase4Action: '',
+    lastPhase4Result: '',
+    lastPhase4Error: '',
+    backendTableWriteAttempted: false,
+    backendTableWriteSucceeded: false,
+    lastShiftDataSyncAt: '',
+    lastShiftSyncError: '',
+    pendingTaskCompletionsCount: normalizeLogs(readStorage(LOG_KEY, [])).filter((log) => ['pending_backend', 'pending_auth', 'sync_error'].includes(log.syncStatus)).length,
+    pendingHandoverNotesCount: Object.values(normalizeHandovers(readStorage(HANDOVER_KEY, {}))).filter((note) => ['pending_backend', 'pending_auth', 'sync_error'].includes(note.syncStatus)).length,
+    backendTaskRowsLoaded: 0,
+    backendHandoverRowsLoaded: 0,
+  });
   const [authStatus, setAuthStatus] = useState({
     configured: isSupabaseAuthConfigured,
     loginSource: user?.loginSource || 'staff_code',
@@ -4076,10 +4354,20 @@ export default function App() {
   useEffect(() => saveStorage(EVENT_TASK_CHECK_KEY, eventTaskChecks), [eventTaskChecks]);
 
   const alertsRef = useRef(alerts);
+  const logsRef = useRef(logs);
+  const handoverNotesRef = useRef(handoverNotes);
 
   useEffect(() => {
     alertsRef.current = alerts;
   }, [alerts]);
+
+  useEffect(() => {
+    logsRef.current = logs;
+  }, [logs]);
+
+  useEffect(() => {
+    handoverNotesRef.current = handoverNotes;
+  }, [handoverNotes]);
 
   const activeOverride = isOverrideActive(siteOverrides);
   const siteAccessStatus = activeOverride ? 'override' : siteAccess.status;
@@ -4148,6 +4436,460 @@ export default function App() {
 
   function currentAuthUserId() {
     return user?.loginSource === 'supabase_auth' ? (user.authUserId || user.backendUserId || '') : '';
+  }
+
+  function canAttemptShiftBackend() {
+    return user?.loginSource === 'supabase_auth';
+  }
+
+  function phase4Log(action, detail = {}) {
+    console.info(`Phase4A: ${action}`, {
+      mode: detail.mode || shiftDataStatus.mode,
+      ok: detail.ok,
+      reason: detail.reason || detail.message || '',
+      user: user?.name || '',
+      loginSource: user?.loginSource || 'unknown',
+    });
+  }
+
+  function beginPhase4Attempt(action, message = 'Checklist backend write attempting.') {
+    phase4Log(action, { mode: 'attempting' });
+    updateShiftDataStatus({
+      mode: 'authenticated',
+      message,
+      lastPhase4Action: action,
+      lastPhase4Result: 'attempting',
+      lastPhase4Error: '',
+      lastShiftSyncError: '',
+      backendTableWriteAttempted: true,
+      backendTableWriteSucceeded: false,
+    });
+  }
+
+  function updateShiftDataStatus(patch, nextLogs = logs, nextHandovers = handoverNotes) {
+    setShiftDataStatus((current) => ({
+      ...current,
+      ...patch,
+      pendingTaskCompletionsCount: normalizeLogs(nextLogs).filter((log) => ['pending_backend', 'pending_auth', 'sync_error'].includes(log.syncStatus)).length,
+      pendingHandoverNotesCount: Object.values(normalizeHandovers(nextHandovers)).filter((note) => ['pending_backend', 'pending_auth', 'sync_error'].includes(note.syncStatus)).length,
+    }));
+  }
+
+  function shiftSessionLocalId(date, shiftType, currentUser = user) {
+    return `shift_session:${date}:${shiftType}:${slug(currentUser?.authUserId || currentUser?.backendUserId || currentUser?.id || currentUser?.name || 'user')}`;
+  }
+
+  async function ensureShiftSession(date, shiftType, { status = 'active', finishedAt = '' } = {}) {
+    const action = status === 'finished' ? 'finish_shift_sync' : 'shift_session_ensure';
+    phase4Log(status === 'finished' ? 'finish shift sync called' : 'ensure shift session called', { mode: shiftDataStatus.mode });
+    if (!date || !shiftType || !user?.id || shiftType === 'guides') {
+      updateShiftDataStatus({
+        lastPhase4Action: action,
+        lastPhase4Result: 'skipped: missing_shift_context',
+        lastPhase4Error: 'Missing shift date, shift key or user.',
+        backendTableWriteAttempted: false,
+        backendTableWriteSucceeded: false,
+      });
+      return { ok: false, mode: 'local_only', message: 'Checklist data saved locally.' };
+    }
+    if (!canAttemptShiftBackend()) {
+      phase4Log('ensure shift session skipped', { mode: isBackendAuthRequired ? 'auth_required' : 'local_only', reason: 'staff-code/local-only login' });
+      updateShiftDataStatus({
+        mode: isBackendAuthRequired ? 'auth_required' : 'local_only',
+        message: 'Checklist data saved locally. Email login required for backend sync.',
+        lastPhase4Action: action,
+        lastPhase4Result: 'skipped: login_source_not_supabase_auth',
+        lastPhase4Error: 'No Supabase Email session for shift backend sync.',
+        backendTableWriteAttempted: false,
+        backendTableWriteSucceeded: false,
+        lastShiftSyncError: '',
+      });
+      return { ok: false, mode: isBackendAuthRequired ? 'auth_required' : 'local_only', message: 'Checklist data saved locally.' };
+    }
+    beginPhase4Attempt(action, status === 'finished' ? 'Finishing shift in checklist backend.' : 'Ensuring shift session in checklist backend.');
+    try {
+      const startedAt = new Date().toISOString();
+      const result = await createOrUpdateShiftSession({
+        localId: shiftSessionLocalId(date, shiftType),
+        date,
+        shiftType,
+        shiftLabel: shiftLabels[shiftType] || shiftType,
+        startedAt,
+        finishedAt,
+        status,
+        userProfileId: user?.backendUserId || user?.authUserId || '',
+        displayName: user?.name || '',
+        role: user?.role || '',
+        loginSource: user?.loginSource || 'staff_code',
+      });
+      phase4Log('ensure shift session result', { ok: result.ok, mode: result.mode, message: result.message });
+      if (!result.ok) console.error('Phase 4A shift session sync failed:', result.message || result.error);
+      updateShiftDataStatus({
+        mode: result.mode,
+        message: result.ok ? 'Checklist data synced.' : result.message || 'Checklist data saved locally.',
+        lastPhase4Action: action,
+        lastPhase4Result: result.ok ? 'success' : 'failed',
+        lastPhase4Error: result.ok ? '' : result.message || 'Shift session sync failed.',
+        backendTableWriteAttempted: true,
+        backendTableWriteSucceeded: Boolean(result.ok),
+        lastShiftDataSyncAt: result.ok ? new Date().toISOString() : shiftDataStatus.lastShiftDataSyncAt,
+        lastShiftSyncError: result.ok ? '' : result.message || '',
+      });
+      return result;
+    } catch (error) {
+      console.error('Phase 4A shift session sync failed:', error);
+      updateShiftDataStatus({
+        mode: 'sync_error',
+        message: 'Checklist data saved locally.',
+        lastPhase4Action: action,
+        lastPhase4Result: 'failed',
+        lastPhase4Error: error.message || 'Shift session sync failed.',
+        backendTableWriteAttempted: true,
+        backendTableWriteSucceeded: false,
+        lastShiftSyncError: error.message || 'Shift session sync failed.',
+      });
+      return { ok: false, mode: 'sync_error', message: error.message || 'Shift session sync failed.', error };
+    }
+  }
+
+  async function syncChecklistLog(log, { shiftSessionBackendId = '', updateLocal = true } = {}) {
+    phase4Log('task sync called', { mode: shiftDataStatus.mode });
+    if (!log?.date || !log?.taskId) {
+      const result = { ok: false, mode: 'local_only', message: 'Missing shift date or task id.' };
+      updateShiftDataStatus({
+        mode: result.mode,
+        message: result.message,
+        taskCompletionsSource: 'local_cache',
+        lastPhase4Action: 'task_completion_sync',
+        lastPhase4Result: !log?.date ? 'skipped: missing_shift_date' : 'skipped: missing_task_id',
+        lastPhase4Error: result.message,
+        backendTableWriteAttempted: false,
+        backendTableWriteSucceeded: false,
+      });
+      return result;
+    }
+    if (!canAttemptShiftBackend()) {
+      const result = { ok: false, mode: isBackendAuthRequired ? 'auth_required' : 'local_only', message: 'Checklist data saved locally. Email login required for backend sync.' };
+      phase4Log('task sync skipped', { mode: result.mode, reason: 'staff-code/local-only login' });
+      updateShiftDataStatus({
+        mode: result.mode,
+        message: result.message,
+        taskCompletionsSource: 'local_cache',
+        lastPhase4Action: 'task_completion_sync',
+        lastPhase4Result: 'skipped: login_source_not_supabase_auth',
+        lastPhase4Error: 'No Supabase Email session for task completion sync.',
+        backendTableWriteAttempted: false,
+        backendTableWriteSucceeded: false,
+      });
+      return result;
+    }
+    beginPhase4Attempt('task_completion_sync', 'Syncing task completion to checklist backend.');
+    let result;
+    try {
+      result = await syncTaskCompletion(log, { shiftSessionBackendId });
+    } catch (error) {
+      console.error('Phase 4A task completion sync failed:', error);
+      result = { ok: false, mode: 'sync_error', message: error.message || 'Checklist sync failed.', error };
+    }
+    if (!result.ok && result.mode === 'sync_error') {
+      console.error('Phase 4A task completion sync failed:', result.message || result.error);
+    }
+    phase4Log('task sync result', { ok: result.ok, mode: result.mode, message: result.message });
+    if (!updateLocal) {
+      updateShiftDataStatus({
+        mode: result.mode,
+        message: result.ok ? 'Checklist data synced.' : result.message || 'Checklist data saved locally.',
+        taskCompletionsSource: result.ok ? 'backend_synced' : 'local_cache',
+        lastPhase4Action: 'task_completion_sync',
+        lastPhase4Result: result.ok ? 'success' : 'failed',
+        lastPhase4Error: result.ok ? '' : result.message || 'Checklist sync failed.',
+        backendTableWriteAttempted: true,
+        backendTableWriteSucceeded: Boolean(result.ok),
+        lastShiftDataSyncAt: result.ok ? new Date().toISOString() : shiftDataStatus.lastShiftDataSyncAt,
+        lastShiftSyncError: result.ok ? '' : result.message || '',
+      });
+      return result;
+    }
+    let matched = false;
+    const nextLogs = normalizeLogs(logsRef.current).map((item) => {
+      if ((item.localId || item.id) !== (log.localId || log.id)) return item;
+      matched = true;
+      if (result.ok) return { ...item, backendId: result.record.backendId, syncStatus: 'synced', syncError: '', updatedAt: result.record.updatedAt };
+      return { ...item, syncStatus: result.mode === 'auth_required' ? 'pending_auth' : 'sync_error', syncError: result.message || 'Checklist sync failed.' };
+    });
+    if (!matched) {
+      nextLogs.push(result.ok
+        ? { ...log, backendId: result.record.backendId, syncStatus: 'synced', syncError: '', updatedAt: result.record.updatedAt }
+        : { ...log, syncStatus: result.mode === 'auth_required' ? 'pending_auth' : 'sync_error', syncError: result.message || 'Checklist sync failed.' });
+    }
+    setLogs(nextLogs);
+    saveStorage(LOG_KEY, nextLogs);
+    updateShiftDataStatus({
+      mode: result.mode,
+      message: result.ok ? 'Checklist data synced.' : result.message || 'Checklist data saved locally. Email login required for backend sync.',
+      taskCompletionsSource: result.ok ? 'backend_synced' : 'local_cache',
+      lastPhase4Action: 'task_completion_sync',
+      lastPhase4Result: result.ok ? 'success' : 'failed',
+      lastPhase4Error: result.ok ? '' : result.message || 'Checklist sync failed.',
+      backendTableWriteAttempted: true,
+      backendTableWriteSucceeded: Boolean(result.ok),
+      lastShiftDataSyncAt: result.ok ? new Date().toISOString() : shiftDataStatus.lastShiftDataSyncAt,
+      lastShiftSyncError: result.ok ? '' : result.message || '',
+    }, nextLogs);
+    return result;
+  }
+
+  async function syncChecklistHandover(note) {
+    phase4Log('handover sync called', { mode: shiftDataStatus.mode });
+    if (!note?.date || !note?.shiftType) {
+      const result = { ok: false, mode: 'local_only', message: 'Missing note date or shift key.' };
+      updateShiftDataStatus({
+        mode: result.mode,
+        message: result.message,
+        handoverNotesSource: 'local_cache',
+        lastPhase4Action: 'handover_sync',
+        lastPhase4Result: !note?.date ? 'skipped: missing_shift_date' : 'skipped: missing_shift_key',
+        lastPhase4Error: result.message,
+        backendTableWriteAttempted: false,
+        backendTableWriteSucceeded: false,
+      });
+      return result;
+    }
+    if (![note.nextShift, note.lowStock, note.maintenance, note.memberEvent].some((value) => String(value || '').trim())) {
+      const result = { ok: false, mode: 'local_only', message: 'Empty handover note saved locally.' };
+      updateShiftDataStatus({
+        mode: result.mode,
+        message: result.message,
+        handoverNotesSource: 'local_cache',
+        lastPhase4Action: 'handover_sync',
+        lastPhase4Result: 'skipped: empty_note',
+        lastPhase4Error: 'Empty handover note was not sent to backend.',
+        backendTableWriteAttempted: false,
+        backendTableWriteSucceeded: false,
+      });
+      return result;
+    }
+    if (!canAttemptShiftBackend()) {
+      const result = { ok: false, mode: isBackendAuthRequired ? 'auth_required' : 'local_only', message: 'Handover notes saved locally. Email login required for backend sync.' };
+      phase4Log('handover sync skipped', { mode: result.mode, reason: 'staff-code/local-only login' });
+      updateShiftDataStatus({
+        mode: result.mode,
+        message: result.message,
+        handoverNotesSource: 'local_cache',
+        lastPhase4Action: 'handover_sync',
+        lastPhase4Result: 'skipped: login_source_not_supabase_auth',
+        lastPhase4Error: 'No Supabase Email session for handover sync.',
+        backendTableWriteAttempted: false,
+        backendTableWriteSucceeded: false,
+      });
+      return result;
+    }
+    beginPhase4Attempt('handover_sync', 'Syncing handover note to checklist backend.');
+    let result;
+    try {
+      result = await syncHandoverNote(note, { shiftSessionBackendId: note.shiftSessionBackendId || '' });
+    } catch (error) {
+      console.error('Phase 4A handover sync failed:', error);
+      result = { ok: false, mode: 'sync_error', message: error.message || 'Handover sync failed.', error };
+    }
+    if (!result.ok && result.mode === 'sync_error') {
+      console.error('Phase 4A handover sync failed:', result.message || result.error);
+    }
+    phase4Log('handover sync result', { ok: result.ok, mode: result.mode, message: result.message });
+    const currentNotes = normalizeHandovers(readStorage(HANDOVER_KEY, handoverNotes));
+    const key = Object.keys(currentNotes).find((itemKey) => handoverIdentity(currentNotes[itemKey]) === handoverIdentity(note)) || handoverIdentity(note);
+    const nextNotes = {
+      ...currentNotes,
+      [key]: result.ok
+        ? { ...currentNotes[key], ...note, backendId: result.record.backendId, syncStatus: 'synced', syncError: '', updatedAt: result.record.updatedAt }
+        : { ...currentNotes[key], ...note, syncStatus: result.mode === 'auth_required' ? 'pending_auth' : 'sync_error', syncError: result.message || 'Handover sync failed.' },
+    };
+    setHandoverNotes(nextNotes);
+    saveStorage(HANDOVER_KEY, nextNotes);
+    updateShiftDataStatus({
+      mode: result.mode,
+      message: result.ok ? 'Handover notes synced.' : result.message || 'Handover notes saved locally.',
+      handoverNotesSource: result.ok ? 'backend_synced' : 'local_cache',
+      lastPhase4Action: 'handover_sync',
+      lastPhase4Result: result.ok ? 'success' : 'failed',
+      lastPhase4Error: result.ok ? '' : result.message || 'Handover sync failed.',
+      backendTableWriteAttempted: true,
+      backendTableWriteSucceeded: Boolean(result.ok),
+      lastShiftDataSyncAt: result.ok ? new Date().toISOString() : shiftDataStatus.lastShiftDataSyncAt,
+      lastShiftSyncError: result.ok ? '' : result.message || '',
+    }, logs, nextNotes);
+    return result;
+  }
+
+  async function fetchShiftDataForDate(date = todayKey()) {
+    if (!date || !canAttemptShiftBackend()) {
+      updateShiftDataStatus({
+        mode: isBackendAuthRequired ? 'auth_required' : 'local_only',
+        message: 'Showing local cache.',
+        taskCompletionsSource: 'local_cache',
+        handoverNotesSource: 'local_cache',
+        lastPhase4Action: 'fetch_shift_data',
+        lastPhase4Result: 'skipped',
+        lastPhase4Error: !date ? 'Missing date.' : 'No Supabase Email session for shift data fetch.',
+        backendTableWriteAttempted: false,
+        backendTableWriteSucceeded: false,
+      });
+      return { ok: false, mode: isBackendAuthRequired ? 'auth_required' : 'local_only' };
+    }
+    let mode;
+    try {
+      mode = await getBackendShiftMode();
+    } catch (error) {
+      console.error('Phase 4A shift data fetch failed:', error);
+      updateShiftDataStatus({
+        mode: 'sync_error',
+        message: 'Showing local cache.',
+        lastShiftSyncError: error.message || 'Checklist data fetch failed.',
+      });
+      return { ok: false, mode: 'sync_error', error };
+    }
+    if (!mode.isAuthenticated) {
+      updateShiftDataStatus({
+        mode: mode.mode,
+        message: mode.message || 'Checklist data saved locally. Email login required for backend sync.',
+        taskCompletionsSource: 'local_cache',
+        handoverNotesSource: 'local_cache',
+      });
+      return { ok: false, mode: mode.mode };
+    }
+    let taskResult;
+    let handoverResult;
+    try {
+      [taskResult, handoverResult] = await Promise.all([
+        fetchTaskCompletionsForDate(date),
+        fetchHandoverNotesForDate(date),
+      ]);
+    } catch (error) {
+      console.error('Phase 4A shift data fetch failed:', error);
+      updateShiftDataStatus({
+        mode: 'sync_error',
+        message: 'Showing local cache.',
+        lastShiftSyncError: error.message || 'Checklist data fetch failed.',
+      });
+      return { ok: false, mode: 'sync_error', error };
+    }
+    const mergedLogs = taskResult.ok ? mergeTaskLogs(logsRef.current, taskResult.records) : logsRef.current;
+    const mergedHandovers = handoverResult.ok ? mergeHandoverNotes(handoverNotesRef.current, handoverResult.records) : handoverNotesRef.current;
+    setLogs(mergedLogs);
+    setHandoverNotes(mergedHandovers);
+    saveStorage(LOG_KEY, mergedLogs);
+    saveStorage(HANDOVER_KEY, mergedHandovers);
+    updateShiftDataStatus({
+      mode: 'authenticated',
+      message: taskResult.ok && handoverResult.ok ? 'Checklist backend ready.' : 'Showing local cache.',
+      taskCompletionsSource: taskResult.ok ? 'backend_synced' : 'local_cache',
+      handoverNotesSource: handoverResult.ok ? 'backend_synced' : 'local_cache',
+      lastShiftDataSyncAt: taskResult.ok || handoverResult.ok ? new Date().toISOString() : shiftDataStatus.lastShiftDataSyncAt,
+      lastShiftSyncError: taskResult.ok && handoverResult.ok ? '' : (taskResult.message || handoverResult.message || ''),
+      backendTaskRowsLoaded: taskResult.records?.length || 0,
+      backendHandoverRowsLoaded: handoverResult.records?.length || 0,
+    }, mergedLogs, mergedHandovers);
+    return { ok: taskResult.ok && handoverResult.ok };
+  }
+
+  async function testChecklistBackendWrite() {
+    const date = todayKey();
+    const shiftType = 'opening';
+    const authUserId = user?.authUserId || user?.backendUserId || user?.id || 'unknown';
+    if (!canAttemptShiftBackend()) {
+      updateShiftDataStatus({
+        mode: isBackendAuthRequired ? 'auth_required' : 'local_only',
+        message: 'Test skipped. Email login required for checklist backend writes.',
+        lastPhase4Action: 'debug_backend_write',
+        lastPhase4Result: 'skipped: login_source_not_supabase_auth',
+        lastPhase4Error: 'No Supabase Email session for checklist backend test.',
+        backendTableWriteAttempted: false,
+        backendTableWriteSucceeded: false,
+      });
+      return { ok: false, message: 'Email login required.' };
+    }
+
+    beginPhase4Attempt('debug_backend_write', 'Testing checklist backend write.');
+    try {
+      const timestamp = new Date().toISOString();
+      const sessionResult = await createOrUpdateShiftSession({
+        localId: `shift_session:${date}:${shiftType}:${slug(authUserId)}:debug`,
+        date,
+        shiftType,
+        shiftLabel: `${shiftLabels[shiftType] || shiftType} debug`,
+        startedAt: timestamp,
+        status: 'active',
+        userProfileId: user?.backendUserId || user?.authUserId || '',
+        displayName: user?.name || '',
+        role: user?.role || '',
+        loginSource: user?.loginSource || 'supabase_auth',
+      });
+      if (!sessionResult.ok) throw new Error(sessionResult.message || 'Debug shift session write failed.');
+
+      const taskResult = await syncTaskCompletion({
+        id: `debug-${date}-phase4a-debug-test`,
+        localId: `task_completion:${date}:${shiftType}:phase4a-debug-test:${slug(authUserId)}`,
+        taskId: 'phase4a-debug-test',
+        taskTitle: 'Phase 4A debug test',
+        date,
+        shiftType,
+        section: 'Diagnostics',
+        timeBlock: 'Diagnostics',
+        status: 'done',
+        completedAt: timestamp,
+        completedBy: user?.name || '',
+        completedByAuthUserId: user?.authUserId || user?.backendUserId || '',
+        completedByProfileId: user?.backendUserId || user?.authUserId || '',
+        input: 'manager diagnostics',
+        comment: 'Created by Test checklist backend write.',
+        criticalConfirmed: false,
+      }, { shiftSessionBackendId: sessionResult.record?.backendId || '' });
+      if (!taskResult.ok) throw new Error(taskResult.message || 'Debug task completion write failed.');
+
+      const handoverResult = await syncHandoverNote({
+        id: `debug-handover-${date}-${shiftType}`,
+        localId: `handover:${date}:${shiftType}:${slug(authUserId)}:debug`,
+        date,
+        shiftType,
+        completedBy: user?.name || '',
+        createdBy: user?.name || '',
+        createdByAuthUserId: user?.authUserId || user?.backendUserId || '',
+        createdByProfileId: user?.backendUserId || user?.authUserId || '',
+        nextShift: 'Phase 4A debug handover write.',
+        lowStock: '',
+        maintenance: '',
+        memberEvent: '',
+      }, { shiftSessionBackendId: sessionResult.record?.backendId || '' });
+      if (!handoverResult.ok) throw new Error(handoverResult.message || 'Debug handover write failed.');
+
+      updateShiftDataStatus({
+        mode: 'authenticated',
+        message: 'Test checklist backend write succeeded.',
+        taskCompletionsSource: 'backend_synced',
+        handoverNotesSource: 'backend_synced',
+        lastPhase4Action: 'debug_backend_write',
+        lastPhase4Result: 'success',
+        lastPhase4Error: '',
+        backendTableWriteAttempted: true,
+        backendTableWriteSucceeded: true,
+        lastShiftDataSyncAt: new Date().toISOString(),
+        lastShiftSyncError: '',
+      });
+      return { ok: true };
+    } catch (error) {
+      console.error('Phase 4A debug backend write failed:', error);
+      updateShiftDataStatus({
+        mode: 'sync_error',
+        message: 'Test checklist backend write failed.',
+        lastPhase4Action: 'debug_backend_write',
+        lastPhase4Result: 'failed',
+        lastPhase4Error: error.message || 'Debug backend write failed.',
+        backendTableWriteAttempted: true,
+        backendTableWriteSucceeded: false,
+        lastShiftSyncError: error.message || 'Debug backend write failed.',
+      });
+      return { ok: false, error };
+    }
   }
 
   async function applySupabaseSession(session) {
@@ -4763,6 +5505,10 @@ export default function App() {
   }, [user?.id]);
 
   useEffect(() => {
+    if (user?.loginSource === 'supabase_auth') fetchShiftDataForDate(todayKey());
+  }, [user?.id, user?.loginSource]);
+
+  useEffect(() => {
     if (!('serviceWorker' in navigator) || import.meta.env.DEV) return undefined;
     let registrationRef;
     navigator.serviceWorker.register(`${import.meta.env.BASE_URL}sw.js`).then((registration) => {
@@ -4862,6 +5608,9 @@ export default function App() {
             setEventTaskChecks={setEventTaskChecks}
             staffUsers={staffUsers}
             requestWriteAccess={requestWriteAccess}
+            onEnsureShiftSession={ensureShiftSession}
+            onSyncTaskLog={syncChecklistLog}
+            onSyncHandover={syncChecklistHandover}
             onShowOverview={() => setSelectedShift('overview')}
             onGuides={() => setSelectedShift('guides')}
           />
@@ -4916,6 +5665,9 @@ export default function App() {
             setAssetChecks={setAssetChecks}
             staffUsers={staffUsers}
             requestWriteAccess={requestWriteAccess}
+            onEnsureShiftSession={ensureShiftSession}
+            onSyncTaskLog={syncChecklistLog}
+            onSyncHandover={syncChecklistHandover}
             onShowOverview={() => setSelectedShift('overview')}
             onChangeShift={() => setSelectedShift(null)}
             onLogout={logout}
@@ -4955,11 +5707,14 @@ export default function App() {
           setEventTaskChecks={setEventTaskChecks}
           siteAccess={siteAccess}
           alertBackendStatus={alertBackendStatus}
+          shiftDataStatus={shiftDataStatus}
           authStatus={authStatus}
           fetchAuthProfiles={fetchUserProfiles}
+          onTestShiftBackendWrite={testChecklistBackendWrite}
           updateAlertRecord={updateAlertRecord}
           retryAlertEmailNotification={(alert) => attemptAlertEmailNotification(alert, { reason: 'retry' })}
           refreshAlerts={loadSupabaseAlerts}
+          refreshShiftData={fetchShiftDataForDate}
           retryAlertSync={() => refreshAlertsFromBackend('retry')}
           checkLocation={checkLocation}
           requestWriteAccess={requestWriteAccess}

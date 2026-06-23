@@ -359,6 +359,68 @@ Organization safety:
 - Phase 3C policies still allow null organization rows so Bobby does not lose visibility.
 - Later, create a Mesh Youngstorget organization row, set Bobby/profile `organization_id`, backfill existing alerts, then tighten RLS to organization-only.
 
+## Supabase Phase 4A shift/checklist backend foundation
+
+Alerts were already backend-backed before Phase 4A. Phase 4A starts backend sync for the core operational shift records:
+
+- `shift_sessions`
+- `task_completions`
+- `handover_notes`
+
+Email login is required for real backend sync. Staff-code mode remains a local-only fallback and continues to save checklist activity in localStorage.
+
+Still local-only/not backend-managed in Phase 4A:
+
+- routine/task definitions and routine editor data
+- full event floor model
+- asset registry/checks
+- cash/invoice signoff
+- staff-code management
+- site/geofence settings
+- backup/import system overhaul
+
+Behavior:
+
+- Checklist task changes update the UI and localStorage immediately.
+- If the user is signed in with Supabase Email login, task completions sync to `public.task_completions`.
+- Handover notes auto-save locally and sync to `public.handover_notes` after a short typing delay.
+- Opening/using a checklist creates or updates a `public.shift_sessions` row.
+- Finishing a shift updates `finished_at` and `status = 'finished'` when backend sync is available.
+- If backend sync is unavailable, records remain local with calm pending/local status.
+
+Setup:
+
+1. Run the updated [supabase/schema.sql](supabase/schema.sql).
+2. Confirm Bobby Email login works.
+3. Confirm Bobby has an active `user_profiles` row.
+4. Mark one checklist task done while Email logged in.
+5. Verify a row appears in `public.task_completions`.
+6. Save a handover note.
+7. Verify a row appears in `public.handover_notes`.
+8. Finish a shift.
+9. Verify `public.shift_sessions.finished_at` and `status` update.
+
+Useful Supabase SQL checks:
+
+```sql
+select *
+from public.shift_sessions
+order by created_at desc
+limit 5;
+
+select *
+from public.task_completions
+order by created_at desc
+limit 5;
+
+select *
+from public.handover_notes
+order by created_at desc
+limit 5;
+```
+
+The Manager Dashboard includes a Phase 4A checklist backend status card showing backend mode, task/handover source, last Phase 4A action/result, whether a backend write was attempted, whether it succeeded, pending local counts, loaded backend row counts and last sync error.
+
 ## Backend Schema Notes
 
 - [supabase/schema.sql](supabase/schema.sql) is the current source of truth for Supabase tables, policies, triggers and helper functions.
