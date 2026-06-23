@@ -104,6 +104,8 @@ export function normalizeTaskCompletion(row) {
     status: row.status || 'done',
     completedAt: row.completed_at || row.updated_at || row.created_at || '',
     completedBy: row.completed_by_name || '',
+    completedByAuthUserId: row.completed_by_auth_user_id || '',
+    completedByProfileId: row.completed_by_profile_id || '',
     input: inputValues.input || '',
     comment: row.not_relevant_reason || inputValues.comment || '',
     inputType: inputValues.inputType || '',
@@ -206,6 +208,19 @@ export async function fetchTaskCompletionsForDate(date) {
     .order('updated_at', { ascending: false });
   if (error) return { ok: false, mode: 'sync_error', message: error.message, error, records: [] };
   return { ok: true, mode: 'authenticated', records: (data || []).map(normalizeTaskCompletion).filter(Boolean), rows: data || [] };
+}
+
+export async function fetchShiftSessionsForDate(date) {
+  const context = await getAuthenticatedContext();
+  if (!context.ok) return { ...context, records: [] };
+  if (!date) return { ...validationError('Missing date for shift session fetch.'), records: [] };
+  const { data, error } = await supabaseAuthClient
+    .from('shift_sessions')
+    .select('*')
+    .eq('shift_date', date)
+    .order('updated_at', { ascending: false });
+  if (error) return { ok: false, mode: 'sync_error', message: error.message, error, records: [] };
+  return { ok: true, mode: 'authenticated', records: (data || []).map(normalizeShiftRecord).filter(Boolean), rows: data || [] };
 }
 
 export async function syncHandoverNote(note, { shiftSessionBackendId = '' } = {}) {

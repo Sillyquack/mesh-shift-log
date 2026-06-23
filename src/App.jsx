@@ -28,6 +28,7 @@ import {
 import {
   createOrUpdateShiftSession,
   fetchHandoverNotesForDate,
+  fetchShiftSessionsForDate,
   fetchTaskCompletionsForDate,
   getBackendShiftMode,
   syncHandoverNote,
@@ -628,20 +629,64 @@ function recordFreshness(record) {
   );
 }
 
-function mergeTaskLogs(localLogs, backendLogs) {
+function taskLogIdentity(log) {
+  return [
+    log.date || '',
+    log.shiftType || '',
+    log.taskId || '',
+    log.completedByAuthUserId || log.completedByProfileId || log.completedBy || '',
+  ].join('__');
+}
+
+function dashboardTaskIdentity(log) {
+  return [
+    log.date || '',
+    log.shiftType || '',
+    log.taskId || '',
+  ].join('__');
+}
+
+function preferredRecord(existing, candidate) {
+  if (!existing) return candidate;
+  if (['pending_backend', 'pending_auth', 'sync_error'].includes(existing.syncStatus) && recordFreshness(existing) > recordFreshness(candidate)) {
+    return existing;
+  }
+  return recordFreshness(candidate) >= recordFreshness(existing) ? candidate : existing;
+}
+
+function uniqueTaskLogsForDashboard(logs) {
   const merged = new Map();
-  normalizeLogs(localLogs).forEach((log) => {
-    merged.set(log.localId || log.id, log);
-  });
-  normalizeLogs(backendLogs).forEach((backendLog) => {
-    const key = backendLog.localId || backendLog.id;
-    const existing = merged.get(key);
-    if (existing && ['pending_backend', 'pending_auth', 'sync_error'].includes(existing.syncStatus) && recordFreshness(existing) > recordFreshness(backendLog)) {
-      return;
-    }
-    merged.set(key, { ...existing, ...backendLog, syncStatus: 'synced' });
+  normalizeLogs(logs).forEach((log) => {
+    const key = dashboardTaskIdentity(log);
+    merged.set(key, preferredRecord(merged.get(key), log));
   });
   return [...merged.values()];
+}
+
+function mergeTaskLogsWithStats(localLogs, backendLogs) {
+  const merged = new Map();
+  const logicalKeys = new Map();
+  let ignoredDuplicates = 0;
+  normalizeLogs(localLogs).forEach((log) => {
+    const key = log.localId || log.backendId || log.id || taskLogIdentity(log);
+    merged.set(key, log);
+    logicalKeys.set(taskLogIdentity(log), key);
+  });
+  normalizeLogs(backendLogs).forEach((backendLog) => {
+    const logicalKey = taskLogIdentity(backendLog);
+    const directKey = backendLog.localId || backendLog.backendId || backendLog.id || logicalKey;
+    const key = merged.has(directKey) ? directKey : logicalKeys.get(logicalKey) || directKey;
+    const existing = merged.get(key);
+    if (existing) ignoredDuplicates += 1;
+    const preferred = preferredRecord(existing, { ...backendLog, syncStatus: 'synced' });
+    merged.set(key, { ...existing, ...preferred, syncStatus: preferred.syncStatus || 'synced' });
+    logicalKeys.set(logicalKey, key);
+  });
+  return { records: [...merged.values()], ignoredDuplicates };
+}
+
+function mergeTaskLogs(localLogs, backendLogs) {
+  return mergeTaskLogsWithStats(localLogs, backendLogs).records;
 }
 
 function handoverIdentity(note) {
@@ -2362,7 +2407,8 @@ function ManagerDashboard({
   const activeSiteOverride = isOverrideActive(siteOverrides);
   const allTasks = activeShifts.flatMap((shift) => flattenTasks(routines, shift.id, date));
   const visibleTasks = allTasks.filter((task) => shiftFilter === 'all' || task.shiftType === shiftFilter);
-  const dateLogs = logs.filter((log) => log.date === date);
+  const rawDateLogs = logs.filter((log) => log.date === date);
+  const dateLogs = uniqueTaskLogsForDashboard(rawDateLogs);
   const dateFinishRecords = finishRecords.filter((record) => record.date === date);
   const dateAlerts = alerts.filter((alert) => alert.date === date);
   const visibleAlerts = dateAlerts
@@ -2415,7 +2461,7 @@ function ManagerDashboard({
     ...finishRecords.map((record) => record.date),
     ...responsibleAssignments.map((item) => item.date),
   ].filter(Boolean))].length;
-  const handledRecords = logs.filter(isHandled).length;
+  const handledRecords = uniqueTaskLogsForDashboard(logs).filter(isHandled).length;
   const usingDefaultRoutines = routinesUseDefaults(routines);
   const normalizedRoutineList = normalizeRoutines(routines);
   const allRoutineTasks = normalizedRoutineList.flatMap((routine) => routine.tasks);
@@ -2652,10 +2698,26 @@ function ManagerDashboard({
       `Backend table write succeeded: ${shiftDataStatus.backendTableWriteSucceeded ? 'yes' : 'no'}`,
       `Last shift data sync: ${shiftDataStatus.lastShiftDataSyncAt || 'none'}`,
       `Pending local task completions: ${shiftDataStatus.pendingTaskCompletionsCount || 0}`,
+      `Pending auth task completions: ${shiftDataStatus.pendingAuthTaskCompletionsCount || 0}`,
+      `Pending backend retry task completions: ${shiftDataStatus.pendingBackendRetryTaskCompletionsCount || 0}`,
+      `Synced local task completions: ${shiftDataStatus.syncedTaskCompletionsCount || 0}`,
       `Pending handover notes: ${shiftDataStatus.pendingHandoverNotesCount || 0}`,
-      `Backend task rows loaded: ${shiftDataStatus.backendTaskRowsLoaded || 0}`,
-      `Backend handover rows loaded: ${shiftDataStatus.backendHandoverRowsLoaded || 0}`,
-      `Last Phase 4A error: ${shiftDataStatus.lastPhase4Error || shiftDataStatus.lastShiftSyncError || 'none'}`,
+      `Supabase shift sessions loaded: ${shiftDataStatus.backendShiftSessionsLoaded || 0}`,
+      `Supabase active sessions: ${shiftDataStatus.backendActiveShiftSessions || 0}`,
+      `Supabase finished sessions: ${shiftDataStatus.backendFinishedShiftSessions || 0}`,
+      `Supabase task rows loaded: ${shiftDataStatus.backendTaskRowsLoaded || 0}`,
+      `Supabase done task rows: ${shiftDataStatus.backendDoneTaskRows || 0}`,
+      `Supabase not relevant task rows: ${shiftDataStatus.backendNotRelevantTaskRows || 0}`,
+      `Supabase open/reset task rows: ${shiftDataStatus.backendOpenTaskRows || 0}`,
+      `Supabase handover rows loaded: ${shiftDataStatus.backendHandoverRowsLoaded || 0}`,
+      `Merged unique task completions: ${shiftDataStatus.mergedUniqueTaskCompletions || 0}`,
+      `Ignored duplicate task rows: ${shiftDataStatus.ignoredDuplicateTaskRows || 0}`,
+      `Last backend count refresh: ${shiftDataStatus.lastBackendCountRefreshAt || 'none'}`,
+      `Last backend count error: ${shiftDataStatus.lastBackendCountError || 'none'}`,
+      `Latest shift session: ${shiftDataStatus.latestShiftSessionDate || 'none'} ${shiftDataStatus.latestShiftSessionShift || ''} ${shiftDataStatus.latestShiftSessionStatus || ''}`,
+      `Latest shift session finished at: ${shiftDataStatus.latestShiftSessionFinishedAt || 'none'}`,
+      `Latest shift session backend id: ${shiftDataStatus.latestShiftSessionBackendId || 'none'}`,
+      `Last Phase 4A error: ${shiftDataStatus.lastPhase4Error || shiftDataStatus.lastShiftSyncError || shiftDataStatus.lastBackendCountError || 'none'}`,
       `Site check: ${siteSettings.locationCheckEnabled ? 'enabled' : 'disabled'}`,
       `Location overrides: ${siteOverrides.length}`,
       `Routine source: ${usingDefaultRoutines ? 'default routines' : 'local edited/imported routines'}`,
@@ -3463,13 +3525,32 @@ function ManagerDashboard({
           <span><strong>{shiftDataStatus.backendTableWriteAttempted ? 'Yes' : 'No'}</strong> Backend write attempted</span>
           <span><strong>{shiftDataStatus.backendTableWriteSucceeded ? 'Yes' : 'No'}</strong> Backend write succeeded</span>
           <span><strong>{shiftDataStatus.lastShiftDataSyncAt ? formatDateTime(shiftDataStatus.lastShiftDataSyncAt) : 'Not yet'}</strong> Last shift data sync</span>
-          <span><strong>{shiftDataStatus.pendingTaskCompletionsCount || 0}</strong> Pending task completions</span>
+          <span><strong>{shiftDataStatus.backendShiftSessionsLoaded || 0}</strong> Supabase shift sessions loaded</span>
+          <span><strong>{shiftDataStatus.backendActiveShiftSessions || 0}</strong> Supabase active sessions</span>
+          <span><strong>{shiftDataStatus.backendFinishedShiftSessions || 0}</strong> Supabase finished sessions</span>
+          <span><strong>{shiftDataStatus.backendTaskRowsLoaded || 0}</strong> Supabase task rows loaded</span>
+          <span><strong>{shiftDataStatus.backendDoneTaskRows || 0}</strong> Supabase done task rows</span>
+          <span><strong>{shiftDataStatus.backendNotRelevantTaskRows || 0}</strong> Supabase not relevant task rows</span>
+          <span><strong>{shiftDataStatus.backendOpenTaskRows || 0}</strong> Supabase open/reset task rows</span>
+          <span><strong>{shiftDataStatus.backendHandoverRowsLoaded || 0}</strong> Supabase handover rows loaded</span>
+          <span><strong>{shiftDataStatus.mergedUniqueTaskCompletions || 0}</strong> Merged unique task completions</span>
+          <span><strong>{shiftDataStatus.ignoredDuplicateTaskRows || 0}</strong> Ignored duplicate task rows</span>
+          <span><strong>{shiftDataStatus.pendingTaskCompletionsCount || 0}</strong> Pending local task completions</span>
+          <span><strong>{shiftDataStatus.pendingAuthTaskCompletionsCount || 0}</strong> Pending auth task completions</span>
+          <span><strong>{shiftDataStatus.pendingBackendRetryTaskCompletionsCount || 0}</strong> Pending backend retry</span>
+          <span><strong>{shiftDataStatus.syncedTaskCompletionsCount || 0}</strong> Synced local records</span>
           <span><strong>{shiftDataStatus.pendingHandoverNotesCount || 0}</strong> Pending handover notes</span>
-          <span><strong>{shiftDataStatus.backendTaskRowsLoaded || 0}</strong> Backend task rows loaded</span>
-          <span><strong>{shiftDataStatus.backendHandoverRowsLoaded || 0}</strong> Backend handover rows loaded</span>
+          <span><strong>{shiftDataStatus.lastBackendCountRefreshAt ? formatDateTime(shiftDataStatus.lastBackendCountRefreshAt) : 'Not yet'}</strong> Last backend count refresh</span>
+          <span><strong>{shiftDataStatus.latestShiftSessionShift || 'None'}</strong> Latest shift session shift</span>
+          <span><strong>{shiftDataStatus.latestShiftSessionStatus || 'None'}</strong> Latest shift session status</span>
+          <span><strong>{shiftDataStatus.latestShiftSessionFinishedAt ? formatDateTime(shiftDataStatus.latestShiftSessionFinishedAt) : 'Not finished'}</strong> Latest finished at</span>
+          <span><strong>{shortId(shiftDataStatus.latestShiftSessionBackendId)}</strong> Latest shift session id</span>
         </div>
-        {(shiftDataStatus.lastShiftSyncError || shiftDataStatus.lastPhase4Error) && (
-          <p className="critical-warning">{shiftDataStatus.lastShiftSyncError || shiftDataStatus.lastPhase4Error}</p>
+        <p className="muted">
+          {authStatus.loginSource === 'supabase_auth' ? 'Using backend + local cache.' : 'Using local cache. Email login required for backend counts.'}
+        </p>
+        {(shiftDataStatus.lastShiftSyncError || shiftDataStatus.lastPhase4Error || shiftDataStatus.lastBackendCountError) && (
+          <p className="critical-warning">{shiftDataStatus.lastShiftSyncError || shiftDataStatus.lastPhase4Error || shiftDataStatus.lastBackendCountError}</p>
         )}
         <div className="backup-actions">
           <button
@@ -3485,7 +3566,10 @@ function ManagerDashboard({
           <button
             type="button"
             className="ghost-button compact-button"
-            onClick={() => refreshShiftData?.(date)}
+            onClick={async () => {
+              const result = await refreshShiftData?.(date);
+              setMessage(result?.ok ? result.message : 'Could not fetch checklist backend data. Showing local cache.');
+            }}
           >
             Refresh checklist backend
           </button>
@@ -4317,8 +4401,29 @@ function App() {
     lastShiftSyncError: '',
     pendingTaskCompletionsCount: normalizeLogs(readStorage(LOG_KEY, [])).filter((log) => ['pending_backend', 'pending_auth', 'sync_error'].includes(log.syncStatus)).length,
     pendingHandoverNotesCount: Object.values(normalizeHandovers(readStorage(HANDOVER_KEY, {}))).filter((note) => ['pending_backend', 'pending_auth', 'sync_error'].includes(note.syncStatus)).length,
+    pendingAuthTaskCompletionsCount: normalizeLogs(readStorage(LOG_KEY, [])).filter((log) => log.syncStatus === 'pending_auth').length,
+    pendingBackendRetryTaskCompletionsCount: normalizeLogs(readStorage(LOG_KEY, [])).filter((log) => ['pending_backend', 'sync_error'].includes(log.syncStatus)).length,
+    syncedTaskCompletionsCount: normalizeLogs(readStorage(LOG_KEY, [])).filter((log) => log.syncStatus === 'synced').length,
+    pendingAuthHandoverNotesCount: Object.values(normalizeHandovers(readStorage(HANDOVER_KEY, {}))).filter((note) => note.syncStatus === 'pending_auth').length,
+    pendingBackendRetryHandoverNotesCount: Object.values(normalizeHandovers(readStorage(HANDOVER_KEY, {}))).filter((note) => ['pending_backend', 'sync_error'].includes(note.syncStatus)).length,
+    syncedHandoverNotesCount: Object.values(normalizeHandovers(readStorage(HANDOVER_KEY, {}))).filter((note) => note.syncStatus === 'synced').length,
+    backendShiftSessionsLoaded: 0,
+    backendActiveShiftSessions: 0,
+    backendFinishedShiftSessions: 0,
     backendTaskRowsLoaded: 0,
+    backendDoneTaskRows: 0,
+    backendNotRelevantTaskRows: 0,
+    backendOpenTaskRows: 0,
+    mergedUniqueTaskCompletions: normalizeLogs(readStorage(LOG_KEY, [])).length,
+    ignoredDuplicateTaskRows: 0,
     backendHandoverRowsLoaded: 0,
+    lastBackendCountRefreshAt: '',
+    lastBackendCountError: '',
+    latestShiftSessionDate: '',
+    latestShiftSessionShift: '',
+    latestShiftSessionStatus: '',
+    latestShiftSessionFinishedAt: '',
+    latestShiftSessionBackendId: '',
   });
   const [authStatus, setAuthStatus] = useState({
     configured: isSupabaseAuthConfigured,
@@ -4467,11 +4572,19 @@ function App() {
   }
 
   function updateShiftDataStatus(patch, nextLogs = logs, nextHandovers = handoverNotes) {
+    const normalizedNextLogs = normalizeLogs(nextLogs);
+    const normalizedNextHandovers = Object.values(normalizeHandovers(nextHandovers));
     setShiftDataStatus((current) => ({
       ...current,
       ...patch,
-      pendingTaskCompletionsCount: normalizeLogs(nextLogs).filter((log) => ['pending_backend', 'pending_auth', 'sync_error'].includes(log.syncStatus)).length,
-      pendingHandoverNotesCount: Object.values(normalizeHandovers(nextHandovers)).filter((note) => ['pending_backend', 'pending_auth', 'sync_error'].includes(note.syncStatus)).length,
+      pendingTaskCompletionsCount: normalizedNextLogs.filter((log) => ['pending_backend', 'pending_auth', 'sync_error'].includes(log.syncStatus)).length,
+      pendingHandoverNotesCount: normalizedNextHandovers.filter((note) => ['pending_backend', 'pending_auth', 'sync_error'].includes(note.syncStatus)).length,
+      pendingAuthTaskCompletionsCount: normalizedNextLogs.filter((log) => log.syncStatus === 'pending_auth').length,
+      pendingBackendRetryTaskCompletionsCount: normalizedNextLogs.filter((log) => ['pending_backend', 'sync_error'].includes(log.syncStatus)).length,
+      syncedTaskCompletionsCount: normalizedNextLogs.filter((log) => log.syncStatus === 'synced').length,
+      pendingAuthHandoverNotesCount: normalizedNextHandovers.filter((note) => note.syncStatus === 'pending_auth').length,
+      pendingBackendRetryHandoverNotesCount: normalizedNextHandovers.filter((note) => ['pending_backend', 'sync_error'].includes(note.syncStatus)).length,
+      syncedHandoverNotesCount: normalizedNextHandovers.filter((note) => note.syncStatus === 'synced').length,
     }));
   }
 
@@ -4757,10 +4870,12 @@ function App() {
       });
       return { ok: false, mode: mode.mode };
     }
+    let shiftSessionResult;
     let taskResult;
     let handoverResult;
     try {
-      [taskResult, handoverResult] = await Promise.all([
+      [shiftSessionResult, taskResult, handoverResult] = await Promise.all([
+        fetchShiftSessionsForDate(date),
         fetchTaskCompletionsForDate(date),
         fetchHandoverNotesForDate(date),
       ]);
@@ -4769,27 +4884,61 @@ function App() {
       updateShiftDataStatus({
         mode: 'sync_error',
         message: 'Showing local cache.',
+        lastBackendCountError: error.message || 'Checklist data fetch failed.',
         lastShiftSyncError: error.message || 'Checklist data fetch failed.',
       });
       return { ok: false, mode: 'sync_error', error };
     }
-    const mergedLogs = taskResult.ok ? mergeTaskLogs(logsRef.current, taskResult.records) : logsRef.current;
+    const taskMerge = taskResult.ok ? mergeTaskLogsWithStats(logsRef.current, taskResult.records) : { records: logsRef.current, ignoredDuplicates: 0 };
+    const mergedLogs = taskMerge.records;
     const mergedHandovers = handoverResult.ok ? mergeHandoverNotes(handoverNotesRef.current, handoverResult.records) : handoverNotesRef.current;
+    const shiftSessions = shiftSessionResult.records || [];
+    const backendTaskRecords = taskResult.records || [];
+    const mergedUniqueDateLogs = uniqueTaskLogsForDashboard(mergedLogs.filter((log) => log.date === date));
+    const duplicateDateRecords = Math.max(0, mergedLogs.filter((log) => log.date === date).length - mergedUniqueDateLogs.length);
+    const latestShiftSession = shiftSessions[0] || null;
+    const fetchedAt = new Date().toISOString();
+    const fetchOk = shiftSessionResult.ok && taskResult.ok && handoverResult.ok;
+    const fetchMessage = fetchOk
+      ? `Fetched ${backendTaskRecords.length} task rows, ${handoverResult.records?.length || 0} handover notes, ${shiftSessions.length} shift sessions from Supabase.`
+      : 'Could not fetch checklist backend data. Showing local cache.';
     setLogs(mergedLogs);
     setHandoverNotes(mergedHandovers);
     saveStorage(LOG_KEY, mergedLogs);
     saveStorage(HANDOVER_KEY, mergedHandovers);
     updateShiftDataStatus({
       mode: 'authenticated',
-      message: taskResult.ok && handoverResult.ok ? 'Checklist backend ready.' : 'Showing local cache.',
+      message: fetchOk ? fetchMessage : 'Could not fetch checklist backend data. Showing local cache.',
       taskCompletionsSource: taskResult.ok ? 'backend_synced' : 'local_cache',
       handoverNotesSource: handoverResult.ok ? 'backend_synced' : 'local_cache',
-      lastShiftDataSyncAt: taskResult.ok || handoverResult.ok ? new Date().toISOString() : shiftDataStatus.lastShiftDataSyncAt,
-      lastShiftSyncError: taskResult.ok && handoverResult.ok ? '' : (taskResult.message || handoverResult.message || ''),
+      lastShiftDataSyncAt: fetchOk ? fetchedAt : shiftDataStatus.lastShiftDataSyncAt,
+      lastShiftSyncError: fetchOk ? '' : (shiftSessionResult.message || taskResult.message || handoverResult.message || ''),
+      backendShiftSessionsLoaded: shiftSessions.length,
+      backendActiveShiftSessions: shiftSessions.filter((session) => session.status === 'active').length,
+      backendFinishedShiftSessions: shiftSessions.filter((session) => session.status === 'finished').length,
       backendTaskRowsLoaded: taskResult.records?.length || 0,
+      backendDoneTaskRows: backendTaskRecords.filter((record) => record.status === 'done').length,
+      backendNotRelevantTaskRows: backendTaskRecords.filter((record) => record.status === 'not_relevant').length,
+      backendOpenTaskRows: backendTaskRecords.filter((record) => record.status === 'open').length,
+      mergedUniqueTaskCompletions: mergedUniqueDateLogs.length,
+      ignoredDuplicateTaskRows: Math.max(taskMerge.ignoredDuplicates, duplicateDateRecords),
       backendHandoverRowsLoaded: handoverResult.records?.length || 0,
+      lastBackendCountRefreshAt: fetchedAt,
+      lastBackendCountError: fetchOk ? '' : (shiftSessionResult.message || taskResult.message || handoverResult.message || ''),
+      latestShiftSessionDate: latestShiftSession?.date || '',
+      latestShiftSessionShift: latestShiftSession?.shiftType || '',
+      latestShiftSessionStatus: latestShiftSession?.status || '',
+      latestShiftSessionFinishedAt: latestShiftSession?.finishedAt || '',
+      latestShiftSessionBackendId: latestShiftSession?.backendId || '',
     }, mergedLogs, mergedHandovers);
-    return { ok: taskResult.ok && handoverResult.ok };
+    return {
+      ok: fetchOk,
+      message: fetchMessage,
+      taskRows: backendTaskRecords.length,
+      handoverRows: handoverResult.records?.length || 0,
+      shiftSessionRows: shiftSessions.length,
+      ignoredDuplicateTaskRows: taskMerge.ignoredDuplicates,
+    };
   }
 
   async function testChecklistBackendWrite() {
