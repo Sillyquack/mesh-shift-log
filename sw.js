@@ -1,4 +1,4 @@
-const CACHE_NAME = 'mesh-shift-log-v0.7.0-auth-backend';
+const CACHE_NAME = 'mesh-shift-log-v0.7.0-phase-5a-financial-signoffs';
 const APP_SHELL = ['./', './index.html', './manifest.webmanifest', './icon.svg'];
 const APP_ORIGIN = self.location.origin;
 
