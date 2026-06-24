@@ -39,10 +39,17 @@ import {
   fetchManagerDailyHistory,
   fetchManagerHistoryRange,
 } from './lib/managerHistoryClient.js';
+import {
+  cleanupSyncedFinancialPendingRecords,
+  fetchFinancialSignoffsForDate,
+  mergeFinancialSignoffs,
+  reviewFinancialSignoff,
+  upsertFinancialSignoff,
+} from './lib/financialDataClient.js';
 
 const APP_VERSION = '0.7.0';
-const RELEASE_LABEL = 'v0.7.0-auth-backend';
-const RELEASE_SUMMARY = 'auth backend transition';
+const RELEASE_LABEL = 'v0.7.0-phase-5a-financial-signoffs';
+const RELEASE_SUMMARY = 'financial signoff backend foundation';
 const ALERT_SYNC_BUILD = 'v0.7.0-auth-backend';
 const ALERT_POLL_INTERVAL_SECONDS = 15;
 const LOG_KEY = 'mesh-shift-logs-v1';
@@ -1593,7 +1600,7 @@ function StaffDashboard({
   );
 }
 
-function CashInvoicePanel({ user, date, shiftType = 'event', eventId = '', cashSignoffs, setCashSignoffs, staffUsers, requestWriteAccess }) {
+function CashInvoicePanel({ user, date, shiftType = 'event', eventId = '', cashSignoffs, setCashSignoffs, staffUsers, requestWriteAccess, onSyncFinancialSignoff }) {
   const existing = cashSignoffs.find((record) => record.date === date && record.shiftType === shiftType && (record.eventId || '') === eventId);
   const [form, setForm] = useState(existing || blankCashForm);
 
@@ -1614,6 +1621,9 @@ function CashInvoicePanel({ user, date, shiftType = 'event', eventId = '', cashS
       eventId,
       signedOffBy: form.signedOffBy || user.name,
       signedOffAt: new Date().toISOString(),
+      signoffType: 'daily_finance',
+      status: 'completed',
+      syncStatus: user.loginSource === 'supabase_auth' ? 'pending_backend' : 'pending_auth',
     };
     const nextRecords = [
       ...cashSignoffs.filter((item) => item.id !== record.id),
@@ -1621,6 +1631,7 @@ function CashInvoicePanel({ user, date, shiftType = 'event', eventId = '', cashS
     ];
     setCashSignoffs(nextRecords);
     saveStorage(CASH_SIGNOFF_KEY, nextRecords);
+    onSyncFinancialSignoff?.(record, nextRecords);
   }
 
   return (
@@ -1772,6 +1783,8 @@ function EventFloorDashboard({
   setEventTaskChecks,
   staffUsers,
   requestWriteAccess,
+  onSyncFinancialSignoff,
+  onRefreshFinancialSignoffs,
   onEnsureShiftSession,
   onSyncTaskLog,
   onSyncHandover,
@@ -1787,6 +1800,10 @@ function EventFloorDashboard({
   const isEventResponsible = eventAssignments.some((assignment) => assignment.roleType === 'event_responsible' && isResponsibleUser(user, assignment));
   const checksForEvent = eventTaskChecks.filter((check) => check.date === date && (check.eventId || '') === activeEventIdValue);
   const checkedIds = new Set(checksForEvent.map((check) => check.taskId));
+
+  useEffect(() => {
+    if (user?.loginSource === 'supabase_auth') onRefreshFinancialSignoffs?.(date);
+  }, [date, user?.id, user?.loginSource]);
 
   async function toggleEventTask(taskId, title, group) {
     if (!(await requestWriteAccess())) return;
@@ -1876,6 +1893,7 @@ function EventFloorDashboard({
         setCashSignoffs={setCashSignoffs}
         staffUsers={staffUsers}
         requestWriteAccess={requestWriteAccess}
+        onSyncFinancialSignoff={onSyncFinancialSignoff}
       />
       <AssetCheckPanel
         user={user}
@@ -1915,6 +1933,7 @@ function Checklist({
   onEnsureShiftSession,
   onSyncTaskLog,
   onSyncHandover,
+  onSyncFinancialSignoff,
   onRestoreShiftData,
   onShowOverview,
   onChangeShift,
@@ -2365,6 +2384,7 @@ function Checklist({
             setCashSignoffs={setCashSignoffs}
             staffUsers={staffUsers}
             requestWriteAccess={requestWriteAccess}
+            onSyncFinancialSignoff={onSyncFinancialSignoff}
           />
           <AssetCheckPanel
             user={user}
@@ -2414,11 +2434,15 @@ function ManagerDashboard({
   siteAccess,
   alertBackendStatus,
   shiftDataStatus,
+  financialBackendStatus,
   authStatus,
   refreshShiftData,
+  refreshFinancialSignoffs,
+  onReviewFinancialSignoff,
   fetchAuthProfiles,
   onTestShiftBackendWrite,
   onClearSyncedLocalChecklistPendingRecords,
+  onClearSyncedFinancialPendingRecords,
   updateAlertRecord,
   retryAlertEmailNotification,
   refreshAlerts,
@@ -2464,12 +2488,15 @@ function ManagerDashboard({
       taskCompletions: 0,
       handoverNotes: 0,
       alerts: 0,
+      financialSignoffs: 0,
     },
   });
 
   const activeShifts = shiftOptions.filter((shift) => shift.id !== 'guides');
   const todayEvents = events.filter((event) => event.date === date);
   const dateCashSignoffs = cashSignoffs.filter((record) => record.date === date);
+  const backendDateFinancialSignoffs = backendHistory?.date === date ? (backendHistory.financialSignoffs || []) : [];
+  const visibleFinancialSignoffs = backendDateFinancialSignoffs.length ? backendDateFinancialSignoffs : dateCashSignoffs;
   const dateAssetChecks = assetChecks.filter((record) => record.date === date);
   const assetIssues = dateAssetChecks.filter(assetHasIssue);
   const activeAssets = assets.filter((asset) => asset.active !== false);
@@ -2551,6 +2578,7 @@ function ManagerDashboard({
 
   useEffect(() => {
     refreshShiftData?.(date);
+    refreshFinancialSignoffs?.(date);
   }, [date]);
 
   const attentionItems = [
@@ -2758,6 +2786,17 @@ function ManagerDashboard({
       `Asset issues today: ${assetIssues.length}`,
       `Events: ${events.length}`,
       `Cash/invoice signoffs: ${cashSignoffs.length}`,
+      `Financial backend mode: ${financialBackendStatus.mode}`,
+      `Financial backend last action: ${financialBackendStatus.lastAction || 'none'}`,
+      `Financial backend last result: ${financialBackendStatus.lastResult || 'none'}`,
+      `Financial backend rows loaded: ${financialBackendStatus.rowsLoaded || 0}`,
+      `Financial backend rows merged: ${financialBackendStatus.rowsMerged || 0}`,
+      `Financial backend duplicates ignored: ${financialBackendStatus.duplicatesIgnored || 0}`,
+      `Pending local financial records: ${financialBackendStatus.pendingLocalRecords || 0}`,
+      `Pending financial records matched in backend: ${financialBackendStatus.pendingMatchedInBackend || 0}`,
+      `Local-only financial records remaining: ${financialBackendStatus.localOnlyRemaining || 0}`,
+      `Financial backend cleanup result: ${financialBackendStatus.lastCleanupResult || 'none'}`,
+      `Financial backend error: ${financialBackendStatus.lastError || 'none'}`,
       `Shift data backend mode: ${shiftDataStatus.mode}`,
       `Task completions source: ${shiftDataStatus.taskCompletionsSource}`,
       `Handover notes source: ${shiftDataStatus.handoverNotesSource}`,
@@ -2800,6 +2839,7 @@ function ManagerDashboard({
       `Backend history task completions fetched: ${backendHistoryStatus.rowsFetched.taskCompletions || 0}`,
       `Backend history handover notes fetched: ${backendHistoryStatus.rowsFetched.handoverNotes || 0}`,
       `Backend history alerts fetched: ${backendHistoryStatus.rowsFetched.alerts || 0}`,
+      `Backend history financial signoffs fetched: ${backendHistoryStatus.rowsFetched.financialSignoffs || 0}`,
       `Backend history duplicates ignored: ${backendHistoryStatus.duplicatesIgnored || 0}`,
       `Backend report source: ${backendHistoryStatus.reportSource || 'none'}`,
       `Last backend report copy: ${backendHistoryStatus.lastReportCopyAt || 'none'}`,
@@ -2882,6 +2922,7 @@ function ManagerDashboard({
         taskCompletions: result.history.rawTaskRows ?? result.history.taskCompletions.length,
         handoverNotes: result.history.handoverNotes.length,
         alerts: result.history.alerts.length,
+        financialSignoffs: result.history.rawFinancialRows ?? result.history.financialSignoffs?.length ?? 0,
       },
     });
     setMessage('Backend history refreshed from Supabase.');
@@ -4309,10 +4350,92 @@ values
           <span><strong>{backendHistorySummary?.openAlerts || 0}</strong> Open alerts</span>
           <span><strong>{backendHistorySummary?.resolvedAlerts || 0}</strong> Resolved alerts</span>
           <span><strong>{backendHistorySummary?.urgentAlerts || 0}</strong> Urgent alerts</span>
+          <span><strong>{backendHistorySummary?.financialSignoffs || 0}</strong> Financial signoffs</span>
+          <span><strong>{backendHistorySummary?.financialCashSignoffs || 0}</strong> Cash signoffs</span>
+          <span><strong>{backendHistorySummary?.financialInvoiceSignoffs || 0}</strong> Invoice signoffs</span>
+          <span><strong>{backendHistorySummary?.financialSettlementTerminalSignoffs || 0}</strong> Settlement/terminal</span>
+          <span><strong>{backendHistorySummary?.financialCompleted || 0}</strong> Financial completed</span>
+          <span><strong>{backendHistorySummary?.financialReviewed || 0}</strong> Financial reviewed</span>
+          <span><strong>{backendHistorySummary?.financialIssues || 0}</strong> Financial issues</span>
+          <span><strong>{backendHistorySummary?.financialVarianceTotal || 0}</strong> Financial variance</span>
           <span><strong>{backendHistoryStatus.lastRefreshAt ? formatDateTime(backendHistoryStatus.lastRefreshAt) : 'Not yet'}</strong> Last backend history refresh</span>
           <span><strong>{backendHistoryStatus.duplicatesIgnored || 0}</strong> Merge duplicates ignored</span>
           <span><strong>{backendHistoryStatus.reportSource}</strong> Backend report source</span>
           <span><strong>{backendHistoryStatus.lastReportCopyAt ? formatDateTime(backendHistoryStatus.lastReportCopyAt) : 'Not copied'}</strong> Last backend report copy</span>
+        </div>
+        <div className="phase-backend-panel">
+          <div className="panel-title-row">
+            <div>
+              <p className="eyebrow">Phase 5A</p>
+              <h3>Financial signoff backend</h3>
+              <p className="muted">
+                Cash/invoice signoffs sync to Supabase for Email login users. Staff-code signoffs stay local until exported/imported.
+              </p>
+            </div>
+          </div>
+          <div className="backup-actions">
+            <button
+              type="button"
+              className="primary-button compact-button"
+              onClick={async () => {
+                const result = await refreshFinancialSignoffs?.(date);
+                setMessage(result?.message || 'Financial signoff refresh finished.');
+              }}
+            >
+              Refresh financial signoffs
+            </button>
+            <button
+              type="button"
+              className="ghost-button compact-button"
+              onClick={() => {
+                const result = onClearSyncedFinancialPendingRecords?.();
+                if (result?.message) setMessage(result.message);
+              }}
+            >
+              Clear synced financial pending records
+            </button>
+          </div>
+          <div className="status-grid">
+            <span><strong>{financialBackendStatus.mode}</strong> Mode</span>
+            <span><strong>{financialBackendStatus.lastAction || 'None'}</strong> Last action</span>
+            <span><strong>{financialBackendStatus.lastResult || 'None'}</strong> Last result</span>
+            <span><strong>{financialBackendStatus.rowsLoaded || 0}</strong> Rows loaded</span>
+            <span><strong>{financialBackendStatus.rowsMerged || 0}</strong> Rows merged</span>
+            <span><strong>{financialBackendStatus.duplicatesIgnored || 0}</strong> Duplicates ignored</span>
+            <span><strong>{financialBackendStatus.pendingLocalRecords || 0}</strong> Pending local</span>
+            <span><strong>{financialBackendStatus.pendingMatchedInBackend || 0}</strong> Pending matched</span>
+            <span><strong>{financialBackendStatus.localOnlyRemaining || 0}</strong> Local-only remaining</span>
+          </div>
+          {financialBackendStatus.lastCleanupResult && <p className="muted">{financialBackendStatus.lastCleanupResult}</p>}
+          {financialBackendStatus.lastError && <p className="critical-warning">{financialBackendStatus.lastError}</p>}
+          <div className="history-table">
+            {visibleFinancialSignoffs.length === 0 && <p className="muted">No financial signoffs for this date yet.</p>}
+            {visibleFinancialSignoffs.slice(0, 8).map((record) => (
+              <article key={record.backendId || record.localId || record.id} className="log-row">
+                <strong>{record.signoffType || 'daily_finance'} | {shiftLabels[record.shiftType] || record.shiftType || 'Unknown shift'}</strong>
+                <span>Status {record.status || 'local'} | Signed by {record.signedOffBy || 'Missing'}</span>
+                <small>Invoice {record.invoiceSent || 'missing'} | Sales {record.salesPunched || 'missing'} | Settlement {record.settlementPerformed || 'missing'}</small>
+                {record.reviewedBy && <small>Reviewed by {record.reviewedBy} at {formatDateTime(record.reviewedAt)}</small>}
+                {(record.comments || record.issueNotes) && <small>{record.comments || record.issueNotes}</small>}
+                {record.syncStatus && <small>Sync: {record.syncStatus}</small>}
+                {record.backendId && record.status !== 'reviewed' && (
+                  <div className="inline-actions">
+                    <button
+                      type="button"
+                      className="ghost-button compact-button"
+                      onClick={async () => {
+                        const result = await onReviewFinancialSignoff?.(record);
+                        setMessage(result?.message || (result?.ok ? 'Financial signoff marked reviewed.' : 'Could not review financial signoff.'));
+                        if (result?.ok) refreshBackendHistory(date);
+                      }}
+                    >
+                      Mark reviewed
+                    </button>
+                  </div>
+                )}
+              </article>
+            ))}
+          </div>
         </div>
         {backendHistoryStatus.lastError && <p className="critical-warning">{backendHistoryStatus.lastError}</p>}
         {backendHistoryStatus.source === 'supabase' && backendHistorySummary && (
@@ -4343,7 +4466,7 @@ values
               >
                 <strong>{day.date}</strong>
                 <span>Sessions {day.shiftSessions} | Finished {day.finishedSessions} | Unique tasks {day.uniqueTaskRecords}</span>
-                <small>Done {day.doneTasks} | N/A {day.notRelevantTasks} | Handovers {day.handoverNotes} | Alerts {day.totalAlerts} | Urgent {day.urgentAlerts} | Open {day.openAlerts}</small>
+                <small>Done {day.doneTasks} | N/A {day.notRelevantTasks} | Handovers {day.handoverNotes} | Alerts {day.totalAlerts} | Urgent {day.urgentAlerts} | Open {day.openAlerts} | Financial {day.financialSignoffs} | Issues {day.financialIssues} | Reviewed {day.financialReviewed}</small>
               </article>
             ))}
           </div>
@@ -4729,6 +4852,19 @@ function App() {
     localOnlyRecordsRemaining: 0,
     lastCleanupResult: '',
   });
+  const [financialBackendStatus, setFinancialBackendStatus] = useState({
+    mode: 'initial',
+    lastAction: '',
+    lastResult: '',
+    lastError: '',
+    rowsLoaded: 0,
+    rowsMerged: 0,
+    duplicatesIgnored: 0,
+    pendingLocalRecords: normalizeRecords(readStorage(CASH_SIGNOFF_KEY, [])).filter((record) => ['pending_backend', 'pending_auth', 'sync_error'].includes(record.syncStatus)).length,
+    pendingMatchedInBackend: 0,
+    localOnlyRemaining: normalizeRecords(readStorage(CASH_SIGNOFF_KEY, [])).filter((record) => ['pending_auth', 'local_only'].includes(record.syncStatus)).length,
+    lastCleanupResult: '',
+  });
   const [authStatus, setAuthStatus] = useState({
     configured: isSupabaseAuthConfigured,
     loginSource: user?.loginSource || 'staff_code',
@@ -4765,6 +4901,7 @@ function App() {
   const alertsRef = useRef(alerts);
   const logsRef = useRef(logs);
   const handoverNotesRef = useRef(handoverNotes);
+  const cashSignoffsRef = useRef(cashSignoffs);
 
   useEffect(() => {
     alertsRef.current = alerts;
@@ -4777,6 +4914,10 @@ function App() {
   useEffect(() => {
     handoverNotesRef.current = handoverNotes;
   }, [handoverNotes]);
+
+  useEffect(() => {
+    cashSignoffsRef.current = cashSignoffs;
+  }, [cashSignoffs]);
 
   const activeOverride = isOverrideActive(siteOverrides);
   const siteAccessStatus = activeOverride ? 'override' : siteAccess.status;
@@ -4890,6 +5031,178 @@ function App() {
       pendingBackendRetryHandoverNotesCount: normalizedNextHandovers.filter((note) => ['pending_backend', 'sync_error'].includes(note.syncStatus)).length,
       syncedHandoverNotesCount: normalizedNextHandovers.filter((note) => note.syncStatus === 'synced').length,
     }));
+  }
+
+  function updateFinancialBackendStatus(patch, nextRecords = cashSignoffsRef.current) {
+    const normalized = normalizeRecords(nextRecords);
+    setFinancialBackendStatus((current) => ({
+      ...current,
+      ...patch,
+      pendingLocalRecords: normalized.filter((record) => ['pending_backend', 'pending_auth', 'sync_error'].includes(record.syncStatus)).length,
+      localOnlyRemaining: normalized.filter((record) => ['pending_auth', 'local_only'].includes(record.syncStatus)).length,
+    }));
+  }
+
+  async function syncFinancialSignoff(record, optimisticRecords = cashSignoffsRef.current) {
+    if (user?.loginSource !== 'supabase_auth') {
+      updateFinancialBackendStatus({
+        mode: isBackendAuthRequired ? 'auth_required' : 'local_only',
+        lastAction: 'financial_signoff_sync',
+        lastResult: 'skipped: login_source_not_supabase_auth',
+        lastError: '',
+      }, optimisticRecords);
+      return { ok: false, mode: 'local_only' };
+    }
+    updateFinancialBackendStatus({
+      mode: 'authenticated',
+      lastAction: 'financial_signoff_sync',
+      lastResult: 'attempting',
+      lastError: '',
+    }, optimisticRecords);
+    let result;
+    try {
+      result = await upsertFinancialSignoff({
+        ...record,
+        signedByAuthUserId: user.authUserId || user.backendUserId || '',
+      });
+    } catch (error) {
+      console.error('Phase 5A financial signoff sync failed:', error);
+      result = {
+        ok: false,
+        mode: 'sync_error',
+        message: error.message || 'Financial signoff sync failed.',
+      };
+    }
+    const latestRecords = normalizeRecords(cashSignoffsRef.current);
+    const optimisticList = normalizeRecords(optimisticRecords);
+    const baseRecords = latestRecords.some((item) => item.id === record.id) ? latestRecords : optimisticList;
+    const nextRecords = baseRecords.map((item) => {
+      if (item.id !== record.id) return item;
+      if (result.ok) return { ...item, ...result.record, id: item.id, syncStatus: 'synced', syncError: '' };
+      return { ...item, syncStatus: 'sync_error', syncError: result.message || 'Financial signoff sync failed.' };
+    });
+    setCashSignoffs(nextRecords);
+    saveStorage(CASH_SIGNOFF_KEY, nextRecords);
+    updateFinancialBackendStatus({
+      mode: result.mode,
+      lastAction: 'financial_signoff_sync',
+      lastResult: result.ok ? 'success' : 'failed',
+      lastError: result.ok ? '' : result.message || 'Financial signoff sync failed.',
+    }, nextRecords);
+    return result;
+  }
+
+  async function refreshFinancialSignoffsFromBackend(date = todayKey()) {
+    if (user?.loginSource !== 'supabase_auth') {
+      updateFinancialBackendStatus({
+        mode: isBackendAuthRequired ? 'auth_required' : 'local_only',
+        lastAction: 'financial_signoff_restore',
+        lastResult: 'skipped: login_source_not_supabase_auth',
+        lastError: '',
+      });
+      return { ok: false, message: 'Could not refresh financial signoffs. Showing local cache.' };
+    }
+    let result;
+    try {
+      result = await fetchFinancialSignoffsForDate(date);
+    } catch (error) {
+      console.error('Phase 5A financial signoff restore failed:', error);
+      result = {
+        ok: false,
+        mode: 'sync_error',
+        message: error.message || 'Could not refresh financial signoffs.',
+        records: [],
+      };
+    }
+    if (!result.ok) {
+      updateFinancialBackendStatus({
+        mode: result.mode,
+        lastAction: 'financial_signoff_restore',
+        lastResult: 'failed',
+        lastError: result.message || 'Could not refresh financial signoffs.',
+      });
+      return { ok: false, message: 'Could not refresh financial signoffs. Showing local cache.' };
+    }
+    const merged = mergeFinancialSignoffs(cashSignoffsRef.current, result.records);
+    setCashSignoffs(merged.records);
+    saveStorage(CASH_SIGNOFF_KEY, merged.records);
+    updateFinancialBackendStatus({
+      mode: 'authenticated',
+      lastAction: 'financial_signoff_restore',
+      lastResult: result.records.length ? 'success' : 'success: no_financial_signoffs_for_date',
+      lastError: '',
+      rowsLoaded: result.records.length,
+      rowsMerged: merged.records.filter((record) => record.date === date).length,
+      duplicatesIgnored: merged.duplicatesIgnored,
+    }, merged.records);
+    return {
+      ok: true,
+      message: result.records.length ? 'Financial signoffs refreshed from Supabase.' : 'No financial signoffs found for this date.',
+    };
+  }
+
+  async function reviewFinancialSignoffFromBackend(record) {
+    const recordId = record?.backendId || '';
+    if (user?.loginSource !== 'supabase_auth' || !recordId) {
+      updateFinancialBackendStatus({
+        mode: user?.loginSource === 'supabase_auth' ? 'authenticated' : 'auth_required',
+        lastAction: 'financial_signoff_review',
+        lastResult: 'skipped: missing_backend_record',
+        lastError: 'Refresh or sync this financial signoff before marking it reviewed.',
+      });
+      return { ok: false, message: 'Refresh or sync this financial signoff before marking it reviewed.' };
+    }
+    updateFinancialBackendStatus({
+      mode: 'authenticated',
+      lastAction: 'financial_signoff_review',
+      lastResult: 'attempting',
+      lastError: '',
+    });
+    let result;
+    try {
+      result = await reviewFinancialSignoff(recordId, { reviewedBy: user.name });
+    } catch (error) {
+      console.error('Phase 5A financial signoff review failed:', error);
+      result = {
+        ok: false,
+        mode: 'sync_error',
+        message: error.message || 'Financial signoff review failed.',
+      };
+    }
+    const nextRecords = normalizeRecords(cashSignoffsRef.current).map((item) => {
+      const matches = [item.backendId, item.localId, item.id].filter(Boolean).includes(record.backendId || record.localId || record.id);
+      return matches && result.ok
+        ? { ...item, ...result.record, id: item.id, syncStatus: 'synced', syncError: '' }
+        : item;
+    });
+    if (result.ok) {
+      setCashSignoffs(nextRecords);
+      saveStorage(CASH_SIGNOFF_KEY, nextRecords);
+    }
+    updateFinancialBackendStatus({
+      mode: result.mode,
+      lastAction: 'financial_signoff_review',
+      lastResult: result.ok ? 'success' : 'failed',
+      lastError: result.ok ? '' : result.message || 'Financial signoff review failed.',
+    }, result.ok ? nextRecords : cashSignoffsRef.current);
+    return result.ok ? { ...result, message: 'Financial signoff marked reviewed.' } : result;
+  }
+
+  function clearSyncedFinancialPendingRecords() {
+    const confirmed = window.confirm('This only clears local financial pending records that already exist in Supabase. Continue?');
+    if (!confirmed) return { ok: false, message: 'Financial cleanup cancelled.' };
+    const cleaned = cleanupSyncedFinancialPendingRecords(cashSignoffsRef.current);
+    setCashSignoffs(cleaned.records);
+    saveStorage(CASH_SIGNOFF_KEY, cleaned.records);
+    const message = `Cleared ${cleaned.removed} financial pending records. ${cleaned.localOnlyRemaining} remain local-only.`;
+    updateFinancialBackendStatus({
+      lastAction: 'financial_pending_cleanup',
+      lastResult: 'success',
+      pendingMatchedInBackend: cleaned.removed,
+      localOnlyRemaining: cleaned.localOnlyRemaining,
+      lastCleanupResult: message,
+    }, cleaned.records);
+    return { ok: true, message };
   }
 
   function shiftSessionLocalId(date, shiftType, currentUser = user) {
@@ -6091,8 +6404,17 @@ function App() {
   }, [user?.id]);
 
   useEffect(() => {
-    if (user?.loginSource === 'supabase_auth') fetchShiftDataForDate(todayKey());
+    if (user?.loginSource === 'supabase_auth') {
+      fetchShiftDataForDate(todayKey());
+      refreshFinancialSignoffsFromBackend(todayKey());
+    }
   }, [user?.id, user?.loginSource]);
+
+  useEffect(() => {
+    if (user?.loginSource === 'supabase_auth' && ['closing', 'event'].includes(selectedShift)) {
+      refreshFinancialSignoffsFromBackend(todayKey());
+    }
+  }, [selectedShift, user?.id, user?.loginSource]);
 
   useEffect(() => {
     if (!('serviceWorker' in navigator) || import.meta.env.DEV) return undefined;
@@ -6194,6 +6516,8 @@ function App() {
             setEventTaskChecks={setEventTaskChecks}
             staffUsers={staffUsers}
             requestWriteAccess={requestWriteAccess}
+            onSyncFinancialSignoff={syncFinancialSignoff}
+            onRefreshFinancialSignoffs={refreshFinancialSignoffsFromBackend}
             onEnsureShiftSession={ensureShiftSession}
             onSyncTaskLog={syncChecklistLog}
             onSyncHandover={syncChecklistHandover}
@@ -6254,6 +6578,7 @@ function App() {
             onEnsureShiftSession={ensureShiftSession}
             onSyncTaskLog={syncChecklistLog}
             onSyncHandover={syncChecklistHandover}
+            onSyncFinancialSignoff={syncFinancialSignoff}
             onRestoreShiftData={restoreShiftFromBackend}
             onShowOverview={() => setSelectedShift('overview')}
             onChangeShift={() => setSelectedShift(null)}
@@ -6295,14 +6620,18 @@ function App() {
           siteAccess={siteAccess}
           alertBackendStatus={alertBackendStatus}
           shiftDataStatus={shiftDataStatus}
+          financialBackendStatus={financialBackendStatus}
           authStatus={authStatus}
           fetchAuthProfiles={fetchUserProfiles}
           onTestShiftBackendWrite={testChecklistBackendWrite}
           onClearSyncedLocalChecklistPendingRecords={clearSyncedLocalChecklistPendingRecords}
+          onClearSyncedFinancialPendingRecords={clearSyncedFinancialPendingRecords}
+          onReviewFinancialSignoff={reviewFinancialSignoffFromBackend}
           updateAlertRecord={updateAlertRecord}
           retryAlertEmailNotification={(alert) => attemptAlertEmailNotification(alert, { reason: 'retry' })}
           refreshAlerts={loadSupabaseAlerts}
           refreshShiftData={fetchShiftDataForDate}
+          refreshFinancialSignoffs={refreshFinancialSignoffsFromBackend}
           retryAlertSync={() => refreshAlertsFromBackend('retry')}
           checkLocation={checkLocation}
           requestWriteAccess={requestWriteAccess}

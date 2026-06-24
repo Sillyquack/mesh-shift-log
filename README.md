@@ -4,9 +4,9 @@ Mobile-first internal shift operations tool for Mesh Youngstorget hospitality st
 
 Current app version: `0.7.0`.
 
-Release: `v0.7.0-auth-backend`.
+Release: `v0.7.0-phase-5a-financial-signoffs`.
 
-Mesh Shift Log now supports Supabase-backed alerts with Supabase Auth email/password login. Staff-code login remains available as a local fallback/emergency pilot mode. Checklists, routines, handover notes, events, assets and several manager tools still use localStorage until later backend migration phases.
+Mesh Shift Log now supports Supabase-backed alerts, checklist/handover records and financial signoffs with Supabase Auth email/password login. Staff-code login remains available as a local fallback/emergency pilot mode. Routines, events, assets and several manager tools still use localStorage until later backend migration phases.
 
 ## Pilot Use
 
@@ -14,7 +14,8 @@ Mesh Shift Log now supports Supabase-backed alerts with Supabase Auth email/pass
 - Staff-code login is still useful for local fallback, but it is not real authentication.
 - Alert data can sync through Supabase when backend access is configured and allowed.
 - Urgent alerts can send email through a Supabase Edge Function and Resend.
-- Local checklist data still stays in the current browser/device.
+- Checklist, handover and cash/invoice signoff data can sync when using Email login.
+- Staff-code activity still stays in the current browser/device unless exported/imported.
 - Managers should export backups regularly from the dashboard.
 - Use `Clear test logs` before starting a real pilot if test data should be removed.
 - Time2Staff workers must enter their actual first name before using a checklist.
@@ -25,7 +26,7 @@ Mesh Shift Log now supports Supabase-backed alerts with Supabase Auth email/pass
 
 - React + Vite frontend
 - GitHub Pages deployment
-- Supabase Postgres for backend alert records
+- Supabase Postgres for backend alert, checklist, handover and financial signoff records
 - Supabase Auth for email/password sessions and user profiles
 - Supabase Edge Functions for urgent alert email notification
 - Resend email delivery
@@ -128,6 +129,8 @@ One person can hold multiple roles, and different people can hold different role
 ## Cash / Invoice And Assets
 
 Closing and event flows include cash/invoice signoff. The responsible person records whether customer/table, sales punching, invoice/report and settlement are complete, who performed settlement, and who signed off.
+
+When signed in with Supabase Email login, cash/invoice signoffs sync to `public.financial_signoffs`. Staff-code signoffs remain local-only fallback records until exported/imported or repeated while Email logged in.
 
 The manager dashboard includes a Youngs-only asset registry seeded with known payment terminals and placeholder POS/iPad assets. Closing/event asset checks record present, correct location, condition, charging, serial check and comments. Missing, damaged, wrong-location or not-charging devices appear in Needs attention and the daily report.
 
@@ -374,7 +377,6 @@ Still local-only/not backend-managed in Phase 4A:
 - routine/task definitions and routine editor data
 - full event floor model
 - asset registry/checks
-- cash/invoice signoff
 - staff-code management
 - site/geofence settings
 - backup/import system overhaul
@@ -447,6 +449,7 @@ Backend history currently includes:
 - `task_completions`
 - `handover_notes`
 - `alerts`
+- `financial_signoffs`
 
 The dashboard shows selected-date backend counts, a compact Last 7 days table, and a `Copy backend daily report` action. Backend daily reports prefer Supabase history when available and fall back to the existing local cache report if backend history cannot be fetched.
 
@@ -454,7 +457,6 @@ Reports may still exclude not-yet-migrated local modules:
 
 - event floor full model
 - assets
-- cash/invoice
 - routine editor changes
 
 localStorage export/import still exists and remains useful for local fallback/cache data.
@@ -472,6 +474,35 @@ Phase 4B test:
 9. Confirm the visible report includes the shift session, checklist counts, handover note and alerts.
 10. Click `Last 7 days` and confirm the compact history table loads.
 11. Sign in with staff-code mode and confirm backend history reports Email login required / local fallback.
+
+## Supabase Phase 5A cash/invoice financial signoffs
+
+Phase 5A migrates the existing cash/invoice signoff workflow into Supabase for Email login users. It does not migrate event floor models, assets or routine editor data.
+
+Backend table:
+
+- `financial_signoffs`
+
+The existing closing/event cash form still saves immediately to localStorage first. If the user is signed in with Supabase Email login, the app then syncs the signoff to `public.financial_signoffs` in the background. If the user is in staff-code mode, the signoff remains local-only and the UI keeps working.
+
+Manager Dashboard now includes:
+
+- Phase 5A financial backend status
+- manual `Refresh financial signoffs`
+- cleanup for synced local financial pending records
+- financial signoff counts in backend history
+- financial signoffs in backend daily reports
+
+Run the updated [supabase/schema.sql](supabase/schema.sql), then test:
+
+1. Sign in with Supabase Email login.
+2. Open Closing or Event shift.
+3. Save a cash/invoice signoff.
+4. Confirm a row appears in `public.financial_signoffs`.
+5. Open Manager Dashboard and click `Refresh backend history`.
+6. Confirm financial signoff counts appear.
+7. Click `Copy backend daily report` and confirm the financial signoff section appears.
+8. Sign in with staff-code mode and confirm cash/invoice still saves locally without crashing.
 
 ## Supabase Phase 4C backend history polish
 
@@ -496,13 +527,13 @@ Backend daily reports now include:
 - checklist progress by shift using recorded backend task rows
 - handover notes
 - urgent/open alerts first
+- financial signoffs
 - data notes and limitations
 
 Still not backend-migrated:
 
 - full event floor model
 - assets
-- cash/invoice
 - routine editor changes
 
 Phase 4C report test:
@@ -533,7 +564,7 @@ Phase 4C report test:
 - Confirm urgent email notifications work.
 - Confirm backup/export still works.
 - Confirm manager has emergency recovery and rollback instructions.
-- Later: migrate checklists, tasks, events and assets to backend.
+- Later: migrate routine definitions, events, assets and staff management to backend.
 - Later: remove or restrict staff-code fallback.
 - Later: backfill `organization_id`.
 - Later: tighten RLS fully by `organization_id`.
@@ -567,7 +598,7 @@ Before deploying, make sure GitHub Pages is enabled for the `gh-pages` branch in
 
 ## Known Limitations
 
-- Checklists/tasks remain mostly local.
+- Staff-code checklist/task activity remains local-only unless exported/imported.
 - Events, assets and routines are not fully backend-migrated yet.
 - Staff-code login is not real security.
 - There is no full backend admin user creation flow yet.

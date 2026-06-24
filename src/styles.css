@@ -1161,6 +1161,15 @@ textarea {
   white-space: pre-wrap;
 }
 
+.phase-backend-panel {
+  display: grid;
+  gap: 12px;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  background: var(--surface-strong);
+  padding: 12px;
+}
+
 .alert-row.severity-urgent,
 .alert-row.needs-help {
   border-left-color: var(--critical);

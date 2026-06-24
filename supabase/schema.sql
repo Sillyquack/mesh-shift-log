@@ -110,6 +110,38 @@ create table if not exists public.handover_notes (
   updated_at timestamptz default now()
 );
 
+-- Phase 5A: cash/invoice and financial signoff backend foundation.
+create table if not exists public.financial_signoffs (
+  id uuid primary key default gen_random_uuid(),
+  organization_id uuid references public.organizations(id),
+  signoff_date date not null,
+  shift_key text,
+  signoff_type text not null,
+  status text not null default 'draft',
+  amount_expected numeric,
+  amount_actual numeric,
+  variance numeric,
+  currency text default 'NOK',
+  terminal_id text,
+  terminal_label text,
+  invoice_reference text,
+  payment_method text,
+  notes text,
+  issue_notes text,
+  signed_by_auth_user_id uuid references auth.users(id),
+  signed_by_name text,
+  reviewed_by_auth_user_id uuid references auth.users(id),
+  reviewed_by_name text,
+  signed_at timestamptz,
+  reviewed_at timestamptz,
+  local_id text,
+  source text default 'app',
+  created_at timestamptz default now(),
+  updated_at timestamptz default now(),
+  constraint financial_signoffs_type_check check (signoff_type in ('cash', 'invoice', 'settlement', 'terminal', 'daily_finance')),
+  constraint financial_signoffs_status_check check (status in ('draft', 'completed', 'reviewed', 'issue'))
+);
+
 alter table public.alerts add column if not exists email_notification_status text default 'not_required';
 alter table public.alerts add column if not exists email_notification_attempted_at timestamptz;
 alter table public.alerts add column if not exists email_notification_error text;
@@ -146,6 +178,10 @@ create index if not exists handover_notes_shift_key_idx on public.handover_notes
 create index if not exists handover_notes_created_by_auth_user_id_idx on public.handover_notes (created_by_auth_user_id);
 create index if not exists handover_notes_organization_id_idx on public.handover_notes (organization_id);
 create unique index if not exists handover_notes_local_id_idx on public.handover_notes (local_id) where local_id is not null;
+create index if not exists financial_signoffs_organization_date_idx on public.financial_signoffs (organization_id, signoff_date);
+create index if not exists financial_signoffs_date_shift_idx on public.financial_signoffs (signoff_date, shift_key);
+create index if not exists financial_signoffs_type_idx on public.financial_signoffs (signoff_type);
+create unique index if not exists financial_signoffs_local_id_idx on public.financial_signoffs (local_id) where local_id is not null;
 
 create or replace function public.set_updated_at()
 returns trigger as $$
@@ -230,12 +266,19 @@ before update on public.handover_notes
 for each row
 execute function public.set_updated_at();
 
+drop trigger if exists financial_signoffs_set_updated_at on public.financial_signoffs;
+create trigger financial_signoffs_set_updated_at
+before update on public.financial_signoffs
+for each row
+execute function public.set_updated_at();
+
 alter table public.organizations enable row level security;
 alter table public.alerts enable row level security;
 alter table public.user_profiles enable row level security;
 alter table public.shift_sessions enable row level security;
 alter table public.task_completions enable row level security;
 alter table public.handover_notes enable row level security;
+alter table public.financial_signoffs enable row level security;
 
 grant select on public.user_profiles to authenticated;
 grant update on public.user_profiles to authenticated;
@@ -243,6 +286,7 @@ grant select, insert, update on public.alerts to authenticated;
 grant select, insert, update on public.shift_sessions to authenticated;
 grant select, insert, update on public.task_completions to authenticated;
 grant select, insert, update on public.handover_notes to authenticated;
+grant select, insert, update on public.financial_signoffs to authenticated;
 grant select on public.organizations to authenticated;
 
 -- Legacy pilot anon policies.
@@ -511,6 +555,56 @@ using (
 with check (
   public.current_user_is_active()
   and (created_by_auth_user_id = auth.uid() or public.current_user_is_manager())
+  and (
+    organization_id is null
+    or public.current_user_organization_id() is null
+    or organization_id = public.current_user_organization_id()
+  )
+);
+
+drop policy if exists "authenticated active users can read financial signoffs" on public.financial_signoffs;
+create policy "authenticated active users can read financial signoffs"
+on public.financial_signoffs for select
+to authenticated
+using (
+  public.current_user_is_active()
+  and (
+    organization_id is null
+    or public.current_user_organization_id() is null
+    or organization_id = public.current_user_organization_id()
+  )
+);
+
+drop policy if exists "authenticated users can insert own financial signoffs" on public.financial_signoffs;
+create policy "authenticated users can insert own financial signoffs"
+on public.financial_signoffs for insert
+to authenticated
+with check (
+  public.current_user_is_active()
+  and (signed_by_auth_user_id = auth.uid() or public.current_user_is_manager())
+  and (
+    organization_id is null
+    or public.current_user_organization_id() is null
+    or organization_id = public.current_user_organization_id()
+  )
+);
+
+drop policy if exists "authenticated users can update own financial signoffs" on public.financial_signoffs;
+create policy "authenticated users can update own financial signoffs"
+on public.financial_signoffs for update
+to authenticated
+using (
+  public.current_user_is_active()
+  and (signed_by_auth_user_id = auth.uid() or public.current_user_is_manager())
+  and (
+    organization_id is null
+    or public.current_user_organization_id() is null
+    or organization_id = public.current_user_organization_id()
+  )
+)
+with check (
+  public.current_user_is_active()
+  and (signed_by_auth_user_id = auth.uid() or public.current_user_is_manager())
   and (
     organization_id is null
     or public.current_user_organization_id() is null

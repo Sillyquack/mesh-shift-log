@@ -4,6 +4,7 @@ import {
   normalizeShiftRecord,
   normalizeTaskCompletion,
 } from './shiftDataClient.js';
+import { normalizeFinancialSignoff } from './financialDataClient.js';
 
 function authRequiredResult() {
   return {
@@ -120,6 +121,10 @@ function statusKey(value) {
   return String(value || '').trim().toLowerCase();
 }
 
+function financialTypeKey(record) {
+  return statusKey(record.signoffType || record.signoff_type || 'daily_finance');
+}
+
 function isUrgentAlert(alert) {
   return String(alert.severity || '').trim().toLowerCase() === 'urgent' || alert.needsImmediateHelp;
 }
@@ -141,6 +146,7 @@ export function summarizeBackendHistory(history) {
   const tasks = history.taskCompletions || [];
   const handovers = history.handoverNotes || [];
   const alerts = history.alerts || [];
+  const financial = history.financialSignoffs || [];
   const staff = new Set([
     ...shifts.map((session) => session.completedBy),
     ...tasks.map((task) => task.completedBy),
@@ -162,6 +168,14 @@ export function summarizeBackendHistory(history) {
     unresolvedAlerts: alerts.filter((alert) => !isResolvedAlert(alert)).length,
     resolvedAlerts: alerts.filter(isResolvedAlert).length,
     urgentAlerts: alerts.filter(isUrgentAlert).length,
+    financialSignoffs: financial.length,
+    financialCashSignoffs: financial.filter((record) => ['cash', 'daily_finance'].includes(financialTypeKey(record))).length,
+    financialInvoiceSignoffs: financial.filter((record) => ['invoice', 'daily_finance'].includes(financialTypeKey(record))).length,
+    financialSettlementTerminalSignoffs: financial.filter((record) => ['settlement', 'terminal', 'daily_finance'].includes(financialTypeKey(record))).length,
+    financialCompleted: financial.filter((record) => statusKey(record.status) === 'completed').length,
+    financialReviewed: financial.filter((record) => statusKey(record.status) === 'reviewed').length,
+    financialIssues: financial.filter((record) => statusKey(record.status) === 'issue' || Number(record.variance || 0) !== 0).length,
+    financialVarianceTotal: financial.reduce((sum, record) => sum + Number(record.variance || 0), 0),
   };
 }
 
@@ -180,16 +194,18 @@ export async function fetchManagerDailyHistory(date) {
   const context = await authenticatedContext();
   if (!context.ok) return { ...context, history: null };
   try {
-    const [shiftResult, taskResult, handoverResult, alertResult] = await Promise.all([
+    const [shiftResult, taskResult, handoverResult, alertResult, financialResult] = await Promise.all([
       supabaseAuthClient.from('shift_sessions').select('*').eq('shift_date', date).order('updated_at', { ascending: false }),
       supabaseAuthClient.from('task_completions').select('*').eq('shift_date', date).order('updated_at', { ascending: false }),
       supabaseAuthClient.from('handover_notes').select('*').eq('note_date', date).order('updated_at', { ascending: false }),
       fetchAlertsForLocalDate(date),
+      supabaseAuthClient.from('financial_signoffs').select('*').eq('signoff_date', date).order('updated_at', { ascending: false }),
     ]);
-    const error = shiftResult.error || taskResult.error || handoverResult.error || alertResult.error;
+    const error = shiftResult.error || taskResult.error || handoverResult.error || alertResult.error || financialResult.error;
     if (error) return { ok: false, mode: 'sync_error', message: error.message, error, history: null };
     const taskMerge = uniqueBy((taskResult.data || []).map(normalizeBackendTaskCompletion), (task) => task.localId || `${task.date}-${task.shiftType}-${task.taskId}-${task.completedByAuthUserId || task.completedBy}`);
     const handoverMerge = uniqueBy((handoverResult.data || []).map(normalizeBackendHandoverNote), (note) => note.localId || `${note.date}-${note.shiftType}-${note.createdByAuthUserId || note.completedBy}`);
+    const financialMerge = uniqueBy((financialResult.data || []).map(normalizeFinancialSignoff), (record) => record.localId || record.backendId || `${record.date}-${record.shiftType}-${record.signoffType}-${record.signedOffBy}`);
     const history = {
       date,
       shiftSessions: (shiftResult.data || []).map(normalizeBackendShiftSession).filter(Boolean),
@@ -197,8 +213,10 @@ export async function fetchManagerDailyHistory(date) {
       taskCompletions: taskMerge.records,
       handoverNotes: handoverMerge.records,
       alerts: (alertResult.data || []).map(normalizeBackendAlertForReport).filter(Boolean),
+      financialSignoffs: financialMerge.records,
+      rawFinancialRows: (financialResult.data || []).length,
       duplicateTaskRowsIgnored: taskMerge.duplicatesIgnored,
-      duplicatesIgnored: taskMerge.duplicatesIgnored + handoverMerge.duplicatesIgnored,
+      duplicatesIgnored: taskMerge.duplicatesIgnored + handoverMerge.duplicatesIgnored + financialMerge.duplicatesIgnored,
       fetchedAt: new Date().toISOString(),
     };
     return { ok: true, mode: 'authenticated', history, summary: summarizeBackendHistory(history) };
@@ -211,13 +229,14 @@ export async function fetchManagerHistoryRange(startDate, endDate) {
   const context = await authenticatedContext();
   if (!context.ok) return { ...context, days: [] };
   try {
-    const [shiftResult, taskResult, handoverResult, alertResult] = await Promise.all([
+    const [shiftResult, taskResult, handoverResult, alertResult, financialResult] = await Promise.all([
       betweenDateQuery(supabaseAuthClient.from('shift_sessions').select('*'), 'shift_date', startDate, endDate),
       betweenDateQuery(supabaseAuthClient.from('task_completions').select('*'), 'shift_date', startDate, endDate),
       betweenDateQuery(supabaseAuthClient.from('handover_notes').select('*'), 'note_date', startDate, endDate),
       supabaseAuthClient.from('alerts').select('*').gte('created_at', startOfDate(startDate)).lte('created_at', endOfDate(endDate)),
+      betweenDateQuery(supabaseAuthClient.from('financial_signoffs').select('*'), 'signoff_date', startDate, endDate),
     ]);
-    const error = shiftResult.error || taskResult.error || handoverResult.error || alertResult.error;
+    const error = shiftResult.error || taskResult.error || handoverResult.error || alertResult.error || financialResult.error;
     if (error) return { ok: false, mode: 'sync_error', message: error.message, error, days: [] };
     const dates = [];
     for (let cursor = new Date(`${startDate}T00:00:00`); cursor <= new Date(`${endDate}T00:00:00`); cursor.setDate(cursor.getDate() + 1)) {
@@ -227,6 +246,7 @@ export async function fetchManagerHistoryRange(startDate, endDate) {
     const tasks = (taskResult.data || []).map(normalizeBackendTaskCompletion).filter(Boolean);
     const handovers = (handoverResult.data || []).map(normalizeBackendHandoverNote).filter(Boolean);
     const alerts = (alertResult.data || []).map(normalizeBackendAlertForReport).filter(Boolean);
+    const financial = (financialResult.data || []).map(normalizeFinancialSignoff).filter(Boolean);
     const days = dates.map((date) => {
       const history = {
         date,
@@ -235,6 +255,7 @@ export async function fetchManagerHistoryRange(startDate, endDate) {
         taskCompletions: tasks.filter((item) => item.date === date),
         handoverNotes: handovers.filter((item) => item.date === date),
         alerts: alerts.filter((item) => item.date === date),
+        financialSignoffs: financial.filter((item) => item.date === date),
         duplicatesIgnored: 0,
       };
       return { date, ...summarizeBackendHistory(history) };
@@ -293,6 +314,9 @@ export function buildDailyReportFromBackend(history, { generatedBy = 'Manager' }
     `- ${summary.totalAlerts} alerts`,
     `- ${summary.urgentAlerts} urgent alerts`,
     `- ${summary.unresolvedAlerts} unresolved/open alerts`,
+    `- ${summary.financialSignoffs} financial signoffs`,
+    `- ${summary.financialReviewed} reviewed financial signoffs`,
+    `- ${summary.financialIssues} financial signoff issues`,
     '',
     '2. Shift sessions',
   ];
@@ -356,9 +380,37 @@ export function buildDailyReportFromBackend(history, { generatedBy = 'Manager' }
     if (alert.resolvedBy) lines.push(`  Resolved by: ${alert.resolvedBy} at ${formatDateTime(alert.resolvedAt)}`);
   });
   if (!alertsSorted.length) lines.push('- None');
-  lines.push('', '6. Data notes');
+  lines.push('', '6. Financial signoffs');
+  lines.push(`- Total financial signoffs: ${summary.financialSignoffs}`);
+  lines.push(`- Cash signoffs: ${summary.financialCashSignoffs}`);
+  lines.push(`- Invoice signoffs: ${summary.financialInvoiceSignoffs}`);
+  lines.push(`- Settlement/terminal signoffs: ${summary.financialSettlementTerminalSignoffs}`);
+  lines.push(`- Completed signoffs: ${summary.financialCompleted}`);
+  lines.push(`- Reviewed signoffs: ${summary.financialReviewed}`);
+  lines.push(`- Signoffs with issues/variance: ${summary.financialIssues}`);
+  lines.push(`- Total recorded variance: ${summary.financialVarianceTotal} NOK`);
+  if (!history.financialSignoffs?.length) lines.push('- None');
+  (history.financialSignoffs || []).forEach((record) => {
+    lines.push(`- ${record.signoffType || 'daily_finance'} | ${record.shiftType || 'Unknown shift'} | ${record.status || 'Unknown status'}`);
+    lines.push(`  Signed by: ${record.signedOffBy || 'Unknown user'} at ${formatDateTime(record.signedOffAt)}`);
+    if (record.reviewedBy) lines.push(`  Reviewed by: ${record.reviewedBy} at ${formatDateTime(record.reviewedAt)}`);
+    const moneyParts = [
+      record.amountExpected !== '' && record.amountExpected != null ? `expected ${record.amountExpected}` : '',
+      record.amountActual !== '' && record.amountActual != null ? `actual ${record.amountActual}` : '',
+      record.variance !== '' && record.variance != null ? `variance ${record.variance}` : '',
+    ].filter(Boolean);
+    if (moneyParts.length) lines.push(`  Amounts: ${moneyParts.join(' | ')} ${record.currency || 'NOK'}`);
+    if (record.terminalId || record.terminalLabel) lines.push(`  Terminal: ${record.terminalLabel || record.terminalId}`);
+    if (record.invoiceReference) lines.push(`  Invoice reference: ${record.invoiceReference}`);
+    lines.push(`  Cash/invoice: table ${record.tableCreated || 'missing'}, sales ${record.salesPunched || 'missing'}, invoice ${record.invoiceSent || 'missing'}, settlement ${record.settlementPerformed || 'missing'}`);
+    if (record.settlementPerformedBy) lines.push(`  Settlement performed by: ${record.settlementPerformedBy}`);
+    if (record.comments) lines.push(`  Comment: ${record.comments}`);
+    if (record.issueNotes && record.issueNotes !== record.comments) lines.push(`  Issue notes: ${record.issueNotes}`);
+  });
+  lines.push('', '7. Data notes');
   lines.push('- Report uses Supabase backend data where available.');
-  lines.push('- Some modules are not yet backend-migrated: full event floor model, assets, cash/invoice, routine editor changes.');
+  lines.push('- Financial signoffs are backend-migrated in Phase 5A when using Email login.');
+  lines.push('- Some modules are not yet backend-migrated: full event floor model, assets, routine editor changes.');
   lines.push('- Local-only staff-code activity may be missing unless synced/exported.');
   lines.push('- Checklist percentages are based on recorded backend task rows, not the full expected routine checklist.');
   return lines.join('\n').trim();
