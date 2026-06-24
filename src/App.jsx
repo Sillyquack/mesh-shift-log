@@ -34,6 +34,11 @@ import {
   syncHandoverNote,
   syncTaskCompletion,
 } from './lib/shiftDataClient.js';
+import {
+  buildDailyReportFromBackend,
+  fetchManagerDailyHistory,
+  fetchManagerHistoryRange,
+} from './lib/managerHistoryClient.js';
 
 const APP_VERSION = '0.7.0';
 const RELEASE_LABEL = 'v0.7.0-auth-backend';
@@ -2429,6 +2434,7 @@ function ManagerDashboard({
   const [showAllCritical, setShowAllCritical] = useState(false);
   const [editorTask, setEditorTask] = useState(blankTask);
   const [message, setMessage] = useState('');
+  const [dailyReportText, setDailyReportText] = useState('');
   const [clearPhrase, setClearPhrase] = useState('');
   const [lastExportAt, setLastExportAt] = useState(() => readStorage(LAST_EXPORT_KEY, ''));
   const [responsibleForm, setResponsibleForm] = useState({ shiftType: 'closing', roleType: 'overall_shift_lead', eventId: '', responsibleName: '', note: '' });
@@ -2439,9 +2445,27 @@ function ManagerDashboard({
   const [eventForm, setEventForm] = useState(blankEventForm);
   const [assetForm, setAssetForm] = useState(blankAssetForm);
   const [showBackendDetails, setShowBackendDetails] = useState(false);
+  const [showHistoryDetails, setShowHistoryDetails] = useState(false);
   const [showAuthDetails, setShowAuthDetails] = useState(false);
   const [authProfiles, setAuthProfiles] = useState([]);
   const [authProfilesMessage, setAuthProfilesMessage] = useState('');
+  const [backendHistory, setBackendHistory] = useState(null);
+  const [backendHistorySummary, setBackendHistorySummary] = useState(null);
+  const [backendHistoryRange, setBackendHistoryRange] = useState([]);
+  const [backendHistoryStatus, setBackendHistoryStatus] = useState({
+    source: 'unavailable',
+    lastRefreshAt: '',
+    lastError: '',
+    duplicatesIgnored: 0,
+    lastReportCopyAt: '',
+    reportSource: 'local_cache',
+    rowsFetched: {
+      shiftSessions: 0,
+      taskCompletions: 0,
+      handoverNotes: 0,
+      alerts: 0,
+    },
+  });
 
   const activeShifts = shiftOptions.filter((shift) => shift.id !== 'guides');
   const todayEvents = events.filter((event) => event.date === date);
@@ -2771,6 +2795,15 @@ function ManagerDashboard({
       `Local-only records remaining: ${shiftDataStatus.localOnlyRecordsRemaining || 0}`,
       `Last cleanup result: ${shiftDataStatus.lastCleanupResult || 'none'}`,
       `Last Phase 4A error: ${shiftDataStatus.lastPhase4Error || shiftDataStatus.lastShiftSyncError || shiftDataStatus.lastBackendCountError || 'none'}`,
+      `Last backend history refresh: ${backendHistoryStatus.lastRefreshAt || 'none'}`,
+      `Backend history shift sessions fetched: ${backendHistoryStatus.rowsFetched.shiftSessions || 0}`,
+      `Backend history task completions fetched: ${backendHistoryStatus.rowsFetched.taskCompletions || 0}`,
+      `Backend history handover notes fetched: ${backendHistoryStatus.rowsFetched.handoverNotes || 0}`,
+      `Backend history alerts fetched: ${backendHistoryStatus.rowsFetched.alerts || 0}`,
+      `Backend history duplicates ignored: ${backendHistoryStatus.duplicatesIgnored || 0}`,
+      `Backend report source: ${backendHistoryStatus.reportSource || 'none'}`,
+      `Last backend report copy: ${backendHistoryStatus.lastReportCopyAt || 'none'}`,
+      `Last backend history error: ${backendHistoryStatus.lastError || 'none'}`,
       `Site check: ${siteSettings.locationCheckEnabled ? 'enabled' : 'disabled'}`,
       `Location overrides: ${siteOverrides.length}`,
       `Routine source: ${usingDefaultRoutines ? 'default routines' : 'local edited/imported routines'}`,
@@ -2805,6 +2838,107 @@ function ManagerDashboard({
     const missing = Math.max(shiftTasks.length - handled, 0);
     const criticalMissingCount = shiftTasks.filter((task) => task.priority === 'critical' && !handledIds.has(task.id)).length;
     return { done, notRelevant, missing, criticalMissing: criticalMissingCount, total: shiftTasks.length };
+  }
+
+  function offsetDate(days) {
+    const nextDate = new Date(`${todayKey()}T00:00:00`);
+    nextDate.setDate(nextDate.getDate() + days);
+    return nextDate.toISOString().slice(0, 10);
+  }
+
+  async function refreshBackendHistory(selectedDate = date) {
+    if (authStatus.loginSource !== 'supabase_auth') {
+      setBackendHistoryStatus((current) => ({
+        ...current,
+        source: 'local_cache',
+        lastError: 'Email login is required for backend history.',
+      }));
+      setMessage('Backend history requires Email login. Showing local cache.');
+      return { ok: false };
+    }
+    const result = await fetchManagerDailyHistory(selectedDate);
+    if (!result.ok) {
+      setBackendHistoryStatus((current) => ({
+        ...current,
+        source: 'unavailable',
+        lastRefreshAt: new Date().toISOString(),
+        lastError: result.message || 'Could not fetch backend history.',
+        reportSource: 'local_cache',
+      }));
+      setMessage('Could not fetch backend history. Showing local cache.');
+      return result;
+    }
+    setBackendHistory(result.history);
+    setBackendHistorySummary(result.summary);
+    setBackendHistoryStatus({
+      source: 'supabase',
+      lastRefreshAt: result.history.fetchedAt,
+      lastError: '',
+      duplicatesIgnored: result.history.duplicatesIgnored || 0,
+      lastReportCopyAt: backendHistoryStatus.lastReportCopyAt,
+      reportSource: 'supabase',
+      rowsFetched: {
+        shiftSessions: result.history.shiftSessions.length,
+        taskCompletions: result.history.taskCompletions.length,
+        handoverNotes: result.history.handoverNotes.length,
+        alerts: result.history.alerts.length,
+      },
+    });
+    setMessage('Backend history refreshed from Supabase.');
+    return result;
+  }
+
+  async function refreshBackendHistoryRange() {
+    if (authStatus.loginSource !== 'supabase_auth') {
+      setMessage('Backend history requires Email login.');
+      return;
+    }
+    const result = await fetchManagerHistoryRange(offsetDate(-6), todayKey());
+    if (!result.ok) {
+      setBackendHistoryStatus((current) => ({
+        ...current,
+        source: 'unavailable',
+        lastError: result.message || 'Could not fetch backend history range.',
+      }));
+      setMessage('Could not fetch last 7 days from Supabase.');
+      return;
+    }
+    setBackendHistoryRange(result.days);
+    setBackendHistoryStatus((current) => ({
+      ...current,
+      source: 'supabase',
+      lastRefreshAt: result.fetchedAt,
+      lastError: '',
+    }));
+    setMessage('Last 7 days loaded from Supabase.');
+  }
+
+  async function copyBackendDailyReport() {
+    let history = backendHistory;
+    let source = 'supabase';
+    if (!history || history.date !== date) {
+      const result = await refreshBackendHistory(date);
+      if (result.ok) history = result.history;
+    }
+    let report;
+    if (history && history.date === date) {
+      report = buildDailyReportFromBackend(history, { generatedBy: user.name });
+    } else {
+      source = 'local_cache';
+      report = `Local cache report\n\n${buildDailyReport()}`;
+    }
+    setDailyReportText(report);
+    try {
+      await navigator.clipboard.writeText(report);
+      setMessage(source === 'supabase' ? 'Backend daily report copied.' : 'Local cache report copied.');
+    } catch {
+      setMessage('Could not copy automatically. You can manually select the report text below.');
+    }
+    setBackendHistoryStatus((current) => ({
+      ...current,
+      reportSource: source,
+      lastReportCopyAt: new Date().toISOString(),
+    }));
   }
 
   function exportData() {
@@ -2878,6 +3012,7 @@ function ManagerDashboard({
 
   async function copyDailyReport() {
     const report = buildDailyReport();
+    setDailyReportText(report);
     try {
       await navigator.clipboard.writeText(report);
       setMessage('Daily report copied.');
@@ -4121,7 +4256,10 @@ values
             <p className="eyebrow">Report</p>
             <h2>Daily report</h2>
           </div>
-          <button type="button" className="primary-button compact-button" onClick={copyDailyReport}>Copy daily report</button>
+          <div className="backup-actions">
+            <button type="button" className="primary-button compact-button" onClick={copyDailyReport}>Copy daily report</button>
+            <button type="button" className="ghost-button compact-button" onClick={copyBackendDailyReport}>Copy backend daily report</button>
+          </div>
         </div>
         {(message.includes('Daily report') || message.includes('Could not copy automatically')) && (
           <p className="status-message report-message">{message}</p>
@@ -4130,9 +4268,72 @@ values
           className="report-textarea"
           readOnly
           rows="14"
-          value={buildDailyReport()}
+          value={dailyReportText || buildDailyReport()}
           aria-label="Daily report text"
         />
+      </section>
+
+      <section className="local-status-card">
+        <div className="panel-title-row">
+          <div>
+            <p className="eyebrow">Phase 4B</p>
+            <h2>Backend history</h2>
+            <p className="muted">
+              {authStatus.loginSource === 'supabase_auth'
+                ? `Backend history source: ${backendHistoryStatus.source === 'supabase' ? 'Supabase' : 'Unavailable'}`
+                : 'Backend history requires Email login. Staff-code mode uses local cache only.'}
+            </p>
+          </div>
+          <label>
+            Date
+            <input type="date" value={date} onChange={(event) => setDate(event.target.value)} />
+          </label>
+        </div>
+        <div className="backup-actions">
+          <button type="button" className="primary-button compact-button" onClick={() => refreshBackendHistory(date)}>Refresh backend history</button>
+          <button type="button" className="ghost-button compact-button" onClick={() => setDate(todayKey())}>Today</button>
+          <button type="button" className="ghost-button compact-button" onClick={() => setDate(offsetDate(-1))}>Yesterday</button>
+          <button type="button" className="ghost-button compact-button" onClick={refreshBackendHistoryRange}>Last 7 days</button>
+        </div>
+        <div className="status-grid">
+          <span><strong>{backendHistorySummary?.shiftSessions || 0}</strong> Shift sessions</span>
+          <span><strong>{backendHistorySummary?.activeSessions || 0}</strong> Active sessions</span>
+          <span><strong>{backendHistorySummary?.finishedSessions || 0}</strong> Finished sessions</span>
+          <span><strong>{backendHistorySummary?.uniqueStaff || 0}</strong> Unique staff/users</span>
+          <span><strong>{backendHistorySummary?.taskRows || 0}</strong> Task completion rows</span>
+          <span><strong>{backendHistorySummary?.doneTasks || 0}</strong> Done tasks</span>
+          <span><strong>{backendHistorySummary?.notRelevantTasks || 0}</strong> Not relevant tasks</span>
+          <span><strong>{backendHistorySummary?.openTasks || 0}</strong> Open/reset rows</span>
+          <span><strong>{backendHistorySummary?.handoverNotes || 0}</strong> Handover notes</span>
+          <span><strong>{backendHistorySummary?.openAlerts || 0}</strong> Open alerts</span>
+          <span><strong>{backendHistorySummary?.resolvedAlerts || 0}</strong> Resolved alerts</span>
+          <span><strong>{backendHistorySummary?.urgentAlerts || 0}</strong> Urgent alerts</span>
+          <span><strong>{backendHistoryStatus.lastRefreshAt ? formatDateTime(backendHistoryStatus.lastRefreshAt) : 'Not yet'}</strong> Last backend history refresh</span>
+          <span><strong>{backendHistoryStatus.duplicatesIgnored || 0}</strong> Merge duplicates ignored</span>
+          <span><strong>{backendHistoryStatus.reportSource}</strong> Backend report source</span>
+          <span><strong>{backendHistoryStatus.lastReportCopyAt ? formatDateTime(backendHistoryStatus.lastReportCopyAt) : 'Not copied'}</strong> Last backend report copy</span>
+        </div>
+        {backendHistoryStatus.lastError && <p className="critical-warning">{backendHistoryStatus.lastError}</p>}
+        {backendHistoryRange.length > 0 && (
+          <div className="history-table">
+            {backendHistoryRange.map((day) => (
+              <article key={day.date} className="log-row">
+                <strong>{day.date}</strong>
+                <span>Sessions {day.shiftSessions} | Done {day.doneTasks} | Handovers {day.handoverNotes}</span>
+                <small>Alerts {day.openAlerts + day.resolvedAlerts} | Urgent {day.urgentAlerts}</small>
+              </article>
+            ))}
+          </div>
+        )}
+        <button type="button" className="text-button" onClick={() => setShowHistoryDetails((current) => !current)}>
+          {showHistoryDetails ? 'Hide backend history debug' : 'Show backend history debug'}
+        </button>
+        {showHistoryDetails && (
+          <div className="backend-details">
+            <strong>Backend history debug</strong>
+            <pre>{JSON.stringify({ backendHistoryStatus, backendHistorySummary, backendHistoryRange }, null, 2)}</pre>
+          </div>
+        )}
       </section>
 
       <section className="manager-list">

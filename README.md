@@ -437,6 +437,42 @@ Phase 4A.2 cross-device restore test:
 
 The manager-only `Clear synced local checklist pending records` action removes only local pending task/handover records that already have matching synced backend-backed records in the local cache. It does not delete Supabase rows or unsynced local-only records.
 
+## Supabase Phase 4B Manager backend history and daily report
+
+Manager Dashboard can fetch historical shift/checklist data from Supabase for a selected date. Email login is required for backend history; staff-code mode remains a local-only fallback.
+
+Backend history currently includes:
+
+- `shift_sessions`
+- `task_completions`
+- `handover_notes`
+- `alerts`
+
+The dashboard shows selected-date backend counts, a compact Last 7 days table, and a `Copy backend daily report` action. Backend daily reports prefer Supabase history when available and fall back to the existing local cache report if backend history cannot be fetched.
+
+Reports may still exclude not-yet-migrated local modules:
+
+- event floor full model
+- assets
+- cash/invoice
+- routine editor changes
+
+localStorage export/import still exists and remains useful for local fallback/cache data.
+
+Phase 4B test:
+
+1. Sign in with Supabase Email login.
+2. Open a shift, complete one task and write a handover note.
+3. Finish the shift.
+4. Create a normal alert and an urgent alert.
+5. Open Manager Dashboard.
+6. Click `Refresh backend history` for today.
+7. Confirm backend counts include shift sessions, task completions, handover notes and alerts.
+8. Click `Copy backend daily report`.
+9. Confirm the visible report includes the shift session, checklist counts, handover note and alerts.
+10. Click `Last 7 days` and confirm the compact history table loads.
+11. Sign in with staff-code mode and confirm backend history reports Email login required / local fallback.
+
 ## Backend Schema Notes
 
 - [supabase/schema.sql](supabase/schema.sql) is the current source of truth for Supabase tables, policies, triggers and helper functions.
