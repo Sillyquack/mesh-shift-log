@@ -473,6 +473,48 @@ Phase 4B test:
 10. Click `Last 7 days` and confirm the compact history table loads.
 11. Sign in with staff-code mode and confirm backend history reports Email login required / local fallback.
 
+## Supabase Phase 4C backend history polish
+
+Phase 4C improves Manager Dashboard backend history readability and backend daily report accuracy.
+
+Important count labels:
+
+- `Raw backend task rows` means the number of rows returned from Supabase `task_completions`.
+- `Unique task records` means deduped logical checklist task records used for progress/reporting.
+- `Done tasks` counts records with status `done`.
+- `Not relevant tasks` counts records with status `not_relevant`.
+- `Open/reset rows` counts records with status `open` or `reset` when those rows are stored.
+- `Urgent alerts` counts alerts with severity `Urgent` or `needsImmediateHelp`.
+- `Unresolved alerts` means alerts that are not `resolved`.
+
+Alert history uses local-day boundaries against `created_at` and also includes rows with matching `alert_date`, reducing UTC off-by-one surprises in daily reports.
+
+Backend daily reports now include:
+
+- executive summary
+- shift sessions with duration where available
+- checklist progress by shift using recorded backend task rows
+- handover notes
+- urgent/open alerts first
+- data notes and limitations
+
+Still not backend-migrated:
+
+- full event floor model
+- assets
+- cash/invoice
+- routine editor changes
+
+Phase 4C report test:
+
+1. Sign in with Supabase Email login as a manager.
+2. Refresh backend history for today.
+3. Confirm raw task rows and unique task records are clearly labeled.
+4. Click `Copy backend daily report`.
+5. Paste into plain text and confirm it includes executive summary, shift sessions, checklist progress by shift, handover notes, alerts and data notes.
+6. Test a date with no backend data and confirm calm empty-state messages.
+7. Click `Last 7 days` and confirm Date, sessions, finished shifts, unique task records, done/N/A, handovers, alerts, urgent and open alert counts are readable.
+
 ## Backend Schema Notes
 
 - [supabase/schema.sql](supabase/schema.sql) is the current source of truth for Supabase tables, policies, triggers and helper functions.

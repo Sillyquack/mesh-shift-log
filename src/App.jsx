@@ -2879,7 +2879,7 @@ function ManagerDashboard({
       reportSource: 'supabase',
       rowsFetched: {
         shiftSessions: result.history.shiftSessions.length,
-        taskCompletions: result.history.taskCompletions.length,
+        taskCompletions: result.history.rawTaskRows ?? result.history.taskCompletions.length,
         handoverNotes: result.history.handoverNotes.length,
         alerts: result.history.alerts.length,
       },
@@ -2930,7 +2930,7 @@ function ManagerDashboard({
     setDailyReportText(report);
     try {
       await navigator.clipboard.writeText(report);
-      setMessage(source === 'supabase' ? 'Backend daily report copied.' : 'Local cache report copied.');
+      setMessage(source === 'supabase' ? 'Backend daily report copied. Source: Supabase backend.' : 'Local cache report copied. Source: Local cache fallback.');
     } catch {
       setMessage('Could not copy automatically. You can manually select the report text below.');
     }
@@ -4300,7 +4300,8 @@ values
           <span><strong>{backendHistorySummary?.activeSessions || 0}</strong> Active sessions</span>
           <span><strong>{backendHistorySummary?.finishedSessions || 0}</strong> Finished sessions</span>
           <span><strong>{backendHistorySummary?.uniqueStaff || 0}</strong> Unique staff/users</span>
-          <span><strong>{backendHistorySummary?.taskRows || 0}</strong> Task completion rows</span>
+          <span><strong>{backendHistorySummary?.taskRows || 0}</strong> Raw backend task rows</span>
+          <span><strong>{backendHistorySummary?.uniqueTaskRecords || 0}</strong> Unique task records</span>
           <span><strong>{backendHistorySummary?.doneTasks || 0}</strong> Done tasks</span>
           <span><strong>{backendHistorySummary?.notRelevantTasks || 0}</strong> Not relevant tasks</span>
           <span><strong>{backendHistorySummary?.openTasks || 0}</strong> Open/reset rows</span>
@@ -4314,13 +4315,35 @@ values
           <span><strong>{backendHistoryStatus.lastReportCopyAt ? formatDateTime(backendHistoryStatus.lastReportCopyAt) : 'Not copied'}</strong> Last backend report copy</span>
         </div>
         {backendHistoryStatus.lastError && <p className="critical-warning">{backendHistoryStatus.lastError}</p>}
+        {backendHistoryStatus.source === 'supabase' && backendHistorySummary && (
+          <div className="empty-state compact-empty">
+            {backendHistorySummary.shiftSessions === 0 && <p>No Supabase shift data found for this date.</p>}
+            {backendHistorySummary.taskRows === 0 && <p>No backend checklist rows found for this date.</p>}
+            {backendHistorySummary.handoverNotes === 0 && <p>No backend handover notes found for this date.</p>}
+          </div>
+        )}
         {backendHistoryRange.length > 0 && (
           <div className="history-table">
             {backendHistoryRange.map((day) => (
-              <article key={day.date} className="log-row">
+              <article
+                key={day.date}
+                className="log-row"
+                role="button"
+                tabIndex={0}
+                onClick={() => {
+                  setDate(day.date);
+                  refreshBackendHistory(day.date);
+                }}
+                onKeyDown={(event) => {
+                  if (event.key === 'Enter' || event.key === ' ') {
+                    setDate(day.date);
+                    refreshBackendHistory(day.date);
+                  }
+                }}
+              >
                 <strong>{day.date}</strong>
-                <span>Sessions {day.shiftSessions} | Done {day.doneTasks} | Handovers {day.handoverNotes}</span>
-                <small>Alerts {day.openAlerts + day.resolvedAlerts} | Urgent {day.urgentAlerts}</small>
+                <span>Sessions {day.shiftSessions} | Finished {day.finishedSessions} | Unique tasks {day.uniqueTaskRecords}</span>
+                <small>Done {day.doneTasks} | N/A {day.notRelevantTasks} | Handovers {day.handoverNotes} | Alerts {day.totalAlerts} | Urgent {day.urgentAlerts} | Open {day.openAlerts}</small>
               </article>
             ))}
           </div>

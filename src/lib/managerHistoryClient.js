@@ -21,11 +21,11 @@ async function authenticatedContext() {
 }
 
 function startOfDate(date) {
-  return `${date}T00:00:00`;
+  return new Date(`${date}T00:00:00`).toISOString();
 }
 
 function endOfDate(date) {
-  return `${date}T23:59:59.999`;
+  return new Date(`${date}T23:59:59.999`).toISOString();
 }
 
 function betweenDateQuery(query, column, startDate, endDate) {
@@ -33,15 +33,47 @@ function betweenDateQuery(query, column, startDate, endDate) {
 }
 
 export function normalizeBackendShiftSession(row) {
-  return normalizeShiftRecord(row);
+  const normalized = normalizeShiftRecord(row);
+  if (!normalized) return null;
+  return {
+    ...normalized,
+    shiftType: normalized.shiftType || 'unknown_shift',
+    shiftLabel: normalized.shiftLabel || normalized.shiftType || 'Unknown shift',
+    status: normalized.status || 'unknown',
+    completedBy: normalized.completedBy || 'Unknown user',
+    startedAt: normalized.startedAt || row?.created_at || '',
+    updatedAt: normalized.updatedAt || row?.updated_at || row?.created_at || '',
+  };
 }
 
 export function normalizeBackendTaskCompletion(row) {
-  return normalizeTaskCompletion(row);
+  const normalized = normalizeTaskCompletion(row);
+  if (!normalized) return null;
+  return {
+    ...normalized,
+    shiftType: normalized.shiftType || 'unknown_shift',
+    taskId: normalized.taskId || normalized.localId || normalized.backendId || 'unknown_task',
+    taskTitle: normalized.taskTitle || 'Unknown task',
+    status: normalized.status || 'unknown',
+    completedBy: normalized.completedBy || 'Unknown user',
+    completedAt: normalized.completedAt || normalized.updatedAt || '',
+    updatedAt: normalized.updatedAt || normalized.completedAt || '',
+  };
 }
 
 export function normalizeBackendHandoverNote(row) {
-  return normalizeHandoverNote(row);
+  const normalized = normalizeHandoverNote(row);
+  if (!normalized) return null;
+  return {
+    ...normalized,
+    shiftType: normalized.shiftType || 'unknown_shift',
+    completedBy: normalized.completedBy || 'Unknown user',
+    nextShift: normalized.nextShift || '',
+    lowStock: normalized.lowStock || '',
+    maintenance: normalized.maintenance || '',
+    memberEvent: normalized.memberEvent || '',
+    updatedAt: normalized.updatedAt || row?.updated_at || row?.created_at || '',
+  };
 }
 
 export function normalizeBackendAlertForReport(row) {
@@ -52,11 +84,11 @@ export function normalizeBackendAlertForReport(row) {
     date: row.alert_date || (row.created_at || '').slice(0, 10),
     createdAt: row.created_at || '',
     updatedAt: row.updated_at || row.created_at || '',
-    createdBy: row.created_by || '',
-    category: row.category || '',
-    severity: row.severity || '',
-    area: row.area || '',
-    message: row.message || '',
+    createdBy: row.created_by || 'Unknown user',
+    category: row.category || 'No category',
+    severity: row.severity || 'Normal',
+    area: row.area || 'No area',
+    message: row.message || 'No message',
     needsImmediateHelp: Boolean(row.needs_immediate_help),
     status: row.status || 'open',
     managerNote: row.manager_note || '',
@@ -84,6 +116,26 @@ function uniqueBy(items, keyFn, freshnessFn = (item) => item.updatedAt || item.c
   return { records: [...merged.values()], duplicatesIgnored };
 }
 
+function statusKey(value) {
+  return String(value || '').trim().toLowerCase();
+}
+
+function isUrgentAlert(alert) {
+  return String(alert.severity || '').trim().toLowerCase() === 'urgent' || alert.needsImmediateHelp;
+}
+
+function isResolvedAlert(alert) {
+  return statusKey(alert.status) === 'resolved';
+}
+
+function durationMinutes(startedAt, finishedAt) {
+  if (!startedAt || !finishedAt) return null;
+  const start = new Date(startedAt).getTime();
+  const end = new Date(finishedAt).getTime();
+  if (!Number.isFinite(start) || !Number.isFinite(end) || end < start) return null;
+  return Math.round((end - start) / 60000);
+}
+
 export function summarizeBackendHistory(history) {
   const shifts = history.shiftSessions || [];
   const tasks = history.taskCompletions || [];
@@ -96,18 +148,32 @@ export function summarizeBackendHistory(history) {
   ].filter(Boolean));
   return {
     shiftSessions: shifts.length,
-    activeSessions: shifts.filter((session) => session.status === 'active').length,
-    finishedSessions: shifts.filter((session) => session.status === 'finished').length,
+    activeSessions: shifts.filter((session) => statusKey(session.status) === 'active').length,
+    finishedSessions: shifts.filter((session) => statusKey(session.status) === 'finished').length,
     uniqueStaff: staff.size,
-    taskRows: tasks.length,
-    doneTasks: tasks.filter((task) => task.status === 'done').length,
-    notRelevantTasks: tasks.filter((task) => task.status === 'not_relevant').length,
-    openTasks: tasks.filter((task) => task.status === 'open').length,
+    taskRows: history.rawTaskRows ?? tasks.length,
+    uniqueTaskRecords: tasks.length,
+    doneTasks: tasks.filter((task) => statusKey(task.status) === 'done').length,
+    notRelevantTasks: tasks.filter((task) => statusKey(task.status) === 'not_relevant').length,
+    openTasks: tasks.filter((task) => ['open', 'reset'].includes(statusKey(task.status))).length,
     handoverNotes: handovers.length,
-    openAlerts: alerts.filter((alert) => alert.status === 'open').length,
-    resolvedAlerts: alerts.filter((alert) => alert.status === 'resolved').length,
-    urgentAlerts: alerts.filter((alert) => alert.severity === 'Urgent' || alert.needsImmediateHelp).length,
+    totalAlerts: alerts.length,
+    openAlerts: alerts.filter((alert) => statusKey(alert.status) === 'open').length,
+    unresolvedAlerts: alerts.filter((alert) => !isResolvedAlert(alert)).length,
+    resolvedAlerts: alerts.filter(isResolvedAlert).length,
+    urgentAlerts: alerts.filter(isUrgentAlert).length,
   };
+}
+
+async function fetchAlertsForLocalDate(date) {
+  const [byAlertDate, byCreatedAt] = await Promise.all([
+    supabaseAuthClient.from('alerts').select('*').eq('alert_date', date).order('created_at', { ascending: false }),
+    supabaseAuthClient.from('alerts').select('*').gte('created_at', startOfDate(date)).lte('created_at', endOfDate(date)).order('created_at', { ascending: false }),
+  ]);
+  const error = byAlertDate.error || byCreatedAt.error;
+  if (error) return { data: [], error };
+  const merged = uniqueBy([...(byAlertDate.data || []), ...(byCreatedAt.data || [])], (row) => row.id || row.local_id || `${row.created_at}-${row.message}`);
+  return { data: merged.records, error: null };
 }
 
 export async function fetchManagerDailyHistory(date) {
@@ -118,7 +184,7 @@ export async function fetchManagerDailyHistory(date) {
       supabaseAuthClient.from('shift_sessions').select('*').eq('shift_date', date).order('updated_at', { ascending: false }),
       supabaseAuthClient.from('task_completions').select('*').eq('shift_date', date).order('updated_at', { ascending: false }),
       supabaseAuthClient.from('handover_notes').select('*').eq('note_date', date).order('updated_at', { ascending: false }),
-      supabaseAuthClient.from('alerts').select('*').eq('alert_date', date).order('created_at', { ascending: false }),
+      fetchAlertsForLocalDate(date),
     ]);
     const error = shiftResult.error || taskResult.error || handoverResult.error || alertResult.error;
     if (error) return { ok: false, mode: 'sync_error', message: error.message, error, history: null };
@@ -127,9 +193,11 @@ export async function fetchManagerDailyHistory(date) {
     const history = {
       date,
       shiftSessions: (shiftResult.data || []).map(normalizeBackendShiftSession).filter(Boolean),
+      rawTaskRows: (taskResult.data || []).length,
       taskCompletions: taskMerge.records,
       handoverNotes: handoverMerge.records,
       alerts: (alertResult.data || []).map(normalizeBackendAlertForReport).filter(Boolean),
+      duplicateTaskRowsIgnored: taskMerge.duplicatesIgnored,
       duplicatesIgnored: taskMerge.duplicatesIgnored + handoverMerge.duplicatesIgnored,
       fetchedAt: new Date().toISOString(),
     };
@@ -147,7 +215,7 @@ export async function fetchManagerHistoryRange(startDate, endDate) {
       betweenDateQuery(supabaseAuthClient.from('shift_sessions').select('*'), 'shift_date', startDate, endDate),
       betweenDateQuery(supabaseAuthClient.from('task_completions').select('*'), 'shift_date', startDate, endDate),
       betweenDateQuery(supabaseAuthClient.from('handover_notes').select('*'), 'note_date', startDate, endDate),
-      supabaseAuthClient.from('alerts').select('*').gte('alert_date', startDate).lte('alert_date', endDate),
+      supabaseAuthClient.from('alerts').select('*').gte('created_at', startOfDate(startDate)).lte('created_at', endOfDate(endDate)),
     ]);
     const error = shiftResult.error || taskResult.error || handoverResult.error || alertResult.error;
     if (error) return { ok: false, mode: 'sync_error', message: error.message, error, days: [] };
@@ -163,6 +231,7 @@ export async function fetchManagerHistoryRange(startDate, endDate) {
       const history = {
         date,
         shiftSessions: shifts.filter((item) => item.date === date),
+        rawTaskRows: tasks.filter((item) => item.date === date).length,
         taskCompletions: tasks.filter((item) => item.date === date),
         handoverNotes: handovers.filter((item) => item.date === date),
         alerts: alerts.filter((item) => item.date === date),
@@ -181,58 +250,116 @@ function formatDateTime(value) {
   return new Date(value).toLocaleString();
 }
 
+function formatDuration(minutes) {
+  if (minutes == null) return 'Not available';
+  const hours = Math.floor(minutes / 60);
+  const rest = minutes % 60;
+  if (!hours) return `${rest} min`;
+  return `${hours}h ${rest}m`;
+}
+
+function shiftDisplayName(shift) {
+  return shift || 'Unknown shift';
+}
+
 export function buildDailyReportFromBackend(history, { generatedBy = 'Manager' } = {}) {
   if (!history) return '';
   const summary = summarizeBackendHistory(history);
   const byShift = history.taskCompletions.reduce((groups, task) => {
-    groups[task.shiftType] ||= [];
-    groups[task.shiftType].push(task);
+    const key = shiftDisplayName(task.shiftType);
+    groups[key] ||= [];
+    groups[key].push(task);
     return groups;
   }, {});
+  const alertsSorted = [...(history.alerts || [])].sort((a, b) => {
+    const aPriority = isUrgentAlert(a) || !isResolvedAlert(a) ? 1 : 0;
+    const bPriority = isUrgentAlert(b) || !isResolvedAlert(b) ? 1 : 0;
+    return bPriority - aPriority || new Date(b.createdAt || 0) - new Date(a.createdAt || 0);
+  });
   const lines = [
-    'Mesh Shift Log Daily Report',
+    'Mesh Shift Log - Daily Operations Report',
     `Date: ${history.date}`,
-    `Generated at: ${new Date().toLocaleString()}`,
+    `Generated: ${new Date().toLocaleString()}`,
     `Generated by: ${generatedBy}`,
-    'Report source: Supabase backend + local cache merge where available',
+    'Source: Supabase backend + local cache where relevant',
     '',
-    'Shift sessions:',
+    '1. Executive summary',
+    `- ${summary.shiftSessions} shift sessions`,
+    `- ${summary.finishedSessions} finished shifts`,
+    `- ${summary.uniqueStaff} unique staff/users`,
+    `- ${summary.doneTasks} done checklist items`,
+    `- ${summary.notRelevantTasks} not relevant checklist items`,
+    `- ${summary.handoverNotes} handover notes`,
+    `- ${summary.totalAlerts} alerts`,
+    `- ${summary.urgentAlerts} urgent alerts`,
+    `- ${summary.unresolvedAlerts} unresolved/open alerts`,
+    '',
+    '2. Shift sessions',
   ];
   if (!history.shiftSessions.length) lines.push('- None');
   history.shiftSessions.forEach((session) => {
-    lines.push(`- ${session.shiftLabel || session.shiftType} | ${session.completedBy || 'Unknown'} | ${session.status}`);
-    lines.push(`  Started: ${formatDateTime(session.startedAt)} | Finished: ${formatDateTime(session.finishedAt)}`);
+    const minutes = durationMinutes(session.startedAt, session.finishedAt);
+    lines.push(`- ${session.shiftLabel || session.shiftType || 'Unknown shift'} (${session.shiftType || 'unknown'})`);
+    lines.push(`  Person: ${session.completedBy || 'Unknown user'}`);
+    lines.push(`  Status: ${session.status || 'Unknown status'}`);
+    lines.push(`  Started: ${formatDateTime(session.startedAt)}`);
+    lines.push(`  Finished: ${formatDateTime(session.finishedAt)}`);
+    lines.push(`  Duration: ${formatDuration(minutes)}`);
+    if (statusKey(session.status) === 'active') lines.push('  Note: session is still active/open.');
   });
-  lines.push('', 'Checklist progress:');
-  lines.push(`- Total task rows: ${summary.taskRows}`);
-  lines.push(`- Done: ${summary.doneTasks}`);
-  lines.push(`- Not relevant: ${summary.notRelevantTasks}`);
-  lines.push(`- Open/reset: ${summary.openTasks}`);
+  lines.push('', '3. Checklist progress by shift');
+  lines.push(`- Raw backend task rows: ${summary.taskRows}`);
+  lines.push(`- Unique task records: ${summary.uniqueTaskRecords}`);
   Object.entries(byShift).forEach(([shift, tasks]) => {
-    lines.push(`- ${shift}: done ${tasks.filter((task) => task.status === 'done').length}, not relevant ${tasks.filter((task) => task.status === 'not_relevant').length}, open ${tasks.filter((task) => task.status === 'open').length}`);
+    const done = tasks.filter((task) => statusKey(task.status) === 'done').length;
+    const notRelevant = tasks.filter((task) => statusKey(task.status) === 'not_relevant').length;
+    const open = tasks.filter((task) => ['open', 'reset'].includes(statusKey(task.status))).length;
+    const touched = tasks.length;
+    const handled = done + notRelevant;
+    const percentage = touched ? Math.round((handled / touched) * 100) : 0;
+    lines.push(`- ${shift}`);
+    lines.push(`  Done: ${done}`);
+    lines.push(`  Not relevant: ${notRelevant}`);
+    lines.push(`  Open/reset rows: ${open}`);
+    lines.push(`  Unique task rows touched: ${touched}`);
+    lines.push(`  Recorded handled percentage: ${percentage}% of recorded task rows`);
+    const openRows = tasks.filter((task) => ['open', 'reset'].includes(statusKey(task.status))).slice(0, 5);
+    if (openRows.length) {
+      lines.push('  Open/reset rows:');
+      openRows.forEach((task) => lines.push(`  - ${task.taskTitle || task.taskId} (${task.completedBy || 'Unknown user'})`));
+    }
   });
-  lines.push('', 'Handover notes:');
+  if (!Object.keys(byShift).length) lines.push('- No backend checklist rows found for this date.');
+  lines.push('', '4. Handover notes');
   if (!history.handoverNotes.length) lines.push('- None');
   history.handoverNotes.forEach((note) => {
-    lines.push(`- ${note.shiftType} | ${note.completedBy || 'Unknown'}`);
-    if (note.nextShift) lines.push(`  Next shift: ${note.nextShift}`);
-    if (note.lowStock) lines.push(`  Low stock: ${note.lowStock}`);
-    if (note.maintenance) lines.push(`  Maintenance: ${note.maintenance}`);
-    if (note.memberEvent) lines.push(`  Member/event: ${note.memberEvent}`);
+    lines.push(`- ${note.shiftType || 'Unknown shift'} | ${note.completedBy || 'Unknown user'} | ${formatDateTime(note.updatedAt)}`);
+    const noteLines = [
+      note.nextShift && `Next shift: ${note.nextShift}`,
+      note.lowStock && `Low stock: ${note.lowStock}`,
+      note.maintenance && `Maintenance: ${note.maintenance}`,
+      note.memberEvent && `Member/event: ${note.memberEvent}`,
+    ].filter(Boolean);
+    lines.push(`  ${noteLines.length ? noteLines.join(' | ') : 'No note text'}`);
   });
-  lines.push('', 'Alerts:');
-  lines.push(`- Open: ${summary.openAlerts}`);
-  lines.push(`- Resolved: ${summary.resolvedAlerts}`);
-  lines.push(`- Urgent/immediate: ${summary.urgentAlerts}`);
-  history.alerts.forEach((alert) => {
-    lines.push(`- ${alert.severity} | ${alert.category} | ${alert.area} | ${alert.status}`);
-    lines.push(`  ${alert.message}`);
+  lines.push('', '5. Alerts');
+  lines.push(`- Total alerts: ${summary.totalAlerts}`);
+  lines.push(`- Urgent alerts: ${summary.urgentAlerts}`);
+  lines.push(`- Open/unresolved alerts: ${summary.unresolvedAlerts}`);
+  lines.push(`- Resolved alerts: ${summary.resolvedAlerts}`);
+  alertsSorted.forEach((alert) => {
+    lines.push(`- ${alert.severity || 'Normal'} | ${alert.area || 'No area'} / ${alert.category || 'No category'}`);
+    lines.push(`  Message: ${alert.message || 'No message'}`);
+    lines.push(`  Status: ${alert.status || 'Unknown status'}`);
     lines.push(`  Created by: ${alert.createdBy} at ${formatDateTime(alert.createdAt)}`);
     if (alert.acknowledgedBy) lines.push(`  Acknowledged by: ${alert.acknowledgedBy} at ${formatDateTime(alert.acknowledgedAt)}`);
     if (alert.resolvedBy) lines.push(`  Resolved by: ${alert.resolvedBy} at ${formatDateTime(alert.resolvedAt)}`);
   });
-  lines.push('', 'Notes / limitations:');
-  lines.push('- This report uses Supabase backend history where available.');
-  lines.push('- Local-only modules may not be included yet: event floor full model, assets, cash/invoice and routine editor changes.');
+  if (!alertsSorted.length) lines.push('- None');
+  lines.push('', '6. Data notes');
+  lines.push('- Report uses Supabase backend data where available.');
+  lines.push('- Some modules are not yet backend-migrated: full event floor model, assets, cash/invoice, routine editor changes.');
+  lines.push('- Local-only staff-code activity may be missing unless synced/exported.');
+  lines.push('- Checklist percentages are based on recorded backend task rows, not the full expected routine checklist.');
   return lines.join('\n').trim();
 }
