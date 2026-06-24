@@ -421,6 +421,22 @@ limit 5;
 
 The Manager Dashboard includes a Phase 4A checklist backend status card showing backend mode, task/handover source, last Phase 4A action/result, whether a backend write was attempted, whether it succeeded, pending local counts, loaded backend row counts and last sync error.
 
+Phase 4A.2 cross-device restore test:
+
+1. On browser/device A, sign in with Supabase Email login.
+2. Open `Opening shift`.
+3. Mark one checklist task done.
+4. Add a handover note.
+5. On browser/device B, sign in with Supabase Email login.
+6. Open the same date and `Opening shift`.
+7. Wait for restore or tap `Refresh checklist from backend`.
+8. Confirm the task appears done and the handover note appears.
+9. On browser/device B, change the same task to `Not relevant`.
+10. On browser/device A, tap `Refresh checklist from backend` and confirm the updated status appears.
+11. Confirm Manager Dashboard progress does not double-count the same task.
+
+The manager-only `Clear synced local checklist pending records` action removes only local pending task/handover records that already have matching synced backend-backed records in the local cache. It does not delete Supabase rows or unsynced local-only records.
+
 ## Backend Schema Notes
 
 - [supabase/schema.sql](supabase/schema.sql) is the current source of truth for Supabase tables, policies, triggers and helper functions.

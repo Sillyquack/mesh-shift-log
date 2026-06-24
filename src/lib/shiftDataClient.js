@@ -125,6 +125,8 @@ export function normalizeHandoverNote(row) {
     date: row.note_date || '',
     shiftType: row.shift_key || '',
     completedBy: row.created_by_name || '',
+    createdByAuthUserId: row.created_by_auth_user_id || '',
+    createdByProfileId: row.created_by_profile_id || '',
     nextShift: fields.nextShift || '',
     lowStock: fields.lowStock || '',
     maintenance: fields.maintenance || '',
@@ -197,15 +199,16 @@ export async function syncTaskCompletion(log, { shiftSessionBackendId = '' } = {
   return { ok: true, mode: 'authenticated', record: normalizeTaskCompletion(data), row: data };
 }
 
-export async function fetchTaskCompletionsForDate(date) {
+export async function fetchTaskCompletionsForDate(date, shiftType = '') {
   const context = await getAuthenticatedContext();
   if (!context.ok) return { ...context, records: [] };
   if (!date) return { ...validationError('Missing date for task completion fetch.'), records: [] };
-  const { data, error } = await supabaseAuthClient
+  let query = supabaseAuthClient
     .from('task_completions')
     .select('*')
-    .eq('shift_date', date)
-    .order('updated_at', { ascending: false });
+    .eq('shift_date', date);
+  if (shiftType) query = query.eq('shift_key', shiftType);
+  const { data, error } = await query.order('updated_at', { ascending: false });
   if (error) return { ok: false, mode: 'sync_error', message: error.message, error, records: [] };
   return { ok: true, mode: 'authenticated', records: (data || []).map(normalizeTaskCompletion).filter(Boolean), rows: data || [] };
 }
@@ -250,15 +253,16 @@ export async function syncHandoverNote(note, { shiftSessionBackendId = '' } = {}
   return { ok: true, mode: 'authenticated', record: normalizeHandoverNote(data), row: data };
 }
 
-export async function fetchHandoverNotesForDate(date) {
+export async function fetchHandoverNotesForDate(date, shiftType = '') {
   const context = await getAuthenticatedContext();
   if (!context.ok) return { ...context, records: [] };
   if (!date) return { ...validationError('Missing date for handover fetch.'), records: [] };
-  const { data, error } = await supabaseAuthClient
+  let query = supabaseAuthClient
     .from('handover_notes')
     .select('*')
-    .eq('note_date', date)
-    .order('updated_at', { ascending: false });
+    .eq('note_date', date);
+  if (shiftType) query = query.eq('shift_key', shiftType);
+  const { data, error } = await query.order('updated_at', { ascending: false });
   if (error) return { ok: false, mode: 'sync_error', message: error.message, error, records: [] };
   return { ok: true, mode: 'authenticated', records: (data || []).map(normalizeHandoverNote).filter(Boolean), rows: data || [] };
 }

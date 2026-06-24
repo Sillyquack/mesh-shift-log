@@ -693,16 +693,30 @@ function handoverIdentity(note) {
   return note.localId || note.id || `${note.date}-${note.shiftType}-${note.completedBy}`;
 }
 
+function handoverLogicalIdentity(note) {
+  return [
+    note.date || '',
+    note.shiftType || '',
+    note.createdByAuthUserId || note.createdByProfileId || note.completedBy || note.createdBy || '',
+  ].join('__');
+}
+
 function mergeHandoverNotes(localNotes, backendNotes) {
   const merged = normalizeHandovers(localNotes);
+  const logicalKeys = new Map();
+  Object.entries(merged).forEach(([key, note]) => {
+    logicalKeys.set(handoverLogicalIdentity(note), key);
+  });
   backendNotes.forEach((backendNote) => {
     const key = handoverIdentity(backendNote);
-    const existingKey = Object.keys(merged).find((itemKey) => handoverIdentity(merged[itemKey]) === key) || key;
+    const logicalKey = handoverLogicalIdentity(backendNote);
+    const existingKey = Object.keys(merged).find((itemKey) => handoverIdentity(merged[itemKey]) === key) || logicalKeys.get(logicalKey) || key;
     const existing = merged[existingKey];
     if (existing && ['pending_backend', 'pending_auth', 'sync_error'].includes(existing.syncStatus) && recordFreshness(existing) > recordFreshness(backendNote)) {
       return;
     }
     merged[existingKey] = { ...existing, ...backendNote, syncStatus: 'synced' };
+    logicalKeys.set(logicalKey, existingKey);
   });
   return merged;
 }
@@ -1346,7 +1360,17 @@ function HandoverNotes({ user, shiftType, notes, setNotes, onSync, backendShiftS
   const date = todayKey();
   const key = `${date}-${shiftType}-${user.name}`;
   const syncUserKey = slug(user.authUserId || user.backendUserId || user.id || user.name);
-  const value = notes[key] || {
+  const currentAuthId = user.authUserId || user.backendUserId || '';
+  const restoredNote = Object.values(normalizeHandovers(notes)).find((note) => (
+    note?.date === date
+    && note?.shiftType === shiftType
+    && (
+      note.localId === `handover:${date}:${shiftType}:${syncUserKey}`
+      || (currentAuthId && note.createdByAuthUserId === currentAuthId)
+      || note.completedBy === user.name
+    )
+  ));
+  const value = notes[key] || restoredNote || {
     id: key,
       localId: `handover:${date}:${shiftType}:${syncUserKey}`,
     date,
@@ -1886,6 +1910,7 @@ function Checklist({
   onEnsureShiftSession,
   onSyncTaskLog,
   onSyncHandover,
+  onRestoreShiftData,
   onShowOverview,
   onChangeShift,
   onLogout,
@@ -1914,6 +1939,7 @@ function Checklist({
   const responsibleCriticalMissing = tasks.filter((task) => task.section === 'Responsible closing control' && task.priority === 'critical' && !isHandled(logsByTask[task.id])).length;
   const [finished, setFinished] = useState(false);
   const [showAlert, setShowAlert] = useState(false);
+  const [restoreMessage, setRestoreMessage] = useState('');
   const [backendShiftSessionId, setBackendShiftSessionId] = useState('');
   const syncUserKey = slug(user.authUserId || user.backendUserId || user.id || user.name);
 
@@ -1923,6 +1949,11 @@ function Checklist({
     onEnsureShiftSession?.(date, shiftType).then((result) => {
       if (!cancelled && result?.ok && result.record?.backendId) setBackendShiftSessionId(result.record.backendId);
     });
+    if (user.loginSource === 'supabase_auth') {
+      onRestoreShiftData?.(date, shiftType).then((result) => {
+        if (!cancelled && result?.ok) setRestoreMessage('Checklist restored from Supabase.');
+      });
+    }
     return () => {
       cancelled = true;
     };
@@ -2149,8 +2180,21 @@ function Checklist({
         )}
         <div className="backup-actions">
           <a className="handover-jump" href="#handover-notes">Jump to handover notes</a>
+          {user.loginSource === 'supabase_auth' && (
+            <button
+              type="button"
+              className="ghost-button compact-button"
+              onClick={async () => {
+                const result = await onRestoreShiftData?.(date, shiftType);
+                setRestoreMessage(result?.ok ? 'Checklist refreshed from Supabase.' : 'Could not refresh checklist backend data. Showing local cache.');
+              }}
+            >
+              Refresh checklist from backend
+            </button>
+          )}
           <button type="button" className="ghost-button compact-button" onClick={() => setShowAlert(true)}>Alert manager</button>
         </div>
+        {restoreMessage && <p className="status-message">{restoreMessage}</p>}
         <div className="checklist-controls">
           <label className="toggle-row">
             <input type="checkbox" checked={hideCompleted} onChange={(event) => setHideCompleted(event.target.checked)} />
@@ -2369,6 +2413,7 @@ function ManagerDashboard({
   refreshShiftData,
   fetchAuthProfiles,
   onTestShiftBackendWrite,
+  onClearSyncedLocalChecklistPendingRecords,
   updateAlertRecord,
   retryAlertEmailNotification,
   refreshAlerts,
@@ -2717,6 +2762,14 @@ function ManagerDashboard({
       `Latest shift session: ${shiftDataStatus.latestShiftSessionDate || 'none'} ${shiftDataStatus.latestShiftSessionShift || ''} ${shiftDataStatus.latestShiftSessionStatus || ''}`,
       `Latest shift session finished at: ${shiftDataStatus.latestShiftSessionFinishedAt || 'none'}`,
       `Latest shift session backend id: ${shiftDataStatus.latestShiftSessionBackendId || 'none'}`,
+      `Last backend restore attempt: ${shiftDataStatus.lastBackendRestoreAttemptAt || 'none'}`,
+      `Last backend restore result: ${shiftDataStatus.lastBackendRestoreResult || 'none'}`,
+      `Backend restore rows fetched: ${shiftDataStatus.backendRestoreRowsFetched || 0}`,
+      `Backend restore rows merged: ${shiftDataStatus.backendRestoreRowsMerged || 0}`,
+      `Backend restore duplicates ignored: ${shiftDataStatus.backendRestoreDuplicatesIgnored || 0}`,
+      `Local pending matched in backend: ${shiftDataStatus.localPendingRecordsMatchedInBackend || 0}`,
+      `Local-only records remaining: ${shiftDataStatus.localOnlyRecordsRemaining || 0}`,
+      `Last cleanup result: ${shiftDataStatus.lastCleanupResult || 'none'}`,
       `Last Phase 4A error: ${shiftDataStatus.lastPhase4Error || shiftDataStatus.lastShiftSyncError || shiftDataStatus.lastBackendCountError || 'none'}`,
       `Site check: ${siteSettings.locationCheckEnabled ? 'enabled' : 'disabled'}`,
       `Location overrides: ${siteOverrides.length}`,
@@ -3545,12 +3598,20 @@ function ManagerDashboard({
           <span><strong>{shiftDataStatus.latestShiftSessionStatus || 'None'}</strong> Latest shift session status</span>
           <span><strong>{shiftDataStatus.latestShiftSessionFinishedAt ? formatDateTime(shiftDataStatus.latestShiftSessionFinishedAt) : 'Not finished'}</strong> Latest finished at</span>
           <span><strong>{shortId(shiftDataStatus.latestShiftSessionBackendId)}</strong> Latest shift session id</span>
+          <span><strong>{shiftDataStatus.lastBackendRestoreAttemptAt ? formatDateTime(shiftDataStatus.lastBackendRestoreAttemptAt) : 'Not yet'}</strong> Last backend restore attempt</span>
+          <span><strong>{shiftDataStatus.lastBackendRestoreResult || 'None'}</strong> Last backend restore result</span>
+          <span><strong>{shiftDataStatus.backendRestoreRowsFetched || 0}</strong> Backend restore rows fetched</span>
+          <span><strong>{shiftDataStatus.backendRestoreRowsMerged || 0}</strong> Backend restore rows merged</span>
+          <span><strong>{shiftDataStatus.backendRestoreDuplicatesIgnored || 0}</strong> Backend restore duplicates ignored</span>
+          <span><strong>{shiftDataStatus.localPendingRecordsMatchedInBackend || 0}</strong> Local pending matched in backend</span>
+          <span><strong>{shiftDataStatus.localOnlyRecordsRemaining || 0}</strong> Local-only records remaining</span>
+          <span><strong>{shiftDataStatus.lastCleanupResult || 'None'}</strong> Last cleanup result</span>
         </div>
         <p className="muted">
           {authStatus.loginSource === 'supabase_auth' ? 'Using backend + local cache.' : 'Using local cache. Email login required for backend counts.'}
         </p>
-        {(shiftDataStatus.lastShiftSyncError || shiftDataStatus.lastPhase4Error || shiftDataStatus.lastBackendCountError) && (
-          <p className="critical-warning">{shiftDataStatus.lastShiftSyncError || shiftDataStatus.lastPhase4Error || shiftDataStatus.lastBackendCountError}</p>
+        {(shiftDataStatus.lastShiftSyncError || shiftDataStatus.lastPhase4Error || shiftDataStatus.lastBackendCountError || shiftDataStatus.lastBackendRestoreError) && (
+          <p className="critical-warning">{shiftDataStatus.lastShiftSyncError || shiftDataStatus.lastPhase4Error || shiftDataStatus.lastBackendCountError || shiftDataStatus.lastBackendRestoreError}</p>
         )}
         <div className="backup-actions">
           <button
@@ -3572,6 +3633,16 @@ function ManagerDashboard({
             }}
           >
             Refresh checklist backend
+          </button>
+          <button
+            type="button"
+            className="ghost-button compact-button"
+            onClick={() => {
+              const result = onClearSyncedLocalChecklistPendingRecords?.();
+              setMessage(result?.message || 'Cleanup finished.');
+            }}
+          >
+            Clear synced local checklist pending records
           </button>
         </div>
       </section>
@@ -4424,6 +4495,15 @@ function App() {
     latestShiftSessionStatus: '',
     latestShiftSessionFinishedAt: '',
     latestShiftSessionBackendId: '',
+    lastBackendRestoreAttemptAt: '',
+    lastBackendRestoreResult: '',
+    lastBackendRestoreError: '',
+    backendRestoreRowsFetched: 0,
+    backendRestoreRowsMerged: 0,
+    backendRestoreDuplicatesIgnored: 0,
+    localPendingRecordsMatchedInBackend: 0,
+    localOnlyRecordsRemaining: 0,
+    lastCleanupResult: '',
   });
   const [authStatus, setAuthStatus] = useState({
     configured: isSupabaseAuthConfigured,
@@ -4939,6 +5019,139 @@ function App() {
       shiftSessionRows: shiftSessions.length,
       ignoredDuplicateTaskRows: taskMerge.ignoredDuplicates,
     };
+  }
+
+  async function restoreShiftFromBackend(date = todayKey(), shiftType = '') {
+    if (!date || !shiftType) {
+      updateShiftDataStatus({
+        lastBackendRestoreAttemptAt: new Date().toISOString(),
+        lastBackendRestoreResult: 'skipped: missing_shift_context',
+        lastPhase4Error: 'Missing date or shift for backend restore.',
+      });
+      return { ok: false, message: 'Could not refresh checklist backend data. Showing local cache.' };
+    }
+    if (!canAttemptShiftBackend()) {
+      updateShiftDataStatus({
+        mode: isBackendAuthRequired ? 'auth_required' : 'local_only',
+        message: 'Checklist data saved locally. Email login required for backend restore.',
+        lastBackendRestoreAttemptAt: new Date().toISOString(),
+        lastBackendRestoreResult: 'skipped: login_source_not_supabase_auth',
+      });
+      return { ok: false, message: 'Could not refresh checklist backend data. Showing local cache.' };
+    }
+
+    const attemptedAt = new Date().toISOString();
+    updateShiftDataStatus({
+      mode: 'authenticated',
+      message: 'Restoring checklist from Supabase.',
+      lastBackendRestoreAttemptAt: attemptedAt,
+      lastBackendRestoreResult: 'attempting',
+      lastBackendRestoreError: '',
+    });
+
+    try {
+      const [taskResult, handoverResult] = await Promise.all([
+        fetchTaskCompletionsForDate(date, shiftType),
+        fetchHandoverNotesForDate(date, shiftType),
+      ]);
+      if (!taskResult.ok || !handoverResult.ok) {
+        throw new Error(taskResult.message || handoverResult.message || 'Checklist backend restore failed.');
+      }
+
+      const taskMerge = mergeTaskLogsWithStats(logsRef.current, taskResult.records);
+      const mergedLogs = taskMerge.records;
+      const mergedHandovers = mergeHandoverNotes(handoverNotesRef.current, handoverResult.records);
+      const restoredTaskIds = new Set((taskResult.records || []).map((record) => dashboardTaskIdentity(record)));
+      const restoredHandoverKeys = new Set((handoverResult.records || []).map((record) => handoverLogicalIdentity(record)));
+      const rowsFetched = (taskResult.records?.length || 0) + (handoverResult.records?.length || 0);
+
+      setLogs(mergedLogs);
+      setHandoverNotes(mergedHandovers);
+      saveStorage(LOG_KEY, mergedLogs);
+      saveStorage(HANDOVER_KEY, mergedHandovers);
+      updateShiftDataStatus({
+        mode: 'authenticated',
+        message: rowsFetched
+          ? 'Checklist restored from Supabase. Backend data merged with local cache.'
+          : 'No backend task rows found for this shift.',
+        taskCompletionsSource: 'backend_synced',
+        handoverNotesSource: 'backend_synced',
+        lastBackendRestoreAttemptAt: attemptedAt,
+        lastBackendRestoreResult: rowsFetched ? 'success' : 'success: no_backend_rows_for_shift',
+        backendRestoreRowsFetched: rowsFetched,
+        backendRestoreRowsMerged: uniqueTaskLogsForDashboard(mergedLogs.filter((log) => log.date === date && log.shiftType === shiftType)).length
+          + Object.values(mergedHandovers).filter((note) => note.date === date && note.shiftType === shiftType).length,
+        backendRestoreDuplicatesIgnored: taskMerge.ignoredDuplicates,
+        localPendingRecordsMatchedInBackend: normalizeLogs(logsRef.current).filter((log) => ['pending_backend', 'sync_error'].includes(log.syncStatus) && restoredTaskIds.has(dashboardTaskIdentity(log))).length
+          + Object.values(normalizeHandovers(handoverNotesRef.current)).filter((note) => ['pending_backend', 'sync_error'].includes(note.syncStatus) && restoredHandoverKeys.has(handoverLogicalIdentity(note))).length,
+        localOnlyRecordsRemaining: normalizeLogs(mergedLogs).filter((log) => ['pending_auth', 'local_only'].includes(log.syncStatus)).length
+          + Object.values(normalizeHandovers(mergedHandovers)).filter((note) => ['pending_auth', 'local_only'].includes(note.syncStatus)).length,
+        lastShiftDataSyncAt: new Date().toISOString(),
+        lastShiftSyncError: '',
+      }, mergedLogs, mergedHandovers);
+      return { ok: true, message: 'Checklist refreshed from Supabase.' };
+    } catch (error) {
+      console.error('Phase 4A checklist restore failed:', error);
+      updateShiftDataStatus({
+        mode: 'sync_error',
+        message: 'Could not refresh checklist backend data. Showing local cache.',
+        lastBackendRestoreAttemptAt: attemptedAt,
+        lastBackendRestoreResult: 'failed',
+        lastBackendRestoreError: error.message || 'Checklist backend restore failed.',
+        lastShiftSyncError: error.message || 'Checklist backend restore failed.',
+      });
+      return { ok: false, message: 'Could not refresh checklist backend data. Showing local cache.', error };
+    }
+  }
+
+  function clearSyncedLocalChecklistPendingRecords() {
+    const confirmed = window.confirm('This only clears local pending records that already exist in Supabase. Continue?');
+    if (!confirmed) return { ok: false, message: 'Cleanup cancelled.' };
+
+    const normalizedLogs = normalizeLogs(logsRef.current);
+    const syncedTaskKeys = new Set(normalizedLogs
+      .filter((log) => log.syncStatus === 'synced' && (log.backendId || log.localId))
+      .map((log) => dashboardTaskIdentity(log)));
+    let removedTaskCount = 0;
+    const nextLogs = normalizedLogs.filter((log) => {
+      const isPending = ['pending_backend', 'sync_error'].includes(log.syncStatus);
+      const hasSyncedMatch = syncedTaskKeys.has(dashboardTaskIdentity(log));
+      if (isPending && hasSyncedMatch) {
+        removedTaskCount += 1;
+        return false;
+      }
+      return true;
+    });
+
+    const normalizedNotes = normalizeHandovers(handoverNotesRef.current);
+    const syncedHandoverKeys = new Set(Object.values(normalizedNotes)
+      .filter((note) => note.syncStatus === 'synced' && (note.backendId || note.localId))
+      .map((note) => handoverLogicalIdentity(note)));
+    let removedHandoverCount = 0;
+    const nextHandovers = Object.fromEntries(Object.entries(normalizedNotes).filter(([, note]) => {
+      const isPending = ['pending_backend', 'sync_error'].includes(note.syncStatus);
+      const hasSyncedMatch = syncedHandoverKeys.has(handoverLogicalIdentity(note));
+      if (isPending && hasSyncedMatch) {
+        removedHandoverCount += 1;
+        return false;
+      }
+      return true;
+    }));
+
+    setLogs(nextLogs);
+    setHandoverNotes(nextHandovers);
+    saveStorage(LOG_KEY, nextLogs);
+    saveStorage(HANDOVER_KEY, nextHandovers);
+    const remainingLocalOnly = nextLogs.filter((log) => ['pending_auth', 'local_only'].includes(log.syncStatus)).length
+      + Object.values(nextHandovers).filter((note) => ['pending_auth', 'local_only'].includes(note.syncStatus)).length;
+    const message = `Cleared ${removedTaskCount} task and ${removedHandoverCount} handover pending records. ${remainingLocalOnly} local-only records remain.`;
+    updateShiftDataStatus({
+      message,
+      lastCleanupResult: message,
+      localPendingRecordsMatchedInBackend: removedTaskCount + removedHandoverCount,
+      localOnlyRecordsRemaining: remainingLocalOnly,
+    }, nextLogs, nextHandovers);
+    return { ok: true, message };
   }
 
   async function testChecklistBackendWrite() {
@@ -5817,6 +6030,7 @@ function App() {
             onEnsureShiftSession={ensureShiftSession}
             onSyncTaskLog={syncChecklistLog}
             onSyncHandover={syncChecklistHandover}
+            onRestoreShiftData={restoreShiftFromBackend}
             onShowOverview={() => setSelectedShift('overview')}
             onChangeShift={() => setSelectedShift(null)}
             onLogout={logout}
@@ -5860,6 +6074,7 @@ function App() {
           authStatus={authStatus}
           fetchAuthProfiles={fetchUserProfiles}
           onTestShiftBackendWrite={testChecklistBackendWrite}
+          onClearSyncedLocalChecklistPendingRecords={clearSyncedLocalChecklistPendingRecords}
           updateAlertRecord={updateAlertRecord}
           retryAlertEmailNotification={(alert) => attemptAlertEmailNotification(alert, { reason: 'retry' })}
           refreshAlerts={loadSupabaseAlerts}
