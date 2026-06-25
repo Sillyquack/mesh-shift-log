@@ -1,4 +1,4 @@
-﻿import { Component, useEffect, useMemo, useRef, useState } from "react";
+import { Component, useEffect, useMemo, useRef, useState } from "react";
 import {
   areas,
   defaultRoutines,
@@ -50,7 +50,12 @@ import {
   reviewFinancialSignoff,
   upsertFinancialSignoff,
 } from "./lib/financialDataClient.js";
-import { upsertAssetCheckRecord } from "./lib/assetDataClient.js";
+import {
+  cleanupSyncedAssetPendingRecords,
+  fetchAssetChecksForDate,
+  mergeAssetChecks,
+  upsertAssetCheckRecord,
+} from "./lib/assetDataClient.js";
 
 const APP_VERSION = "0.7.0";
 const RELEASE_LABEL = "v0.7.0-phase-5a-financial-signoffs";
@@ -3620,14 +3625,17 @@ function ManagerDashboard({
   alertBackendStatus,
   shiftDataStatus,
   financialBackendStatus,
+  assetBackendStatus,
   authStatus,
   refreshShiftData,
   refreshFinancialSignoffs,
+  refreshAssetChecks,
   onReviewFinancialSignoff,
   fetchAuthProfiles,
   onTestShiftBackendWrite,
   onClearSyncedLocalChecklistPendingRecords,
   onClearSyncedFinancialPendingRecords,
+  onClearSyncedAssetPendingRecords,
   updateAlertRecord,
   retryAlertEmailNotification,
   refreshAlerts,
@@ -4130,6 +4138,18 @@ function ManagerDashboard({
       `Local-only financial records remaining: ${financialBackendStatus.localOnlyRemaining || 0}`,
       `Financial backend cleanup result: ${financialBackendStatus.lastCleanupResult || "none"}`,
       `Financial backend error: ${financialBackendStatus.lastError || "none"}`,
+      `Asset backend mode: ${assetBackendStatus.mode}`,
+      `Asset backend last action: ${assetBackendStatus.lastAction || "none"}`,
+      `Asset backend last result: ${assetBackendStatus.lastResult || "none"}`,
+      `Asset backend rows loaded: ${assetBackendStatus.rowsLoaded || 0}`,
+      `Asset backend rows merged: ${assetBackendStatus.rowsMerged || 0}`,
+      `Asset backend duplicates ignored: ${assetBackendStatus.duplicatesIgnored || 0}`,
+      `Asset checks today: ${dateAssetChecks.length}`,
+      `Asset issues today: ${assetIssues.length}`,
+      `Pending local asset checks: ${assetBackendStatus.pendingLocalRecords || 0}`,
+      `Local-only asset checks remaining: ${assetBackendStatus.localOnlyRemaining || 0}`,
+      `Asset backend cleanup result: ${assetBackendStatus.lastCleanupResult || "none"}`,
+      `Asset backend error: ${assetBackendStatus.lastError || "none"}`,
       `Shift data backend mode: ${shiftDataStatus.mode}`,
       `Task completions source: ${shiftDataStatus.taskCompletionsSource}`,
       `Handover notes source: ${shiftDataStatus.handoverNotesSource}`,
@@ -7193,6 +7213,119 @@ values
             ))}
           </div>
         </div>
+        <div className="phase-backend-panel">
+          <div className="panel-title-row">
+            <div>
+              <p className="eyebrow">Phase 5B</p>
+              <h3>Asset check backend</h3>
+              <p className="muted">
+                Payment terminal and POS device checks sync to Supabase for Email
+                login users. Staff-code checks stay local until exported/imported.
+              </p>
+            </div>
+          </div>
+          <div className="backup-actions">
+            <button
+              type="button"
+              className="primary-button compact-button"
+              onClick={async () => {
+                const result = await refreshAssetChecks?.(date);
+                setMessage(result?.message || "Asset check refresh finished.");
+              }}
+            >
+              Refresh asset checks
+            </button>
+            <button
+              type="button"
+              className="ghost-button compact-button"
+              onClick={() => {
+                const result = onClearSyncedAssetPendingRecords?.();
+                if (result?.message) setMessage(result.message);
+              }}
+            >
+              Clear synced asset pending records
+            </button>
+          </div>
+          <div className="status-grid">
+            <span>
+              <strong>{assetBackendStatus.mode}</strong> Mode
+            </span>
+            <span>
+              <strong>{assetBackendStatus.lastAction || "None"}</strong>{" "}
+              Last action
+            </span>
+            <span>
+              <strong>{assetBackendStatus.lastResult || "None"}</strong>{" "}
+              Last result
+            </span>
+            <span>
+              <strong>{assetBackendStatus.rowsLoaded || 0}</strong> Rows loaded
+            </span>
+            <span>
+              <strong>{assetBackendStatus.rowsMerged || 0}</strong> Rows merged
+            </span>
+            <span>
+              <strong>{assetBackendStatus.duplicatesIgnored || 0}</strong>{" "}
+              Duplicates ignored
+            </span>
+            <span>
+              <strong>{dateAssetChecks.length}</strong> Checks this date
+            </span>
+            <span>
+              <strong>{assetIssues.length}</strong> Issues this date
+            </span>
+            <span>
+              <strong>{assetBackendStatus.pendingLocalRecords || 0}</strong>{" "}
+              Pending local
+            </span>
+            <span>
+              <strong>{assetBackendStatus.localOnlyRemaining || 0}</strong>{" "}
+              Local-only remaining
+            </span>
+          </div>
+          {assetBackendStatus.lastCleanupResult && (
+            <p className="muted">{assetBackendStatus.lastCleanupResult}</p>
+          )}
+          {assetBackendStatus.lastError && (
+            <p className="critical-warning">{assetBackendStatus.lastError}</p>
+          )}
+          <div className="history-table">
+            {dateAssetChecks.length === 0 && (
+              <p className="muted">No asset checks for this date yet.</p>
+            )}
+            {dateAssetChecks.slice(0, 10).map((record) => (
+              <article
+                key={record.backendId || record.localId || record.id}
+                className={`log-row priority-${assetHasIssue(record) ? "critical" : "normal"}`}
+              >
+                <strong>{record.assetLabel || record.assetId}</strong>
+                <span>
+                  {shiftLabels[record.shiftType] || record.shiftType || "Unknown shift"} | Present{" "}
+                  {record.present || "missing"} | Correct location{" "}
+                  {record.correctLocation || "missing"} | Charging{" "}
+                  {record.charging || "missing"}
+                </span>
+                <small>
+                  Condition: {record.condition || "missing"} | Serial checked:{" "}
+                  {record.serialChecked || "missing"} | Last 4: {record.serialLast4 || "missing"}
+                </small>
+                <small>
+                  Signed by {record.signedOffBy || "Missing"}
+                  {record.signedOffAt
+                    ? ` at ${formatDateTime(record.signedOffAt)}`
+                    : ""}
+                </small>
+                {record.comment && <small>Comment: {record.comment}</small>}
+                {record.syncStatus && <small>Sync: {record.syncStatus}</small>}
+                {record.syncError && (
+                  <small className="sync-note error">
+                    Backend sync: {record.syncError}
+                  </small>
+                )}
+              </article>
+            ))}
+          </div>
+        </div>
         {backendHistoryStatus.lastError && (
           <p className="critical-warning">{backendHistoryStatus.lastError}</p>
         )}
@@ -8112,6 +8245,26 @@ function App() {
     ).length,
     lastCleanupResult: "",
   });
+  const [assetBackendStatus, setAssetBackendStatus] = useState({
+    mode: "initial",
+    lastAction: "",
+    lastResult: "",
+    lastError: "",
+    rowsLoaded: 0,
+    rowsMerged: 0,
+    duplicatesIgnored: 0,
+    pendingLocalRecords: normalizeRecords(readStorage(ASSET_CHECK_KEY, [])).filter(
+      (record) =>
+        ["pending_backend", "pending_auth", "sync_error"].includes(
+          record.syncStatus,
+        ),
+    ).length,
+    pendingMatchedInBackend: 0,
+    localOnlyRemaining: normalizeRecords(readStorage(ASSET_CHECK_KEY, [])).filter(
+      (record) => ["pending_auth", "local_only"].includes(record.syncStatus),
+    ).length,
+    lastCleanupResult: "",
+  });
   const [authStatus, setAuthStatus] = useState({
     configured: isSupabaseAuthConfigured,
     loginSource: user?.loginSource || "staff_code",
@@ -8161,6 +8314,7 @@ function App() {
   const logsRef = useRef(logs);
   const handoverNotesRef = useRef(handoverNotes);
   const cashSignoffsRef = useRef(cashSignoffs);
+  const assetChecksRef = useRef(assetChecks);
 
   useEffect(() => {
     alertsRef.current = alerts;
@@ -8177,6 +8331,10 @@ function App() {
   useEffect(() => {
     cashSignoffsRef.current = cashSignoffs;
   }, [cashSignoffs]);
+
+  useEffect(() => {
+    assetChecksRef.current = assetChecks;
+  }, [assetChecks]);
 
   const activeOverride = isOverrideActive(siteOverrides);
   const siteAccessStatus = activeOverride ? "override" : siteAccess.status;
@@ -8448,6 +8606,95 @@ function App() {
       nextRecords,
     );
     return result;
+  }
+
+  function updateAssetBackendStatus(
+    patch,
+    nextRecords = assetChecksRef.current,
+  ) {
+    const normalized = normalizeRecords(nextRecords);
+    setAssetBackendStatus((current) => ({
+      ...current,
+      ...patch,
+      pendingLocalRecords: normalized.filter((record) =>
+        ["pending_backend", "pending_auth", "sync_error"].includes(
+          record.syncStatus,
+        ),
+      ).length,
+      localOnlyRemaining: normalized.filter((record) =>
+        ["pending_auth", "local_only"].includes(record.syncStatus),
+      ).length,
+    }));
+  }
+
+  async function refreshAssetChecksFromBackend(date = todayKey()) {
+    if (user?.loginSource !== "supabase_auth") {
+      updateAssetBackendStatus({
+        mode: isBackendAuthRequired ? "auth_required" : "local_only",
+        lastAction: "asset_check_restore",
+        lastResult: "skipped: login_source_not_supabase_auth",
+        lastError: "",
+      });
+      return {
+        ok: false,
+        message: "Could not refresh asset checks. Showing local cache.",
+      };
+    }
+
+    let result;
+
+    try {
+      result = await fetchAssetChecksForDate(date);
+    } catch (error) {
+      console.error("Phase 5B asset check restore failed:", error);
+      result = {
+        ok: false,
+        mode: "sync_error",
+        message: error.message || "Could not refresh asset checks.",
+        records: [],
+      };
+    }
+
+    if (!result.ok) {
+      updateAssetBackendStatus({
+        mode: result.mode,
+        lastAction: "asset_check_restore",
+        lastResult: "failed",
+        lastError: result.message || "Could not refresh asset checks.",
+      });
+      return {
+        ok: false,
+        message: "Could not refresh asset checks. Showing local cache.",
+      };
+    }
+
+    const merged = mergeAssetChecks(assetChecksRef.current, result.records);
+
+    setAssetChecks(merged.records);
+    saveStorage(ASSET_CHECK_KEY, merged.records);
+
+    updateAssetBackendStatus(
+      {
+        mode: "authenticated",
+        lastAction: "asset_check_restore",
+        lastResult: result.records.length
+          ? "success"
+          : "success: no_asset_checks_for_date",
+        lastError: "",
+        rowsLoaded: result.records.length,
+        rowsMerged: merged.records.filter((record) => record.date === date)
+          .length,
+        duplicatesIgnored: merged.duplicatesIgnored,
+      },
+      merged.records,
+    );
+
+    return {
+      ok: true,
+      message: result.records.length
+        ? "Asset checks refreshed from Supabase."
+        : "No asset checks found for this date.",
+    };
   }
 
   async function refreshFinancialSignoffsFromBackend(date = todayKey()) {
@@ -9432,6 +9679,36 @@ function App() {
     return { ok: true, message };
   }
 
+  function clearSyncedAssetPendingRecords() {
+    const confirmed = window.confirm(
+      "This only clears local asset pending records that already exist in Supabase. Continue?",
+    );
+
+    if (!confirmed)
+      return { ok: false, message: "Asset cleanup cancelled." };
+
+    const cleaned = cleanupSyncedAssetPendingRecords(assetChecksRef.current);
+
+    setAssetChecks(cleaned.records);
+    saveStorage(ASSET_CHECK_KEY, cleaned.records);
+
+    const message = `Cleared ${cleaned.removed} asset pending records. ${cleaned.localOnlyRemaining} remain local-only.`;
+
+    updateAssetBackendStatus(
+      {
+        lastAction: "asset_pending_cleanup",
+        lastResult: "success",
+        pendingMatchedInBackend: cleaned.removed,
+        localOnlyRemaining: cleaned.localOnlyRemaining,
+        lastCleanupResult: message,
+        lastError: "",
+      },
+      cleaned.records,
+    );
+
+    return { ok: true, message };
+  }
+
   async function testChecklistBackendWrite() {
     const date = todayKey();
     const shiftType = "opening";
@@ -10343,6 +10620,7 @@ function App() {
     if (user?.loginSource === "supabase_auth") {
       fetchShiftDataForDate(todayKey());
       refreshFinancialSignoffsFromBackend(todayKey());
+      refreshAssetChecksFromBackend(todayKey());
     }
   }, [user?.id, user?.loginSource]);
 
@@ -10352,6 +10630,7 @@ function App() {
       ["closing", "event"].includes(selectedShift)
     ) {
       refreshFinancialSignoffsFromBackend(todayKey());
+      refreshAssetChecksFromBackend(todayKey());
     }
   }, [selectedShift, user?.id, user?.loginSource]);
 
@@ -10572,6 +10851,7 @@ function App() {
           alertBackendStatus={alertBackendStatus}
           shiftDataStatus={shiftDataStatus}
           financialBackendStatus={financialBackendStatus}
+          assetBackendStatus={assetBackendStatus}
           authStatus={authStatus}
           fetchAuthProfiles={fetchUserProfiles}
           onTestShiftBackendWrite={testChecklistBackendWrite}
@@ -10581,6 +10861,7 @@ function App() {
           onClearSyncedFinancialPendingRecords={
             clearSyncedFinancialPendingRecords
           }
+          onClearSyncedAssetPendingRecords={clearSyncedAssetPendingRecords}
           onReviewFinancialSignoff={reviewFinancialSignoffFromBackend}
           updateAlertRecord={updateAlertRecord}
           retryAlertEmailNotification={(alert) =>
@@ -10589,6 +10870,7 @@ function App() {
           refreshAlerts={loadSupabaseAlerts}
           refreshShiftData={fetchShiftDataForDate}
           refreshFinancialSignoffs={refreshFinancialSignoffsFromBackend}
+          refreshAssetChecks={refreshAssetChecksFromBackend}
           retryAlertSync={() => refreshAlertsFromBackend("retry")}
           checkLocation={checkLocation}
           requestWriteAccess={requestWriteAccess}
