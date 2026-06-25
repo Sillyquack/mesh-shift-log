@@ -3716,6 +3716,191 @@ function ManagerDashboardJumpIndex() {
   );
 }
 
+function ManagerDashboardSectionCollapseControls() {
+  const storageKey = "mesh-manager-collapsed-sections-v1";
+
+  function sectionIdFromHeading(text, index) {
+    return (
+      text
+        .toLowerCase()
+        .replace(/[^a-z0-9]+/g, "-")
+        .replace(/^-+|-+$/g, "") || "section"
+    ) + "-" + index;
+  }
+
+  function readState() {
+    try {
+      return JSON.parse(localStorage.getItem(storageKey) || "{}");
+    } catch {
+      return {};
+    }
+  }
+
+  function writeState(state) {
+    localStorage.setItem(storageKey, JSON.stringify(state));
+  }
+
+  function defaultCollapsed(text) {
+    const normalized = text.toLowerCase();
+
+    return [
+      "diagnostics",
+      "pilot quick start",
+      "clear test logs",
+      "routine editor",
+      "supabase profiles",
+      "site access",
+      "real alert notifications",
+      "local data status",
+    ].some((needle) => normalized.includes(needle));
+  }
+
+  function getManagerSections() {
+    const managerPage = document.querySelector(".manager-page");
+    if (!managerPage) return [];
+
+    return Array.from(managerPage.querySelectorAll("section"))
+      .filter((section) => {
+        if (
+          section.classList.contains("intro") ||
+          section.classList.contains("manager-jump-index") ||
+          section.classList.contains("manager-collapse-toolbar")
+        ) {
+          return false;
+        }
+
+        return Boolean(section.querySelector("h2"));
+      })
+      .map((section, index) => {
+        const heading = section.querySelector("h2");
+        const title = heading?.textContent?.trim() || "Section";
+        const id = sectionIdFromHeading(title, index);
+
+        return { section, heading, title, id, index };
+      });
+  }
+
+  function applyCollapsed(section, button, collapsed) {
+    Array.from(section.children).forEach((child) => {
+      const keepVisible =
+        child.classList.contains("section-heading") ||
+        child.classList.contains("manager-collapse-control") ||
+        child.tagName === "H2" ||
+        child.contains(button);
+
+      child.style.display = keepVisible ? "" : collapsed ? "none" : "";
+    });
+
+    section.dataset.managerCollapsed = collapsed ? "true" : "false";
+    button.textContent = collapsed ? "Show" : "Hide";
+    button.setAttribute(
+      "aria-label",
+      collapsed ? "Show section" : "Hide section",
+    );
+  }
+
+  function setupSectionToggles() {
+    const state = readState();
+
+    getManagerSections().forEach(({ section, heading, title, id }) => {
+      let button = section.querySelector("[data-manager-collapse-toggle='true']");
+
+      if (!button) {
+        button = document.createElement("button");
+        button.type = "button";
+        button.dataset.managerCollapseToggle = "true";
+        button.className = "ghost-button compact-button manager-collapse-control";
+        button.style.marginLeft = "auto";
+
+        const headingRow = heading.closest(".section-heading");
+
+        if (headingRow && headingRow.closest("section") === section) {
+          headingRow.appendChild(button);
+        } else {
+          heading.insertAdjacentElement("afterend", button);
+        }
+      }
+
+      const collapsed =
+        typeof state[id] === "boolean" ? state[id] : defaultCollapsed(title);
+
+      applyCollapsed(section, button, collapsed);
+
+      button.onclick = () => {
+        const nextState = readState();
+        const nextCollapsed = section.dataset.managerCollapsed !== "true";
+
+        nextState[id] = nextCollapsed;
+        writeState(nextState);
+        applyCollapsed(section, button, nextCollapsed);
+      };
+    });
+  }
+
+  function setAllSections(collapsed) {
+    const nextState = {};
+
+    getManagerSections().forEach(({ section, id }) => {
+      const button = section.querySelector("[data-manager-collapse-toggle='true']");
+      if (!button) return;
+
+      nextState[id] = collapsed;
+      applyCollapsed(section, button, collapsed);
+    });
+
+    writeState(nextState);
+  }
+
+  function resetSections() {
+    localStorage.removeItem(storageKey);
+    setupSectionToggles();
+  }
+
+  useEffect(() => {
+    const frame = window.requestAnimationFrame(setupSectionToggles);
+
+    return () => {
+      window.cancelAnimationFrame(frame);
+    };
+  }, []);
+
+  return (
+    <section className="panel manager-collapse-toolbar">
+      <div className="section-heading static-heading">
+        <div>
+          <h2>Section controls</h2>
+          <p className="muted">
+            Expand everything, collapse everything, or return to the recommended default view.
+          </p>
+        </div>
+      </div>
+      <div className="backup-actions">
+        <button
+          type="button"
+          className="ghost-button compact-button"
+          onClick={() => setAllSections(false)}
+        >
+          Expand all
+        </button>
+        <button
+          type="button"
+          className="ghost-button compact-button"
+          onClick={() => setAllSections(true)}
+        >
+          Collapse all
+        </button>
+        <button
+          type="button"
+          className="ghost-button compact-button"
+          onClick={resetSections}
+        >
+          Default view
+        </button>
+      </div>
+    </section>
+  );
+}
+
 function ManagerDashboard({
   routines,
   setRoutines,
@@ -5304,6 +5489,7 @@ function ManagerDashboard({
         <h1>Dashboard</h1>
       </section>
       <ManagerDashboardJumpIndex />
+      <ManagerDashboardSectionCollapseControls />
 
       {message && <p className="status-message">{message}</p>}
 
