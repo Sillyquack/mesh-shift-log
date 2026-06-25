@@ -3637,6 +3637,85 @@ function Checklist({
   );
 }
 
+function ManagerDashboardJumpIndex() {
+  const jumpItems = [
+    { label: "Top", needles: ["dashboard"] },
+    { label: "Backend", needles: ["backend status"] },
+    { label: "Checklist", needles: ["checklist backend"] },
+    { label: "Auth", needles: ["auth status"] },
+    { label: "Staff", needles: ["staff codes", "site access"] },
+    { label: "Alerts", needles: ["open alerts", "real alert"] },
+    { label: "Daily report", needles: ["daily report"] },
+    { label: "History", needles: ["backend history", "history by date"] },
+    { label: "Assets", needles: ["asset registry", "payment terminals"] },
+    { label: "Backup", needles: ["backup"] },
+    { label: "Routines", needles: ["routine editor"] },
+  ];
+
+  function jumpTo(needles) {
+    const normalizedNeedles = needles.map((needle) => needle.toLowerCase());
+    const headings = Array.from(document.querySelectorAll("h1, h2, h3"));
+
+    const target = headings.find((heading) => {
+      const text = heading.textContent?.trim().toLowerCase() || "";
+      return normalizedNeedles.some((needle) => text.includes(needle));
+    });
+
+    if (target) {
+      target.scrollIntoView({ behavior: "smooth", block: "start" });
+      return;
+    }
+
+    window.scrollTo({ top: 0, behavior: "smooth" });
+  }
+
+  return (
+    <section className="panel manager-jump-index">
+      <div className="section-heading static-heading">
+        <div>
+          <h2>Manager index</h2>
+          <p className="muted">
+            Jump directly to the section you need.
+          </p>
+        </div>
+      </div>
+      <div className="backup-actions">
+        {jumpItems.map((item) => (
+          <button
+            key={item.label}
+            type="button"
+            className="ghost-button compact-button"
+            onClick={() => jumpTo(item.needles)}
+          >
+            {item.label}
+          </button>
+        ))}
+      </div>
+      <button
+        type="button"
+        aria-label="Back to dashboard top"
+        onClick={() => window.scrollTo({ top: 0, behavior: "smooth" })}
+        style={{
+          position: "fixed",
+          right: "1rem",
+          bottom: "1rem",
+          zIndex: 9999,
+          padding: "0.75rem 1rem",
+          borderRadius: "999px",
+          border: "1px solid rgba(255, 255, 255, 0.35)",
+          background: "#111827",
+          color: "#ffffff",
+          fontWeight: 800,
+          cursor: "pointer",
+          boxShadow: "0 12px 32px rgba(0, 0, 0, 0.35)",
+        }}
+      >
+        ↑ Top
+      </button>
+    </section>
+  );
+}
+
 function ManagerDashboard({
   routines,
   setRoutines,
@@ -3691,6 +3770,13 @@ function ManagerDashboard({
   onResetPilotNotice,
   user,
 }) {
+
+  useEffect(() => {
+    window.requestAnimationFrame(() => {
+      window.scrollTo({ top: 0, behavior: "auto" });
+    });
+  }, []);
+
   const [date, setDate] = useState(todayKey());
   const [staffFilter, setStaffFilter] = useState("all");
   const [shiftFilter, setShiftFilter] = useState("all");
@@ -5217,6 +5303,7 @@ function ManagerDashboard({
         <p className="eyebrow">Manager</p>
         <h1>Dashboard</h1>
       </section>
+      <ManagerDashboardJumpIndex />
 
       {message && <p className="status-message">{message}</p>}
 
