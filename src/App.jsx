@@ -53,8 +53,11 @@ import {
 import {
   cleanupSyncedAssetPendingRecords,
   fetchAssetChecksForDate,
+  fetchAssetRegistry,
   mergeAssetChecks,
+  mergeAssetRegistry,
   upsertAssetCheckRecord,
+  upsertAssetRegistryRecord,
 } from "./lib/assetDataClient.js";
 
 const APP_VERSION = "0.7.0";
@@ -1068,6 +1071,48 @@ function assetHasIssue(check) {
       check.correctLocation === "no" ||
       ["damaged", "not_working", "missing"].includes(check.condition) ||
       check.charging === "no")
+  );
+}
+
+function assetCheckDashboardIdentity(record) {
+  return [
+    record.date || "",
+    record.shiftType || "",
+    record.eventId || "",
+    record.assetLocalId || record.assetId || record.assetLabel || "",
+  ].join("__");
+}
+
+function preferredAssetCheck(existing, candidate) {
+  if (!existing) return candidate;
+
+  const existingScore =
+    (existing.backendId || existing.assetBackendId ? 2 : 0) +
+    (existing.syncStatus === "synced" ? 1 : 0);
+  const candidateScore =
+    (candidate.backendId || candidate.assetBackendId ? 2 : 0) +
+    (candidate.syncStatus === "synced" ? 1 : 0);
+
+  if (candidateScore !== existingScore)
+    return candidateScore > existingScore ? candidate : existing;
+
+  return recordFreshness(candidate) >= recordFreshness(existing)
+    ? candidate
+    : existing;
+}
+
+function uniqueAssetChecksForDashboard(records) {
+  const merged = new Map();
+
+  normalizeRecords(records).forEach((record) => {
+    const key = assetCheckDashboardIdentity(record);
+    merged.set(key, preferredAssetCheck(merged.get(key), record));
+  });
+
+  return [...merged.values()].sort(
+    (a, b) =>
+      recordFreshness(b) - recordFreshness(a) ||
+      new Date(b.signedOffAt || 0) - new Date(a.signedOffAt || 0),
   );
 }
 
@@ -3629,6 +3674,7 @@ function ManagerDashboard({
   authStatus,
   refreshShiftData,
   refreshFinancialSignoffs,
+  refreshAssetRegistry,
   refreshAssetChecks,
   onReviewFinancialSignoff,
   fetchAuthProfiles,
@@ -3719,7 +3765,9 @@ function ManagerDashboard({
 
     return value ? record[valueKey] : "Not filled";
   }
-  const dateAssetChecks = assetChecks.filter((record) => record.date === date);
+  const dateAssetChecks = uniqueAssetChecksForDashboard(
+    assetChecks.filter((record) => record.date === date),
+  );
   const assetIssues = dateAssetChecks.filter(assetHasIssue);
   const activeAssets = assets.filter((asset) => asset.active !== false);
   const activeSiteOverride = isOverrideActive(siteOverrides);
@@ -5079,19 +5127,61 @@ function ManagerDashboard({
       setMessage("Asset needs a model/name or serial number.");
       return;
     }
+
+    const timestamp = new Date().toISOString();
     const savedAsset = {
       ...assetForm,
-      id: assetForm.id || `asset-${Date.now()}`,
-      updatedAt: new Date().toISOString(),
+      id: assetForm.id || "asset-" + Date.now(),
+      localId: assetForm.localId || assetForm.id || "asset:" + Date.now(),
+      syncStatus:
+        user.loginSource === "supabase_auth"
+          ? "pending_backend"
+          : "pending_auth",
+      syncError: "",
+      updatedAt: timestamp,
     };
+
+    let finalAsset = savedAsset;
+    let message = "Asset saved locally.";
+
+    if (user.loginSource === "supabase_auth") {
+      const result = await upsertAssetRegistryRecord(savedAsset);
+
+      if (result.ok) {
+        finalAsset = {
+          ...savedAsset,
+          ...result.record,
+          id: savedAsset.id,
+          localId: savedAsset.localId || result.record.localId,
+          syncStatus: "synced",
+          syncError: "",
+        };
+        message = "Asset saved and synced to Supabase.";
+      } else {
+        finalAsset = {
+          ...savedAsset,
+          syncStatus: "sync_error",
+          syncError: result.message || "Asset registry sync failed.",
+        };
+        message = "Asset saved locally. Backend sync failed.";
+      }
+    }
+
     const nextAssets = [
-      ...assets.filter((asset) => asset.id !== savedAsset.id),
-      savedAsset,
+      ...assets.filter((asset) => asset.id !== finalAsset.id),
+      finalAsset,
     ];
+
     setAssets(nextAssets);
     saveStorage(ASSET_REGISTRY_KEY, nextAssets);
     setAssetForm(blankAssetForm);
-    setMessage("Asset saved.");
+
+    if (user.loginSource === "supabase_auth" && finalAsset.syncStatus === "synced") {
+      await refreshAssetRegistry?.();
+      setMessage("Asset saved and synced to Supabase.");
+    } else {
+      setMessage(message);
+    }
   }
 
   async function assignResponsible(event) {
@@ -7459,6 +7549,27 @@ values
       <section className="manager-list">
         <h2>Asset registry</h2>
         <p className="muted">
+          Asset registry syncs to Supabase for Email login users. Staff-code
+          changes stay local until exported/imported.
+        </p>
+        <div className="backup-actions">
+          <button
+            type="button"
+            className="ghost-button compact-button"
+            onClick={async () => {
+              const result = await refreshAssetRegistry?.();
+              setMessage(result?.message || "Asset registry refresh finished.");
+            }}
+          >
+            Refresh asset registry
+          </button>
+        </div>
+        <p className="muted">
+          Registry backend: {assetBackendStatus.registryRowsLoaded || 0} loaded
+          | {assetBackendStatus.registryRowsMerged || 0} merged |{" "}
+          {assetBackendStatus.registryDuplicatesIgnored || 0} duplicates ignored
+        </p>
+        <p className="muted">
           Youngs payment terminals and POS/iPad devices only. Clear test logs
           does not delete this registry.
         </p>
@@ -8625,6 +8736,72 @@ function App() {
         ["pending_auth", "local_only"].includes(record.syncStatus),
       ).length,
     }));
+  }
+
+  async function refreshAssetRegistryFromBackend() {
+    if (user?.loginSource !== "supabase_auth") {
+      updateAssetBackendStatus({
+        mode: isBackendAuthRequired ? "auth_required" : "local_only",
+        lastAction: "asset_registry_restore",
+        lastResult: "skipped: login_source_not_supabase_auth",
+        lastError: "",
+      });
+      return {
+        ok: false,
+        message: "Could not refresh asset registry. Email login required.",
+      };
+    }
+
+    let result;
+
+    try {
+      result = await fetchAssetRegistry();
+    } catch (error) {
+      console.error("Phase 5B asset registry restore failed:", error);
+      result = {
+        ok: false,
+        mode: "sync_error",
+        message: error.message || "Could not refresh asset registry.",
+        records: [],
+      };
+    }
+
+    if (!result.ok) {
+      updateAssetBackendStatus({
+        mode: result.mode,
+        lastAction: "asset_registry_restore",
+        lastResult: "failed",
+        lastError: result.message || "Could not refresh asset registry.",
+      });
+      return {
+        ok: false,
+        message: "Could not refresh asset registry. Showing local cache.",
+      };
+    }
+
+    const merged = mergeAssetRegistry(assetsRef.current, result.records);
+
+    setAssets(merged.records);
+    saveStorage(ASSET_REGISTRY_KEY, merged.records);
+
+    updateAssetBackendStatus({
+      mode: "authenticated",
+      lastAction: "asset_registry_restore",
+      lastResult: result.records.length
+        ? "success"
+        : "success: no_assets_in_backend",
+      lastError: "",
+      registryRowsLoaded: result.records.length,
+      registryRowsMerged: merged.records.length,
+      registryDuplicatesIgnored: merged.duplicatesIgnored,
+    });
+
+    return {
+      ok: true,
+      message: result.records.length
+        ? "Asset registry refreshed from Supabase."
+        : "No backend assets found yet.",
+    };
   }
 
   async function refreshAssetChecksFromBackend(date = todayKey()) {
@@ -10870,6 +11047,7 @@ function App() {
           refreshAlerts={loadSupabaseAlerts}
           refreshShiftData={fetchShiftDataForDate}
           refreshFinancialSignoffs={refreshFinancialSignoffsFromBackend}
+          refreshAssetRegistry={refreshAssetRegistryFromBackend}
           refreshAssetChecks={refreshAssetChecksFromBackend}
           retryAlertSync={() => refreshAlertsFromBackend("retry")}
           checkLocation={checkLocation}
