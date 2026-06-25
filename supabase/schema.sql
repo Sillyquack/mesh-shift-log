@@ -641,3 +641,182 @@ revoke select, insert, update on public.alerts from anon;
 -- Phase 3C policies intentionally allow null organization_id so existing pilot rows remain visible.
 -- Later, create a Mesh Youngstorget organization row, set user_profiles.organization_id,
 -- backfill alerts.organization_id, then tighten policies to organization-only.
+-- Phase 5B: asset registry and asset check backend foundation.
+
+create table if not exists public.asset_registry (
+  id uuid primary key default gen_random_uuid(),
+  organization_id uuid references public.organizations(id),
+  asset_type text not null default 'other',
+  provider text,
+  model text,
+  serial_number text,
+  expected_venue text,
+  expected_station text,
+  notes text,
+  active boolean not null default true,
+  condition text not null default 'ok',
+  default_required_for_closing boolean not null default true,
+  local_id text,
+  source text not null default 'app',
+  created_at timestamptz default now(),
+  updated_at timestamptz default now()
+);
+
+create table if not exists public.asset_check_records (
+  id uuid primary key default gen_random_uuid(),
+  organization_id uuid references public.organizations(id),
+  check_date date not null,
+  shift_key text,
+  event_id text,
+  asset_backend_id uuid references public.asset_registry(id) on delete set null,
+  asset_local_id text,
+  asset_label text,
+  expected_venue text,
+  expected_station text,
+  present text,
+  correct_location text,
+  condition text,
+  charging text,
+  serial_checked text,
+  serial_last4 text,
+  comment text,
+  signed_by_auth_user_id uuid references auth.users(id),
+  signed_by_name text,
+  signed_at timestamptz,
+  local_id text,
+  source text not null default 'app',
+  created_at timestamptz default now(),
+  updated_at timestamptz default now()
+);
+
+create index if not exists asset_registry_organization_id_idx on public.asset_registry (organization_id);
+create index if not exists asset_registry_asset_type_idx on public.asset_registry (asset_type);
+create index if not exists asset_registry_active_idx on public.asset_registry (active);
+create index if not exists asset_registry_serial_number_idx on public.asset_registry (serial_number);
+create unique index if not exists asset_registry_local_id_idx on public.asset_registry (local_id) where local_id is not null;
+create index if not exists asset_registry_updated_at_idx on public.asset_registry (updated_at);
+
+create index if not exists asset_check_records_organization_id_idx on public.asset_check_records (organization_id);
+create index if not exists asset_check_records_check_date_idx on public.asset_check_records (check_date);
+create index if not exists asset_check_records_shift_key_idx on public.asset_check_records (shift_key);
+create index if not exists asset_check_records_event_id_idx on public.asset_check_records (event_id);
+create index if not exists asset_check_records_asset_backend_id_idx on public.asset_check_records (asset_backend_id);
+create index if not exists asset_check_records_asset_local_id_idx on public.asset_check_records (asset_local_id);
+create unique index if not exists asset_check_records_local_id_idx on public.asset_check_records (local_id) where local_id is not null;
+create index if not exists asset_check_records_signed_by_auth_user_id_idx on public.asset_check_records (signed_by_auth_user_id);
+create index if not exists asset_check_records_updated_at_idx on public.asset_check_records (updated_at);
+
+drop trigger if exists asset_registry_set_updated_at on public.asset_registry;
+create trigger asset_registry_set_updated_at
+before update on public.asset_registry
+for each row
+execute function public.set_updated_at();
+
+drop trigger if exists asset_check_records_set_updated_at on public.asset_check_records;
+create trigger asset_check_records_set_updated_at
+before update on public.asset_check_records
+for each row
+execute function public.set_updated_at();
+
+alter table public.asset_registry enable row level security;
+alter table public.asset_check_records enable row level security;
+
+grant select, insert, update on public.asset_registry to authenticated;
+grant select, insert, update on public.asset_check_records to authenticated;
+
+drop policy if exists "authenticated active users can read asset registry" on public.asset_registry;
+create policy "authenticated active users can read asset registry"
+on public.asset_registry for select
+to authenticated
+using (
+  public.current_user_is_active()
+  and (
+    organization_id is null
+    or public.current_user_organization_id() is null
+    or organization_id = public.current_user_organization_id()
+  )
+);
+
+drop policy if exists "authenticated managers can insert asset registry" on public.asset_registry;
+create policy "authenticated managers can insert asset registry"
+on public.asset_registry for insert
+to authenticated
+with check (
+  public.current_user_is_manager()
+  and (
+    organization_id is null
+    or public.current_user_organization_id() is null
+    or organization_id = public.current_user_organization_id()
+  )
+);
+
+drop policy if exists "authenticated managers can update asset registry" on public.asset_registry;
+create policy "authenticated managers can update asset registry"
+on public.asset_registry for update
+to authenticated
+using (
+  public.current_user_is_manager()
+  and (
+    organization_id is null
+    or public.current_user_organization_id() is null
+    or organization_id = public.current_user_organization_id()
+  )
+)
+with check (
+  public.current_user_is_manager()
+  and (
+    organization_id is null
+    or public.current_user_organization_id() is null
+    or organization_id = public.current_user_organization_id()
+  )
+);
+
+drop policy if exists "authenticated active users can read asset checks" on public.asset_check_records;
+create policy "authenticated active users can read asset checks"
+on public.asset_check_records for select
+to authenticated
+using (
+  public.current_user_is_active()
+  and (
+    organization_id is null
+    or public.current_user_organization_id() is null
+    or organization_id = public.current_user_organization_id()
+  )
+);
+
+drop policy if exists "authenticated users can insert own asset checks" on public.asset_check_records;
+create policy "authenticated users can insert own asset checks"
+on public.asset_check_records for insert
+to authenticated
+with check (
+  public.current_user_is_active()
+  and (signed_by_auth_user_id = auth.uid() or public.current_user_is_manager())
+  and (
+    organization_id is null
+    or public.current_user_organization_id() is null
+    or organization_id = public.current_user_organization_id()
+  )
+);
+
+drop policy if exists "authenticated users can update own asset checks" on public.asset_check_records;
+create policy "authenticated users can update own asset checks"
+on public.asset_check_records for update
+to authenticated
+using (
+  public.current_user_is_active()
+  and (signed_by_auth_user_id = auth.uid() or public.current_user_is_manager())
+  and (
+    organization_id is null
+    or public.current_user_organization_id() is null
+    or organization_id = public.current_user_organization_id()
+  )
+)
+with check (
+  public.current_user_is_active()
+  and (signed_by_auth_user_id = auth.uid() or public.current_user_is_manager())
+  and (
+    organization_id is null
+    or public.current_user_organization_id() is null
+    or organization_id = public.current_user_organization_id()
+  )
+);

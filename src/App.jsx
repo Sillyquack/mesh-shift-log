@@ -1,4 +1,4 @@
-import { Component, useEffect, useMemo, useRef, useState } from "react";
+﻿import { Component, useEffect, useMemo, useRef, useState } from "react";
 import {
   areas,
   defaultRoutines,
@@ -50,6 +50,7 @@ import {
   reviewFinancialSignoff,
   upsertFinancialSignoff,
 } from "./lib/financialDataClient.js";
+import { upsertAssetCheckRecord } from "./lib/assetDataClient.js";
 
 const APP_VERSION = "0.7.0";
 const RELEASE_LABEL = "v0.7.0-phase-5a-financial-signoffs";
@@ -2419,13 +2420,20 @@ function AssetCheckPanel({
 
   async function saveAssetCheck(asset) {
     if (!(await requestWriteAccess())) return;
+
     const draft = drafts[asset.id] || {};
+    const assetIdentity = asset.localId || asset.id;
+    const timestamp = new Date().toISOString();
+
     const record = {
       id: `${date}-${shiftType}-${eventId || "shift"}-${asset.id}`,
+      localId: `asset_check:${date}:${shiftType}:${eventId || "shift"}:${assetIdentity}:${user.authUserId || user.backendUserId || user.id || user.name}`,
       date,
       shiftType,
       eventId,
       assetId: asset.id,
+      assetLocalId: assetIdentity,
+      assetBackendId: asset.backendId || "",
       assetLabel: `${asset.provider} ${asset.model}`.trim(),
       expectedVenue: asset.expectedVenue,
       expectedStation: asset.expectedStation,
@@ -2443,20 +2451,67 @@ function AssetCheckPanel({
         draft.serialLast4 ?? checksByAsset[asset.id]?.serialLast4 ?? "",
       comment: draft.comment ?? checksByAsset[asset.id]?.comment ?? "",
       signedOffBy: user.name,
-      signedOffAt: new Date().toISOString(),
+      signedOffAt: timestamp,
+      signedByAuthUserId:
+        user.loginSource === "supabase_auth"
+          ? user.authUserId || user.backendUserId || ""
+          : "",
+      syncStatus:
+        user.loginSource === "supabase_auth"
+          ? "pending_backend"
+          : "pending_auth",
+      syncError: "",
+      updatedAt: timestamp,
     };
+
     if (assetHasIssue(record) && !record.comment.trim()) {
       alert(
         "Add a comment for missing, damaged, not charging or wrong-location assets.",
       );
       return;
     }
+
     const nextChecks = [
       ...assetChecks.filter((check) => check.id !== record.id),
       record,
     ];
+
     setAssetChecks(nextChecks);
     saveStorage(ASSET_CHECK_KEY, nextChecks);
+
+    if (user.loginSource !== "supabase_auth") return;
+
+    const result = await upsertAssetCheckRecord(record);
+
+    const syncedRecord = result.ok
+      ? {
+          ...record,
+          ...result.record,
+          id: record.id,
+          localId: record.localId || result.record.localId,
+          syncStatus: "synced",
+          syncError: "",
+        }
+      : {
+          ...record,
+          syncStatus: "sync_error",
+          syncError: result.message || "Asset check sync failed.",
+        };
+
+    const syncedChecks = [
+      ...nextChecks.filter((check) => check.id !== record.id),
+      syncedRecord,
+    ];
+
+    setAssetChecks(syncedChecks);
+    saveStorage(ASSET_CHECK_KEY, syncedChecks);
+
+    if (!result.ok) {
+      console.error(
+        "Phase 5B asset check sync failed:",
+        result.error || result.message,
+      );
+    }
   }
 
   return (
@@ -2521,6 +2576,7 @@ function AssetCheckPanel({
                 }
               >
                 <option value="ok">OK</option>
+                <option value="unstable">Unstable</option>
                 <option value="damaged">Damaged</option>
                 <option value="not_working">Not working</option>
                 <option value="missing">Missing</option>
@@ -2565,6 +2621,16 @@ function AssetCheckPanel({
               Save asset check
             </button>
           </div>
+          {checksByAsset[asset.id]?.syncStatus && (
+            <small className="sync-note">
+              Sync: {checksByAsset[asset.id].syncStatus}
+            </small>
+          )}
+          {checksByAsset[asset.id]?.syncError && (
+            <small className="sync-note error">
+              Backend sync: {checksByAsset[asset.id].syncError}
+            </small>
+          )}
         </article>
       ))}
     </section>
@@ -6324,7 +6390,7 @@ values
                 {staff.active === false ? "Inactive" : "Active"}
               </span>
               <small>
-                Code: {showStaffCodes ? staff.code : "••••••"}
+                Code: {showStaffCodes ? staff.code : "â€¢â€¢â€¢â€¢â€¢â€¢"}
                 {staff.needsName ? " | asks for real name" : ""}
               </small>
               <div className="inline-actions">
@@ -10567,3 +10633,4 @@ function App() {
     </>
   );
 }
+
