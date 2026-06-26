@@ -3718,6 +3718,7 @@ function ManagerDashboardJumpIndex() {
 
 function ManagerDashboardSectionCollapseControls() {
   const storageKey = "mesh-manager-collapsed-sections-v1";
+  const viewKey = "mesh-manager-dashboard-view-v1";
 
   function sectionIdFromHeading(text, index) {
     return (
@@ -3740,8 +3741,86 @@ function ManagerDashboardSectionCollapseControls() {
     localStorage.setItem(storageKey, JSON.stringify(state));
   }
 
-  function defaultCollapsed(text) {
-    const normalized = text.toLowerCase();
+  function sectionGroup(title) {
+    const normalized = title.toLowerCase();
+
+    if (
+      [
+        "backend status",
+        "checklist backend status",
+        "auth status",
+        "supabase profiles",
+        "diagnostics",
+        "local data status",
+        "real alert notifications",
+        "clear test logs",
+      ].some((needle) => normalized.includes(needle))
+    ) {
+      return "dev";
+    }
+
+    if (
+      [
+        "staff codes",
+        "site access",
+        "routine editor",
+        "backup",
+        "events",
+        "responsibility roles",
+      ].some((needle) => normalized.includes(needle))
+    ) {
+      return "admin";
+    }
+
+    return "operations";
+  }
+
+  function sectionSummary(title) {
+    const normalized = title.toLowerCase();
+
+    if (normalized.includes("backend status")) return "Backend/auth/system health tools.";
+    if (normalized.includes("checklist backend")) return "Checklist sync, pending records and restore status.";
+    if (normalized.includes("auth status")) return "Email login and Supabase Auth status.";
+    if (normalized.includes("supabase profiles")) return "View backend user profiles and roles.";
+    if (normalized.includes("site access")) return "Control access rules and manager permissions.";
+    if (normalized.includes("staff codes")) return "Manage local staff-code users.";
+    if (normalized.includes("open alerts")) return "Current alerts that need attention.";
+    if (normalized.includes("daily report")) return "Copy/export today’s operational report.";
+    if (normalized.includes("backend history")) return "Load backend history by date range.";
+    if (normalized.includes("asset registry")) return "Payment terminals and POS/iPad asset list.";
+    if (normalized.includes("asset")) return "Asset checks, missing devices and backend sync.";
+    if (normalized.includes("cash") || normalized.includes("invoice")) return "Cash and invoice responsibility signoffs.";
+    if (normalized.includes("routine editor")) return "Edit checklist routines and tasks.";
+    if (normalized.includes("backup")) return "Export/import local app data.";
+    if (normalized.includes("diagnostics")) return "Debug and backend test tools.";
+    if (normalized.includes("missing tasks")) return "Tasks not completed for the selected date/filter.";
+    if (normalized.includes("completed")) return "Completed and handled task history.";
+    if (normalized.includes("handover")) return "Handover notes for selected date/filter.";
+    if (normalized.includes("history")) return "Browse saved dates and historical records.";
+    if (normalized.includes("needs attention")) return "Operational issues and warnings.";
+    if (normalized.includes("events")) return "Create and manage event cards.";
+
+    return "Open this section to view details.";
+  }
+
+  function collapsedForView(title, view) {
+    const normalized = title.toLowerCase();
+    const group = sectionGroup(title);
+
+    if (view === "expand") return false;
+    if (view === "collapse") return true;
+
+    if (view === "operations") {
+      return group !== "operations";
+    }
+
+    if (view === "admin") {
+      return group !== "admin";
+    }
+
+    if (view === "dev") {
+      return group !== "dev";
+    }
 
     return [
       "diagnostics",
@@ -3780,17 +3859,42 @@ function ManagerDashboardSectionCollapseControls() {
       });
   }
 
-  function applyCollapsed(section, button, collapsed) {
+  function ensureSummary(section, heading, title) {
+    let summary = section.querySelector("[data-manager-section-summary='true']");
+
+    if (!summary) {
+      summary = document.createElement("p");
+      summary.dataset.managerSectionSummary = "true";
+      summary.className = "muted manager-section-summary";
+      summary.style.marginTop = "0.5rem";
+      summary.style.marginBottom = "0.75rem";
+      summary.textContent = sectionSummary(title);
+
+      const headingRow = heading.closest(".section-heading");
+
+      if (headingRow && headingRow.closest("section") === section) {
+        headingRow.insertAdjacentElement("afterend", summary);
+      } else {
+        heading.insertAdjacentElement("afterend", summary);
+      }
+    }
+
+    return summary;
+  }
+
+  function applyCollapsed(section, button, summary, collapsed) {
     Array.from(section.children).forEach((child) => {
       const keepVisible =
         child.classList.contains("section-heading") ||
         child.classList.contains("manager-collapse-control") ||
+        child.dataset.managerSectionSummary === "true" ||
         child.tagName === "H2" ||
         child.contains(button);
 
       child.style.display = keepVisible ? "" : collapsed ? "none" : "";
     });
 
+    summary.style.display = collapsed ? "" : "none";
     section.dataset.managerCollapsed = collapsed ? "true" : "false";
     button.textContent = collapsed ? "Show" : "Hide";
     button.setAttribute(
@@ -3801,8 +3905,10 @@ function ManagerDashboardSectionCollapseControls() {
 
   function setupSectionToggles() {
     const state = readState();
+    const view = localStorage.getItem(viewKey) || "operations";
 
     getManagerSections().forEach(({ section, heading, title, id }) => {
+      const summary = ensureSummary(section, heading, title);
       let button = section.querySelector("[data-manager-collapse-toggle='true']");
 
       if (!button) {
@@ -3822,9 +3928,11 @@ function ManagerDashboardSectionCollapseControls() {
       }
 
       const collapsed =
-        typeof state[id] === "boolean" ? state[id] : defaultCollapsed(title);
+        typeof state[id] === "boolean"
+          ? state[id]
+          : collapsedForView(title, view);
 
-      applyCollapsed(section, button, collapsed);
+      applyCollapsed(section, button, summary, collapsed);
 
       button.onclick = () => {
         const nextState = readState();
@@ -3832,26 +3940,46 @@ function ManagerDashboardSectionCollapseControls() {
 
         nextState[id] = nextCollapsed;
         writeState(nextState);
-        applyCollapsed(section, button, nextCollapsed);
+        applyCollapsed(section, button, summary, nextCollapsed);
       };
     });
+  }
+
+  function setPresetView(view) {
+    const nextState = {};
+
+    getManagerSections().forEach(({ section, heading, title, id }) => {
+      const summary = ensureSummary(section, heading, title);
+      const button = section.querySelector("[data-manager-collapse-toggle='true']");
+      if (!button) return;
+
+      const collapsed = collapsedForView(title, view);
+      nextState[id] = collapsed;
+      applyCollapsed(section, button, summary, collapsed);
+    });
+
+    localStorage.setItem(viewKey, view);
+    writeState(nextState);
   }
 
   function setAllSections(collapsed) {
     const nextState = {};
 
-    getManagerSections().forEach(({ section, id }) => {
+    getManagerSections().forEach(({ section, heading, title, id }) => {
+      const summary = ensureSummary(section, heading, title);
       const button = section.querySelector("[data-manager-collapse-toggle='true']");
       if (!button) return;
 
       nextState[id] = collapsed;
-      applyCollapsed(section, button, collapsed);
+      applyCollapsed(section, button, summary, collapsed);
     });
 
+    localStorage.setItem(viewKey, collapsed ? "collapse" : "expand");
     writeState(nextState);
   }
 
   function resetSections() {
+    localStorage.setItem(viewKey, "operations");
     localStorage.removeItem(storageKey);
     setupSectionToggles();
   }
@@ -3870,10 +3998,47 @@ function ManagerDashboardSectionCollapseControls() {
         <div>
           <h2>Section controls</h2>
           <p className="muted">
-            Expand everything, collapse everything, or return to the recommended default view.
+            Choose what kind of work you are doing right now.
           </p>
         </div>
       </div>
+
+      <div className="manager-view-guide">
+        <p className="muted">
+          <strong>Daily operations:</strong> daily report, alerts, assets and shift history.
+        </p>
+        <p className="muted">
+          <strong>Setup / admin:</strong> staff codes, access, events, routines and backup.
+        </p>
+        <p className="muted">
+          <strong>Backend / dev:</strong> sync status, auth, Supabase profiles and diagnostics.
+        </p>
+      </div>
+
+      <div className="backup-actions">
+        <button
+          type="button"
+          className="ghost-button compact-button"
+          onClick={() => setPresetView("operations")}
+        >
+          Daily operations
+        </button>
+        <button
+          type="button"
+          className="ghost-button compact-button"
+          onClick={() => setPresetView("admin")}
+        >
+          Setup / admin
+        </button>
+        <button
+          type="button"
+          className="ghost-button compact-button"
+          onClick={() => setPresetView("dev")}
+        >
+          Backend / dev
+        </button>
+      </div>
+
       <div className="backup-actions">
         <button
           type="button"
@@ -3894,7 +4059,7 @@ function ManagerDashboardSectionCollapseControls() {
           className="ghost-button compact-button"
           onClick={resetSections}
         >
-          Default view
+          Default: Daily operations
         </button>
       </div>
     </section>
