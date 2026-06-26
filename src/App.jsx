@@ -3741,18 +3741,56 @@ function ManagerDashboardActionCenter({
     window.scrollTo({ top: 0, behavior: "smooth" });
   }
 
+  function meaningfulBackendError(value) {
+    if (!value) return false;
+
+    const message = String(value).toLowerCase();
+
+    return ![
+      "auth_required",
+      "email login required",
+      "email login is required",
+      "login required",
+      "login is required",
+      "showing local cache",
+      "backend auth required",
+      "local_only",
+      "none",
+    ].some((needle) => message.includes(needle));
+  }
+
+  function displayStatus(value) {
+    if (!value) return "unknown";
+
+    const normalized = String(value);
+
+    if (normalized === "auth_required") return "auth pending";
+    if (normalized === "local_only") return "local only";
+    if (normalized === "authenticated") return "authenticated";
+
+    return normalized;
+  }
+
   const assetIssueCount = assetIssues?.length || 0;
   const assetCheckCount = dateAssetChecks?.length || 0;
   const assetPendingCount = assetBackendStatus?.pendingLocalRecords || 0;
   const financialPendingCount = financialBackendStatus?.pendingLocalRecords || 0;
 
-  const hasAttention =
+  const hasRealBackendError =
+    meaningfulBackendError(assetBackendStatus?.lastError) ||
+    meaningfulBackendError(financialBackendStatus?.lastError) ||
+    meaningfulBackendError(shiftDataStatus?.lastError);
+
+  const hasReviewItems =
     assetIssueCount > 0 ||
     assetPendingCount > 0 ||
-    financialPendingCount > 0 ||
-    assetBackendStatus?.lastError ||
-    financialBackendStatus?.lastError ||
-    shiftDataStatus?.lastError;
+    financialPendingCount > 0;
+
+  const statusLabel = hasRealBackendError
+    ? "Backend error"
+    : hasReviewItems
+      ? "Needs review"
+      : "Looks good";
 
   return (
     <section className="panel manager-action-center">
@@ -3763,23 +3801,23 @@ function ManagerDashboardActionCenter({
             Quick daily status for manager follow-up.
           </p>
         </div>
-        <span className={hasAttention ? "status-pill warning" : "status-pill success"}>
-          {hasAttention ? "Needs review" : "Looks good"}
+        <span className={hasRealBackendError || hasReviewItems ? "status-pill warning" : "status-pill success"}>
+          {statusLabel}
         </span>
       </div>
 
       <div className="status-grid">
         <span>
-          <strong>{authStatus?.loginSource || "unknown"}</strong> Login mode
+          <strong>{displayStatus(authStatus?.loginSource)}</strong> Login mode
         </span>
         <span>
-          <strong>{shiftDataStatus?.mode || "unknown"}</strong> Checklist backend
+          <strong>{displayStatus(shiftDataStatus?.mode)}</strong> Checklist backend
         </span>
         <span>
-          <strong>{financialBackendStatus?.mode || "unknown"}</strong> Financial backend
+          <strong>{displayStatus(financialBackendStatus?.mode)}</strong> Financial backend
         </span>
         <span>
-          <strong>{assetBackendStatus?.mode || "unknown"}</strong> Asset backend
+          <strong>{displayStatus(assetBackendStatus?.mode)}</strong> Asset backend
         </span>
         <span>
           <strong>{assetCheckCount}</strong> Asset checks today
@@ -3795,11 +3833,22 @@ function ManagerDashboardActionCenter({
         </span>
       </div>
 
-      {(assetBackendStatus?.lastError ||
-        financialBackendStatus?.lastError ||
-        shiftDataStatus?.lastError) && (
+      {hasRealBackendError && (
         <p className="critical-warning">
-          Backend warning present. Check the relevant backend section.
+          Real backend error present. Check the relevant backend section.
+        </p>
+      )}
+
+      {!hasRealBackendError && hasReviewItems && (
+        <p className="muted">
+          Review items found. This can be normal pending local work, old cached
+          records, or operational issues that need checking.
+        </p>
+      )}
+
+      {!hasRealBackendError && !hasReviewItems && (
+        <p className="muted">
+          No urgent manager follow-up detected.
         </p>
       )}
 
