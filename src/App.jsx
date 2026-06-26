@@ -3716,6 +3716,127 @@ function ManagerDashboardJumpIndex() {
   );
 }
 
+function ManagerDashboardActionCenter({
+  authStatus,
+  shiftDataStatus,
+  financialBackendStatus,
+  assetBackendStatus,
+  dateAssetChecks,
+  assetIssues,
+}) {
+  function jumpTo(needles) {
+    const normalizedNeedles = needles.map((needle) => needle.toLowerCase());
+    const headings = Array.from(document.querySelectorAll("h1, h2, h3"));
+
+    const target = headings.find((heading) => {
+      const text = heading.textContent?.trim().toLowerCase() || "";
+      return normalizedNeedles.some((needle) => text.includes(needle));
+    });
+
+    if (target) {
+      target.scrollIntoView({ behavior: "smooth", block: "start" });
+      return;
+    }
+
+    window.scrollTo({ top: 0, behavior: "smooth" });
+  }
+
+  const assetIssueCount = assetIssues?.length || 0;
+  const assetCheckCount = dateAssetChecks?.length || 0;
+  const assetPendingCount = assetBackendStatus?.pendingLocalRecords || 0;
+  const financialPendingCount = financialBackendStatus?.pendingLocalRecords || 0;
+
+  const hasAttention =
+    assetIssueCount > 0 ||
+    assetPendingCount > 0 ||
+    financialPendingCount > 0 ||
+    assetBackendStatus?.lastError ||
+    financialBackendStatus?.lastError ||
+    shiftDataStatus?.lastError;
+
+  return (
+    <section className="panel manager-action-center">
+      <div className="section-heading static-heading">
+        <div>
+          <h2>Action center</h2>
+          <p className="muted">
+            Quick daily status for manager follow-up.
+          </p>
+        </div>
+        <span className={hasAttention ? "status-pill warning" : "status-pill success"}>
+          {hasAttention ? "Needs review" : "Looks good"}
+        </span>
+      </div>
+
+      <div className="status-grid">
+        <span>
+          <strong>{authStatus?.loginSource || "unknown"}</strong> Login mode
+        </span>
+        <span>
+          <strong>{shiftDataStatus?.mode || "unknown"}</strong> Checklist backend
+        </span>
+        <span>
+          <strong>{financialBackendStatus?.mode || "unknown"}</strong> Financial backend
+        </span>
+        <span>
+          <strong>{assetBackendStatus?.mode || "unknown"}</strong> Asset backend
+        </span>
+        <span>
+          <strong>{assetCheckCount}</strong> Asset checks today
+        </span>
+        <span>
+          <strong>{assetIssueCount}</strong> Asset issues
+        </span>
+        <span>
+          <strong>{assetPendingCount}</strong> Pending asset sync
+        </span>
+        <span>
+          <strong>{financialPendingCount}</strong> Pending financial sync
+        </span>
+      </div>
+
+      {(assetBackendStatus?.lastError ||
+        financialBackendStatus?.lastError ||
+        shiftDataStatus?.lastError) && (
+        <p className="critical-warning">
+          Backend warning present. Check the relevant backend section.
+        </p>
+      )}
+
+      <div className="backup-actions">
+        <button
+          type="button"
+          className="ghost-button compact-button"
+          onClick={() => jumpTo(["daily report"])}
+        >
+          Daily report
+        </button>
+        <button
+          type="button"
+          className="ghost-button compact-button"
+          onClick={() => jumpTo(["asset registry", "asset check"])}
+        >
+          Assets
+        </button>
+        <button
+          type="button"
+          className="ghost-button compact-button"
+          onClick={() => jumpTo(["open alerts", "needs attention"])}
+        >
+          Attention
+        </button>
+        <button
+          type="button"
+          className="ghost-button compact-button"
+          onClick={() => jumpTo(["backend status", "checklist backend"])}
+        >
+          Backend
+        </button>
+      </div>
+    </section>
+  );
+}
+
 function ManagerDashboardSectionCollapseControls() {
   const storageKey = "mesh-manager-collapsed-sections-v1";
   const viewKey = "mesh-manager-dashboard-view-v1";
@@ -5655,6 +5776,14 @@ function ManagerDashboard({
       </section>
       <ManagerDashboardJumpIndex />
       <ManagerDashboardSectionCollapseControls />
+      <ManagerDashboardActionCenter
+        authStatus={authStatus}
+        shiftDataStatus={shiftDataStatus}
+        financialBackendStatus={financialBackendStatus}
+        assetBackendStatus={assetBackendStatus}
+        dateAssetChecks={dateAssetChecks}
+        assetIssues={assetIssues}
+      />
 
       {message && <p className="status-message">{message}</p>}
 
