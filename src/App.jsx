@@ -3717,13 +3717,41 @@ function ManagerDashboardJumpIndex() {
 }
 
 function ManagerDashboardActionCenter({
+  date,
   authStatus,
   shiftDataStatus,
   financialBackendStatus,
   assetBackendStatus,
   dateAssetChecks,
   assetIssues,
+  refreshShiftData,
+  refreshFinancialSignoffs,
+  refreshAssetRegistry,
+  refreshAssetChecks,
+  onClearSyncedLocalChecklistPendingRecords,
+  onClearSyncedFinancialPendingRecords,
+  onClearSyncedAssetPendingRecords,
 }) {
+  const [syncActionMessage, setSyncActionMessage] = useState("");
+  const [syncActionBusy, setSyncActionBusy] = useState(false);
+
+  async function runSyncAction(label, action) {
+    if (syncActionBusy) return;
+
+    setSyncActionBusy(true);
+    setSyncActionMessage(label + " started...");
+
+    try {
+      const result = await action();
+      setSyncActionMessage(result?.message || label + " finished.");
+    } catch (error) {
+      console.error(label + " failed:", error);
+      setSyncActionMessage(error?.message || label + " failed.");
+    } finally {
+      setSyncActionBusy(false);
+    }
+  }
+
   function jumpTo(needles) {
     const normalizedNeedles = needles.map((needle) => needle.toLowerCase());
     const headings = Array.from(document.querySelectorAll("h1, h2, h3"));
@@ -3775,6 +3803,7 @@ function ManagerDashboardActionCenter({
   const assetCheckCount = dateAssetChecks?.length || 0;
   const assetPendingCount = assetBackendStatus?.pendingLocalRecords || 0;
   const financialPendingCount = financialBackendStatus?.pendingLocalRecords || 0;
+  const checklistPendingCount = shiftDataStatus?.pendingLocalRecords || 0;
 
   const hasRealBackendError =
     meaningfulBackendError(assetBackendStatus?.lastError) ||
@@ -3784,7 +3813,8 @@ function ManagerDashboardActionCenter({
   const hasReviewItems =
     assetIssueCount > 0 ||
     assetPendingCount > 0 ||
-    financialPendingCount > 0;
+    financialPendingCount > 0 ||
+    checklistPendingCount > 0;
 
   const statusLabel = hasRealBackendError
     ? "Backend error"
@@ -3798,7 +3828,7 @@ function ManagerDashboardActionCenter({
         <div>
           <h2>Action center</h2>
           <p className="muted">
-            Quick daily status for manager follow-up.
+            Quick daily status and sync tools for manager follow-up.
           </p>
         </div>
         <span className={hasRealBackendError || hasReviewItems ? "status-pill warning" : "status-pill success"}>
@@ -3826,10 +3856,13 @@ function ManagerDashboardActionCenter({
           <strong>{assetIssueCount}</strong> Asset issues
         </span>
         <span>
-          <strong>{assetPendingCount}</strong> Pending asset sync
+          <strong>{checklistPendingCount}</strong> Pending checklist sync
         </span>
         <span>
           <strong>{financialPendingCount}</strong> Pending financial sync
+        </span>
+        <span>
+          <strong>{assetPendingCount}</strong> Pending asset sync
         </span>
       </div>
 
@@ -3851,6 +3884,86 @@ function ManagerDashboardActionCenter({
           No urgent manager follow-up detected.
         </p>
       )}
+
+      <div className="section-heading static-heading">
+        <div>
+          <h3>Sync health actions</h3>
+          <p className="muted">
+            Refresh backend data or clean local pending records without scrolling.
+          </p>
+        </div>
+      </div>
+
+      {syncActionMessage && <p className="muted">{syncActionMessage}</p>}
+
+      <div className="backup-actions">
+        <button
+          type="button"
+          className="ghost-button compact-button"
+          disabled={syncActionBusy}
+          onClick={() =>
+            runSyncAction("Refresh backend status", async () => {
+              const results = await Promise.allSettled([
+                refreshShiftData?.(date),
+                refreshFinancialSignoffs?.(date),
+                refreshAssetRegistry?.(),
+                refreshAssetChecks?.(date),
+              ]);
+
+              const rejected = results.filter((result) => result.status === "rejected");
+
+              return {
+                ok: rejected.length === 0,
+                message:
+                  rejected.length === 0
+                    ? "Backend status refreshed."
+                    : "Backend refresh finished with one or more warnings.",
+              };
+            })
+          }
+        >
+          Refresh backend status
+        </button>
+
+        <button
+          type="button"
+          className="ghost-button compact-button"
+          disabled={syncActionBusy}
+          onClick={() =>
+            runSyncAction("Cleanup checklist pending", () =>
+              onClearSyncedLocalChecklistPendingRecords?.(),
+            )
+          }
+        >
+          Cleanup checklist pending
+        </button>
+
+        <button
+          type="button"
+          className="ghost-button compact-button"
+          disabled={syncActionBusy}
+          onClick={() =>
+            runSyncAction("Cleanup financial pending", () =>
+              onClearSyncedFinancialPendingRecords?.(),
+            )
+          }
+        >
+          Cleanup financial pending
+        </button>
+
+        <button
+          type="button"
+          className="ghost-button compact-button"
+          disabled={syncActionBusy}
+          onClick={() =>
+            runSyncAction("Cleanup asset pending", () =>
+              onClearSyncedAssetPendingRecords?.(),
+            )
+          }
+        >
+          Cleanup asset pending
+        </button>
+      </div>
 
       <div className="backup-actions">
         <button
@@ -5826,12 +5939,24 @@ function ManagerDashboard({
       <ManagerDashboardJumpIndex />
       <ManagerDashboardSectionCollapseControls />
       <ManagerDashboardActionCenter
+        date={date}
         authStatus={authStatus}
         shiftDataStatus={shiftDataStatus}
         financialBackendStatus={financialBackendStatus}
         assetBackendStatus={assetBackendStatus}
         dateAssetChecks={dateAssetChecks}
         assetIssues={assetIssues}
+        refreshShiftData={refreshShiftData}
+        refreshFinancialSignoffs={refreshFinancialSignoffs}
+        refreshAssetRegistry={refreshAssetRegistry}
+        refreshAssetChecks={refreshAssetChecks}
+        onClearSyncedLocalChecklistPendingRecords={
+          onClearSyncedLocalChecklistPendingRecords
+        }
+        onClearSyncedFinancialPendingRecords={
+          onClearSyncedFinancialPendingRecords
+        }
+        onClearSyncedAssetPendingRecords={onClearSyncedAssetPendingRecords}
       />
 
       {message && <p className="status-message">{message}</p>}
