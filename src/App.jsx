@@ -3822,13 +3822,94 @@ function ManagerDashboardActionCenter({
       ? "Needs review"
       : "Looks good";
 
+  function recommendedActions() {
+    if (hasRealBackendError) {
+      return [
+        {
+          title: "Check backend status",
+          description:
+            "A real backend warning is present. Open the backend section first.",
+          label: "Open Backend",
+          action: () => jumpTo(["backend status", "checklist backend"]),
+        },
+      ];
+    }
+
+    const actions = [];
+
+    if (checklistPendingCount > 0) {
+      actions.push({
+        title: "Clean checklist pending records",
+        description:
+          checklistPendingCount +
+          " local checklist sync record(s) need review or cleanup.",
+        label: "Cleanup checklist",
+        action: () =>
+          runSyncAction("Cleanup checklist pending", () =>
+            onClearSyncedLocalChecklistPendingRecords?.(),
+          ),
+      });
+    }
+
+    if (financialPendingCount > 0) {
+      actions.push({
+        title: "Clean financial pending records",
+        description:
+          financialPendingCount +
+          " local financial sync record(s) need review or cleanup.",
+        label: "Cleanup financial",
+        action: () =>
+          runSyncAction("Cleanup financial pending", () =>
+            onClearSyncedFinancialPendingRecords?.(),
+          ),
+      });
+    }
+
+    if (assetPendingCount > 0) {
+      actions.push({
+        title: "Clean asset pending records",
+        description:
+          assetPendingCount +
+          " local asset sync record(s) need review or cleanup.",
+        label: "Cleanup assets",
+        action: () =>
+          runSyncAction("Cleanup asset pending", () =>
+            onClearSyncedAssetPendingRecords?.(),
+          ),
+      });
+    }
+
+    if (assetIssueCount > 0) {
+      actions.push({
+        title: "Review asset issues",
+        description: assetIssueCount + " asset issue(s) are listed for today.",
+        label: "Open Assets",
+        action: () => jumpTo(["asset registry", "asset check"]),
+      });
+    }
+
+    if (actions.length === 0) {
+      actions.push({
+        title: "Review daily report",
+        description:
+          "No urgent follow-up detected. Daily report is the best next checkpoint.",
+        label: "Open Daily report",
+        action: () => jumpTo(["daily report"]),
+      });
+    }
+
+    return actions.slice(0, 3);
+  }
+
+  const nextActions = recommendedActions();
+
   return (
     <section className="panel manager-action-center">
       <div className="section-heading static-heading">
         <div>
           <h2>Action center</h2>
           <p className="muted">
-            Quick daily status and sync tools for manager follow-up.
+            Quick daily status, next actions and sync tools for manager follow-up.
           </p>
         </div>
         <span className={hasRealBackendError || hasReviewItems ? "status-pill warning" : "status-pill success"}>
@@ -3884,6 +3965,32 @@ function ManagerDashboardActionCenter({
           No urgent manager follow-up detected.
         </p>
       )}
+
+      <div className="section-heading static-heading">
+        <div>
+          <h3>Recommended next action</h3>
+          <p className="muted">
+            Suggested follow-up based on today’s dashboard status.
+          </p>
+        </div>
+      </div>
+
+      <div className="attention-grid">
+        {nextActions.map((item) => (
+          <article key={item.title}>
+            <strong>{item.title}</strong>
+            <p className="muted">{item.description}</p>
+            <button
+              type="button"
+              className="ghost-button compact-button"
+              disabled={syncActionBusy}
+              onClick={item.action}
+            >
+              {item.label}
+            </button>
+          </article>
+        ))}
+      </div>
 
       <div className="section-heading static-heading">
         <div>
