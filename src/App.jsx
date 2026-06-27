@@ -71,6 +71,45 @@ import {
   upsertManagerDailyReview,
 } from "./lib/managerReviewDataClient.js";
 
+function buildReviewStatusForHistoryDate(historyDate, reviewMap = {}) {
+  const review = reviewMap?.[historyDate];
+  const checkedCount = review
+    ? Object.values(review.checked || {}).filter(Boolean).length
+    : 0;
+
+  if (!review) {
+    return {
+      label: "Missing",
+      checkedCount: 0,
+      signedBy: "",
+      signedAt: "",
+      notes: "",
+    };
+  }
+
+  if (review.signedOffAt) {
+    return {
+      label: "Signed",
+      checkedCount,
+      signedBy: review.signedOffBy || "Manager",
+      signedAt: review.signedOffAt,
+      notes: review.notes || "",
+    };
+  }
+
+  return {
+    label: checkedCount ? "Open" : "Not started",
+    checkedCount,
+    signedBy: "",
+    signedAt: "",
+    notes: review.notes || "",
+  };
+}
+
+function fallbackReviewStatusForHistoryDate(historyDate) {
+  return buildReviewStatusForHistoryDate(historyDate, globalThis.__meshManagerReviewHistoryByDate || {});
+}
+
 const APP_VERSION = "0.7.0";
 const RELEASE_LABEL = "v0.7.0-phase-5a-financial-signoffs";
 const RELEASE_SUMMARY = "financial signoff backend foundation";
@@ -3744,6 +3783,8 @@ function ManagerDashboardActionCenter({
   onClearSyncedLocalChecklistPendingRecords,
   onClearSyncedFinancialPendingRecords,
   onClearSyncedAssetPendingRecords,
+
+  reviewStatusForHistoryDate = fallbackReviewStatusForHistoryDate,
 }) {
   const reviewItems = [
     { id: "action_center_reviewed", label: "Action Center reviewed" },
@@ -4301,7 +4342,7 @@ function ManagerDashboardActionCenter({
               checked={Boolean(dailyReview.checked?.[item.id])}
               onChange={() => toggleReviewItem(item.id)}
             />
-            <span>{item.label}</span>
+          <span>{item.label}</span>
           </label>
         ))}
       </div>
@@ -5056,6 +5097,38 @@ function ManagerDashboard({
   const visibleFinancialSignoffs = backendDateFinancialSignoffs.length
     ? backendDateFinancialSignoffs
     : dateCashSignoffs;
+  function reviewStatusForHistoryDate(historyDate) {
+  const reviewMap =
+    typeof managerReviewHistoryByDate !== "undefined" && managerReviewHistoryByDate
+      ? managerReviewHistoryByDate
+      : globalThis.__meshManagerReviewHistoryByDate || {};
+
+  return buildReviewStatusForHistoryDate(historyDate, reviewMap);
+}
+
+  async function refreshManagerReviewStatusHistory(limit = 14) {
+    if (authStatus.loginSource !== "supabase_auth") {
+      return {};
+    }
+
+    const result = await fetchManagerDailyReviewHistory({ limit });
+
+    if (!result.ok) {
+      return {};
+    }
+
+    const nextMap = {};
+    for (const review of result.records || []) {
+      if (review?.date) {
+        nextMap[review.date] = review;
+      }
+    }
+
+    globalThis.__meshManagerReviewHistoryByDate = nextMap;
+    setManagerReviewHistoryByDate(nextMap);
+    return nextMap;
+  }
+
   function displayFinancialAnswer(record, valueKey, labelKey) {
     const label = record?.[labelKey];
     if (label) return label;
@@ -5650,6 +5723,7 @@ function ManagerDashboard({
       setMessage("Backend history requires Email login. Showing local cache.");
       return { ok: false };
     }
+    await refreshManagerReviewStatusHistory(14);
     const result = await fetchManagerDailyHistory(selectedDate);
     if (!result.ok) {
       setBackendHistoryStatus((current) => ({
@@ -5692,6 +5766,7 @@ function ManagerDashboard({
       setMessage("Backend history requires Email login.");
       return;
     }
+    const reviewMap = await refreshManagerReviewStatusHistory(14);
     const result = await fetchManagerHistoryRange(offsetDate(-6), todayKey());
     if (!result.ok) {
       setBackendHistoryStatus((current) => ({
@@ -6596,7 +6671,12 @@ function ManagerDashboard({
           onClearSyncedFinancialPendingRecords
         }
         onClearSyncedAssetPendingRecords={onClearSyncedAssetPendingRecords}
-      />
+        reviewStatusForHistoryDate={
+    typeof reviewStatusForHistoryDate === "function"
+      ? reviewStatusForHistoryDate
+      : fallbackReviewStatusForHistoryDate
+  }
+/>
       <ManagerDailyReviewHistory user={user} date={date} />
 
       {message && <p className="status-message">{message}</p>}
@@ -8838,6 +8918,19 @@ values
                   Sessions {day.shiftSessions} | Finished {day.finishedSessions}{" "}
                   | Unique tasks {day.uniqueTaskRecords}
                 </span>
+                <span>
+                  Manager review: <strong>{reviewStatusForHistoryDate(day.date).label}</strong> · Checks{" "}
+                  {reviewStatusForHistoryDate(day.date).checkedCount}/5
+                </span>
+                {reviewStatusForHistoryDate(day.date).signedAt && (
+                  <span>
+                    Signed by {reviewStatusForHistoryDate(day.date).signedBy} at{" "}
+                    {formatDateTime(reviewStatusForHistoryDate(day.date).signedAt)}
+                  </span>
+                )}
+                {reviewStatusForHistoryDate(day.date).notes && (
+                  <span>Review notes: yes</span>
+                )}
                 <small>
                   Done {day.doneTasks} | N/A {day.notRelevantTasks} | Handovers{" "}
                   {day.handoverNotes} | Alerts {day.totalAlerts} | Urgent{" "}
@@ -8867,6 +8960,7 @@ values
                   backendHistoryStatus,
                   backendHistorySummary,
                   backendHistoryRange,
+                  managerReviewHistoryByDate,
                 },
                 null,
                 2,
