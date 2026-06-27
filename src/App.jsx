@@ -59,6 +59,10 @@ import {
   upsertAssetCheckRecord,
   upsertAssetRegistryRecord,
 } from "./lib/assetDataClient.js";
+import {
+  fetchManagerDailyReview,
+  upsertManagerDailyReview,
+} from "./lib/managerReviewDataClient.js";
 
 const APP_VERSION = "0.7.0";
 const RELEASE_LABEL = "v0.7.0-phase-5a-financial-signoffs";
@@ -3734,26 +3738,11 @@ function ManagerDashboardActionCenter({
   onClearSyncedAssetPendingRecords,
 }) {
   const reviewItems = [
-    {
-      id: "action_center_reviewed",
-      label: "Action Center reviewed",
-    },
-    {
-      id: "asset_issues_checked",
-      label: "Asset issues checked",
-    },
-    {
-      id: "financial_signoffs_checked",
-      label: "Financial signoffs checked",
-    },
-    {
-      id: "alerts_attention_checked",
-      label: "Alerts / needs attention checked",
-    },
-    {
-      id: "daily_report_reviewed",
-      label: "Daily report reviewed",
-    },
+    { id: "action_center_reviewed", label: "Action Center reviewed" },
+    { id: "asset_issues_checked", label: "Asset issues checked" },
+    { id: "financial_signoffs_checked", label: "Financial signoffs checked" },
+    { id: "alerts_attention_checked", label: "Alerts / needs attention checked" },
+    { id: "daily_report_reviewed", label: "Daily report reviewed" },
   ];
 
   const reviewStorageKey = "mesh-manager-daily-review-v1:" + (date || "unknown");
@@ -3761,10 +3750,15 @@ function ManagerDashboardActionCenter({
   function blankDailyReview() {
     return {
       date: date || "",
+      localId: "manager-review:" + (date || "unknown"),
       checked: {},
       notes: "",
       signedOffBy: "",
+      signedOffByAuthUserId: "",
       signedOffAt: "",
+      syncStatus:
+        user?.loginSource === "supabase_auth" ? "pending_backend" : "local_only",
+      syncError: "",
       updatedAt: "",
     };
   }
@@ -3777,7 +3771,15 @@ function ManagerDashboardActionCenter({
         ...blankDailyReview().checked,
         ...(record?.checked || {}),
       },
+      localId:
+        record?.localId || "manager-review:" + (record?.date || date || "unknown"),
     };
+  }
+
+  function reviewFreshness(record) {
+    return new Date(
+      record?.updatedAt || record?.signedOffAt || record?.createdAt || 0,
+    ).getTime();
   }
 
   function loadDailyReview() {
@@ -3793,57 +3795,201 @@ function ManagerDashboardActionCenter({
   const [syncActionMessage, setSyncActionMessage] = useState("");
   const [syncActionBusy, setSyncActionBusy] = useState(false);
   const [dailyReview, setDailyReview] = useState(loadDailyReview);
+  const [reviewBackendMessage, setReviewBackendMessage] = useState("");
+  const [reviewSyncBusy, setReviewSyncBusy] = useState(false);
 
   useEffect(() => {
     setDailyReview(loadDailyReview());
+    setReviewBackendMessage("");
   }, [reviewStorageKey]);
+
+  useEffect(() => {
+    let cancelled = false;
+
+    async function restoreOnLoad() {
+      if (user?.loginSource !== "supabase_auth" || !date) return;
+
+      const result = await fetchManagerDailyReview(date);
+
+      if (cancelled) return;
+
+      if (result.ok && result.record) {
+        const localReview = loadDailyReview();
+        const backendReview = normalizeDailyReview(result.record);
+        const preferred =
+          reviewFreshness(backendReview) >= reviewFreshness(localReview)
+            ? backendReview
+            : localReview;
+
+        setDailyReview(preferred);
+        localStorage.setItem(reviewStorageKey, JSON.stringify(preferred));
+        setReviewBackendMessage("Manager daily review restored from Supabase.");
+        return;
+      }
+
+      if (result.ok) {
+        setReviewBackendMessage("No backend manager review found yet.");
+        return;
+      }
+
+      setReviewBackendMessage(result.message || "Could not restore manager review.");
+    }
+
+    restoreOnLoad();
+
+    return () => {
+      cancelled = true;
+    };
+  }, [date, user?.id, user?.loginSource]);
 
   function saveDailyReview(nextReview) {
     const normalized = normalizeDailyReview({
       ...nextReview,
       date: date || "",
+      localId: nextReview.localId || "manager-review:" + (date || "unknown"),
+      syncStatus:
+        user?.loginSource === "supabase_auth" ? "pending_backend" : "local_only",
+      syncError: "",
       updatedAt: new Date().toISOString(),
     });
 
     setDailyReview(normalized);
     localStorage.setItem(reviewStorageKey, JSON.stringify(normalized));
+    return normalized;
   }
 
-  function toggleReviewItem(itemId) {
-    saveDailyReview({
+  async function syncDailyReviewToBackend(review) {
+    if (user?.loginSource !== "supabase_auth") {
+      setReviewBackendMessage("Manager review saved locally. Email login required for backend sync.");
+      return { ok: false, mode: "local_only" };
+    }
+
+    setReviewSyncBusy(true);
+    setReviewBackendMessage("Syncing manager daily review...");
+
+    try {
+      const result = await upsertManagerDailyReview(review);
+
+      if (result.ok && result.record) {
+        const synced = normalizeDailyReview({
+          ...review,
+          ...result.record,
+          syncStatus: "synced",
+          syncError: "",
+        });
+
+        setDailyReview(synced);
+        localStorage.setItem(reviewStorageKey, JSON.stringify(synced));
+        setReviewBackendMessage(result.message || "Manager daily review synced.");
+        return result;
+      }
+
+      const failed = normalizeDailyReview({
+        ...review,
+        syncStatus: "sync_error",
+        syncError: result.message || "Manager daily review sync failed.",
+      });
+
+      setDailyReview(failed);
+      localStorage.setItem(reviewStorageKey, JSON.stringify(failed));
+      setReviewBackendMessage(result.message || "Manager daily review sync failed.");
+      return result;
+    } catch (error) {
+      const failed = normalizeDailyReview({
+        ...review,
+        syncStatus: "sync_error",
+        syncError: error.message || "Manager daily review sync failed.",
+      });
+
+      setDailyReview(failed);
+      localStorage.setItem(reviewStorageKey, JSON.stringify(failed));
+      setReviewBackendMessage(error.message || "Manager daily review sync failed.");
+      return { ok: false, mode: "sync_error", message: error.message };
+    } finally {
+      setReviewSyncBusy(false);
+    }
+  }
+
+  async function restoreDailyReviewFromBackend() {
+    if (user?.loginSource !== "supabase_auth") {
+      setReviewBackendMessage("Email login required for manager review backend restore.");
+      return;
+    }
+
+    setReviewSyncBusy(true);
+    setReviewBackendMessage("Restoring manager daily review...");
+
+    try {
+      const result = await fetchManagerDailyReview(date);
+
+      if (result.ok && result.record) {
+        const restored = normalizeDailyReview(result.record);
+        setDailyReview(restored);
+        localStorage.setItem(reviewStorageKey, JSON.stringify(restored));
+        setReviewBackendMessage(result.message || "Manager daily review restored.");
+        return;
+      }
+
+      setReviewBackendMessage(result.message || "No backend manager review found.");
+    } catch (error) {
+      setReviewBackendMessage(error.message || "Could not restore manager daily review.");
+    } finally {
+      setReviewSyncBusy(false);
+    }
+  }
+
+  async function toggleReviewItem(itemId) {
+    const nextReview = saveDailyReview({
       ...dailyReview,
       signedOffAt: "",
       signedOffBy: "",
+      signedOffByAuthUserId: "",
       checked: {
         ...dailyReview.checked,
         [itemId]: !dailyReview.checked?.[itemId],
       },
     });
+
+    if (dailyReview.signedOffAt) {
+      await syncDailyReviewToBackend(nextReview);
+    }
   }
 
-  function updateReviewNotes(notes) {
-    saveDailyReview({
+  async function updateReviewNotes(notes) {
+    const nextReview = saveDailyReview({
       ...dailyReview,
       signedOffAt: "",
       signedOffBy: "",
+      signedOffByAuthUserId: "",
       notes,
     });
+
+    if (dailyReview.signedOffAt) {
+      await syncDailyReviewToBackend(nextReview);
+    }
   }
 
-  function signOffDailyReview() {
-    saveDailyReview({
+  async function signOffDailyReview() {
+    const nextReview = saveDailyReview({
       ...dailyReview,
       signedOffBy: user?.name || authStatus?.email || "Manager",
+      signedOffByAuthUserId:
+        user?.authUserId || user?.backendUserId || dailyReview.signedOffByAuthUserId || "",
       signedOffAt: new Date().toISOString(),
     });
+
+    await syncDailyReviewToBackend(nextReview);
   }
 
-  function clearDailyReviewSignoff() {
-    saveDailyReview({
+  async function clearDailyReviewSignoff() {
+    const nextReview = saveDailyReview({
       ...dailyReview,
       signedOffBy: "",
+      signedOffByAuthUserId: "",
       signedOffAt: "",
     });
+
+    await syncDailyReviewToBackend(nextReview);
   }
 
   async function runSyncAction(label, action) {
@@ -4077,6 +4223,9 @@ function ManagerDashboardActionCenter({
           <strong>{dailyReviewSigned ? "signed" : reviewDone ? "ready" : "open"}</strong>{" "}
           Daily review
         </span>
+        <span>
+          <strong>{dailyReview.syncStatus || "local_only"}</strong> Review backend
+        </span>
       </div>
 
       {hasRealBackendError && (
@@ -4115,7 +4264,7 @@ function ManagerDashboardActionCenter({
             <button
               type="button"
               className="ghost-button compact-button"
-              disabled={syncActionBusy}
+              disabled={syncActionBusy || reviewSyncBusy}
               onClick={item.action}
             >
               {item.label}
@@ -4165,19 +4314,41 @@ function ManagerDashboardActionCenter({
         </p>
       )}
 
+      {reviewBackendMessage && <p className="muted">{reviewBackendMessage}</p>}
+      {dailyReview.syncError && (
+        <p className="critical-warning">{dailyReview.syncError}</p>
+      )}
+
       <div className="backup-actions">
         <button
           type="button"
           className="primary-button compact-button"
-          disabled={!reviewDone}
+          disabled={!reviewDone || reviewSyncBusy}
           onClick={signOffDailyReview}
         >
           Sign off daily review
+        </button>
+        <button
+          type="button"
+          className="ghost-button compact-button"
+          disabled={reviewSyncBusy}
+          onClick={() => syncDailyReviewToBackend(dailyReview)}
+        >
+          Sync review now
+        </button>
+        <button
+          type="button"
+          className="ghost-button compact-button"
+          disabled={reviewSyncBusy}
+          onClick={restoreDailyReviewFromBackend}
+        >
+          Restore review from backend
         </button>
         {dailyReviewSigned && (
           <button
             type="button"
             className="ghost-button compact-button"
+            disabled={reviewSyncBusy}
             onClick={clearDailyReviewSignoff}
           >
             Reopen review

@@ -820,3 +820,99 @@ with check (
     or organization_id = public.current_user_organization_id()
   )
 );
+
+-- Phase 5E.2 Daily manager review backend
+create table if not exists public.manager_daily_reviews (
+  id uuid primary key default gen_random_uuid(),
+  organization_id uuid references public.organizations(id) on delete cascade,
+  review_date date not null,
+  checked jsonb not null default '{}'::jsonb,
+  notes text not null default '',
+  signed_off_by_name text not null default '',
+  signed_off_by_auth_user_id uuid references auth.users(id),
+  signed_off_at timestamptz,
+  local_id text,
+  created_by uuid references auth.users(id),
+  updated_by uuid references auth.users(id),
+  created_at timestamptz not null default now(),
+  updated_at timestamptz not null default now(),
+  unique (organization_id, review_date)
+);
+
+create index if not exists manager_daily_reviews_org_date_idx
+  on public.manager_daily_reviews (organization_id, review_date desc);
+
+do $
+begin
+  if not exists (
+    select 1
+    from pg_constraint
+    where conname = 'manager_daily_reviews_local_id_key'
+  ) then
+    alter table public.manager_daily_reviews
+    add constraint manager_daily_reviews_local_id_key unique (local_id);
+  end if;
+end $;
+
+drop trigger if exists manager_daily_reviews_set_updated_at on public.manager_daily_reviews;
+
+create trigger manager_daily_reviews_set_updated_at
+before update on public.manager_daily_reviews
+for each row
+execute function public.set_updated_at();
+
+alter table public.manager_daily_reviews enable row level security;
+
+grant select, insert, update on public.manager_daily_reviews to authenticated;
+
+drop policy if exists "manager_daily_reviews_select_authenticated" on public.manager_daily_reviews;
+drop policy if exists "manager_daily_reviews_insert_authenticated" on public.manager_daily_reviews;
+drop policy if exists "manager_daily_reviews_update_authenticated" on public.manager_daily_reviews;
+
+create policy "authenticated active users can read manager daily reviews"
+on public.manager_daily_reviews
+for select
+to authenticated
+using (
+  public.current_user_is_active()
+  and (
+    organization_id is null
+    or public.current_user_organization_id() is null
+    or organization_id = public.current_user_organization_id()
+  )
+);
+
+create policy "authenticated managers can insert manager daily reviews"
+on public.manager_daily_reviews
+for insert
+to authenticated
+with check (
+  public.current_user_is_manager()
+  and (
+    organization_id is null
+    or public.current_user_organization_id() is null
+    or organization_id = public.current_user_organization_id()
+  )
+);
+
+create policy "authenticated managers can update manager daily reviews"
+on public.manager_daily_reviews
+for update
+to authenticated
+using (
+  public.current_user_is_manager()
+  and (
+    organization_id is null
+    or public.current_user_organization_id() is null
+    or organization_id = public.current_user_organization_id()
+  )
+)
+with check (
+  public.current_user_is_manager()
+  and (
+    organization_id is null
+    or public.current_user_organization_id() is null
+    or organization_id = public.current_user_organization_id()
+  )
+);
+
