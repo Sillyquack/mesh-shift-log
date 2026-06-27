@@ -3698,6 +3698,7 @@ function ManagerDashboardJumpIndex() {
     { label: "Daily report", needles: ["daily report"] },
     { label: "Close day", needles: ["close day control"] },
     { label: "Close summary", needles: ["close day summary", "copy close day summary"] },
+    { label: "Close signoff", needles: ["mark day closed", "close signoff"] },
     { label: "Reviews", needles: ["manager review history", "daily manager review"] },
     { label: "History", needles: ["backend history", "history by date"] },
     { label: "Assets", needles: ["asset registry", "payment terminals"] },
@@ -3885,6 +3886,33 @@ function ManagerDashboardActionCenter({
   useEffect(() => {
     setCloseDayAcknowledgements(loadCloseDayAcknowledgements());
   }, [closeDayAckStorageKey]);
+
+  const closeDaySignoffStorageKey = "mesh-close-day-signoff-v1:" + (date || "unknown");
+
+  function loadCloseDaySignoff() {
+    try {
+      return JSON.parse(localStorage.getItem(closeDaySignoffStorageKey) || "null");
+    } catch {
+      return null;
+    }
+  }
+
+  const [closeDaySignoff, setCloseDaySignoff] = useState(loadCloseDaySignoff);
+
+  function saveCloseDaySignoff(nextSignoff) {
+    setCloseDaySignoff(nextSignoff);
+
+    if (nextSignoff) {
+      localStorage.setItem(closeDaySignoffStorageKey, JSON.stringify(nextSignoff));
+    } else {
+      localStorage.removeItem(closeDaySignoffStorageKey);
+    }
+  }
+
+  useEffect(() => {
+    setCloseDaySignoff(loadCloseDaySignoff());
+  }, [closeDaySignoffStorageKey]);
+
 
   useEffect(() => {
     let cancelled = false;
@@ -4348,11 +4376,40 @@ const closeDayChecks = [
 
   const closeDayReady = closeDayChecks.every((check) => check.ok);
   const closeDayBlockingItems = closeDayChecks.filter((check) => !check.ok);
+  const closeDayClosed = Boolean(closeDaySignoff?.closedAt);
+
+  function markCloseDayClosed() {
+    if (!closeDayReady) {
+      setSyncActionMessage("Close day cannot be marked closed yet. Resolve blocking items first.");
+      return;
+    }
+
+    const nextSignoff = {
+      date: date || "",
+      closedBy: dailyReview?.signedOffBy || "Manager",
+      closedAt: new Date().toISOString(),
+      status: "closed",
+      checksPassed: closeDayChecks.filter((check) => check.ok).length,
+      totalChecks: closeDayChecks.length,
+    };
+
+    saveCloseDaySignoff(nextSignoff);
+    setSyncActionMessage("Close day marked closed.");
+  }
+
+  function reopenCloseDay() {
+    saveCloseDaySignoff(null);
+    setSyncActionMessage("Close day reopened.");
+  }
 function buildCloseDaySummary() {
     const lines = [
       "Mesh Shift Log - Close Day Summary",
       "Date: " + (date || "-"),
       "Status: " + (closeDayReady ? "Ready to close" : "Needs attention"),
+      "Closed: " + (closeDayClosed ? "yes" : "no"),
+      "Closed by: " + (closeDaySignoff?.closedBy || "-"),
+      "Closed at: " +
+        (closeDaySignoff?.closedAt ? formatDateTime(closeDaySignoff.closedAt) : "-"),
       "",
       "Manager review",
       "Signed: " + (dailyReviewSigned ? "yes" : "no"),
@@ -4509,9 +4566,19 @@ function buildCloseDaySummary() {
         <span>
           <strong>{closeDayBlockingItems.length}</strong> Blocking items
         </span>
+        <span>
+          <strong>{closeDayClosed ? "closed" : "open"}</strong> Close signoff
+        </span>
       </div>
 
-      <div className="checklist-grid">
+            {closeDayClosed && (
+        <p className="muted">
+          Closed by {closeDaySignoff.closedBy || "Manager"} at{" "}
+          {formatDateTime(closeDaySignoff.closedAt)}.
+        </p>
+      )}
+
+<div className="checklist-grid">
         {closeDayChecks.map((check) => (
           <article
             key={check.id}
@@ -4573,6 +4640,23 @@ function buildCloseDaySummary() {
         >
           Copy close day summary
         </button>
+        <button
+          type="button"
+          className="primary-button compact-button"
+          disabled={!closeDayReady || closeDayClosed}
+          onClick={markCloseDayClosed}
+        >
+          Mark day closed
+        </button>
+        {closeDayClosed && (
+          <button
+            type="button"
+            className="ghost-button compact-button"
+            onClick={reopenCloseDay}
+          >
+            Reopen close day
+          </button>
+        )}
       </div>
 
       <div className="section-heading static-heading">
