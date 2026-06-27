@@ -3697,6 +3697,7 @@ function ManagerDashboardJumpIndex() {
     { label: "Alerts", needles: ["open alerts", "real alert"] },
     { label: "Daily report", needles: ["daily report"] },
     { label: "Close day", needles: ["close day control"] },
+    { label: "Close summary", needles: ["close day summary", "copy close day summary"] },
     { label: "Reviews", needles: ["manager review history", "daily manager review"] },
     { label: "History", needles: ["backend history", "history by date"] },
     { label: "Assets", needles: ["asset registry", "payment terminals"] },
@@ -3848,10 +3849,42 @@ function ManagerDashboardActionCenter({
   const [reviewBackendMessage, setReviewBackendMessage] = useState("");
   const [reviewSyncBusy, setReviewSyncBusy] = useState(false);
 
+  const closeDayAckStorageKey = "mesh-close-day-ack-v1:" + (date || "unknown");
+
+  function loadCloseDayAcknowledgements() {
+    try {
+      return JSON.parse(localStorage.getItem(closeDayAckStorageKey) || "{}");
+    } catch {
+      return {};
+    }
+  }
+
+  const [closeDayAcknowledgements, setCloseDayAcknowledgements] = useState(
+    loadCloseDayAcknowledgements,
+  );
+
+  function acknowledgeCloseDayItem(itemId) {
+    const acknowledgedAt = new Date().toISOString();
+
+    setCloseDayAcknowledgements((current) => {
+      const next = {
+        ...(current || {}),
+        [itemId]: acknowledgedAt,
+      };
+
+      localStorage.setItem(closeDayAckStorageKey, JSON.stringify(next));
+      return next;
+    });
+  }
+
   useEffect(() => {
     setDailyReview(loadDailyReview());
     setReviewBackendMessage("");
   }, [reviewStorageKey]);
+
+  useEffect(() => {
+    setCloseDayAcknowledgements(loadCloseDayAcknowledgements());
+  }, [closeDayAckStorageKey]);
 
   useEffect(() => {
     let cancelled = false;
@@ -4114,6 +4147,9 @@ function ManagerDashboardActionCenter({
   const assetPendingCount = assetBackendStatus?.pendingLocalRecords || 0;
   const financialPendingCount = financialBackendStatus?.pendingLocalRecords || 0;
   const checklistPendingCount = shiftDataStatus?.pendingLocalRecords || 0;
+  const financialPendingAcknowledged = Boolean(
+    closeDayAcknowledgements?.financial_pending_clear,
+  );
 
   const hasRealBackendError =
     meaningfulBackendError(assetBackendStatus?.lastError) ||
@@ -4123,7 +4159,7 @@ function ManagerDashboardActionCenter({
   const hasReviewItems =
     assetIssueCount > 0 ||
     assetPendingCount > 0 ||
-    financialPendingCount > 0 ||
+    (financialPendingCount > 0 && !financialPendingAcknowledged) ||
     checklistPendingCount > 0 ||
     !dailyReviewSigned;
 
@@ -4162,7 +4198,7 @@ function ManagerDashboardActionCenter({
       });
     }
 
-    if (financialPendingCount > 0) {
+    if (financialPendingCount > 0 && !financialPendingAcknowledged) {
       actions.push({
         title: "Clean financial pending records",
         description:
@@ -4224,8 +4260,7 @@ function ManagerDashboardActionCenter({
 
     return actions.slice(0, 3);
   }
-
-  const closeDayChecks = [
+const closeDayChecks = [
     {
       id: "manager_review_signed",
       label: "Daily manager review signed",
@@ -4269,14 +4304,25 @@ function ManagerDashboardActionCenter({
     {
       id: "financial_pending_clear",
       label: "Financial pending cleared",
-      ok: financialPendingCount === 0,
-      detail: financialPendingCount + " pending financial record(s)",
-      actionLabel: financialPendingCount > 0 ? "Cleanup financial" : "",
-      action: () =>
-        runSyncAction(
-          "Financial pending cleanup complete.",
-          onClearSyncedFinancialPendingRecords,
-        ),
+      ok: financialPendingCount === 0 || financialPendingAcknowledged,
+      detail:
+        financialPendingCount === 0
+          ? "0 pending financial record(s)"
+          : financialPendingAcknowledged
+            ? financialPendingCount + " pending financial record(s) reviewed for close"
+            : financialPendingCount + " pending financial record(s)",
+      actionLabel:
+        financialPendingCount > 0 && !financialPendingAcknowledged
+          ? "Review financial"
+          : "",
+      action: async () => {
+        acknowledgeCloseDayItem("financial_pending_clear");
+
+        await runSyncAction("Financial pending reviewed for close.", async () => {
+          await onClearSyncedFinancialPendingRecords?.();
+          await refreshFinancialSignoffs?.();
+        });
+      },
     },
     {
       id: "asset_pending_clear",
@@ -4301,6 +4347,66 @@ function ManagerDashboardActionCenter({
   ];
 
   const closeDayReady = closeDayChecks.every((check) => check.ok);
+  const closeDayBlockingItems = closeDayChecks.filter((check) => !check.ok);
+function buildCloseDaySummary() {
+    const lines = [
+      "Mesh Shift Log - Close Day Summary",
+      "Date: " + (date || "-"),
+      "Status: " + (closeDayReady ? "Ready to close" : "Needs attention"),
+      "",
+      "Manager review",
+      "Signed: " + (dailyReviewSigned ? "yes" : "no"),
+      "Closing checks: " +
+        closeDayChecks.filter((check) => check.ok).length +
+        "/" +
+        closeDayChecks.length +
+        " passed",
+      "Signed by: " + (dailyReview.signedOffBy || "-"),
+      "Signed at: " +
+        (dailyReview.signedOffAt ? formatDateTime(dailyReview.signedOffAt) : "-"),
+      "",
+      "Backend / sync",
+      "Backend state: " + (hasRealBackendError ? "needs attention" : "clear"),
+      "Checklist pending: " + checklistPendingCount,
+      "Financial pending: " +
+        financialPendingCount +
+        (financialPendingAcknowledged ? " (reviewed for close)" : ""),
+      "Asset pending: " + assetPendingCount,
+      "",
+      "Operational issues",
+      "Asset issues: " + assetIssueCount,
+      "",
+      "Blocking items",
+    ];
+
+    if (closeDayBlockingItems.length) {
+      closeDayBlockingItems.forEach((check) => {
+        lines.push("- " + check.label + ": " + check.detail);
+      });
+    } else {
+      lines.push("- none");
+    }
+
+    if (dailyReview.notes?.trim()) {
+      lines.push("", "Manager review notes", dailyReview.notes.trim());
+    }
+
+    return lines.join("\n");
+  }
+
+  async function copyCloseDaySummary() {
+    const summary = buildCloseDaySummary();
+
+    try {
+      await navigator.clipboard.writeText(summary);
+      setSyncActionMessage("Close day summary copied.");
+    } catch {
+      setSyncActionMessage(
+        "Could not copy close day summary automatically. Open daily report and copy manually.",
+      );
+    }
+  }
+
 
   const nextActions = recommendedActions();
 
@@ -4400,6 +4506,9 @@ function ManagerDashboardActionCenter({
         <span>
           <strong>{assetIssueCount}</strong> Asset issues
         </span>
+        <span>
+          <strong>{closeDayBlockingItems.length}</strong> Blocking items
+        </span>
       </div>
 
       <div className="checklist-grid">
@@ -4456,6 +4565,13 @@ function ManagerDashboardActionCenter({
           onClick={() => jumpTo(["daily report"])}
         >
           Open daily report
+        </button>
+        <button
+          type="button"
+          className="ghost-button compact-button"
+          onClick={copyCloseDaySummary}
+        >
+          Copy close day summary
         </button>
       </div>
 
