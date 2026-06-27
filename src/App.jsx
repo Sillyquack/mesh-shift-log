@@ -3696,6 +3696,7 @@ function ManagerDashboardJumpIndex() {
     { label: "Staff", needles: ["staff codes", "site access"] },
     { label: "Alerts", needles: ["open alerts", "real alert"] },
     { label: "Daily report", needles: ["daily report"] },
+    { label: "Close day", needles: ["close day control"] },
     { label: "Reviews", needles: ["manager review history", "daily manager review"] },
     { label: "History", needles: ["backend history", "history by date"] },
     { label: "Assets", needles: ["asset registry", "payment terminals"] },
@@ -4224,6 +4225,83 @@ function ManagerDashboardActionCenter({
     return actions.slice(0, 3);
   }
 
+  const closeDayChecks = [
+    {
+      id: "manager_review_signed",
+      label: "Daily manager review signed",
+      ok: dailyReviewSigned,
+      detail: dailyReviewSigned
+        ? "Signed by " + (dailyReview.signedOffBy || "Manager")
+        : reviewDone
+          ? "Ready to sign"
+          : "Checklist still open",
+      actionLabel: dailyReviewSigned ? "" : "Open review",
+      action: () => jumpTo(["daily manager review"]),
+    },
+    {
+      id: "review_checklist_done",
+      label: "Daily review checklist complete",
+      ok: reviewDone,
+      detail: reviewDone ? "5/5 checks complete" : "Complete all review checks",
+      actionLabel: reviewDone ? "" : "Open review",
+      action: () => jumpTo(["daily manager review"]),
+    },
+    {
+      id: "backend_errors_clear",
+      label: "No real backend errors",
+      ok: !hasRealBackendError,
+      detail: hasRealBackendError ? "Backend needs attention" : "No real backend error",
+      actionLabel: hasRealBackendError ? "Open backend" : "",
+      action: () => jumpTo(["backend status", "checklist backend"]),
+    },
+    {
+      id: "checklist_pending_clear",
+      label: "Checklist pending cleared",
+      ok: checklistPendingCount === 0,
+      detail: checklistPendingCount + " pending checklist record(s)",
+      actionLabel: checklistPendingCount > 0 ? "Cleanup checklist" : "",
+      action: () =>
+        runSyncAction(
+          "Checklist pending cleanup complete.",
+          onClearSyncedLocalChecklistPendingRecords,
+        ),
+    },
+    {
+      id: "financial_pending_clear",
+      label: "Financial pending cleared",
+      ok: financialPendingCount === 0,
+      detail: financialPendingCount + " pending financial record(s)",
+      actionLabel: financialPendingCount > 0 ? "Cleanup financial" : "",
+      action: () =>
+        runSyncAction(
+          "Financial pending cleanup complete.",
+          onClearSyncedFinancialPendingRecords,
+        ),
+    },
+    {
+      id: "asset_pending_clear",
+      label: "Asset pending cleared",
+      ok: assetPendingCount === 0,
+      detail: assetPendingCount + " pending asset record(s)",
+      actionLabel: assetPendingCount > 0 ? "Cleanup assets" : "",
+      action: () =>
+        runSyncAction(
+          "Asset pending cleanup complete.",
+          onClearSyncedAssetPendingRecords,
+        ),
+    },
+    {
+      id: "asset_issues_clear",
+      label: "No asset issues",
+      ok: assetIssueCount === 0,
+      detail: assetIssueCount + " asset issue(s)",
+      actionLabel: assetIssueCount > 0 ? "Open assets" : "",
+      action: () => jumpTo(["asset registry", "asset check"]),
+    },
+  ];
+
+  const closeDayReady = closeDayChecks.every((check) => check.ok);
+
   const nextActions = recommendedActions();
 
   return (
@@ -4295,6 +4373,91 @@ function ManagerDashboardActionCenter({
           No urgent manager follow-up detected.
         </p>
       )}
+
+      <div className="section-heading static-heading" id="close-day-control">
+        <div>
+          <h3>Close Day Control</h3>
+          <p className="muted">
+            Final manager checkpoint before closing the operational day.
+          </p>
+        </div>
+        <span className={closeDayReady ? "status-pill success" : "status-pill warning"}>
+          {closeDayReady ? "Ready to close" : "Needs attention"}
+        </span>
+      </div>
+
+      <div className="status-grid">
+        <span>
+          <strong>{closeDayChecks.filter((check) => check.ok).length}/{closeDayChecks.length}</strong>{" "}
+          Closing checks passed
+        </span>
+        <span>
+          <strong>{dailyReviewSigned ? "signed" : "open"}</strong> Manager signoff
+        </span>
+        <span>
+          <strong>{hasRealBackendError ? "attention" : "clear"}</strong> Backend state
+        </span>
+        <span>
+          <strong>{assetIssueCount}</strong> Asset issues
+        </span>
+      </div>
+
+      <div className="checklist-grid">
+        {closeDayChecks.map((check) => (
+          <article
+            key={check.id}
+            className={check.ok ? "toggle-row small-toggle" : "toggle-row small-toggle needs-attention"}
+          >
+            <span>{check.ok ? "✅" : "⚠️"}</span>
+            <span>
+              <strong>{check.label}</strong>
+              <small> · {check.detail}</small>
+            </span>
+            {check.actionLabel && (
+              <button
+                type="button"
+                className="ghost-button compact-button"
+                disabled={syncActionBusy}
+                onClick={check.action}
+              >
+                {check.actionLabel}
+              </button>
+            )}
+          </article>
+        ))}
+      </div>
+
+      <div className="backup-actions">
+        <button
+          type="button"
+          className="ghost-button compact-button"
+          disabled={syncActionBusy}
+          onClick={() =>
+            runSyncAction("Backend status refreshed.", async () => {
+              await refreshShiftData?.();
+              await refreshFinancialSignoffs?.();
+              await refreshAssetRegistry?.();
+              await refreshAssetChecks?.();
+            })
+          }
+        >
+          Refresh backend status
+        </button>
+        <button
+          type="button"
+          className="ghost-button compact-button"
+          onClick={() => jumpTo(["daily manager review"])}
+        >
+          Open review
+        </button>
+        <button
+          type="button"
+          className="ghost-button compact-button"
+          onClick={() => jumpTo(["daily report"])}
+        >
+          Open daily report
+        </button>
+      </div>
 
       <div className="section-heading static-heading">
         <div>
