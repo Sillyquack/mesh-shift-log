@@ -3717,6 +3717,7 @@ function ManagerDashboardJumpIndex() {
 }
 
 function ManagerDashboardActionCenter({
+  user,
   date,
   authStatus,
   shiftDataStatus,
@@ -3732,8 +3733,118 @@ function ManagerDashboardActionCenter({
   onClearSyncedFinancialPendingRecords,
   onClearSyncedAssetPendingRecords,
 }) {
+  const reviewItems = [
+    {
+      id: "action_center_reviewed",
+      label: "Action Center reviewed",
+    },
+    {
+      id: "asset_issues_checked",
+      label: "Asset issues checked",
+    },
+    {
+      id: "financial_signoffs_checked",
+      label: "Financial signoffs checked",
+    },
+    {
+      id: "alerts_attention_checked",
+      label: "Alerts / needs attention checked",
+    },
+    {
+      id: "daily_report_reviewed",
+      label: "Daily report reviewed",
+    },
+  ];
+
+  const reviewStorageKey = "mesh-manager-daily-review-v1:" + (date || "unknown");
+
+  function blankDailyReview() {
+    return {
+      date: date || "",
+      checked: {},
+      notes: "",
+      signedOffBy: "",
+      signedOffAt: "",
+      updatedAt: "",
+    };
+  }
+
+  function normalizeDailyReview(record) {
+    return {
+      ...blankDailyReview(),
+      ...(record || {}),
+      checked: {
+        ...blankDailyReview().checked,
+        ...(record?.checked || {}),
+      },
+    };
+  }
+
+  function loadDailyReview() {
+    try {
+      return normalizeDailyReview(
+        JSON.parse(localStorage.getItem(reviewStorageKey) || "null"),
+      );
+    } catch {
+      return blankDailyReview();
+    }
+  }
+
   const [syncActionMessage, setSyncActionMessage] = useState("");
   const [syncActionBusy, setSyncActionBusy] = useState(false);
+  const [dailyReview, setDailyReview] = useState(loadDailyReview);
+
+  useEffect(() => {
+    setDailyReview(loadDailyReview());
+  }, [reviewStorageKey]);
+
+  function saveDailyReview(nextReview) {
+    const normalized = normalizeDailyReview({
+      ...nextReview,
+      date: date || "",
+      updatedAt: new Date().toISOString(),
+    });
+
+    setDailyReview(normalized);
+    localStorage.setItem(reviewStorageKey, JSON.stringify(normalized));
+  }
+
+  function toggleReviewItem(itemId) {
+    saveDailyReview({
+      ...dailyReview,
+      signedOffAt: "",
+      signedOffBy: "",
+      checked: {
+        ...dailyReview.checked,
+        [itemId]: !dailyReview.checked?.[itemId],
+      },
+    });
+  }
+
+  function updateReviewNotes(notes) {
+    saveDailyReview({
+      ...dailyReview,
+      signedOffAt: "",
+      signedOffBy: "",
+      notes,
+    });
+  }
+
+  function signOffDailyReview() {
+    saveDailyReview({
+      ...dailyReview,
+      signedOffBy: user?.name || authStatus?.email || "Manager",
+      signedOffAt: new Date().toISOString(),
+    });
+  }
+
+  function clearDailyReviewSignoff() {
+    saveDailyReview({
+      ...dailyReview,
+      signedOffBy: "",
+      signedOffAt: "",
+    });
+  }
 
   async function runSyncAction(label, action) {
     if (syncActionBusy) return;
@@ -3799,6 +3910,9 @@ function ManagerDashboardActionCenter({
     return normalized;
   }
 
+  const reviewDone = reviewItems.every((item) => dailyReview.checked?.[item.id]);
+  const dailyReviewSigned = Boolean(dailyReview.signedOffAt);
+
   const assetIssueCount = assetIssues?.length || 0;
   const assetCheckCount = dateAssetChecks?.length || 0;
   const assetPendingCount = assetBackendStatus?.pendingLocalRecords || 0;
@@ -3814,7 +3928,8 @@ function ManagerDashboardActionCenter({
     assetIssueCount > 0 ||
     assetPendingCount > 0 ||
     financialPendingCount > 0 ||
-    checklistPendingCount > 0;
+    checklistPendingCount > 0 ||
+    !dailyReviewSigned;
 
   const statusLabel = hasRealBackendError
     ? "Backend error"
@@ -3888,6 +4003,19 @@ function ManagerDashboardActionCenter({
       });
     }
 
+    if (!dailyReviewSigned) {
+      actions.push({
+        title: reviewDone
+          ? "Sign off daily manager review"
+          : "Complete daily manager review",
+        description: reviewDone
+          ? "All daily review checks are complete. Sign off the day."
+          : "Finish the manager review checklist before closing the day.",
+        label: "Open review",
+        action: () => jumpTo(["daily manager review"]),
+      });
+    }
+
     if (actions.length === 0) {
       actions.push({
         title: "Review daily report",
@@ -3945,6 +4073,10 @@ function ManagerDashboardActionCenter({
         <span>
           <strong>{assetPendingCount}</strong> Pending asset sync
         </span>
+        <span>
+          <strong>{dailyReviewSigned ? "signed" : reviewDone ? "ready" : "open"}</strong>{" "}
+          Daily review
+        </span>
       </div>
 
       {hasRealBackendError && (
@@ -3956,7 +4088,7 @@ function ManagerDashboardActionCenter({
       {!hasRealBackendError && hasReviewItems && (
         <p className="muted">
           Review items found. This can be normal pending local work, old cached
-          records, or operational issues that need checking.
+          records, operational issues, or the daily manager review still being open.
         </p>
       )}
 
@@ -3990,6 +4122,67 @@ function ManagerDashboardActionCenter({
             </button>
           </article>
         ))}
+      </div>
+
+      <div className="section-heading static-heading" id="daily-manager-review">
+        <div>
+          <h3>Daily manager review</h3>
+          <p className="muted">
+            Local checklist for confirming the day has been reviewed.
+          </p>
+        </div>
+        <span className={dailyReviewSigned ? "status-pill success" : "status-pill warning"}>
+          {dailyReviewSigned ? "Signed" : reviewDone ? "Ready" : "Open"}
+        </span>
+      </div>
+
+      <div className="checklist-grid">
+        {reviewItems.map((item) => (
+          <label key={item.id} className="toggle-row small-toggle">
+            <input
+              type="checkbox"
+              checked={Boolean(dailyReview.checked?.[item.id])}
+              onChange={() => toggleReviewItem(item.id)}
+            />
+            <span>{item.label}</span>
+          </label>
+        ))}
+      </div>
+
+      <label>
+        <span>Manager review notes</span>
+        <textarea
+          value={dailyReview.notes || ""}
+          onChange={(event) => updateReviewNotes(event.target.value)}
+          placeholder="Optional notes before signing off the day."
+        />
+      </label>
+
+      {dailyReviewSigned && (
+        <p className="muted">
+          Signed by {dailyReview.signedOffBy || "Manager"} at{" "}
+          {formatDateTime(dailyReview.signedOffAt)}.
+        </p>
+      )}
+
+      <div className="backup-actions">
+        <button
+          type="button"
+          className="primary-button compact-button"
+          disabled={!reviewDone}
+          onClick={signOffDailyReview}
+        >
+          Sign off daily review
+        </button>
+        {dailyReviewSigned && (
+          <button
+            type="button"
+            className="ghost-button compact-button"
+            onClick={clearDailyReviewSignoff}
+          >
+            Reopen review
+          </button>
+        )}
       </div>
 
       <div className="section-heading static-heading">
@@ -6046,6 +6239,7 @@ function ManagerDashboard({
       <ManagerDashboardJumpIndex />
       <ManagerDashboardSectionCollapseControls />
       <ManagerDashboardActionCenter
+        user={user}
         date={date}
         authStatus={authStatus}
         shiftDataStatus={shiftDataStatus}
