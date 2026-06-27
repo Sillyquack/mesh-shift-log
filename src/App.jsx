@@ -70,6 +70,10 @@ import {
   fetchManagerDailyReviewHistory,
   upsertManagerDailyReview,
 } from "./lib/managerReviewDataClient.js";
+import {
+  fetchCloseDayArchive,
+  upsertCloseDayArchive,
+} from "./lib/closeDayArchiveClient.js";
 
 function buildReviewStatusForHistoryDate(historyDate, reviewMap = {}) {
   const review = reviewMap?.[historyDate];
@@ -3699,6 +3703,7 @@ function ManagerDashboardJumpIndex() {
     { label: "Close day", needles: ["close day control"] },
     { label: "Close summary", needles: ["close day summary", "copy close day summary"] },
     { label: "Close signoff", needles: ["mark day closed", "close signoff"] },
+    { label: "Close archive", needles: ["sync close archive", "restore close archive"] },
     { label: "Reviews", needles: ["manager review history", "daily manager review"] },
     { label: "History", needles: ["backend history", "history by date"] },
     { label: "Assets", needles: ["asset registry", "payment terminals"] },
@@ -3898,6 +3903,8 @@ function ManagerDashboardActionCenter({
   }
 
   const [closeDaySignoff, setCloseDaySignoff] = useState(loadCloseDaySignoff);
+  const [closeDayArchiveMessage, setCloseDayArchiveMessage] = useState("");
+  const [closeDayArchiveBusy, setCloseDayArchiveBusy] = useState(false);
 
   function saveCloseDaySignoff(nextSignoff) {
     setCloseDaySignoff(nextSignoff);
@@ -4376,9 +4383,9 @@ const closeDayChecks = [
 
   const closeDayReady = closeDayChecks.every((check) => check.ok);
   const closeDayBlockingItems = closeDayChecks.filter((check) => !check.ok);
-  const closeDayClosed = Boolean(closeDaySignoff?.closedAt);
+  const closeDayClosed = Boolean(closeDaySignoff?.closedAt) && closeDaySignoff?.status !== "reopened";
 
-  function markCloseDayClosed() {
+  async function markCloseDayClosed() {
     if (!closeDayReady) {
       setSyncActionMessage("Close day cannot be marked closed yet. Resolve blocking items first.");
       return;
@@ -4391,25 +4398,164 @@ const closeDayChecks = [
       status: "closed",
       checksPassed: closeDayChecks.filter((check) => check.ok).length,
       totalChecks: closeDayChecks.length,
+      syncStatus: user?.loginSource === "supabase_auth" ? "pending_backend" : "local_only",
     };
 
     saveCloseDaySignoff(nextSignoff);
     setSyncActionMessage("Close day marked closed.");
+    await syncCloseDayArchive(nextSignoff);
   }
 
-  function reopenCloseDay() {
+  async function reopenCloseDay() {
+    const reopenedSignoff = {
+      ...(closeDaySignoff || {}),
+      date: date || closeDaySignoff?.date || "",
+      status: "reopened",
+      reopenedBy: dailyReview?.signedOffBy || "Manager",
+      reopenedAt: new Date().toISOString(),
+      syncStatus: user?.loginSource === "supabase_auth" ? "pending_backend" : "local_only",
+    };
+
     saveCloseDaySignoff(null);
     setSyncActionMessage("Close day reopened.");
+    await syncCloseDayArchive(reopenedSignoff);
   }
-function buildCloseDaySummary() {
+
+  async function syncCloseDayArchive(signoff) {
+    if (!signoff) {
+      setCloseDayArchiveMessage("No close day signoff to archive yet.");
+      return { ok: false, mode: "missing_signoff" };
+    }
+
+    if (user?.loginSource !== "supabase_auth") {
+      setCloseDayArchiveMessage("Close day saved locally. Email login required for backend archive.");
+      return { ok: false, mode: "local_only" };
+    }
+
+    setCloseDayArchiveBusy(true);
+    setCloseDayArchiveMessage("Syncing close day archive...");
+
+    const archiveRecord = {
+      ...signoff,
+      date: signoff.date || date || "",
+      localId: signoff.localId || "close-day:" + (date || "unknown"),
+      checksPassed: signoff.checksPassed ?? closeDayChecks.filter((check) => check.ok).length,
+      totalChecks: signoff.totalChecks ?? closeDayChecks.length,
+      blockingItems: closeDayBlockingItems.map((check) => ({
+        id: check.id,
+        label: check.label,
+        detail: check.detail,
+      })),
+      summary: buildCloseDaySummary(signoff),
+      metadata: {
+        closeDayReady,
+        backendState: hasRealBackendError ? "needs_attention" : "clear",
+        checklistPendingCount,
+        financialPendingCount,
+        financialPendingAcknowledged,
+        assetPendingCount,
+        assetIssueCount,
+      },
+    };
+
+    try {
+      const result = await upsertCloseDayArchive(archiveRecord);
+
+      if (result.ok && result.record) {
+        setCloseDayArchiveMessage(
+          result.record.status === "reopened"
+            ? "Close day archive marked reopened in Supabase."
+            : "Close day archive synced to Supabase.",
+        );
+
+        if (result.record.status === "closed") {
+          saveCloseDaySignoff({
+            ...signoff,
+            backendId: result.record.backendId,
+            localId: result.record.localId,
+            syncStatus: "synced",
+            updatedAt: result.record.updatedAt,
+          });
+        }
+
+        return result;
+      }
+
+      setCloseDayArchiveMessage(result.message || "Close day archive sync failed.");
+      return result;
+    } catch (error) {
+      setCloseDayArchiveMessage(error.message || "Close day archive sync failed.");
+      return { ok: false, mode: "sync_error", message: error.message };
+    } finally {
+      setCloseDayArchiveBusy(false);
+    }
+  }
+
+  async function restoreCloseDayArchiveFromBackend() {
+    if (user?.loginSource !== "supabase_auth") {
+      setCloseDayArchiveMessage("Email login required for close day archive restore.");
+      return;
+    }
+
+    setCloseDayArchiveBusy(true);
+    setCloseDayArchiveMessage("Restoring close day archive...");
+
+    try {
+      const result = await fetchCloseDayArchive(date);
+
+      if (result.ok && result.record) {
+        if (result.record.status === "closed") {
+          saveCloseDaySignoff({
+            date: result.record.date,
+            closedBy: result.record.closedBy || "Manager",
+            closedAt: result.record.closedAt,
+            status: "closed",
+            checksPassed: result.record.checksPassed,
+            totalChecks: result.record.totalChecks,
+            backendId: result.record.backendId,
+            localId: result.record.localId,
+            syncStatus: "synced",
+            updatedAt: result.record.updatedAt,
+          });
+
+          setCloseDayArchiveMessage("Close day archive restored from Supabase.");
+          return;
+        }
+
+        saveCloseDaySignoff(null);
+        setCloseDayArchiveMessage("Supabase archive says this day was reopened.");
+        return;
+      }
+
+      setCloseDayArchiveMessage(result.message || "No close day archive found.");
+    } catch (error) {
+      setCloseDayArchiveMessage(error.message || "Could not restore close day archive.");
+    } finally {
+      setCloseDayArchiveBusy(false);
+    }
+  }
+function buildCloseDaySummary(summarySignoff = closeDaySignoff) {
+    const summaryClosed =
+      Boolean(summarySignoff?.closedAt) && summarySignoff?.status !== "reopened";
+    const summaryClosedBy = summarySignoff?.closedBy || "-";
+    const summaryClosedAt = summarySignoff?.closedAt
+      ? formatDateTime(summarySignoff.closedAt)
+      : "-";
+    const summaryArchiveStatus =
+      summarySignoff?.syncStatus === "synced"
+        ? "synced"
+        : user?.loginSource === "supabase_auth"
+          ? "local / pending backend"
+          : "local only";
+
     const lines = [
       "Mesh Shift Log - Close Day Summary",
       "Date: " + (date || "-"),
       "Status: " + (closeDayReady ? "Ready to close" : "Needs attention"),
-      "Closed: " + (closeDayClosed ? "yes" : "no"),
-      "Closed by: " + (closeDaySignoff?.closedBy || "-"),
-      "Closed at: " +
-        (closeDaySignoff?.closedAt ? formatDateTime(closeDaySignoff.closedAt) : "-"),
+      "Closed: " + (summaryClosed ? "yes" : "no"),
+      "Closed by: " + summaryClosedBy,
+      "Closed at: " + summaryClosedAt,
+      "Backend archive: " + summaryArchiveStatus,
       "",
       "Manager review",
       "Signed: " + (dailyReviewSigned ? "yes" : "no"),
@@ -4569,6 +4715,9 @@ function buildCloseDaySummary() {
         <span>
           <strong>{closeDayClosed ? "closed" : "open"}</strong> Close signoff
         </span>
+        <span>
+          <strong>{closeDaySignoff?.syncStatus === "synced" ? "synced" : "local"}</strong> Archive sync
+        </span>
       </div>
 
             {closeDayClosed && (
@@ -4603,7 +4752,11 @@ function buildCloseDaySummary() {
         ))}
       </div>
 
-      <div className="backup-actions">
+            {closeDayArchiveMessage && (
+        <p className="muted">{closeDayArchiveMessage}</p>
+      )}
+
+<div className="backup-actions">
         <button
           type="button"
           className="ghost-button compact-button"
@@ -4639,6 +4792,22 @@ function buildCloseDaySummary() {
           onClick={copyCloseDaySummary}
         >
           Copy close day summary
+        </button>
+        <button
+          type="button"
+          className="ghost-button compact-button"
+          disabled={closeDayArchiveBusy || !closeDaySignoff}
+          onClick={() => syncCloseDayArchive(closeDaySignoff)}
+        >
+          Sync close archive
+        </button>
+        <button
+          type="button"
+          className="ghost-button compact-button"
+          disabled={closeDayArchiveBusy}
+          onClick={restoreCloseDayArchiveFromBackend}
+        >
+          Restore close archive
         </button>
         <button
           type="button"
