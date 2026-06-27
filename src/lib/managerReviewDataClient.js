@@ -148,3 +148,47 @@ export async function fetchManagerDailyReview(date) {
     records: data ? [normalizeManagerReviewRow(data)] : [],
   };
 }
+
+
+export async function fetchManagerDailyReviewHistory({ limit = 14 } = {}) {
+  const context = await authenticatedContext();
+
+  if (!context) return authRequiredResult();
+
+  const organizationId = await currentUserOrganizationId(context.authUserId);
+
+  let query = supabaseAuthClient
+    .from("manager_daily_reviews")
+    .select("*")
+    .ilike("local_id", "manager-review:%")
+    .order("review_date", { ascending: false })
+    .limit(limit);
+
+  if (organizationId) {
+    query = query.eq("organization_id", organizationId);
+  } else {
+    query = query.is("organization_id", null);
+  }
+
+  const { data, error } = await query;
+
+  if (error) {
+    return {
+      ok: false,
+      mode: "sync_error",
+      message: error.message || "Could not fetch manager review history.",
+      record: null,
+      records: [],
+    };
+  }
+
+  return {
+    ok: true,
+    mode: "authenticated",
+    message: data?.length
+      ? "Manager review history loaded."
+      : "No manager review history found.",
+    record: null,
+    records: (data || []).map(normalizeManagerReviewRow).filter(Boolean),
+  };
+}

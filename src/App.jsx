@@ -1,4 +1,10 @@
-import { Component, useEffect, useMemo, useRef, useState } from "react";
+import {
+  Component,
+  fetchManagerDailyReviewHistory,
+  useEffect,
+  useMemo,
+  useRef,
+  useState } from "react";
 import {
   areas,
   defaultRoutines,
@@ -7,12 +13,12 @@ import {
   normalizeRoutines,
   shiftOptions,
   staffCodes,
-} from "./data/routines.js";
+  } from "./data/routines.js";
 import {
   isBackendAuthRequired,
   isSupabaseConfigured,
   supabase,
-} from "./lib/supabaseClient.js";
+  } from "./lib/supabaseClient.js";
 import {
   fetchCurrentUserProfile,
   fetchUserProfiles,
@@ -20,7 +26,7 @@ import {
   isSupabaseAuthConfigured,
   signInWithEmailPassword,
   signOutSupabase,
-} from "./lib/supabaseAuthClient.js";
+  } from "./lib/supabaseAuthClient.js";
 import {
   canAccessManagerDashboard,
   canAcknowledgeAlerts,
@@ -28,7 +34,7 @@ import {
   canRetryEmailNotification,
   canUseEventFloorDashboard,
   canViewAuthProfiles,
-} from "./lib/permissions.js";
+  } from "./lib/permissions.js";
 import {
   createOrUpdateShiftSession,
   fetchHandoverNotesForDate,
@@ -37,19 +43,19 @@ import {
   getBackendShiftMode,
   syncHandoverNote,
   syncTaskCompletion,
-} from "./lib/shiftDataClient.js";
+  } from "./lib/shiftDataClient.js";
 import {
   buildDailyReportFromBackend,
   fetchManagerDailyHistory,
   fetchManagerHistoryRange,
-} from "./lib/managerHistoryClient.js";
+  } from "./lib/managerHistoryClient.js";
 import {
   cleanupSyncedFinancialPendingRecords,
   fetchFinancialSignoffsForDate,
   mergeFinancialSignoffs,
   reviewFinancialSignoff,
   upsertFinancialSignoff,
-} from "./lib/financialDataClient.js";
+  } from "./lib/financialDataClient.js";
 import {
   cleanupSyncedAssetPendingRecords,
   fetchAssetChecksForDate,
@@ -58,7 +64,7 @@ import {
   mergeAssetRegistry,
   upsertAssetCheckRecord,
   upsertAssetRegistryRecord,
-} from "./lib/assetDataClient.js";
+  } from "./lib/assetDataClient.js";
 import {
   fetchManagerDailyReview,
   upsertManagerDailyReview,
@@ -3650,6 +3656,7 @@ function ManagerDashboardJumpIndex() {
     { label: "Staff", needles: ["staff codes", "site access"] },
     { label: "Alerts", needles: ["open alerts", "real alert"] },
     { label: "Daily report", needles: ["daily report"] },
+    { label: "Reviews", needles: ["manager review history", "daily manager review"] },
     { label: "History", needles: ["backend history", "history by date"] },
     { label: "Assets", needles: ["asset registry", "payment terminals"] },
     { label: "Backup", needles: ["backup"] },
@@ -4465,6 +4472,112 @@ function ManagerDashboardActionCenter({
         >
           Backend
         </button>
+      </div>
+    </section>
+  );
+}
+
+function ManagerDailyReviewHistory({ user, date }) {
+  const [historyStatus, setHistoryStatus] = useState({
+    mode: "initial",
+    message: "",
+  });
+  const [reviewHistory, setReviewHistory] = useState([]);
+
+  async function refreshReviewHistory() {
+    if (user?.loginSource !== "supabase_auth") {
+      setHistoryStatus({
+        mode: "local_only",
+        message: "Email login required for manager review history.",
+      });
+      return;
+    }
+
+    setHistoryStatus({
+      mode: "loading",
+      message: "Loading manager review history...",
+    });
+
+    try {
+      const result = await fetchManagerDailyReviewHistory({ limit: 14 });
+
+      if (!result.ok) {
+        setHistoryStatus({
+          mode: result.mode || "sync_error",
+          message: result.message || "Could not load manager review history.",
+        });
+        return;
+      }
+
+      setReviewHistory(result.records || []);
+      setHistoryStatus({
+        mode: "authenticated",
+        message: result.message || "Manager review history loaded.",
+      });
+    } catch (error) {
+      setHistoryStatus({
+        mode: "sync_error",
+        message: error.message || "Could not load manager review history.",
+      });
+    }
+  }
+
+  useEffect(() => {
+    refreshReviewHistory();
+  }, [user?.id, user?.loginSource, date]);
+
+  return (
+    <section className="panel manager-review-history">
+      <div className="section-heading static-heading">
+        <div>
+          <h2>Manager review history</h2>
+          <p className="muted">
+            Recent daily manager reviews restored from Supabase.
+          </p>
+        </div>
+        <button
+          type="button"
+          className="ghost-button compact-button"
+          onClick={refreshReviewHistory}
+        >
+          Refresh history
+        </button>
+      </div>
+
+      {historyStatus.message && (
+        <p className={historyStatus.mode === "sync_error" ? "critical-warning" : "muted"}>
+          {historyStatus.message}
+        </p>
+      )}
+
+      {reviewHistory.length === 0 && (
+        <p className="muted">No manager review history found yet.</p>
+      )}
+
+      <div className="history-table">
+        {reviewHistory.map((review) => {
+          const checkedCount = Object.values(review.checked || {}).filter(Boolean).length;
+          const signed = Boolean(review.signedOffAt);
+
+          return (
+            <article key={review.backendId || review.localId || review.date}>
+              <div>
+                <strong>{review.date}</strong>
+                <p className="muted">
+                  {signed ? "Signed" : "Open"} · {checkedCount}/5 checks ·{" "}
+                  {review.syncStatus || "backend"}
+                </p>
+                {review.signedOffBy && (
+                  <p className="muted">
+                    Signed by {review.signedOffBy} at{" "}
+                    {formatDateTime(review.signedOffAt)}
+                  </p>
+                )}
+                {review.notes && <p>{review.notes}</p>}
+              </div>
+            </article>
+          );
+        })}
       </div>
     </section>
   );
@@ -6430,6 +6543,7 @@ function ManagerDashboard({
         }
         onClearSyncedAssetPendingRecords={onClearSyncedAssetPendingRecords}
       />
+      <ManagerDailyReviewHistory user={user} date={date} />
 
       {message && <p className="status-message">{message}</p>}
 
