@@ -1,10 +1,10 @@
 import {
   Component,
-  fetchManagerDailyReviewHistory,
   useEffect,
   useMemo,
   useRef,
-  useState } from "react";
+  useState,
+} from "react";
 import {
   areas,
   defaultRoutines,
@@ -67,6 +67,7 @@ import {
   } from "./lib/assetDataClient.js";
 import {
   fetchManagerDailyReview,
+  fetchManagerDailyReviewHistory,
   upsertManagerDailyReview,
 } from "./lib/managerReviewDataClient.js";
 
@@ -5250,6 +5251,45 @@ function ManagerDashboard({
     })),
   ];
 
+  function readManagerDailyReviewForReport(reportDate = date) {
+    try {
+      return JSON.parse(
+        localStorage.getItem(
+          "mesh-manager-daily-review-v1:" + (reportDate || "unknown"),
+        ) || "null",
+      );
+    } catch {
+      return null;
+    }
+  }
+
+  function buildManagerReviewReportSection(reportDate = date) {
+    const review = readManagerDailyReviewForReport(reportDate);
+    const reviewChecklist = [
+      "action_center_reviewed",
+      "asset_issues_checked",
+      "financial_signoffs_checked",
+      "alerts_attention_checked",
+      "daily_report_reviewed",
+    ];
+
+    const checkedCount = review
+      ? reviewChecklist.filter((item) => review.checked?.[item]).length
+      : 0;
+
+    const signed = Boolean(review?.signedOffAt);
+
+    return [
+      "",
+      "Manager daily review",
+      `Status: ${signed ? "Signed" : checkedCount ? "Open" : "Not started"}`,
+      `Checks: ${checkedCount}/${reviewChecklist.length}`,
+      `Signed by: ${review?.signedOffBy || "-"}`,
+      `Signed at: ${review?.signedOffAt ? formatDateTime(review.signedOffAt) : "-"}`,
+      `Notes: ${review?.notes?.trim() || "-"}`,
+    ];
+  }
+
   function buildDailyReport() {
     const lines = [
       "Mesh Shift Log - Daily report",
@@ -5672,6 +5712,16 @@ function ManagerDashboard({
     setMessage("Last 7 days loaded from Supabase.");
   }
 
+  function buildDailyReportWithManagerReview() {
+    let report = buildDailyReport();
+
+    if (!report.includes("Manager daily review")) {
+      report = `${report}\n${buildManagerReviewReportSection().join("\n")}`;
+    }
+
+    return report;
+  }
+
   async function copyBackendDailyReport() {
     let history = backendHistory;
     let source = "supabase";
@@ -5686,6 +5736,10 @@ function ManagerDashboard({
       source = "local_cache";
       report = `Local cache report\n\n${buildDailyReport()}`;
     }
+    if (!report.includes("Manager daily review")) {
+      report = `${report}\n${buildManagerReviewReportSection().join("\n")}`;
+    }
+
     setDailyReportText(report);
     try {
       await navigator.clipboard.writeText(report);
@@ -5778,7 +5832,7 @@ function ManagerDashboard({
   }
 
   async function copyDailyReport() {
-    const report = buildDailyReport();
+    const report = buildDailyReportWithManagerReview();
     setDailyReportText(report);
     try {
       await navigator.clipboard.writeText(report);
@@ -8279,7 +8333,7 @@ values
           className="report-textarea"
           readOnly
           rows="14"
-          value={dailyReportText || buildDailyReport()}
+          value={dailyReportText || buildDailyReportWithManagerReview()}
           aria-label="Daily report text"
         />
       </section>
