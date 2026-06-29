@@ -511,6 +511,56 @@ function taskNeedsInput(task) {
   return task.inputType && task.inputType !== "none";
 }
 
+function isOptionalTask(task) {
+  return (
+    task.optional === true ||
+    task.shiftType === "monthly" ||
+    ["monthly", "quiet_time"].includes(task.recurring?.type)
+  );
+}
+
+function normalizeGuide(guide) {
+  return {
+    id: guide.id || slug(guide.title || "guide"),
+    title: guide.title || "Guide",
+    category: guide.category || "Guide",
+    area: guide.area || "general",
+    body: guide.body || "",
+    steps: Array.isArray(guide.steps) ? guide.steps : [],
+    images: Array.isArray(guide.images) ? guide.images : [],
+    relatedTaskIds: Array.isArray(guide.relatedTaskIds)
+      ? guide.relatedTaskIds
+      : [],
+    tags: Array.isArray(guide.tags) ? guide.tags : [],
+  };
+}
+
+function findGuideById(guideId) {
+  if (!guideId) return null;
+  return knowledgeBase.map(normalizeGuide).find((guide) => guide.id === guideId);
+}
+
+function getTaskImages(task, guide) {
+  const guideImages = Array.isArray(guide?.images) ? guide.images : [];
+  const taskRefs = [
+    ...(Array.isArray(task.imageIds) ? task.imageIds : []),
+    ...(Array.isArray(task.imageRefs) ? task.imageRefs : []),
+  ];
+  const directTaskImages = taskRefs
+    .filter((ref) => ref && !guideImages.some((image) => image.id === ref))
+    .map((ref) => ({
+      id: ref,
+      label: "Task image",
+      src: "",
+    }));
+  return [
+    ...(taskRefs.length
+      ? guideImages.filter((image) => taskRefs.includes(image.id))
+      : guideImages),
+    ...directTaskImages,
+  ];
+}
+
 function hasDeviation(log) {
   if (!log) return false;
   if (log.status === "not_relevant") return true;
@@ -1255,6 +1305,7 @@ function isResponsibleUser(user, assignment) {
 }
 
 function getShiftStats(tasks, logsByTask) {
+  const requiredTasks = tasks.filter((task) => !isOptionalTask(task));
   const done = tasks.filter(
     (task) => logsByTask[task.id]?.status === "done",
   ).length;
@@ -1262,11 +1313,22 @@ function getShiftStats(tasks, logsByTask) {
     (task) => logsByTask[task.id]?.status === "not_relevant",
   ).length;
   const handled = done + notRelevant;
-  const missing = Math.max(tasks.length - handled, 0);
-  const criticalMissing = tasks.filter(
+  const requiredHandled = requiredTasks.filter((task) =>
+    isHandled(logsByTask[task.id]),
+  ).length;
+  const missing = Math.max(requiredTasks.length - requiredHandled, 0);
+  const criticalMissing = requiredTasks.filter(
     (task) => task.priority === "critical" && !isHandled(logsByTask[task.id]),
   ).length;
-  return { done, notRelevant, handled, missing, criticalMissing };
+  return {
+    done,
+    notRelevant,
+    handled,
+    missing,
+    criticalMissing,
+    requiredTotal: requiredTasks.length,
+    optionalTotal: tasks.length - requiredTasks.length,
+  };
 }
 
 function alertStatus(alert) {
@@ -1854,13 +1916,10 @@ function ShiftPicker({
     const shiftLogs = logs.filter(
       (log) => log.date === date && log.shiftType === shiftType,
     );
-    const handled = shiftLogs.filter(isHandled).length;
-    const handledIds = new Set(
-      shiftLogs.filter(isHandled).map((log) => log.taskId),
+    const logsByTask = Object.fromEntries(
+      shiftLogs.map((log) => [log.taskId, log]),
     );
-    const criticalRemaining = tasks.filter(
-      (task) => task.priority === "critical" && !handledIds.has(task.id),
-    ).length;
+    const stats = getShiftStats(tasks, logsByTask);
     const hasHandover = Object.values(handoverNotes).some(
       (note) =>
         note.date === date &&
@@ -1873,8 +1932,9 @@ function ShiftPicker({
     const responsibleText = responsible
       ? ` | responsible: ${responsible.responsibleName}`
       : "";
-    if (shiftType === "weekly") return `${handled}/${tasks.length} handled`;
-    return `${handled}/${tasks.length} handled | ${criticalRemaining} critical | handover ${hasHandover ? "yes" : "no"}${responsibleText}`;
+    if (["weekly", "monthly"].includes(shiftType))
+      return `${stats.handled}/${tasks.length} handled${stats.optionalTotal ? " | optional" : ""}`;
+    return `${stats.handled}/${tasks.length} handled | ${stats.criticalMissing} critical | handover ${hasHandover ? "yes" : "no"}${responsibleText}`;
   }
   return (
     <main className="page">
@@ -1963,6 +2023,79 @@ function TaskInput({ task, value, onChange }) {
       placeholder="Add comment"
       rows="3"
     />
+  );
+}
+
+function GuideImages({ images = [] }) {
+  const [failedImages, setFailedImages] = useState({});
+  if (!images.length) {
+    return (
+      <div className="image-placeholder">
+        Image placeholder - add final photo later.
+      </div>
+    );
+  }
+  return (
+    <div className="guide-images">
+      {images.map((image) => {
+        const imageKey = image.id || image.src || image.label;
+        const hasImage = image.src && !failedImages[imageKey];
+        return (
+          <figure key={imageKey} className="guide-image-frame">
+            {hasImage ? (
+              <img
+                src={image.src}
+                alt={image.label || "Guide image"}
+                onError={() =>
+                  setFailedImages((current) => ({
+                    ...current,
+                    [imageKey]: true,
+                  }))
+                }
+              />
+            ) : (
+              <div className="image-placeholder">
+                Image placeholder - add final photo later.
+              </div>
+            )}
+            {image.label && <figcaption>{image.label}</figcaption>}
+          </figure>
+        );
+      })}
+    </div>
+  );
+}
+
+function GuideCard({ guide, compact = false }) {
+  const normalizedGuide = normalizeGuide(guide);
+  return (
+    <article className={`guide-card ${compact ? "compact-guide" : ""}`}>
+      <div className="guide-card-header">
+        <div>
+          <p className="eyebrow">{normalizedGuide.category}</p>
+          <h2>{normalizedGuide.title}</h2>
+        </div>
+        <span>{normalizedGuide.area}</span>
+      </div>
+      <p>{normalizedGuide.body}</p>
+      {normalizedGuide.steps.length > 0 && (
+        <ol className="guide-steps">
+          {normalizedGuide.steps.map((step) => (
+            <li key={step}>{step}</li>
+          ))}
+        </ol>
+      )}
+      {normalizedGuide.images.length > 0 && (
+        <GuideImages images={normalizedGuide.images} />
+      )}
+      {normalizedGuide.tags.length > 0 && (
+        <div className="task-labels">
+          {normalizedGuide.tags.map((tag) => (
+            <span key={tag}>{tag}</span>
+          ))}
+        </div>
+      )}
+    </article>
   );
 }
 
@@ -3051,6 +3184,8 @@ function Checklist({
   const [showAlert, setShowAlert] = useState(false);
   const [restoreMessage, setRestoreMessage] = useState("");
   const [backendShiftSessionId, setBackendShiftSessionId] = useState("");
+  const [guidePanel, setGuidePanel] = useState(null);
+  const [imagePanel, setImagePanel] = useState(null);
   const syncUserKey = slug(
     user.authUserId || user.backendUserId || user.id || user.name,
   );
@@ -3282,12 +3417,10 @@ function Checklist({
           <h1>Knowledge base</h1>
         </section>
         <section className="guide-list">
-          {knowledgeBase.map((guide) => (
-            <article key={guide.title} className="guide-card">
-              <h2>{guide.title}</h2>
-              <p>{guide.body}</p>
-            </article>
-          ))}
+          {knowledgeBase.map((guide) => {
+            const normalizedGuide = normalizeGuide(guide);
+            return <GuideCard key={normalizedGuide.id} guide={normalizedGuide} />;
+          })}
         </section>
       </main>
     );
@@ -3474,6 +3607,8 @@ function Checklist({
           {sectionTasks.map((task) => {
             const log = logsByTask[task.id];
             const handled = isHandled(log);
+            const linkedGuide = findGuideById(task.guideId);
+            const taskImages = getTaskImages(task, linkedGuide);
             return (
               <article
                 key={task.id}
@@ -3498,6 +3633,7 @@ function Checklist({
                     <div className="task-labels">
                       <span>{task.area}</span>
                       <span>{task.timeBlock}</span>
+                      {isOptionalTask(task) && <span>Optional quiet-time</span>}
                       {task.requiresComment && <span>Comment required</span>}
                     </div>
                   </div>
@@ -3601,6 +3737,34 @@ function Checklist({
                   {!handled && (
                     <span className="save-as">Will save as {user.name}</span>
                   )}
+                  {task.guideId && (
+                    <button
+                      type="button"
+                      className="ghost-button compact-button"
+                      onClick={() =>
+                        setGuidePanel({
+                          task,
+                          guide: linkedGuide,
+                        })
+                      }
+                    >
+                      Guide
+                    </button>
+                  )}
+                  {taskImages.length > 0 && (
+                    <button
+                      type="button"
+                      className="ghost-button compact-button"
+                      onClick={() =>
+                        setImagePanel({
+                          title: task.title,
+                          images: taskImages,
+                        })
+                      }
+                    >
+                      See image?
+                    </button>
+                  )}
                 </div>
               </article>
             );
@@ -3679,6 +3843,49 @@ function Checklist({
             requestWriteAccess={requestWriteAccess}
           />
         </>
+      )}
+      {guidePanel && (
+        <div className="modal-backdrop" role="dialog" aria-modal="true">
+          <section className="pilot-modal guide-modal">
+            {guidePanel.guide ? (
+              <GuideCard guide={guidePanel.guide} compact />
+            ) : (
+              <div className="empty-state">
+                <h2>Guide not found</h2>
+                <p className="muted">
+                  This task is linked to a guide that has not been added yet.
+                </p>
+              </div>
+            )}
+            <div className="backup-actions">
+              <button
+                type="button"
+                className="primary-button"
+                onClick={() => setGuidePanel(null)}
+              >
+                Close
+              </button>
+            </div>
+          </section>
+        </div>
+      )}
+      {imagePanel && (
+        <div className="modal-backdrop" role="dialog" aria-modal="true">
+          <section className="pilot-modal guide-modal">
+            <p className="eyebrow">Images</p>
+            <h1>{imagePanel.title}</h1>
+            <GuideImages images={imagePanel.images} />
+            <div className="backup-actions">
+              <button
+                type="button"
+                className="primary-button"
+                onClick={() => setImagePanel(null)}
+              >
+                Close
+              </button>
+            </div>
+          </section>
+        </div>
       )}
       {showAlert && (
         <AlertManagerModal
@@ -5686,6 +5893,7 @@ function ManagerDashboard({
   const visibleTasks = allTasks.filter(
     (task) => shiftFilter === "all" || task.shiftType === shiftFilter,
   );
+  const requiredVisibleTasks = visibleTasks.filter((task) => !isOptionalTask(task));
   const rawDateLogs = logs.filter((log) => log.date === date);
   const dateLogs = uniqueTaskLogsForDashboard(rawDateLogs);
   const dateFinishRecords = finishRecords.filter(
@@ -5713,11 +5921,13 @@ function ManagerDashboard({
   const handledIds = new Set(
     dateLogs.filter(isHandled).map((log) => log.taskId),
   );
-  const missingTasks = visibleTasks.filter((task) => !handledIds.has(task.id));
+  const missingTasks = requiredVisibleTasks.filter(
+    (task) => !handledIds.has(task.id),
+  );
   const criticalMissing = missingTasks.filter(
     (task) => task.priority === "critical",
   );
-  const visibleCritical = visibleTasks.filter(
+  const visibleCritical = requiredVisibleTasks.filter(
     (task) => task.priority === "critical",
   );
   const criticalPanelTasks = showAllCritical
@@ -5930,15 +6140,17 @@ function ManagerDashboard({
     activeShifts.forEach((shift) => {
       const shiftTasks = flattenTasks(routines, shift.id, date);
       const shiftLogs = dateLogs.filter((log) => log.shiftType === shift.id);
+      const shiftLogsByTask = Object.fromEntries(
+        shiftLogs.map((log) => [log.taskId, log]),
+      );
+      const shiftStats = getShiftStats(shiftTasks, shiftLogsByTask);
       const done = shiftLogs.filter((log) => log.status === "done").length;
       const notRelevant = shiftLogs.filter(
         (log) => log.status === "not_relevant",
       ).length;
       const handled = done + notRelevant;
-      const missing = Math.max(shiftTasks.length - handled, 0);
-      const criticalMissingCount = shiftTasks.filter(
-        (task) => task.priority === "critical" && !handledIds.has(task.id),
-      ).length;
+      const missing = shiftStats.missing;
+      const criticalMissingCount = shiftStats.criticalMissing;
       const staff = [...new Set(shiftLogs.map((log) => log.completedBy))];
       const shiftHandovers = visibleHandovers.filter(
         (note) => note.shiftType === shift.id,
@@ -5969,6 +6181,8 @@ function ManagerDashboard({
       lines.push(`Not relevant: ${notRelevant}`);
       lines.push(`Missing: ${missing}`);
       lines.push(`Critical missing: ${criticalMissingCount}`);
+      if (shiftStats.optionalTotal)
+        lines.push(`Optional quiet-time tasks: ${shiftStats.optionalTotal}`);
       lines.push(`Staff: ${staff.length ? staff.join(", ") : "None logged"}`);
       if (shiftHandovers.length) {
         lines.push("");
@@ -13100,4 +13314,3 @@ function App() {
     </>
   );
 }
-

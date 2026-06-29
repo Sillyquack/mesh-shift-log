@@ -114,6 +114,10 @@ a:focus-visible {
   -webkit-overflow-scrolling: touch;
 }
 
+.guide-modal {
+  width: min(100%, 720px);
+}
+
 .pilot-modal h1 {
   font-size: clamp(1.7rem, 7vw, 2.4rem);
 }
@@ -862,10 +866,89 @@ textarea {
   padding: 18px;
 }
 
+.guide-card-header {
+  display: flex;
+  min-width: 0;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 12px;
+}
+
+.guide-card-header h2 {
+  margin: 0;
+  font-size: 1.12rem;
+}
+
+.guide-card-header > span {
+  border-radius: 999px;
+  background: var(--surface-strong);
+  color: var(--muted);
+  padding: 5px 8px;
+  font-size: 0.76rem;
+  font-weight: 800;
+  white-space: nowrap;
+}
+
 .guide-card p {
   margin-bottom: 0;
   color: var(--muted);
   line-height: 1.45;
+}
+
+.compact-guide {
+  border: 0;
+  box-shadow: none;
+  padding: 0;
+}
+
+.guide-steps {
+  display: grid;
+  gap: 7px;
+  margin: 14px 0 0;
+  padding-left: 22px;
+  color: var(--text);
+  line-height: 1.4;
+}
+
+.guide-images {
+  display: grid;
+  gap: 10px;
+  margin-top: 14px;
+}
+
+.guide-image-frame {
+  display: grid;
+  gap: 6px;
+  margin: 0;
+}
+
+.guide-image-frame img,
+.image-placeholder {
+  width: 100%;
+  min-height: 180px;
+  border: 1px dashed var(--line);
+  border-radius: 8px;
+  background: var(--surface-strong);
+}
+
+.guide-image-frame img {
+  display: block;
+  object-fit: contain;
+}
+
+.image-placeholder {
+  display: grid;
+  place-items: center;
+  color: var(--muted);
+  padding: 18px;
+  text-align: center;
+  font-weight: 800;
+}
+
+.guide-image-frame figcaption {
+  color: var(--muted);
+  font-size: 0.84rem;
+  font-weight: 800;
 }
 
 .handover-panel,
