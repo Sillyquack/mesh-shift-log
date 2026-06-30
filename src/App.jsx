@@ -132,6 +132,7 @@ const SESSION_KEY = "mesh-current-user-v1";
 const OPERATOR_KEY = "mesh-current-operator-v1";
 const EVENT_CODE_ACCESS_KEY = "mesh-event-code-access-v1";
 const ROLE_MODE_KEY = "mesh-current-role-mode-v1";
+const SHIFT_SCOPE_KEY = "mesh-current-shift-scope-v1";
 const HANDOVER_KEY = "mesh-handover-notes-v1";
 const PILOT_NOTICE_KEY = "mesh-pilot-notice-accepted-v1";
 const LAST_EXPORT_KEY = "mesh-last-export-at-v1";
@@ -247,6 +248,61 @@ const protectedSiteAccessShifts = new Set([
   "event",
   "other_support",
 ]);
+
+const allOperationalShiftIds = [
+  "opening",
+  "daytime",
+  "closing",
+  "event",
+  "weekly",
+  "monthly",
+  "other_support",
+];
+
+const shiftScopeOptions = {
+  opening: {
+    selectedScope: "opening",
+    allowedShifts: ["opening"],
+    label: "Opening shift",
+    defaultShift: "opening",
+  },
+  daytime: {
+    selectedScope: "daytime",
+    allowedShifts: ["daytime"],
+    label: "Daytime shift",
+    defaultShift: "daytime",
+  },
+  closing: {
+    selectedScope: "closing",
+    allowedShifts: ["closing"],
+    label: "Closing shift",
+    defaultShift: "closing",
+  },
+  event: {
+    selectedScope: "event",
+    allowedShifts: ["event"],
+    label: "Event shift",
+    defaultShift: "event",
+  },
+  other_support: {
+    selectedScope: "other_support",
+    allowedShifts: ["other_support"],
+    label: "Other / Support tasks",
+    defaultShift: "other_support",
+  },
+  double_opening_closing: {
+    selectedScope: "double_opening_closing",
+    allowedShifts: ["opening", "closing"],
+    label: "Double shift",
+    defaultShift: "opening",
+  },
+  manager_all: {
+    selectedScope: "manager_all",
+    allowedShifts: allOperationalShiftIds,
+    label: "Manager all shifts",
+    defaultShift: "overview",
+  },
+};
 
 const defaultAssets = [
   {
@@ -538,6 +594,73 @@ function normalizeRoleMode(record, user) {
     userId: record.userId || userId,
     label: record.label || option.label,
   };
+}
+
+function shiftScopeUserId(user, operator) {
+  return (
+    operator?.name ||
+    user?.operatorName ||
+    user?.authUserId ||
+    user?.backendUserId ||
+    user?.id ||
+    user?.code ||
+    user?.name ||
+    ""
+  );
+}
+
+function defaultShiftForScope(scope) {
+  if (scope === "double_opening_closing") {
+    return getOsloTimeParts().minutesSinceMidnight < 11 * 60
+      ? "opening"
+      : "closing";
+  }
+  return shiftScopeOptions[scope]?.defaultShift || scope;
+}
+
+function normalizeShiftScope(record, user, operator) {
+  if (!record || typeof record !== "object") return null;
+  const option = shiftScopeOptions[record.selectedScope];
+  if (!option) return null;
+  if (record.date !== getOsloDateKey()) return null;
+  const userId = shiftScopeUserId(user, operator);
+  if (userId && record.userId && record.userId !== userId) return null;
+  return {
+    date: record.date,
+    userId: record.userId || userId,
+    operatorName: record.operatorName || operator?.name || user?.name || "",
+    selectedScope: option.selectedScope,
+    allowedShifts: option.allowedShifts,
+    label: record.label || option.label,
+    selectedAt: record.selectedAt || new Date().toISOString(),
+  };
+}
+
+function makeShiftScope(scope, user, operator) {
+  const option = shiftScopeOptions[scope];
+  if (!option) return null;
+  return {
+    date: getOsloDateKey(),
+    userId: shiftScopeUserId(user, operator),
+    operatorName: operator?.name || user?.operatorName || user?.name || "",
+    selectedScope: option.selectedScope,
+    allowedShifts: option.allowedShifts,
+    label: option.label,
+    selectedAt: new Date().toISOString(),
+  };
+}
+
+function canWorkInShiftScope(shiftType, scope, user) {
+  if (isManager(user)) return true;
+  if (["overview", "guides"].includes(shiftType)) return true;
+  return Boolean(scope?.allowedShifts?.includes(shiftType));
+}
+
+function shiftScopeBlockMessage(shiftType, scope) {
+  if (shiftType === "closing" || shiftType === "opening") {
+    return "This shift is not part of your selected role today. Choose Double shift if you are covering both Opening and Closing.";
+  }
+  return `${shiftLabels[shiftType] || "This shift"} is not part of your selected role today.`;
 }
 
 function formatDateTime(value) {
@@ -2099,6 +2222,7 @@ function TopBar({
   user,
   selectedShift,
   currentRoleMode,
+  currentShiftScope,
   currentOperator,
   onChangeOperator,
   onChangeRole,
@@ -2150,6 +2274,9 @@ function TopBar({
         </span>
         {currentRoleMode?.label && (
           <span className="shift-pill">{currentRoleMode.label}</span>
+        )}
+        {currentShiftScope?.label && (
+          <span className="shift-pill">{currentShiftScope.label}</span>
         )}
         <span className={`shift-pill site-${siteAccessStatus}`}>
           {siteStatuses[siteAccessStatus] || "Location unknown"}
@@ -2208,6 +2335,7 @@ const operatorRoleLabelOptions = [
   { label: "Opening shift", shiftId: "opening" },
   { label: "Daytime shift", shiftId: "daytime" },
   { label: "Closing shift", shiftId: "closing" },
+  { label: "Double shift / Opening + Closing", shiftId: "double_opening_closing" },
   { label: "Event shift", shiftId: "event" },
   { label: "Training shift", shiftId: "training" },
   { label: "Extra / support shift", shiftId: "support" },
@@ -2532,7 +2660,9 @@ function ShiftPicker({
     } else {
       setShiftAccessMessage("");
     }
-    onSelect(shiftId);
+    const result = await onSelect(shiftId);
+    if (result?.ok === false || result?.allowed === false)
+      setShiftAccessMessage(result.message);
   }
 
   return (
@@ -2580,6 +2710,14 @@ function ShiftPicker({
             );
           })()
         ))}
+        <button
+          className="shift-card"
+          type="button"
+          onClick={() => selectShift("double_opening_closing")}
+        >
+          <span>Double shift / Opening + Closing</span>
+          <small>Work both opening and closing within time rules</small>
+        </button>
         {canAccessManagerDashboard(user) && (
           <button
             className="shift-card manager-card"
@@ -2853,6 +2991,15 @@ function StaffDashboard({
   cashSignoffs,
   assetChecks,
   alertBackendStatus,
+  currentShiftScope,
+  eventAccessIsValid,
+  canShowEventCodeStatus,
+  siteAccessStatus,
+  siteAccessLabel,
+  osloTimeLabel,
+  onOpenMyShift,
+  onOpenGuides,
+  onChangeShift,
   refreshAlerts,
   onAlert,
 }) {
@@ -2901,10 +3048,38 @@ function StaffDashboard({
         <h1>Today's overview</h1>
         <p className="muted">Active user: {user.name}</p>
         <p className="muted">
+          Oslo time: {osloTimeLabel}
+          {currentShiftScope?.label ? ` | Current scope: ${currentShiftScope.label}` : ""}
+          {siteAccessLabel ? ` | Site access: ${siteAccessLabel}` : ""}
+        </p>
+        <p className="muted">
           Thanks to everyone keeping the day moving. Completed tasks are shown
           for transparency, not competition.
         </p>
         <div className="inline-actions">
+          {currentShiftScope && (
+            <button
+              type="button"
+              className="primary-button compact-button"
+              onClick={onOpenMyShift}
+            >
+              My shift
+            </button>
+          )}
+          <button
+            type="button"
+            className="ghost-button compact-button"
+            onClick={onOpenGuides}
+          >
+            Guides
+          </button>
+          <button
+            type="button"
+            className="ghost-button compact-button"
+            onClick={onChangeShift}
+          >
+            Change shift
+          </button>
           <button
             type="button"
             className="ghost-button compact-button"
@@ -2927,6 +3102,11 @@ function StaffDashboard({
             ? ` | ${alertBackendStatus.unsyncedLocalAlertCount} waiting to sync`
             : ""}
         </p>
+        {canShowEventCodeStatus && (
+          <p className="muted">
+            Daily event code: {eventAccessIsValid ? "validated for this session" : "not validated for this session"}
+          </p>
+        )}
       </section>
 
       <section className="summary-grid">
@@ -3782,7 +3962,9 @@ function Checklist({
   onSyncHandover,
   onSyncFinancialSignoff,
   onRestoreShiftData,
+  currentShiftScope,
   onShowOverview,
+  onOpenGuides,
   onChangeShift,
   onLogout,
 }) {
@@ -3867,8 +4049,16 @@ function Checklist({
   });
   const grouped = groupBy(visibleTasks, (task) => task.section);
   const allGrouped = groupBy(tasks, (task) => task.section);
+  const canWorkThisShift = canWorkInShiftScope(shiftType, currentShiftScope, user);
+
+  function ensureScopeAllowed(taskShiftType = shiftType) {
+    if (canWorkInShiftScope(taskShiftType, currentShiftScope, user)) return true;
+    window.alert(shiftScopeBlockMessage(taskShiftType, currentShiftScope));
+    return false;
+  }
 
   async function saveTaskStatus(task, status) {
+    if (!ensureScopeAllowed(task.shiftType)) return;
     if (!(await requestWriteAccess())) return;
     const input = drafts[task.id] || "";
     const comment = comments[task.id] || "";
@@ -3939,6 +4129,7 @@ function Checklist({
   }
 
   function clearTask(task) {
+    if (!ensureScopeAllowed(task.shiftType)) return;
     const resetLog = {
       id: `${date}-${task.id}`,
       localId: `task_completion:${date}:${task.shiftType}:${task.id}:${syncUserKey}`,
@@ -4006,6 +4197,7 @@ function Checklist({
   }
 
   async function finishShift() {
+    if (!ensureScopeAllowed(shiftType)) return;
     if (!(await requestWriteAccess())) return;
     if (
       criticalRemaining > 0 &&
@@ -4163,6 +4355,14 @@ function Checklist({
             {assignment.note ? ` ${assignment.note}` : ""}
           </p>
         )}
+        {currentShiftScope?.label && (
+          <p className={canWorkThisShift ? "all-clear" : "critical-warning"}>
+            Scope: {currentShiftScope.label}
+            {canWorkThisShift
+              ? " | You can complete this shift."
+              : ` | ${shiftScopeBlockMessage(shiftType, currentShiftScope)}`}
+          </p>
+        )}
         {shiftType === "closing" && (
           <section className="readiness-card">
             <strong>
@@ -4178,6 +4378,27 @@ function Checklist({
           </section>
         )}
         <div className="backup-actions">
+          <button
+            type="button"
+            className="primary-button compact-button"
+            onClick={onShowOverview}
+          >
+            Today's overview
+          </button>
+          <button
+            type="button"
+            className="ghost-button compact-button"
+            onClick={onOpenGuides}
+          >
+            Guides
+          </button>
+          <button
+            type="button"
+            className="ghost-button compact-button"
+            onClick={onChangeShift}
+          >
+            Change shift
+          </button>
           <a className="handover-jump" href="#handover-notes">
             Jump to handover notes
           </a>
@@ -11065,6 +11286,13 @@ function App() {
   const [currentOperator, setCurrentOperator] = useState(() =>
     normalizeOperator(readStorage(OPERATOR_KEY, null)),
   );
+  const [currentShiftScope, setCurrentShiftScope] = useState(() =>
+    normalizeShiftScope(
+      readStorage(SHIFT_SCOPE_KEY, null),
+      readStorage(SESSION_KEY, null),
+      normalizeOperator(readStorage(OPERATOR_KEY, null)),
+    ),
+  );
   const [eventCodeAccess, setEventCodeAccess] = useState(() =>
     readStorage(EVENT_CODE_ACCESS_KEY, null),
   );
@@ -13021,8 +13249,10 @@ function App() {
     localStorage.removeItem(OPERATOR_KEY);
     localStorage.removeItem(EVENT_CODE_ACCESS_KEY);
     localStorage.removeItem(ROLE_MODE_KEY);
+    localStorage.removeItem(SHIFT_SCOPE_KEY);
     setUser(null);
     setCurrentOperator(null);
+    setCurrentShiftScope(null);
     setEventCodeAccess(null);
     setCurrentRoleMode(null);
     setSelectedShift(null);
@@ -13793,6 +14023,16 @@ function App() {
     if (!normalized) localStorage.removeItem(ROLE_MODE_KEY);
   }, [user?.id, user?.authUserId, user?.code, user?.name]);
 
+  useEffect(() => {
+    const normalized = normalizeShiftScope(
+      readStorage(SHIFT_SCOPE_KEY, null),
+      user,
+      currentOperator,
+    );
+    setCurrentShiftScope(normalized);
+    if (!normalized) localStorage.removeItem(SHIFT_SCOPE_KEY);
+  }, [user?.id, user?.authUserId, user?.code, user?.name, currentOperator?.name]);
+
   if (!user) {
     return (
       <>
@@ -13852,6 +14092,55 @@ function App() {
     else localStorage.removeItem(OPERATOR_KEY);
   }
 
+  function saveCurrentShiftScope(scope, scopeUser = effectiveUser, operator = currentOperator) {
+    const nextScope = makeShiftScope(scope, scopeUser, operator);
+    if (!nextScope) return null;
+    setCurrentShiftScope(nextScope);
+    saveStorage(SHIFT_SCOPE_KEY, nextScope);
+    return nextScope;
+  }
+
+  async function setShiftScopeAndOpen(
+    scope,
+    scopeUser = effectiveUser,
+    operator = currentOperator,
+    options = {},
+  ) {
+    const nextScope = makeShiftScope(scope, scopeUser, operator);
+    if (!nextScope) return { ok: false, message: "Shift scope not available." };
+    const targetShift = defaultShiftForScope(scope);
+    const timeAccess = getShiftAccessStatus(targetShift, scopeUser);
+    if (!timeAccess.allowed) return timeAccess;
+    const siteAccessResult = await checkShiftSiteAccess(targetShift, scopeUser);
+    if (!siteAccessResult.allowed) return siteAccessResult;
+    setCurrentShiftScope(nextScope);
+    saveStorage(SHIFT_SCOPE_KEY, nextScope);
+    setSelectedShift(options.openTarget ? targetShift : "overview");
+    setShowManager(false);
+    setShowEventFloorManager(false);
+    return { ok: true, shiftId: targetShift, scope: nextScope };
+  }
+
+  function clearShiftScopeAndSelection() {
+    setSelectedShift(null);
+    setCurrentShiftScope(null);
+    localStorage.removeItem(SHIFT_SCOPE_KEY);
+  }
+
+  async function openMyShiftFromScope() {
+    if (!activeShiftScope) {
+      setSelectedShift(null);
+      return;
+    }
+    const targetShift = defaultShiftForScope(activeShiftScope.selectedScope);
+    const siteAccessResult = await checkShiftSiteAccess(targetShift, effectiveUser);
+    if (!siteAccessResult.allowed) {
+      window.alert(siteAccessResult.message);
+      return;
+    }
+    setSelectedShift(targetShift);
+  }
+
   async function checkShiftSiteAccess(shiftId, actorUser = effectiveUser) {
     if (!protectedSiteAccessShifts.has(shiftId)) {
       return { allowed: true, blocked: false, message: "" };
@@ -13883,22 +14172,37 @@ function App() {
 
   async function saveCurrentOperatorAndRoute(operator) {
     const operatorShiftId = shiftIdForOperatorRoleLabel(operator?.roleLabel);
+    const operatorUser = userForActor(user, {
+      operatorName: operator?.name,
+      operatorSource: operator?.source,
+      operatorRoleLabel: operator?.roleLabel,
+      authDisplayName: user?.name || "",
+      isSharedDevice: true,
+    });
+    const scopeId =
+      operatorShiftId === "double_opening_closing"
+        ? "double_opening_closing"
+        : shiftScopeOptions[operatorShiftId]?.selectedScope || operatorShiftId;
+    if (!shiftScopeOptions[scopeId]) {
+      saveCurrentOperator(operator);
+      setSelectedShift(null);
+      setShowManager(false);
+      setShowEventFloorManager(false);
+      return { ok: true };
+    }
+    const targetShift = defaultShiftForScope(scopeId);
+    const timeAccess = getShiftAccessStatus(targetShift, operatorUser);
+    if (!timeAccess.allowed) return timeAccess;
     const siteAccessResult = await checkShiftSiteAccess(
-      operatorShiftId,
-      userForActor(user, {
-        operatorName: operator?.name,
-        operatorSource: operator?.source,
-        operatorRoleLabel: operator?.roleLabel,
-        authDisplayName: user?.name || "",
-        isSharedDevice: true,
-      }),
+      targetShift,
+      operatorUser,
     );
     if (!siteAccessResult.allowed) return siteAccessResult;
     saveCurrentOperator(operator);
-    if (operatorShiftId === "event") {
-      setSelectedShift("event");
-      setShowManager(false);
-    }
+    saveCurrentShiftScope(scopeId, operatorUser, operator);
+    setSelectedShift(scopeId === "event" ? "event" : "overview");
+    setShowManager(false);
+    setShowEventFloorManager(false);
     return { ok: true };
   }
 
@@ -13920,27 +14224,39 @@ function App() {
     setCurrentRoleMode(record);
     setShowManager(false);
     setShowEventFloorManager(false);
-    setSelectedShift(roleMode === "other_support" ? "other_support" : null);
+    if (roleMode === "other_support") {
+      saveCurrentShiftScope("other_support");
+      setSelectedShift("overview");
+    } else {
+      setSelectedShift(null);
+    }
     return { ok: true };
   }
 
   function clearRoleMode() {
     localStorage.removeItem(ROLE_MODE_KEY);
     setCurrentRoleMode(null);
-    setSelectedShift(null);
+    clearShiftScopeAndSelection();
     setShowManager(false);
     setShowEventFloorManager(false);
   }
 
   const effectiveActor = getEffectiveActor(user, currentOperator);
   const effectiveUser = userForActor(user, effectiveActor);
+  const activeShiftScope = normalizeShiftScope(
+    currentShiftScope,
+    effectiveUser,
+    currentOperator,
+  );
   const userCanChooseRoleMode = canUseEventFloorDashboard(user);
   const activeRoleMode = userCanChooseRoleMode
     ? normalizeRoleMode(currentRoleMode, user)
     : null;
   const activeShift =
     selectedShift ||
-    (activeRoleMode?.roleMode === "other_support" ? "other_support" : null);
+    (activeRoleMode?.roleMode === "other_support" && activeShiftScope
+      ? "overview"
+      : null);
   const selectedShiftAccess = getShiftAccessStatus(activeShift, effectiveUser);
   const eventCodeDate = getOsloDateKey();
   const eventAccessIsValid =
@@ -13957,8 +14273,12 @@ function App() {
     activeShift &&
     !["guides", "overview"].includes(activeShift) &&
     !selectedShiftAccess.allowed;
+  const selectedScopeBlocked =
+    activeShift &&
+    !["guides", "overview"].includes(activeShift) &&
+    !canWorkInShiftScope(activeShift, activeShiftScope, effectiveUser);
   const canOpenOperationalView =
-    (!sharedDeviceNeedsOperator && !selectedShiftBlocked) ||
+    (!sharedDeviceNeedsOperator && !selectedShiftBlocked && !selectedScopeBlocked) ||
     activeShift === "guides" ||
     activeShift === "overview";
 
@@ -13972,18 +14292,21 @@ function App() {
             : activeShift
         }
         currentRoleMode={activeRoleMode}
+        currentShiftScope={activeShiftScope}
         currentOperator={currentOperator}
         onChangeOperator={() => {
           setSelectedShift(null);
           setShowManager(false);
           setShowEventFloorManager(false);
+          setCurrentShiftScope(null);
+          localStorage.removeItem(SHIFT_SCOPE_KEY);
           saveCurrentOperator(null);
         }}
         onChangeRole={activeRoleMode ? clearRoleMode : null}
         isOnline={isOnline}
         siteAccessStatus={siteAccessStatus}
         onBack={() => {
-          setSelectedShift(null);
+          clearShiftScopeAndSelection();
           setShowManager(false);
           setShowEventFloorManager(false);
         }}
@@ -14092,7 +14415,15 @@ function App() {
         ) : (
           <ShiftPicker
             user={effectiveUser}
-            onSelect={setSelectedShift}
+            onSelect={(shiftId) => {
+              if (shiftId === "overview" || shiftId === "guides") {
+                setSelectedShift(shiftId);
+                return { ok: true };
+              }
+              return setShiftScopeAndOpen(shiftId, effectiveUser, currentOperator, {
+                openTarget: shiftId === "event",
+              });
+            }}
             onCheckShiftAccess={(shiftId) =>
               checkShiftSiteAccess(shiftId, effectiveUser)
             }
@@ -14105,22 +14436,33 @@ function App() {
         ))}
       {activeShift &&
         !showManager &&
-        selectedShiftBlocked && (
+        (selectedShiftBlocked || selectedScopeBlocked) && (
           <main className="page">
             <section className="empty-state">
               <h2>Shift not available</h2>
               <p className="muted">
-                {activeShift === "opening"
-                  ? "Opening shift is closed for today after 11:00 Oslo time."
-                  : "Closing shift is not available before 11:00 Oslo time."}
+                {selectedScopeBlocked
+                  ? shiftScopeBlockMessage(activeShift, activeShiftScope)
+                  : activeShift === "opening"
+                    ? "Opening shift is closed for today after 11:00 Oslo time."
+                    : "Closing shift is not available before 11:00 Oslo time."}
               </p>
-              <p className="muted">
-                Oslo time: {selectedShiftAccess.osloTime.label}
-              </p>
+              {selectedShiftBlocked && (
+                <p className="muted">
+                  Oslo time: {selectedShiftAccess.osloTime.label}
+                </p>
+              )}
+              {activeShiftScope?.label && (
+                <p className="muted">Current scope: {activeShiftScope.label}</p>
+              )}
               <button
                 type="button"
                 className="primary-button"
-                onClick={() => setSelectedShift(null)}
+                onClick={() => {
+                  setSelectedShift(null);
+                  setCurrentShiftScope(null);
+                  localStorage.removeItem(SHIFT_SCOPE_KEY);
+                }}
               >
                 Choose another shift
               </button>
@@ -14130,6 +14472,7 @@ function App() {
       {activeShift &&
         !showManager &&
         !selectedShiftBlocked &&
+        !selectedScopeBlocked &&
         eventCodeNeeded && (
           <EventCodeGate
             user={effectiveUser}
@@ -14138,13 +14481,14 @@ function App() {
               setEventCodeAccess(accessRecord);
               saveStorage(EVENT_CODE_ACCESS_KEY, accessRecord);
             }}
-            onCancel={() => setSelectedShift(null)}
+            onCancel={clearShiftScopeAndSelection}
             onGuides={() => setSelectedShift("guides")}
           />
         )}
       {activeShift &&
         !showManager &&
         !selectedShiftBlocked &&
+        !selectedScopeBlocked &&
         !eventCodeNeeded &&
         !canOpenOperationalView && (
           <main className="page">
@@ -14160,6 +14504,7 @@ function App() {
       {activeShift &&
         !showManager &&
         !selectedShiftBlocked &&
+        !selectedScopeBlocked &&
         !eventCodeNeeded &&
         canOpenOperationalView &&
         (activeShift === "overview" ? (
@@ -14175,6 +14520,15 @@ function App() {
             cashSignoffs={cashSignoffs}
             assetChecks={assetChecks}
             alertBackendStatus={alertBackendStatus}
+            currentShiftScope={activeShiftScope}
+            eventAccessIsValid={eventAccessIsValid}
+            canShowEventCodeStatus={canGenerateEventCode(effectiveUser)}
+            siteAccessStatus={siteAccessStatus}
+            siteAccessLabel={siteStatuses[siteAccessStatus] || "Location unknown"}
+            osloTimeLabel={getOsloTimeParts().label}
+            onOpenMyShift={openMyShiftFromScope}
+            onOpenGuides={() => setSelectedShift("guides")}
+            onChangeShift={clearShiftScopeAndSelection}
             refreshAlerts={loadSupabaseAlerts}
             onAlert={() => setShowGlobalAlert(true)}
           />
@@ -14205,10 +14559,12 @@ function App() {
             onSyncHandover={syncChecklistHandover}
             onSyncFinancialSignoff={syncFinancialSignoff}
             onRestoreShiftData={restoreShiftFromBackend}
+            currentShiftScope={activeShiftScope}
             onShowOverview={() => setSelectedShift("overview")}
+            onOpenGuides={() => setSelectedShift("guides")}
             onChangeShift={() => {
               if (activeRoleMode?.roleMode === "other_support") clearRoleMode();
-              else setSelectedShift(null);
+              else clearShiftScopeAndSelection();
             }}
             onLogout={logout}
           />
