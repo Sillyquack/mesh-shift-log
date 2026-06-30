@@ -240,6 +240,14 @@ const defaultSiteSettings = {
   managerOverrideEnabled: true,
 };
 
+const protectedSiteAccessShifts = new Set([
+  "opening",
+  "daytime",
+  "closing",
+  "event",
+  "other_support",
+]);
+
 const defaultAssets = [
   {
     id: "asset-adyen-workbar-1",
@@ -1315,6 +1323,70 @@ function isOverrideActive(history) {
   return activeOverride || null;
 }
 
+function hasSiteCoordinates(siteSettings) {
+  return Boolean(siteSettings?.latitude && siteSettings?.longitude);
+}
+
+function getSiteAccessGuardStatus({
+  shiftId,
+  user,
+  siteSettings,
+  siteAccess,
+  activeOverride,
+}) {
+  if (!protectedSiteAccessShifts.has(shiftId)) {
+    return { allowed: true, blocked: false, message: "" };
+  }
+  if (!siteSettings.locationCheckEnabled) {
+    return {
+      allowed: true,
+      blocked: false,
+      message: "Location check off.",
+    };
+  }
+  if (!hasSiteCoordinates(siteSettings)) {
+    return {
+      allowed: true,
+      blocked: false,
+      warning: true,
+      message: "Location guard not configured.",
+    };
+  }
+  if (
+    activeOverride &&
+    siteSettings.managerOverrideEnabled &&
+    isManager(user)
+  ) {
+    return {
+      allowed: true,
+      blocked: false,
+      override: true,
+      message: `Temporary manager override active until ${formatDateTime(activeOverride.expiresAt)}.`,
+    };
+  }
+  if (siteAccess.status === "on_site") {
+    return {
+      allowed: true,
+      blocked: false,
+      message: "On site.",
+    };
+  }
+  if (siteAccess.status === "away") {
+    return {
+      allowed: false,
+      blocked: true,
+      message:
+        "This operational shift requires being at Youngs. Guides remain available.",
+    };
+  }
+  return {
+    allowed: false,
+    blocked: true,
+    message:
+      "Check your location before starting this operational shift. Guides remain available.",
+  };
+}
+
 function toRadians(value) {
   return (Number(value) * Math.PI) / 180;
 }
@@ -2097,6 +2169,14 @@ function TopBar({
 }
 
 function RoleLauncher({ user, onSelectRole }) {
+  const [message, setMessage] = useState("");
+  async function chooseRole(roleMode) {
+    setMessage("");
+    const result = await onSelectRole(roleMode);
+    if (result?.ok === false || result?.allowed === false)
+      setMessage(result.message);
+  }
+
   return (
     <main className="page">
       <section className="intro compact role-launcher-intro">
@@ -2105,6 +2185,7 @@ function RoleLauncher({ user, onSelectRole }) {
         <p className="muted">
           Choose a role for this Oslo day. You can change it later.
         </p>
+        {message && <p className="critical-warning">{message}</p>}
       </section>
       <section className="shift-grid role-launcher-grid">
         {roleModeOptions.map((option) => (
@@ -2112,7 +2193,7 @@ function RoleLauncher({ user, onSelectRole }) {
             key={option.roleMode}
             type="button"
             className="shift-card role-card"
-            onClick={() => onSelectRole(option.roleMode)}
+            onClick={() => chooseRole(option.roleMode)}
           >
             <span>{option.label}</span>
             <small>{option.description}</small>
@@ -2152,7 +2233,7 @@ function OperatorPanel({ user, staffUsers, currentOperator, onSave, onOpenGuides
       ?.shiftId || "";
   const selectedAccess = getShiftAccessStatus(selectedShiftId, user);
 
-  function save(event) {
+  async function save(event) {
     event.preventDefault();
     setError("");
     if (!selectedAccess.allowed) {
@@ -2168,11 +2249,13 @@ function OperatorPanel({ user, staffUsers, currentOperator, onSave, onOpenGuides
       setError("Add the real name of the person working this shift.");
       return;
     }
-    onSave({
+    const result = await onSave({
       ...operator,
       setAt: new Date().toISOString(),
       setByAuthUserId: user?.authUserId || user?.backendUserId || "",
     });
+    if (result?.ok === false || result?.allowed === false)
+      setError(result.message);
   }
 
   return (
@@ -2388,6 +2471,7 @@ function EventCodeGate({
 function ShiftPicker({
   user,
   onSelect,
+  onCheckShiftAccess,
   onManager,
   routines,
   logs,
@@ -2424,7 +2508,7 @@ function ShiftPicker({
     return `${stats.handled}/${tasks.length} handled | ${stats.criticalMissing} critical | handover ${hasHandover ? "yes" : "no"}${responsibleText}`;
   }
 
-  function selectShift(shiftId) {
+  async function selectShift(shiftId) {
     const access = getShiftAccessStatus(shiftId, user);
     if (!access.allowed) {
       setShiftAccessMessage(
@@ -2434,7 +2518,20 @@ function ShiftPicker({
       );
       return;
     }
-    setShiftAccessMessage("");
+    if (onCheckShiftAccess) {
+      const siteAccessResult = await onCheckShiftAccess(shiftId);
+      if (!siteAccessResult.allowed) {
+        setShiftAccessMessage(siteAccessResult.message);
+        return;
+      }
+      if (siteAccessResult.warning) {
+        setShiftAccessMessage(siteAccessResult.message);
+      } else {
+        setShiftAccessMessage("");
+      }
+    } else {
+      setShiftAccessMessage("");
+    }
     onSelect(shiftId);
   }
 
@@ -6446,7 +6543,9 @@ function ManagerDashboard({
   );
   const assetIssues = dateAssetChecks.filter(assetHasIssue);
   const activeAssets = assets.filter((asset) => asset.active !== false);
-  const activeSiteOverride = isOverrideActive(siteOverrides);
+  const activeSiteOverride = siteSettings.managerOverrideEnabled
+    ? isOverrideActive(siteOverrides)
+    : null;
   const allTasks = activeShifts.flatMap((shift) =>
     flattenTasks(routines, shift.id, date),
   );
@@ -8718,6 +8817,10 @@ values
         <p className="muted">
           Local on-site check. This is a practical browser guardrail, not real
           security.
+        </p>
+        <p className="muted">
+          Network guard: not configured. Browsers cannot reliably read WiFi
+          network names.
         </p>
         {siteAccess.status === "away" && (
           <p className="critical-warning">
@@ -11264,7 +11367,9 @@ function App() {
   }, [assetChecks]);
 
   const activeOverride = isOverrideActive(siteOverrides);
-  const siteAccessStatus = activeOverride ? "override" : siteAccess.status;
+  const activeManagerOverride =
+    siteSettings.managerOverrideEnabled && isManager(user) ? activeOverride : null;
+  const siteAccessStatus = activeManagerOverride ? "override" : siteAccess.status;
 
   function checkLocation() {
     return new Promise((resolve) => {
@@ -11286,7 +11391,9 @@ function App() {
         const result = {
           status: "unknown",
           distance: null,
-          message: "Location unavailable",
+          message: !hasSiteCoordinates(siteSettings)
+            ? "Location guard not configured"
+            : "Location unavailable",
         };
         setSiteAccess(result);
         resolve(result);
@@ -11327,7 +11434,13 @@ function App() {
   }
 
   async function requestWriteAccess() {
-    if (!siteSettings.locationCheckEnabled || activeOverride) return true;
+    if (!siteSettings.locationCheckEnabled || activeManagerOverride) return true;
+    if (!hasSiteCoordinates(siteSettings)) {
+      window.alert(
+        "Location guard not configured\n\nSite coordinates are missing in Youngs Site Mode. Save site settings before using this as a hard guard.",
+      );
+      return true;
+    }
     const result = await checkLocation();
     if (result.status === "on_site") return true;
     window.alert(
@@ -13739,17 +13852,63 @@ function App() {
     else localStorage.removeItem(OPERATOR_KEY);
   }
 
-  function saveCurrentOperatorAndRoute(operator) {
+  async function checkShiftSiteAccess(shiftId, actorUser = effectiveUser) {
+    if (!protectedSiteAccessShifts.has(shiftId)) {
+      return { allowed: true, blocked: false, message: "" };
+    }
+    const overrideForUser =
+      siteSettings.managerOverrideEnabled && isManager(actorUser)
+        ? activeOverride
+        : null;
+    const currentStatus = getSiteAccessGuardStatus({
+      shiftId,
+      user: actorUser,
+      siteSettings,
+      siteAccess,
+      activeOverride: overrideForUser,
+    });
+    if (!siteSettings.locationCheckEnabled || !hasSiteCoordinates(siteSettings)) {
+      return currentStatus;
+    }
+    if (currentStatus.allowed) return currentStatus;
+    const checkedLocation = await checkLocation();
+    return getSiteAccessGuardStatus({
+      shiftId,
+      user: actorUser,
+      siteSettings,
+      siteAccess: checkedLocation,
+      activeOverride: overrideForUser,
+    });
+  }
+
+  async function saveCurrentOperatorAndRoute(operator) {
+    const operatorShiftId = shiftIdForOperatorRoleLabel(operator?.roleLabel);
+    const siteAccessResult = await checkShiftSiteAccess(
+      operatorShiftId,
+      userForActor(user, {
+        operatorName: operator?.name,
+        operatorSource: operator?.source,
+        operatorRoleLabel: operator?.roleLabel,
+        authDisplayName: user?.name || "",
+        isSharedDevice: true,
+      }),
+    );
+    if (!siteAccessResult.allowed) return siteAccessResult;
     saveCurrentOperator(operator);
-    if (shiftIdForOperatorRoleLabel(operator?.roleLabel) === "event") {
+    if (operatorShiftId === "event") {
       setSelectedShift("event");
       setShowManager(false);
     }
+    return { ok: true };
   }
 
-  function chooseRoleMode(roleMode) {
+  async function chooseRoleMode(roleMode) {
     const option = roleModeOptions.find((item) => item.roleMode === roleMode);
-    if (!option) return;
+    if (!option) return { ok: false, message: "Role not available." };
+    if (roleMode === "other_support") {
+      const siteAccessResult = await checkShiftSiteAccess("other_support");
+      if (!siteAccessResult.allowed) return siteAccessResult;
+    }
     const record = {
       roleMode: option.roleMode,
       selectedAt: new Date().toISOString(),
@@ -13762,6 +13921,7 @@ function App() {
     setShowManager(false);
     setShowEventFloorManager(false);
     setSelectedShift(roleMode === "other_support" ? "other_support" : null);
+    return { ok: true };
   }
 
   function clearRoleMode() {
@@ -13830,8 +13990,17 @@ function App() {
         onLogout={logout}
       />
       {siteSettings.locationCheckEnabled &&
+        !hasSiteCoordinates(siteSettings) && (
+          <p className="status-message page-status">
+            Location guard not configured. Guides and read-only areas are
+            available; save Youngs Site access coordinates before using it as a
+            hard guard.
+          </p>
+        )}
+      {siteSettings.locationCheckEnabled &&
+        hasSiteCoordinates(siteSettings) &&
         ["away", "unknown"].includes(siteAccess.status) &&
-        !activeOverride && (
+        !activeManagerOverride && (
           <p className="status-message page-status">
             You appear to be away from Youngs. You can view the app, but
             operational changes require being on site.
@@ -13924,6 +14093,9 @@ function App() {
           <ShiftPicker
             user={effectiveUser}
             onSelect={setSelectedShift}
+            onCheckShiftAccess={(shiftId) =>
+              checkShiftSiteAccess(shiftId, effectiveUser)
+            }
             onManager={() => setShowManager(true)}
             routines={routines}
             logs={logs}
