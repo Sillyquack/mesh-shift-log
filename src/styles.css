@@ -479,6 +479,25 @@ textarea {
   color: var(--critical);
 }
 
+.role-launcher-intro {
+  max-width: 680px;
+}
+
+.role-card {
+  display: grid;
+  align-content: center;
+  gap: 8px;
+}
+
+.role-card small {
+  line-height: 1.35;
+}
+
+.manager-full-button {
+  width: 100%;
+  margin-top: 10px;
+}
+
 .field-help {
   display: block;
   margin-top: 6px;

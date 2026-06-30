@@ -131,6 +131,7 @@ const ROUTINE_KEY = "mesh-routines-v1";
 const SESSION_KEY = "mesh-current-user-v1";
 const OPERATOR_KEY = "mesh-current-operator-v1";
 const EVENT_CODE_ACCESS_KEY = "mesh-event-code-access-v1";
+const ROLE_MODE_KEY = "mesh-current-role-mode-v1";
 const HANDOVER_KEY = "mesh-handover-notes-v1";
 const PILOT_NOTICE_KEY = "mesh-pilot-notice-accepted-v1";
 const LAST_EXPORT_KEY = "mesh-last-export-at-v1";
@@ -488,6 +489,46 @@ function getShiftAccessStatus(shiftId, user, date = new Date()) {
     managerOverride: blocked && managerOverride,
     message,
     osloTime,
+  };
+}
+
+const roleModeOptions = [
+  {
+    roleMode: "event_floor_manager",
+    label: "Event Floor Manager",
+    description: "Open event floor tools, event checks, and daily event code.",
+  },
+  {
+    roleMode: "cafe_staff",
+    label: "Cafe Staff",
+    description: "Open the normal shift and routine overview.",
+  },
+  {
+    roleMode: "other_support",
+    label: "Other / Support",
+    description: "Open optional support tasks for quiet-time or event help.",
+  },
+];
+
+function userRoleModeId(user) {
+  return user?.authUserId || user?.id || user?.code || user?.name || "";
+}
+
+function normalizeRoleMode(record, user) {
+  if (!record || typeof record !== "object") return null;
+  const option = roleModeOptions.find(
+    (item) => item.roleMode === record.roleMode,
+  );
+  if (!option) return null;
+  if (record.selectedDate !== getOsloDateKey()) return null;
+  const userId = userRoleModeId(user);
+  if (userId && record.userId && record.userId !== userId) return null;
+  return {
+    roleMode: option.roleMode,
+    selectedAt: record.selectedAt || new Date().toISOString(),
+    selectedDate: record.selectedDate,
+    userId: record.userId || userId,
+    label: record.label || option.label,
   };
 }
 
@@ -1985,8 +2026,10 @@ function Login({
 function TopBar({
   user,
   selectedShift,
+  currentRoleMode,
   currentOperator,
   onChangeOperator,
+  onChangeRole,
   onBack,
   onLogout,
   isOnline,
@@ -2021,9 +2064,21 @@ function TopBar({
             Change operator
           </button>
         )}
+        {currentRoleMode && onChangeRole && (
+          <button
+            type="button"
+            className="ghost-button"
+            onClick={onChangeRole}
+          >
+            Change role
+          </button>
+        )}
         <span className={`pilot-status ${isOnline ? "online" : "offline"}`}>
           Local pilot | {isOnline ? "Online" : "Offline - local data available"}
         </span>
+        {currentRoleMode?.label && (
+          <span className="shift-pill">{currentRoleMode.label}</span>
+        )}
         <span className={`shift-pill site-${siteAccessStatus}`}>
           {siteStatuses[siteAccessStatus] || "Location unknown"}
         </span>
@@ -2038,6 +2093,33 @@ function TopBar({
         </button>
       </div>
     </header>
+  );
+}
+
+function RoleLauncher({ user, onSelectRole }) {
+  return (
+    <main className="page">
+      <section className="intro compact role-launcher-intro">
+        <p className="eyebrow">Welcome, {user.display_name || user.name}</p>
+        <h1>What are you doing today?</h1>
+        <p className="muted">
+          Choose a role for this Oslo day. You can change it later.
+        </p>
+      </section>
+      <section className="shift-grid role-launcher-grid">
+        {roleModeOptions.map((option) => (
+          <button
+            key={option.roleMode}
+            type="button"
+            className="shift-card role-card"
+            onClick={() => onSelectRole(option.roleMode)}
+          >
+            <span>{option.label}</span>
+            <small>{option.description}</small>
+          </button>
+        ))}
+      </section>
+    </main>
   );
 }
 
@@ -2337,7 +2419,7 @@ function ShiftPicker({
     const responsibleText = responsible
       ? ` | responsible: ${responsible.responsibleName}`
       : "";
-    if (["weekly", "monthly"].includes(shiftType))
+    if (["weekly", "monthly", "other_support"].includes(shiftType))
       return `${stats.handled}/${tasks.length} handled${stats.optionalTotal ? " | optional" : ""}`;
     return `${stats.handled}/${tasks.length} handled | ${stats.criticalMissing} critical | handover ${hasHandover ? "yes" : "no"}${responsibleText}`;
   }
@@ -3341,6 +3423,8 @@ function EventFloorDashboard({
   onSyncHandover,
   onShowOverview,
   onGuides,
+  onBackToManager,
+  onChangeRole,
 }) {
   const date = todayKey();
   const todayEvents = events.filter((event) => event.date === date);
@@ -3424,6 +3508,24 @@ function EventFloorDashboard({
         <h1>Event Floor Manager</h1>
         <p className="muted">{user.name}</p>
         <div className="backup-actions">
+          {onBackToManager && (
+            <button
+              type="button"
+              className="ghost-button compact-button"
+              onClick={onBackToManager}
+            >
+              Back to Manager Dashboard
+            </button>
+          )}
+          {onChangeRole && (
+            <button
+              type="button"
+              className="ghost-button compact-button"
+              onClick={onChangeRole}
+            >
+              Change role
+            </button>
+          )}
           <button
             type="button"
             className="ghost-button compact-button"
@@ -6222,6 +6324,7 @@ function ManagerDashboard({
   retryAlertSync,
   checkLocation,
   requestWriteAccess,
+  onOpenEventFloorDashboard,
   onResetPilotNotice,
   user,
 }) {
@@ -7885,6 +7988,23 @@ function ManagerDashboard({
       {message && <p className="status-message">{message}</p>}
 
       <EventCodeGeneratorPanel user={user} />
+
+      {canGenerateEventCode(user) && (
+        <section className="manager-list">
+          <h2>Event floor tools</h2>
+          <p className="muted">
+            Open the event floor manager view for event checks, assignments, and
+            event-floor operations.
+          </p>
+          <button
+            type="button"
+            className="primary-button manager-full-button"
+            onClick={onOpenEventFloorDashboard}
+          >
+            Event Floor Manager Dashboard
+          </button>
+        </section>
+      )}
 
       <section className="manager-controls">
         <label>
@@ -10835,6 +10955,10 @@ function App() {
   const [user, setUser] = useState(() => readStorage(SESSION_KEY, null));
   const [selectedShift, setSelectedShift] = useState(null);
   const [showManager, setShowManager] = useState(false);
+  const [showEventFloorManager, setShowEventFloorManager] = useState(false);
+  const [currentRoleMode, setCurrentRoleMode] = useState(() =>
+    normalizeRoleMode(readStorage(ROLE_MODE_KEY, null), readStorage(SESSION_KEY, null)),
+  );
   const [currentOperator, setCurrentOperator] = useState(() =>
     normalizeOperator(readStorage(OPERATOR_KEY, null)),
   );
@@ -12783,11 +12907,14 @@ function App() {
     localStorage.removeItem(SESSION_KEY);
     localStorage.removeItem(OPERATOR_KEY);
     localStorage.removeItem(EVENT_CODE_ACCESS_KEY);
+    localStorage.removeItem(ROLE_MODE_KEY);
     setUser(null);
     setCurrentOperator(null);
     setEventCodeAccess(null);
+    setCurrentRoleMode(null);
     setSelectedShift(null);
     setShowManager(false);
+    setShowEventFloorManager(false);
     setAuthStatus((current) => ({
       ...current,
       configured: isSupabaseAuthConfigured,
@@ -13547,6 +13674,12 @@ function App() {
     };
   }, []);
 
+  useEffect(() => {
+    const normalized = normalizeRoleMode(readStorage(ROLE_MODE_KEY, null), user);
+    setCurrentRoleMode(normalized);
+    if (!normalized) localStorage.removeItem(ROLE_MODE_KEY);
+  }, [user?.id, user?.authUserId, user?.code, user?.name]);
+
   if (!user) {
     return (
       <>
@@ -13614,45 +13747,85 @@ function App() {
     }
   }
 
+  function chooseRoleMode(roleMode) {
+    const option = roleModeOptions.find((item) => item.roleMode === roleMode);
+    if (!option) return;
+    const record = {
+      roleMode: option.roleMode,
+      selectedAt: new Date().toISOString(),
+      selectedDate: getOsloDateKey(),
+      userId: userRoleModeId(user),
+      label: option.label,
+    };
+    saveStorage(ROLE_MODE_KEY, record);
+    setCurrentRoleMode(record);
+    setShowManager(false);
+    setShowEventFloorManager(false);
+    setSelectedShift(roleMode === "other_support" ? "other_support" : null);
+  }
+
+  function clearRoleMode() {
+    localStorage.removeItem(ROLE_MODE_KEY);
+    setCurrentRoleMode(null);
+    setSelectedShift(null);
+    setShowManager(false);
+    setShowEventFloorManager(false);
+  }
+
   const effectiveActor = getEffectiveActor(user, currentOperator);
   const effectiveUser = userForActor(user, effectiveActor);
-  const selectedShiftAccess = getShiftAccessStatus(selectedShift, effectiveUser);
+  const userCanChooseRoleMode = canUseEventFloorDashboard(user);
+  const activeRoleMode = userCanChooseRoleMode
+    ? normalizeRoleMode(currentRoleMode, user)
+    : null;
+  const activeShift =
+    selectedShift ||
+    (activeRoleMode?.roleMode === "other_support" ? "other_support" : null);
+  const selectedShiftAccess = getShiftAccessStatus(activeShift, effectiveUser);
   const eventCodeDate = getOsloDateKey();
   const eventAccessIsValid =
     eventCodeAccess?.codeDate === eventCodeDate &&
     (!eventCodeAccess.expiresAt || new Date(eventCodeAccess.expiresAt) > new Date());
   const eventCodeRequired =
-    selectedShift === "event" &&
+    activeShift === "event" &&
     !isManager(effectiveUser) &&
     !canUseEventFloorDashboard(effectiveUser);
   const eventCodeNeeded = eventCodeRequired && !eventAccessIsValid;
   const sharedDeviceNeedsOperator =
     effectiveActor.isSharedDevice && !normalizeOperator(currentOperator);
   const selectedShiftBlocked =
-    selectedShift &&
-    !["guides", "overview"].includes(selectedShift) &&
+    activeShift &&
+    !["guides", "overview"].includes(activeShift) &&
     !selectedShiftAccess.allowed;
   const canOpenOperationalView =
     (!sharedDeviceNeedsOperator && !selectedShiftBlocked) ||
-    selectedShift === "guides" ||
-    selectedShift === "overview";
+    activeShift === "guides" ||
+    activeShift === "overview";
 
   return (
     <>
       <TopBar
         user={user}
-        selectedShift={showManager ? "manager" : selectedShift}
+        selectedShift={
+          showManager
+            ? "manager"
+            : activeShift
+        }
+        currentRoleMode={activeRoleMode}
         currentOperator={currentOperator}
         onChangeOperator={() => {
           setSelectedShift(null);
           setShowManager(false);
+          setShowEventFloorManager(false);
           saveCurrentOperator(null);
         }}
+        onChangeRole={activeRoleMode ? clearRoleMode : null}
         isOnline={isOnline}
         siteAccessStatus={siteAccessStatus}
         onBack={() => {
           setSelectedShift(null);
           setShowManager(false);
+          setShowEventFloorManager(false);
         }}
         onLogout={logout}
       />
@@ -13664,8 +13837,9 @@ function App() {
             operational changes require being on site.
           </p>
         )}
-      {!selectedShift &&
+      {!activeShift &&
         !showManager &&
+        !showEventFloorManager &&
         sharedDeviceNeedsOperator && (
           <main className="page">
             <OperatorPanel
@@ -13677,10 +13851,53 @@ function App() {
             />
           </main>
         )}
-      {!selectedShift &&
+      {!activeShift &&
         !showManager &&
+        showEventFloorManager && (
+          <EventFloorDashboard
+            user={effectiveUser}
+            events={events}
+            responsibleAssignments={responsibleAssignments}
+            cashSignoffs={cashSignoffs}
+            setCashSignoffs={setCashSignoffs}
+            assets={assets}
+            assetChecks={assetChecks}
+            setAssetChecks={setAssetChecks}
+            eventTaskChecks={eventTaskChecks}
+            setEventTaskChecks={setEventTaskChecks}
+            staffUsers={staffUsers}
+            requestWriteAccess={requestWriteAccess}
+            onSyncFinancialSignoff={syncFinancialSignoff}
+            onRefreshFinancialSignoffs={refreshFinancialSignoffsFromBackend}
+            onEnsureShiftSession={ensureShiftSession}
+            onSyncTaskLog={syncChecklistLog}
+            onSyncHandover={syncChecklistHandover}
+            onShowOverview={() => {
+              setShowEventFloorManager(false);
+              setSelectedShift("overview");
+            }}
+            onGuides={() => {
+              setShowEventFloorManager(false);
+              setSelectedShift("guides");
+            }}
+            onBackToManager={
+              canAccessManagerDashboard(user)
+                ? () => {
+                    setShowEventFloorManager(false);
+                    setShowManager(true);
+                  }
+                : null
+            }
+            onChangeRole={activeRoleMode ? clearRoleMode : null}
+          />
+        )}
+      {!activeShift &&
+        !showManager &&
+        !showEventFloorManager &&
         !sharedDeviceNeedsOperator &&
-        (canUseEventFloorDashboard(user) ? (
+        (userCanChooseRoleMode && !activeRoleMode ? (
+          <RoleLauncher user={user} onSelectRole={chooseRoleMode} />
+        ) : activeRoleMode?.roleMode === "event_floor_manager" ? (
           <EventFloorDashboard
             user={effectiveUser}
             events={events}
@@ -13701,6 +13918,7 @@ function App() {
             onSyncHandover={syncChecklistHandover}
             onShowOverview={() => setSelectedShift("overview")}
             onGuides={() => setSelectedShift("guides")}
+            onChangeRole={clearRoleMode}
           />
         ) : (
           <ShiftPicker
@@ -13713,14 +13931,14 @@ function App() {
             responsibleAssignments={responsibleAssignments}
           />
         ))}
-      {selectedShift &&
+      {activeShift &&
         !showManager &&
         selectedShiftBlocked && (
           <main className="page">
             <section className="empty-state">
               <h2>Shift not available</h2>
               <p className="muted">
-                {selectedShift === "opening"
+                {activeShift === "opening"
                   ? "Opening shift is closed for today after 11:00 Oslo time."
                   : "Closing shift is not available before 11:00 Oslo time."}
               </p>
@@ -13737,7 +13955,7 @@ function App() {
             </section>
           </main>
         )}
-      {selectedShift &&
+      {activeShift &&
         !showManager &&
         !selectedShiftBlocked &&
         eventCodeNeeded && (
@@ -13752,7 +13970,7 @@ function App() {
             onGuides={() => setSelectedShift("guides")}
           />
         )}
-      {selectedShift &&
+      {activeShift &&
         !showManager &&
         !selectedShiftBlocked &&
         !eventCodeNeeded &&
@@ -13767,12 +13985,12 @@ function App() {
             />
           </main>
         )}
-      {selectedShift &&
+      {activeShift &&
         !showManager &&
         !selectedShiftBlocked &&
         !eventCodeNeeded &&
         canOpenOperationalView &&
-        (selectedShift === "overview" ? (
+        (activeShift === "overview" ? (
           <StaffDashboard
             user={effectiveUser}
             routines={routines}
@@ -13791,7 +14009,7 @@ function App() {
         ) : (
           <Checklist
             user={effectiveUser}
-            shiftType={selectedShift}
+            shiftType={activeShift}
             routines={routines}
             logs={logs}
             setLogs={setLogs}
@@ -13816,7 +14034,10 @@ function App() {
             onSyncFinancialSignoff={syncFinancialSignoff}
             onRestoreShiftData={restoreShiftFromBackend}
             onShowOverview={() => setSelectedShift("overview")}
-            onChangeShift={() => setSelectedShift(null)}
+            onChangeShift={() => {
+              if (activeRoleMode?.roleMode === "other_support") clearRoleMode();
+              else setSelectedShift(null);
+            }}
             onLogout={logout}
           />
         ))}
@@ -13879,6 +14100,11 @@ function App() {
           retryAlertSync={() => refreshAlertsFromBackend("retry")}
           checkLocation={checkLocation}
           requestWriteAccess={requestWriteAccess}
+          onOpenEventFloorDashboard={() => {
+            setSelectedShift(null);
+            setShowManager(false);
+            setShowEventFloorManager(true);
+          }}
           onResetPilotNotice={() => {
             localStorage.removeItem(PILOT_NOTICE_KEY);
             setPilotAccepted(false);

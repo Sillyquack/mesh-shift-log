@@ -18,6 +18,7 @@ export const shiftOptions = [
   { id: 'event', label: 'Event shift' },
   { id: 'weekly', label: 'Weekly tasks' },
   { id: 'monthly', label: 'Monthly / Quiet-time tasks' },
+  { id: 'other_support', label: 'Other / Support tasks' },
   { id: 'guides', label: 'Guides / Knowledge base' },
 ];
 
@@ -334,6 +335,21 @@ export const defaultRoutines = [
   ], {
     optional: true,
     description: 'Optional task for calm periods. This does not block daily close day status.',
+  }),
+  section('other-support-tasks', 'other_support', 'Other / Support tasks', [
+    ['Reorganize storage shelves', { area: 'general', optional: true, recurring: { type: 'quiet_time' } }],
+    ['Check event equipment boxes', { area: 'event', optional: true, recurring: { type: 'quiet_time' }, guideId: 'technical-equipment-standard', imageRefs: ['technical-equipment-placeholder'] }],
+    ['Check cable/microphone/battery box', { area: 'event', optional: true, recurring: { type: 'quiet_time' }, guideId: 'technical-equipment-standard', imageRefs: ['technical-equipment-placeholder'] }],
+    ['Tidy project room supplies', { area: 'project_rooms', optional: true, recurring: { type: 'quiet_time' }, guideId: 'project-room-preparation-standard', imageRefs: ['project-room-standard-placeholder'] }],
+    ['Refill pens/post-its/whiteboard markers', { area: 'project_rooms', optional: true, recurring: { type: 'quiet_time' }, guideId: 'project-room-preparation-standard', imageRefs: ['project-room-standard-placeholder'] }],
+    ['Check fridge layout against standard', { area: 'workbar', optional: true, recurring: { type: 'quiet_time' }, guideId: 'workbar-fridge-standard', imageRefs: ['workbar-fridge-standard-placeholder'] }],
+    ['Check mailroom/package area', { area: 'general', optional: true, recurring: { type: 'quiet_time' }, guideId: 'mail-in-workbar-guide' }],
+    ['Restock disposables', { area: 'workbar', optional: true, recurring: { type: 'quiet_time' } }],
+    ['Deep clean selected Workbar area', { area: 'workbar', optional: true, recurring: { type: 'quiet_time' } }],
+    ['Report anything broken or missing in handover notes', { area: 'general', optional: true, requiresComment: true, inputType: 'comment', recurring: { type: 'quiet_time' } }],
+  ], {
+    optional: true,
+    description: 'Optional support checklist for event floor, cafe, storage, and quiet-time help. This does not block daily close day status.',
   }),
 ];
 
