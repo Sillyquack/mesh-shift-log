@@ -2,8 +2,16 @@ function roleOf(user) {
   return String(user?.role || '').toLowerCase();
 }
 
+export function isSharedDeviceUser(user) {
+  return Boolean(
+    user?.isSharedDevice ||
+      user?.is_shared_device ||
+      user?.profile?.is_shared_device,
+  );
+}
+
 export function isManager(user) {
-  return Boolean(user?.isManager) || roleOf(user) === 'manager';
+  return !isSharedDeviceUser(user) && (Boolean(user?.isManager) || roleOf(user) === 'manager');
 }
 
 export function canAccessManagerDashboard(user) {
@@ -31,7 +39,7 @@ export function canViewAuthProfiles(user) {
 }
 
 export function canUseEventFloorDashboard(user) {
-  return roleOf(user) === 'event_floor_manager';
+  return !isSharedDeviceUser(user) && roleOf(user) === 'event_floor_manager';
 }
 
 export function canCreateAlerts(user) {

@@ -89,6 +89,61 @@ a:focus-visible {
   box-shadow: var(--shadow);
 }
 
+.operator-panel {
+  display: grid;
+  gap: 12px;
+  width: min(100%, 520px);
+  margin: 28px auto;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  background: var(--surface);
+  box-shadow: var(--shadow);
+  padding: 24px;
+}
+
+.operator-panel h2 {
+  margin: 0;
+}
+
+.operator-panel .editor-form {
+  margin-top: 4px;
+}
+
+.operator-form-grid {
+  display: grid;
+  gap: 12px;
+}
+
+.readonly-field {
+  display: grid;
+  gap: 6px;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  background: var(--surface-strong);
+  padding: 11px 12px;
+}
+
+.readonly-field span {
+  color: var(--muted);
+  font-size: 0.8rem;
+  font-weight: 850;
+}
+
+.readonly-field strong {
+  color: var(--text);
+}
+
+.operator-actions {
+  display: grid;
+  gap: 10px;
+}
+
+.operator-actions .primary-button,
+.operator-actions .ghost-button {
+  width: 100%;
+  min-height: 48px;
+}
+
 .modal-backdrop {
   position: fixed;
   inset: 0;
@@ -413,6 +468,24 @@ textarea {
 .shift-card small {
   color: var(--brand);
   font-weight: 800;
+}
+
+.shift-card.blocked-shift {
+  border-color: color-mix(in srgb, var(--critical) 28%, var(--line));
+  background: color-mix(in srgb, var(--critical) 5%, var(--surface));
+}
+
+.shift-card.blocked-shift small {
+  color: var(--critical);
+}
+
+.field-help {
+  display: block;
+  margin-top: 6px;
+  color: var(--critical);
+  font-size: 0.82rem;
+  font-weight: 800;
+  line-height: 1.35;
 }
 
 .manager-card {

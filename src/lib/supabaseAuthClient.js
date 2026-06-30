@@ -132,7 +132,7 @@ export async function fetchUserProfiles() {
   try {
     const { data, error } = await supabaseAuthClient
       .from('user_profiles')
-      .select('id, organization_id, display_name, role, active, staff_code_alias, created_at, updated_at')
+      .select('id, organization_id, display_name, role, active, staff_code_alias, is_shared_device, shared_device_label, created_at, updated_at')
       .order('display_name', { ascending: true });
 
     if (error) {

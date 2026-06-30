@@ -34,6 +34,8 @@ import {
   canRetryEmailNotification,
   canUseEventFloorDashboard,
   canViewAuthProfiles,
+  isManager,
+  isSharedDeviceUser,
   } from "./lib/permissions.js";
 import {
   createOrUpdateShiftSession,
@@ -122,6 +124,7 @@ const ALERT_POLL_INTERVAL_SECONDS = 15;
 const LOG_KEY = "mesh-shift-logs-v1";
 const ROUTINE_KEY = "mesh-routines-v1";
 const SESSION_KEY = "mesh-current-user-v1";
+const OPERATOR_KEY = "mesh-current-operator-v1";
 const HANDOVER_KEY = "mesh-handover-notes-v1";
 const PILOT_NOTICE_KEY = "mesh-pilot-notice-accepted-v1";
 const LAST_EXPORT_KEY = "mesh-last-export-at-v1";
@@ -426,6 +429,49 @@ function todayKey() {
   return `${year}-${month}-${day}`;
 }
 
+function getOsloTimeParts(date = new Date()) {
+  const parts = new Intl.DateTimeFormat("en-GB", {
+    timeZone: "Europe/Oslo",
+    hour: "2-digit",
+    minute: "2-digit",
+    hourCycle: "h23",
+  }).formatToParts(date);
+  const hour = Number(parts.find((part) => part.type === "hour")?.value || 0);
+  const minute = Number(
+    parts.find((part) => part.type === "minute")?.value || 0,
+  );
+  return {
+    hour,
+    minute,
+    minutesSinceMidnight: hour * 60 + minute,
+    label: `${String(hour).padStart(2, "0")}:${String(minute).padStart(2, "0")}`,
+    timeZone: "Europe/Oslo",
+  };
+}
+
+function getShiftAccessStatus(shiftId, user, date = new Date()) {
+  const osloTime = getOsloTimeParts(date);
+  const boundary = 11 * 60;
+  const managerOverride = isManager(user);
+  let blocked = false;
+  let message = "";
+  if (shiftId === "opening" && osloTime.minutesSinceMidnight > boundary) {
+    blocked = true;
+    message = "Opening shift is only available before 11:00 Oslo time.";
+  }
+  if (shiftId === "closing" && osloTime.minutesSinceMidnight < boundary) {
+    blocked = true;
+    message = "Closing shift is only available after 11:00 Oslo time.";
+  }
+  return {
+    allowed: !blocked || managerOverride,
+    blocked,
+    managerOverride: blocked && managerOverride,
+    message,
+    osloTime,
+  };
+}
+
 function formatDateTime(value) {
   if (!value) return "";
   return new Date(value).toLocaleString([], {
@@ -601,6 +647,10 @@ function normalizeLogs(logs) {
       updatedAt: log.updatedAt || log.completedAt || `${log.date}T00:00:00`,
       completedAt: log.completedAt || `${log.date}T00:00:00`,
       completedBy: log.completedBy || "Unknown",
+      operatorName: log.operatorName || log.operator_name || log.completedBy || "",
+      operatorSource: log.operatorSource || log.operator_source || "",
+      operatorRoleLabel: log.operatorRoleLabel || log.operator_role_label || "",
+      authDisplayName: log.authDisplayName || log.auth_display_name || "",
       completedByAuthUserId:
         log.completedByAuthUserId || log.completed_by_auth_user_id || "",
       completedByProfileId:
@@ -628,6 +678,12 @@ function normalizeHandovers(notes) {
           syncStatus: note.syncStatus || "local_only",
           syncError: note.syncError || "",
           updatedAt: note.updatedAt || note.updated_at || "",
+          operatorName:
+            note.operatorName || note.operator_name || note.completedBy || "",
+          operatorSource: note.operatorSource || note.operator_source || "",
+          operatorRoleLabel:
+            note.operatorRoleLabel || note.operator_role_label || "",
+          authDisplayName: note.authDisplayName || note.auth_display_name || "",
           createdByAuthUserId:
             note.createdByAuthUserId || note.created_by_auth_user_id || "",
           createdByProfileId:
@@ -678,15 +734,21 @@ function appUserFromProfile(profile, authUser) {
   const role = profile.role || "staff";
   const displayName =
     profile.display_name || authUser?.email || "Supabase user";
+  const isSharedDevice = Boolean(profile.is_shared_device);
   return {
     id: `auth-${profile.id}`,
     name: displayName,
     role,
     code: profile.staff_code_alias || "",
-    isManager: role === "manager",
+    isManager: role === "manager" && !isSharedDevice,
     isEventFloorManager: role === "event_floor_manager",
     needsName: role === "time2staff",
     active: profile.active !== false,
+    profile,
+    isSharedDevice,
+    is_shared_device: isSharedDevice,
+    sharedDeviceLabel: profile.shared_device_label || displayName,
+    shared_device_label: profile.shared_device_label || displayName,
     backendUserId: profile.id,
     authUserId: authUser?.id || profile.id,
     organizationId: profile.organization_id || "",
@@ -694,6 +756,47 @@ function appUserFromProfile(profile, authUser) {
     profileActive: profile.active !== false,
     loginSource: "supabase_auth",
     email: authUser?.email || "",
+  };
+}
+
+function normalizeOperator(operator) {
+  if (!operator || typeof operator !== "object") return null;
+  const name = String(operator.name || "").trim().replace(/\s+/g, " ");
+  if (!name) return null;
+  return {
+    name,
+    source: operator.source || "unknown",
+    roleLabel: operator.roleLabel || "",
+    setAt: operator.setAt || new Date().toISOString(),
+    setByAuthUserId: operator.setByAuthUserId || "",
+  };
+}
+
+function getEffectiveActor(user, currentOperator) {
+  const operator = normalizeOperator(currentOperator);
+  const authDisplayName = user?.name || user?.email || "Unknown auth user";
+  return {
+    authUserId: user?.authUserId || user?.backendUserId || user?.id || "",
+    authDisplayName,
+    authLoginSource: user?.loginSource || "unknown",
+    operatorName: operator?.name || authDisplayName || "Unknown operator",
+    operatorSource: operator?.source || user?.loginSource || "unknown",
+    operatorRoleLabel: operator?.roleLabel || "",
+    isSharedDevice: isSharedDeviceUser(user),
+  };
+}
+
+function userForActor(user, actor) {
+  if (!actor?.isSharedDevice) return user;
+  return {
+    ...user,
+    name: actor.operatorName,
+    staffName: actor.operatorName,
+    baseName: user?.name || "",
+    operatorName: actor.operatorName,
+    operatorSource: actor.operatorSource,
+    operatorRoleLabel: actor.operatorRoleLabel,
+    authDisplayName: actor.authDisplayName,
   };
 }
 
@@ -1863,6 +1966,8 @@ function Login({
 function TopBar({
   user,
   selectedShift,
+  currentOperator,
+  onChangeOperator,
   onBack,
   onLogout,
   isOnline,
@@ -1878,8 +1983,25 @@ function TopBar({
       <div className="top-user">
         <strong>{user.name}</strong>
         <span>{user.role}</span>
+        {isSharedDeviceUser(user) && (
+          <span>
+            Workbar Device login
+            {currentOperator?.name
+              ? ` | Working as: ${currentOperator.name}${currentOperator.roleLabel ? ` - ${currentOperator.roleLabel}` : ""}`
+              : " | Choose operator"}
+          </span>
+        )}
       </div>
       <div className="top-actions">
+        {isSharedDeviceUser(user) && (
+          <button
+            type="button"
+            className="ghost-button"
+            onClick={onChangeOperator}
+          >
+            Change operator
+          </button>
+        )}
         <span className={`pilot-status ${isOnline ? "online" : "offline"}`}>
           Local pilot | {isOnline ? "Online" : "Offline - local data available"}
         </span>
@@ -1900,6 +2022,112 @@ function TopBar({
   );
 }
 
+const operatorRoleLabelOptions = [
+  { label: "Opening shift", shiftId: "opening" },
+  { label: "Daytime shift", shiftId: "daytime" },
+  { label: "Closing shift", shiftId: "closing" },
+  { label: "Event shift", shiftId: "event" },
+  { label: "Training shift", shiftId: "training" },
+  { label: "Extra / support shift", shiftId: "support" },
+  { label: "Monthly / quiet-time tasks", shiftId: "monthly" },
+];
+
+function OperatorPanel({ user, staffUsers, currentOperator, onSave, onOpenGuides }) {
+  const [name, setName] = useState(currentOperator?.name || "");
+  const [roleLabel, setRoleLabel] = useState(
+    currentOperator?.roleLabel || "Opening shift",
+  );
+  const [error, setError] = useState("");
+  const osloTime = getOsloTimeParts();
+  const selectedShiftId =
+    operatorRoleLabelOptions.find((option) => option.label === roleLabel)
+      ?.shiftId || "";
+  const selectedAccess = getShiftAccessStatus(selectedShiftId, user);
+
+  function save(event) {
+    event.preventDefault();
+    setError("");
+    if (!selectedAccess.allowed) {
+      setError(selectedAccess.message);
+      return;
+    }
+    const operator = {
+      name: name.trim().replace(/\s+/g, " "),
+      source: "time2staff",
+      roleLabel,
+    };
+    if (!operator.name || operator.name.length < 2) {
+      setError("Add the real name of the person working this shift.");
+      return;
+    }
+    onSave({
+      ...operator,
+      setAt: new Date().toISOString(),
+      setByAuthUserId: user?.authUserId || user?.backendUserId || "",
+    });
+  }
+
+  return (
+    <section className="operator-panel">
+      <p className="eyebrow">Workbar Device login</p>
+      <h2>Who is working this shift?</h2>
+      <p className="muted">
+        The device stays logged in for backend sync. Completed work is saved
+        under the actual operator name.
+      </p>
+      <p className="muted">Oslo time now: {osloTime.label}</p>
+      <form className="editor-form" onSubmit={save}>
+        <div className="operator-form-grid">
+          <label>
+            Name
+            <input
+              value={name}
+              onChange={(event) => setName(event.target.value)}
+              placeholder="First name"
+              autoComplete="given-name"
+            />
+          </label>
+          <label>
+            Shift
+            <select
+              value={roleLabel}
+              onChange={(event) => setRoleLabel(event.target.value)}
+            >
+              {operatorRoleLabelOptions.map((option) => (
+                <option
+                  key={option.label}
+                  value={option.label}
+                  disabled={!getShiftAccessStatus(option.shiftId, user).allowed}
+                >
+                  {option.label}
+                </option>
+              ))}
+            </select>
+            {selectedAccess.blocked && (
+              <small className="field-help">{selectedAccess.message}</small>
+            )}
+          </label>
+          <div className="readonly-field">
+            <span>Operator type</span>
+            <strong>Time2Staff</strong>
+          </div>
+        </div>
+        {error && <p className="error">{error}</p>}
+        <div className="operator-actions">
+          <button type="submit" className="primary-button">
+            Continue
+          </button>
+          {onOpenGuides && (
+            <button type="button" className="ghost-button" onClick={onOpenGuides}>
+              Open guides
+            </button>
+          )}
+        </div>
+      </form>
+    </section>
+  );
+}
+
 function ShiftPicker({
   user,
   onSelect,
@@ -1910,6 +2138,8 @@ function ShiftPicker({
   responsibleAssignments,
 }) {
   const date = todayKey();
+  const [shiftAccessMessage, setShiftAccessMessage] = useState("");
+  const osloTime = getOsloTimeParts();
   function shiftStatus(shiftType) {
     if (shiftType === "guides") return "Quick reference";
     const tasks = flattenTasks(routines, shiftType, date);
@@ -1936,12 +2166,32 @@ function ShiftPicker({
       return `${stats.handled}/${tasks.length} handled${stats.optionalTotal ? " | optional" : ""}`;
     return `${stats.handled}/${tasks.length} handled | ${stats.criticalMissing} critical | handover ${hasHandover ? "yes" : "no"}${responsibleText}`;
   }
+
+  function selectShift(shiftId) {
+    const access = getShiftAccessStatus(shiftId, user);
+    if (!access.allowed) {
+      setShiftAccessMessage(
+        shiftId === "opening"
+          ? "Opening shift is closed for today after 11:00 Oslo time."
+          : "Closing shift is not available before 11:00 Oslo time.",
+      );
+      return;
+    }
+    setShiftAccessMessage("");
+    onSelect(shiftId);
+  }
+
   return (
     <main className="page">
       <section className="intro">
         <p className="eyebrow">{new Date().toLocaleDateString()}</p>
         <h1>Start today's routines</h1>
-        <p className="muted">{user.name}</p>
+        <p className="muted">
+          {user.name} | Oslo time: {osloTime.label}
+        </p>
+        {shiftAccessMessage && (
+          <p className="critical-warning">{shiftAccessMessage}</p>
+        )}
       </section>
       <section className="shift-grid">
         <button
@@ -1953,15 +2203,28 @@ function ShiftPicker({
           <small>Team transparency, not competition</small>
         </button>
         {shiftOptions.map((shift) => (
-          <button
-            key={shift.id}
-            className="shift-card"
-            type="button"
-            onClick={() => onSelect(shift.id)}
-          >
-            <span>{shift.label}</span>
-            <small>{shiftStatus(shift.id)}</small>
-          </button>
+          (() => {
+            const access = getShiftAccessStatus(shift.id, user);
+            return (
+              <button
+                key={shift.id}
+                className={`shift-card ${access.blocked && !access.allowed ? "blocked-shift" : ""}`}
+                type="button"
+                aria-disabled={access.blocked && !access.allowed}
+                onClick={() => selectShift(shift.id)}
+              >
+                <span>{shift.label}</span>
+                <small>
+                  {shiftStatus(shift.id)}
+                  {access.managerOverride
+                    ? " | manager override"
+                    : access.blocked
+                      ? ` | ${access.message}`
+                      : ""}
+                </small>
+              </button>
+            );
+          })()
         ))}
         {canAccessManagerDashboard(user) && (
           <button
@@ -2130,6 +2393,10 @@ function HandoverNotes({
       date,
       shiftType,
       completedBy: user.name,
+      operatorName: user.operatorName || user.name,
+      operatorSource: user.operatorSource || user.loginSource || "",
+      operatorRoleLabel: user.operatorRoleLabel || "",
+      authDisplayName: user.authDisplayName || user.name,
       nextShift: "",
       lowStock: "",
       maintenance: "",
@@ -2150,6 +2417,11 @@ function HandoverNotes({
       id: value.id || key,
       localId: value.localId || `handover:${date}:${shiftType}:${syncUserKey}`,
       shiftSessionBackendId: backendShiftSessionId,
+      completedBy: user.name,
+      operatorName: user.operatorName || user.name,
+      operatorSource: user.operatorSource || user.loginSource || "",
+      operatorRoleLabel: user.operatorRoleLabel || "",
+      authDisplayName: user.authDisplayName || user.name,
       [field]: fieldValue,
       syncStatus:
         user.loginSource === "supabase_auth"
@@ -3250,6 +3522,10 @@ function Checklist({
       taskTitle: task.title,
       date,
       completedBy: user.name,
+      operatorName: user.operatorName || user.name,
+      operatorSource: user.operatorSource || user.loginSource || "",
+      operatorRoleLabel: user.operatorRoleLabel || "",
+      authDisplayName: user.authDisplayName || user.name,
       staffRole: user.role,
       shiftType: task.shiftType,
       section: task.section,
@@ -3294,6 +3570,10 @@ function Checklist({
       taskTitle: task.title,
       date,
       completedBy: user.name,
+      operatorName: user.operatorName || user.name,
+      operatorSource: user.operatorSource || user.loginSource || "",
+      operatorRoleLabel: user.operatorRoleLabel || "",
+      authDisplayName: user.authDisplayName || user.name,
       staffRole: user.role,
       shiftType: task.shiftType,
       section: task.section,
@@ -10376,6 +10656,9 @@ function App() {
   const [user, setUser] = useState(() => readStorage(SESSION_KEY, null));
   const [selectedShift, setSelectedShift] = useState(null);
   const [showManager, setShowManager] = useState(false);
+  const [currentOperator, setCurrentOperator] = useState(() =>
+    normalizeOperator(readStorage(OPERATOR_KEY, null)),
+  );
   const [showGlobalAlert, setShowGlobalAlert] = useState(false);
   const [logs, setLogs] = useState(() =>
     normalizeLogs(readStorage(LOG_KEY, [])),
@@ -10611,6 +10894,8 @@ function App() {
     profileFetchErrorMessage: "",
     profileFetchError: "",
     lastProfileFetchAt: "",
+    isSharedDevice: isSharedDeviceUser(user),
+    sharedDeviceLabel: user?.sharedDeviceLabel || user?.shared_device_label || "",
   });
   const [pilotAccepted, setPilotAccepted] = useState(() =>
     readStorage(PILOT_NOTICE_KEY, false),
@@ -10761,6 +11046,9 @@ function App() {
       profileFetchErrorCode: details.profileFetchErrorCode || "",
       profileFetchErrorMessage: details.profileFetchErrorMessage || "",
       profileFetchError: error,
+      isSharedDevice: isSharedDeviceUser(nextUser),
+      sharedDeviceLabel:
+        nextUser?.sharedDeviceLabel || nextUser?.shared_device_label || "",
       lastProfileFetchAt: new Date().toISOString(),
     });
   }
@@ -11321,6 +11609,7 @@ function App() {
     );
     try {
       const startedAt = new Date().toISOString();
+      const actor = getEffectiveActor(user, currentOperator);
       const result = await createOrUpdateShiftSession({
         localId: shiftSessionLocalId(date, shiftType),
         date,
@@ -11330,9 +11619,13 @@ function App() {
         finishedAt,
         status,
         userProfileId: user?.backendUserId || user?.authUserId || "",
-        displayName: user?.name || "",
-        role: user?.role || "",
-        loginSource: user?.loginSource || "staff_code",
+        displayName: actor.operatorName,
+        role: actor.operatorRoleLabel || user?.role || "",
+        loginSource: actor.operatorSource || user?.loginSource || "staff_code",
+        operatorName: actor.operatorName,
+        operatorSource: actor.operatorSource,
+        operatorRoleLabel: actor.operatorRoleLabel,
+        authDisplayName: actor.authDisplayName,
       });
       phase4Log("ensure shift session result", {
         ok: result.ok,
@@ -12302,7 +12595,9 @@ function App() {
   async function clearSupabaseAuthSession() {
     await signOutSupabase();
     localStorage.removeItem(SESSION_KEY);
+    localStorage.removeItem(OPERATOR_KEY);
     setUser(null);
+    setCurrentOperator(null);
     setSelectedShift(null);
     setShowManager(false);
     setAuthStatus((current) => ({
@@ -12313,6 +12608,8 @@ function App() {
       profileRole: "",
       organizationId: "",
       profileActive: true,
+      isSharedDevice: false,
+      sharedDeviceLabel: "",
       profileFetchError: "",
       lastProfileFetchAt: new Date().toISOString(),
     }));
@@ -13094,7 +13391,9 @@ function App() {
       await signOutSupabase();
     }
     localStorage.removeItem(SESSION_KEY);
+    localStorage.removeItem(OPERATOR_KEY);
     setUser(null);
+    setCurrentOperator(null);
     setSelectedShift(null);
     setShowManager(false);
     setAuthStatus((current) => ({
@@ -13104,15 +13403,44 @@ function App() {
       profileRole: "",
       organizationId: "",
       profileActive: true,
+      isSharedDevice: false,
+      sharedDeviceLabel: "",
       profileFetchError: "",
     }));
   }
+
+  function saveCurrentOperator(operator) {
+    const normalized = normalizeOperator(operator);
+    setCurrentOperator(normalized);
+    if (normalized) saveStorage(OPERATOR_KEY, normalized);
+    else localStorage.removeItem(OPERATOR_KEY);
+  }
+
+  const effectiveActor = getEffectiveActor(user, currentOperator);
+  const effectiveUser = userForActor(user, effectiveActor);
+  const selectedShiftAccess = getShiftAccessStatus(selectedShift, effectiveUser);
+  const sharedDeviceNeedsOperator =
+    effectiveActor.isSharedDevice && !normalizeOperator(currentOperator);
+  const selectedShiftBlocked =
+    selectedShift &&
+    !["guides", "overview"].includes(selectedShift) &&
+    !selectedShiftAccess.allowed;
+  const canOpenOperationalView =
+    (!sharedDeviceNeedsOperator && !selectedShiftBlocked) ||
+    selectedShift === "guides" ||
+    selectedShift === "overview";
 
   return (
     <>
       <TopBar
         user={user}
         selectedShift={showManager ? "manager" : selectedShift}
+        currentOperator={currentOperator}
+        onChangeOperator={() => {
+          setSelectedShift(null);
+          setShowManager(false);
+          saveCurrentOperator(null);
+        }}
         isOnline={isOnline}
         siteAccessStatus={siteAccessStatus}
         onBack={() => {
@@ -13131,9 +13459,23 @@ function App() {
         )}
       {!selectedShift &&
         !showManager &&
+        sharedDeviceNeedsOperator && (
+          <main className="page">
+            <OperatorPanel
+              user={user}
+              staffUsers={staffUsers}
+              currentOperator={currentOperator}
+              onSave={saveCurrentOperator}
+              onOpenGuides={() => setSelectedShift("guides")}
+            />
+          </main>
+        )}
+      {!selectedShift &&
+        !showManager &&
+        !sharedDeviceNeedsOperator &&
         (canUseEventFloorDashboard(user) ? (
           <EventFloorDashboard
-            user={user}
+            user={effectiveUser}
             events={events}
             responsibleAssignments={responsibleAssignments}
             cashSignoffs={cashSignoffs}
@@ -13155,7 +13497,7 @@ function App() {
           />
         ) : (
           <ShiftPicker
-            user={user}
+            user={effectiveUser}
             onSelect={setSelectedShift}
             onManager={() => setShowManager(true)}
             routines={routines}
@@ -13166,9 +13508,49 @@ function App() {
         ))}
       {selectedShift &&
         !showManager &&
+        selectedShiftBlocked && (
+          <main className="page">
+            <section className="empty-state">
+              <h2>Shift not available</h2>
+              <p className="muted">
+                {selectedShift === "opening"
+                  ? "Opening shift is closed for today after 11:00 Oslo time."
+                  : "Closing shift is not available before 11:00 Oslo time."}
+              </p>
+              <p className="muted">
+                Oslo time: {selectedShiftAccess.osloTime.label}
+              </p>
+              <button
+                type="button"
+                className="primary-button"
+                onClick={() => setSelectedShift(null)}
+              >
+                Choose another shift
+              </button>
+            </section>
+          </main>
+        )}
+      {selectedShift &&
+        !showManager &&
+        !selectedShiftBlocked &&
+        !canOpenOperationalView && (
+          <main className="page">
+            <OperatorPanel
+              user={user}
+              staffUsers={staffUsers}
+              currentOperator={currentOperator}
+              onSave={saveCurrentOperator}
+              onOpenGuides={() => setSelectedShift("guides")}
+            />
+          </main>
+        )}
+      {selectedShift &&
+        !showManager &&
+        !selectedShiftBlocked &&
+        canOpenOperationalView &&
         (selectedShift === "overview" ? (
           <StaffDashboard
-            user={user}
+            user={effectiveUser}
             routines={routines}
             logs={logs}
             handoverNotes={handoverNotes}
@@ -13184,7 +13566,7 @@ function App() {
           />
         ) : (
           <Checklist
-            user={user}
+            user={effectiveUser}
             shiftType={selectedShift}
             routines={routines}
             logs={logs}
@@ -13289,7 +13671,7 @@ function App() {
       )}
       {showGlobalAlert && (
         <AlertManagerModal
-          user={user}
+          user={effectiveUser}
           onClose={() => setShowGlobalAlert(false)}
           onSave={async (alertRecord) => {
             if (!(await requestWriteAccess())) return;
