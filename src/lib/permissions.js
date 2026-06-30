@@ -42,6 +42,10 @@ export function canUseEventFloorDashboard(user) {
   return !isSharedDeviceUser(user) && roleOf(user) === 'event_floor_manager';
 }
 
+export function canGenerateEventCode(user) {
+  return !isSharedDeviceUser(user) && (isManager(user) || roleOf(user) === 'event_floor_manager');
+}
+
 export function canCreateAlerts(user) {
   return Boolean(user);
 }

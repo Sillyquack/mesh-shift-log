@@ -488,6 +488,29 @@ textarea {
   line-height: 1.35;
 }
 
+.event-code-display {
+  display: grid;
+  gap: 5px;
+  width: max-content;
+  max-width: 100%;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  background: var(--surface-strong);
+  padding: 12px 14px;
+}
+
+.event-code-display span,
+.event-code-display small {
+  color: var(--muted);
+  font-size: 0.82rem;
+  font-weight: 800;
+}
+
+.event-code-display strong {
+  font-size: 1.9rem;
+  letter-spacing: 0.08em;
+}
+
 .manager-card {
   border-color: color-mix(in srgb, var(--brand) 55%, var(--line));
   background: color-mix(in srgb, var(--brand) 9%, var(--surface));

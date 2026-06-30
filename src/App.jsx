@@ -32,6 +32,7 @@ import {
   canAcknowledgeAlerts,
   canResolveAlerts,
   canRetryEmailNotification,
+  canGenerateEventCode,
   canUseEventFloorDashboard,
   canViewAuthProfiles,
   isManager,
@@ -76,6 +77,10 @@ import {
   fetchCloseDayArchive,
   upsertCloseDayArchive,
 } from "./lib/closeDayArchiveClient.js";
+import {
+  generateDailyEventCode,
+  validateDailyEventCode,
+} from "./lib/eventAccessCodeClient.js";
 
 function buildReviewStatusForHistoryDate(historyDate, reviewMap = {}) {
   const review = reviewMap?.[historyDate];
@@ -125,6 +130,7 @@ const LOG_KEY = "mesh-shift-logs-v1";
 const ROUTINE_KEY = "mesh-routines-v1";
 const SESSION_KEY = "mesh-current-user-v1";
 const OPERATOR_KEY = "mesh-current-operator-v1";
+const EVENT_CODE_ACCESS_KEY = "mesh-event-code-access-v1";
 const HANDOVER_KEY = "mesh-handover-notes-v1";
 const PILOT_NOTICE_KEY = "mesh-pilot-notice-accepted-v1";
 const LAST_EXPORT_KEY = "mesh-last-export-at-v1";
@@ -447,6 +453,19 @@ function getOsloTimeParts(date = new Date()) {
     label: `${String(hour).padStart(2, "0")}:${String(minute).padStart(2, "0")}`,
     timeZone: "Europe/Oslo",
   };
+}
+
+function getOsloDateKey(date = new Date()) {
+  const parts = new Intl.DateTimeFormat("en-CA", {
+    timeZone: "Europe/Oslo",
+    year: "numeric",
+    month: "2-digit",
+    day: "2-digit",
+  }).formatToParts(date);
+  const year = parts.find((part) => part.type === "year")?.value || "0000";
+  const month = parts.find((part) => part.type === "month")?.value || "00";
+  const day = parts.find((part) => part.type === "day")?.value || "00";
+  return `${year}-${month}-${day}`;
 }
 
 function getShiftAccessStatus(shiftId, user, date = new Date()) {
@@ -2032,6 +2051,13 @@ const operatorRoleLabelOptions = [
   { label: "Monthly / quiet-time tasks", shiftId: "monthly" },
 ];
 
+function shiftIdForOperatorRoleLabel(roleLabel) {
+  return (
+    operatorRoleLabelOptions.find((option) => option.label === roleLabel)
+      ?.shiftId || ""
+  );
+}
+
 function OperatorPanel({ user, staffUsers, currentOperator, onSave, onOpenGuides }) {
   const [name, setName] = useState(currentOperator?.name || "");
   const [roleLabel, setRoleLabel] = useState(
@@ -2125,6 +2151,155 @@ function OperatorPanel({ user, staffUsers, currentOperator, onSave, onOpenGuides
         </div>
       </form>
     </section>
+  );
+}
+
+function EventCodeGeneratorPanel({ user }) {
+  const [result, setResult] = useState(null);
+  const [message, setMessage] = useState("");
+  const [busy, setBusy] = useState(false);
+  if (!canGenerateEventCode(user)) return null;
+
+  async function generateCode() {
+    setBusy(true);
+    setMessage("");
+    const nextResult = await generateDailyEventCode();
+    setBusy(false);
+    setResult(nextResult.ok ? nextResult : null);
+    setMessage(nextResult.message || "");
+  }
+
+  async function copyCode() {
+    if (!result?.code) return;
+    try {
+      await navigator.clipboard.writeText(result.code);
+      setMessage("Event code copied.");
+    } catch {
+      setMessage("Could not copy automatically. Select the code and copy it.");
+    }
+  }
+
+  return (
+    <section className="manager-list event-code-panel">
+      <p className="eyebrow">Daily event code</p>
+      <h2>Generate today's event code</h2>
+      <p className="muted">
+        Share this only with today's event staff. The code is shown once here
+        and is stored hashed in Supabase.
+      </p>
+      <div className="backup-actions">
+        <button
+          type="button"
+          className="primary-button compact-button"
+          onClick={generateCode}
+          disabled={busy}
+        >
+          {busy ? "Generating..." : "Generate today's event code"}
+        </button>
+        {result?.code && (
+          <button
+            type="button"
+            className="ghost-button compact-button"
+            onClick={copyCode}
+          >
+            Copy code
+          </button>
+        )}
+      </div>
+      {result?.code && (
+        <div className="event-code-display">
+          <span>Today's code</span>
+          <strong>{result.code}</strong>
+          <small>
+            Oslo date {result.codeDate || getOsloDateKey()} | Expires{" "}
+            {result.expiresAt ? formatDateTime(result.expiresAt) : "end of Oslo day"}
+          </small>
+        </div>
+      )}
+      {message && <p className={result?.ok ? "all-clear" : "muted"}>{message}</p>}
+      <small className="muted">
+        Logged in as {user.name}. Shared-device accounts cannot generate codes.
+      </small>
+    </section>
+  );
+}
+
+function EventCodeGate({
+  user,
+  currentOperator,
+  onUnlock,
+  onCancel,
+  onGuides,
+}) {
+  const [code, setCode] = useState("");
+  const [message, setMessage] = useState("");
+  const [busy, setBusy] = useState(false);
+  const osloDate = getOsloDateKey();
+  const osloTime = getOsloTimeParts();
+
+  async function submit(event) {
+    event.preventDefault();
+    setMessage("");
+    if (!code.trim()) {
+      setMessage("Enter today's event code.");
+      return;
+    }
+    setBusy(true);
+    const result = await validateDailyEventCode(code.trim());
+    setBusy(false);
+    if (!result.valid) {
+      setMessage(
+        result.message ||
+          "Event code could not be validated. Ask event responsible.",
+      );
+      return;
+    }
+    onUnlock({
+      codeDate: result.codeDate || osloDate,
+      validatedAt: new Date().toISOString(),
+      operatorName: currentOperator?.name || user?.name || "",
+      authUserId: user?.authUserId || user?.backendUserId || "",
+      expiresAt: result.expiresAt || "",
+    });
+  }
+
+  return (
+    <main className="page">
+      <section className="operator-panel">
+        <p className="eyebrow">Event shift</p>
+        <h2>Enter today's event code</h2>
+        <p className="muted">
+          Ask event responsible if you do not have the code. Oslo time:{" "}
+          {osloTime.label}
+        </p>
+        <form className="editor-form" onSubmit={submit}>
+          <label>
+            Event code
+            <input
+              value={code}
+              onChange={(event) => setCode(event.target.value)}
+              inputMode="numeric"
+              autoComplete="one-time-code"
+              placeholder="6 digit code"
+            />
+          </label>
+          {message && <p className="error">{message}</p>}
+          <div className="operator-actions">
+            <button type="submit" className="primary-button" disabled={busy}>
+              {busy ? "Checking..." : "Continue"}
+            </button>
+            {onGuides && (
+              <button type="button" className="ghost-button" onClick={onGuides}>
+                Open guides
+              </button>
+            )}
+            <button type="button" className="ghost-button" onClick={onCancel}>
+              Choose another shift
+            </button>
+          </div>
+        </form>
+      </section>
+    </main>
   );
 }
 
@@ -3265,6 +3440,8 @@ function EventFloorDashboard({
           </button>
         </div>
       </section>
+
+      <EventCodeGeneratorPanel user={user} />
 
       <section className="manager-list">
         <h2>Today's events</h2>
@@ -7707,6 +7884,8 @@ function ManagerDashboard({
 
       {message && <p className="status-message">{message}</p>}
 
+      <EventCodeGeneratorPanel user={user} />
+
       <section className="manager-controls">
         <label>
           Date
@@ -10659,6 +10838,9 @@ function App() {
   const [currentOperator, setCurrentOperator] = useState(() =>
     normalizeOperator(readStorage(OPERATOR_KEY, null)),
   );
+  const [eventCodeAccess, setEventCodeAccess] = useState(() =>
+    readStorage(EVENT_CODE_ACCESS_KEY, null),
+  );
   const [showGlobalAlert, setShowGlobalAlert] = useState(false);
   const [logs, setLogs] = useState(() =>
     normalizeLogs(readStorage(LOG_KEY, [])),
@@ -10909,6 +11091,10 @@ function App() {
   useEffect(() => saveStorage(HANDOVER_KEY, handoverNotes), [handoverNotes]);
   useEffect(() => saveStorage(FINISH_KEY, finishRecords), [finishRecords]);
   useEffect(() => saveStorage(ALERT_KEY, alerts), [alerts]);
+  useEffect(
+    () => saveStorage(EVENT_CODE_ACCESS_KEY, eventCodeAccess),
+    [eventCodeAccess],
+  );
   useEffect(
     () => saveStorage(RESPONSIBLE_KEY, responsibleAssignments),
     [responsibleAssignments],
@@ -12596,8 +12782,10 @@ function App() {
     await signOutSupabase();
     localStorage.removeItem(SESSION_KEY);
     localStorage.removeItem(OPERATOR_KEY);
+    localStorage.removeItem(EVENT_CODE_ACCESS_KEY);
     setUser(null);
     setCurrentOperator(null);
+    setEventCodeAccess(null);
     setSelectedShift(null);
     setShowManager(false);
     setAuthStatus((current) => ({
@@ -13392,8 +13580,10 @@ function App() {
     }
     localStorage.removeItem(SESSION_KEY);
     localStorage.removeItem(OPERATOR_KEY);
+    localStorage.removeItem(EVENT_CODE_ACCESS_KEY);
     setUser(null);
     setCurrentOperator(null);
+    setEventCodeAccess(null);
     setSelectedShift(null);
     setShowManager(false);
     setAuthStatus((current) => ({
@@ -13416,9 +13606,26 @@ function App() {
     else localStorage.removeItem(OPERATOR_KEY);
   }
 
+  function saveCurrentOperatorAndRoute(operator) {
+    saveCurrentOperator(operator);
+    if (shiftIdForOperatorRoleLabel(operator?.roleLabel) === "event") {
+      setSelectedShift("event");
+      setShowManager(false);
+    }
+  }
+
   const effectiveActor = getEffectiveActor(user, currentOperator);
   const effectiveUser = userForActor(user, effectiveActor);
   const selectedShiftAccess = getShiftAccessStatus(selectedShift, effectiveUser);
+  const eventCodeDate = getOsloDateKey();
+  const eventAccessIsValid =
+    eventCodeAccess?.codeDate === eventCodeDate &&
+    (!eventCodeAccess.expiresAt || new Date(eventCodeAccess.expiresAt) > new Date());
+  const eventCodeRequired =
+    selectedShift === "event" &&
+    !isManager(effectiveUser) &&
+    !canUseEventFloorDashboard(effectiveUser);
+  const eventCodeNeeded = eventCodeRequired && !eventAccessIsValid;
   const sharedDeviceNeedsOperator =
     effectiveActor.isSharedDevice && !normalizeOperator(currentOperator);
   const selectedShiftBlocked =
@@ -13465,7 +13672,7 @@ function App() {
               user={user}
               staffUsers={staffUsers}
               currentOperator={currentOperator}
-              onSave={saveCurrentOperator}
+              onSave={saveCurrentOperatorAndRoute}
               onOpenGuides={() => setSelectedShift("guides")}
             />
           </main>
@@ -13533,13 +13740,29 @@ function App() {
       {selectedShift &&
         !showManager &&
         !selectedShiftBlocked &&
+        eventCodeNeeded && (
+          <EventCodeGate
+            user={effectiveUser}
+            currentOperator={currentOperator}
+            onUnlock={(accessRecord) => {
+              setEventCodeAccess(accessRecord);
+              saveStorage(EVENT_CODE_ACCESS_KEY, accessRecord);
+            }}
+            onCancel={() => setSelectedShift(null)}
+            onGuides={() => setSelectedShift("guides")}
+          />
+        )}
+      {selectedShift &&
+        !showManager &&
+        !selectedShiftBlocked &&
+        !eventCodeNeeded &&
         !canOpenOperationalView && (
           <main className="page">
             <OperatorPanel
               user={user}
               staffUsers={staffUsers}
               currentOperator={currentOperator}
-              onSave={saveCurrentOperator}
+              onSave={saveCurrentOperatorAndRoute}
               onOpenGuides={() => setSelectedShift("guides")}
             />
           </main>
@@ -13547,6 +13770,7 @@ function App() {
       {selectedShift &&
         !showManager &&
         !selectedShiftBlocked &&
+        !eventCodeNeeded &&
         canOpenOperationalView &&
         (selectedShift === "overview" ? (
           <StaffDashboard
