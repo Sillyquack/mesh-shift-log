@@ -593,7 +593,7 @@ textarea {
 
 .event-task-alert-banner {
   position: sticky;
-  top: 10px;
+  top: 62px;
   z-index: 30;
   display: grid;
   gap: 10px;
@@ -1850,6 +1850,21 @@ textarea {
 
   .task-actions .compact-button {
     flex: 1 1 130px;
+  }
+
+  .event-task-alert-banner {
+    top: 82px;
+    width: calc(100% - 20px);
+    padding: 12px;
+  }
+
+  .event-task-alert-actions {
+    align-items: stretch;
+  }
+
+  .event-task-alert-actions .compact-button,
+  .event-task-alert-settings .compact-button {
+    flex: 1 1 150px;
   }
 
   .update-banner {

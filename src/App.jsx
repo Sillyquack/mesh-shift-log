@@ -4250,12 +4250,15 @@ function EventOperationsCorePanel({
     (handover) => handover.eventId === activeEventIdValue,
   );
   const [eventForm, setEventForm] = useState(() => defaultEventOperationForm());
+  const [eventBoardCreating, setEventBoardCreating] = useState(false);
   const [manualStaffName, setManualStaffName] = useState("");
+  const [staffStatus, setStaffStatus] = useState({ type: "", message: "" });
   const [assignmentForm, setAssignmentForm] = useState({
     roleKey: "event_floor_manager",
     staffName: "",
     notes: "",
   });
+  const [assignmentStatus, setAssignmentStatus] = useState({ type: "", message: "" });
   const [taskForm, setTaskForm] = useState(() => defaultEventTaskForm());
   const [taskStatus, setTaskStatus] = useState({ type: "", message: "" });
   const [taskCreating, setTaskCreating] = useState(false);
@@ -4265,6 +4268,7 @@ function EventOperationsCorePanel({
     responsibilityScope: "all",
     notes: "",
   });
+  const [handoverStatus, setHandoverStatus] = useState({ type: "", message: "" });
 
   const todayEventSignature = todayEvents
     .map((event) => `${event.id}:${event.status}:${event.updatedAt || ""}`)
@@ -4315,24 +4319,66 @@ function EventOperationsCorePanel({
   async function submitEvent(event) {
     event.preventDefault();
     setEventBoardStatus({ type: "", message: "" });
-    if (!eventForm.title.trim()) return;
-    const result = await onCreateEvent({
-      date,
-      title: eventForm.title.trim(),
-      venue: eventForm.venue.trim(),
-      startsAt: fromDateTimeLocalValue(eventForm.startsAt),
-      endsAt: fromDateTimeLocalValue(eventForm.endsAt),
-      notes: eventForm.notes.trim(),
-      status: "draft",
-      source: "manual",
-      createdByName: user.name,
-      activeResponsibleName: user.name,
-    });
-    const record = result?.record || result;
-    if (!record?.id) return;
-    selectEventBoard(record.id);
-    setEventForm(defaultEventOperationForm());
-    setEventBoardStatus({ type: "success", message: "Event board created and selected." });
+    if (!eventForm.title.trim()) {
+      setEventBoardStatus({ type: "error", message: "Event board title is required." });
+      return;
+    }
+    setEventBoardCreating(true);
+    setEventBoardStatus({ type: "pending", message: "Creating event board..." });
+    try {
+      const result = await onCreateEvent({
+        date,
+        title: eventForm.title.trim(),
+        venue: eventForm.venue.trim(),
+        startsAt: fromDateTimeLocalValue(eventForm.startsAt),
+        endsAt: fromDateTimeLocalValue(eventForm.endsAt),
+        notes: eventForm.notes.trim(),
+        status: "draft",
+        source: "manual",
+        createdByName: user.name,
+        activeResponsibleName: user.name,
+      });
+      const record = result?.record || result;
+      if (!record?.id) {
+        setEventBoardStatus({
+          type: "error",
+          message: result?.message || result?.error?.message || "Event board could not be created.",
+        });
+        return;
+      }
+      selectEventBoard(record.id);
+      setEventForm(defaultEventOperationForm());
+      setEventBoardStatus({ type: "success", message: "Event board created and selected." });
+    } catch (error) {
+      setEventBoardStatus({
+        type: "error",
+        message: error?.message || "Unexpected error while creating event board.",
+      });
+    } finally {
+      setEventBoardCreating(false);
+    }
+  }
+
+  async function updateActiveEventStatus(status) {
+    if (!activeEvent?.id) return;
+    setEventBoardStatus({ type: "pending", message: "Updating event board status..." });
+    try {
+      const result = await onUpdateEvent(activeEvent.id, { ...activeEvent, status });
+      const record = result?.record || result;
+      if (!record?.id) {
+        setEventBoardStatus({
+          type: "error",
+          message: result?.message || result?.error?.message || "Event board status could not be updated.",
+        });
+        return;
+      }
+      setEventBoardStatus({ type: "success", message: "Event board status updated." });
+    } catch (error) {
+      setEventBoardStatus({
+        type: "error",
+        message: error?.message || "Unexpected error while updating event board status.",
+      });
+    }
   }
 
   async function submitTask(event) {
@@ -4410,34 +4456,82 @@ function EventOperationsCorePanel({
 
   async function submitAssignment(event) {
     event.preventDefault();
-    if (!activeEventIdValue || !assignmentForm.staffName.trim()) return;
+    setAssignmentStatus({ type: "", message: "" });
+    if (!activeEventIdValue) {
+      setAssignmentStatus({ type: "error", message: "Select an event board before assigning a role." });
+      return;
+    }
+    if (!assignmentForm.staffName.trim()) {
+      setAssignmentStatus({ type: "error", message: "Choose or enter a staff name before assigning a role." });
+      return;
+    }
     const role = eventRoleOptions.find((item) => item.key === assignmentForm.roleKey);
-    const record = await onAssignRole({
-      eventId: activeEventIdValue,
-      roleKey: role.key,
-      roleLabel: role.label,
-      zone: role.zone,
-      assignedOperatorName: assignmentForm.staffName.trim(),
-      assignedByName: user.name,
-      notes: assignmentForm.notes.trim(),
-    });
-    if (!record?.id) return;
-    setAssignmentForm({ roleKey: "event_floor_manager", staffName: "", notes: "" });
+    setAssignmentStatus({ type: "pending", message: "Assigning role..." });
+    try {
+      const result = await onAssignRole({
+        eventId: activeEventIdValue,
+        roleKey: role.key,
+        roleLabel: role.label,
+        zone: role.zone,
+        assignedOperatorName: assignmentForm.staffName.trim(),
+        assignedByName: user.name,
+        notes: assignmentForm.notes.trim(),
+      });
+      const record = result?.record || result;
+      if (!record?.id) {
+        setAssignmentStatus({
+          type: "error",
+          message: result?.message || result?.error?.message || "Role assignment could not be saved.",
+        });
+        return;
+      }
+      setAssignmentForm({ roleKey: "event_floor_manager", staffName: "", notes: "" });
+      setAssignmentStatus({ type: "success", message: "Role assigned." });
+    } catch (error) {
+      setAssignmentStatus({
+        type: "error",
+        message: error?.message || "Unexpected error while assigning role.",
+      });
+    }
   }
 
   async function submitHandover(event) {
     event.preventDefault();
-    if (!activeEventIdValue || !handoverForm.toName.trim()) return;
-    const record = await onCreateHandover({
-      eventId: activeEventIdValue,
-      fromName: activeEvent?.activeResponsibleName || user.name,
-      toName: handoverForm.toName.trim(),
-      responsibilityScope: handoverForm.responsibilityScope,
-      notes: handoverForm.notes.trim(),
-      createdByName: user.name,
-    });
-    if (!record?.id) return;
-    setHandoverForm({ toName: "", responsibilityScope: "all", notes: "" });
+    setHandoverStatus({ type: "", message: "" });
+    if (!activeEventIdValue) {
+      setHandoverStatus({ type: "error", message: "Select an event board before creating a handover." });
+      return;
+    }
+    if (!handoverForm.toName.trim()) {
+      setHandoverStatus({ type: "error", message: "Enter who is taking over before confirming handover." });
+      return;
+    }
+    setHandoverStatus({ type: "pending", message: "Saving handover..." });
+    try {
+      const result = await onCreateHandover({
+        eventId: activeEventIdValue,
+        fromName: activeEvent?.activeResponsibleName || user.name,
+        toName: handoverForm.toName.trim(),
+        responsibilityScope: handoverForm.responsibilityScope,
+        notes: handoverForm.notes.trim(),
+        createdByName: user.name,
+      });
+      const record = result?.record || result;
+      if (!record?.id) {
+        setHandoverStatus({
+          type: "error",
+          message: result?.message || result?.error?.message || "Handover could not be saved.",
+        });
+        return;
+      }
+      setHandoverForm({ toName: "", responsibilityScope: "all", notes: "" });
+      setHandoverStatus({ type: "success", message: "Handover saved." });
+    } catch (error) {
+      setHandoverStatus({
+        type: "error",
+        message: error?.message || "Unexpected error while saving handover.",
+      });
+    }
   }
 
   return (
@@ -4468,12 +4562,12 @@ function EventOperationsCorePanel({
             Notes
             <textarea rows="2" value={eventForm.notes} onChange={(event) => setEventForm((current) => ({ ...current, notes: event.target.value }))} />
           </label>
-          <button type="submit" className="primary-button compact-button">
-            Create manual event
+          <button type="submit" className="primary-button compact-button" disabled={eventBoardCreating}>
+            {eventBoardCreating ? "Creating event board..." : "Create manual event"}
           </button>
         </form>
         {eventBoardStatus.message && (
-          <p className={eventBoardStatus.type === "success" ? "all-clear" : "status-message"}>
+          <p className={eventBoardStatus.type === "error" ? "critical-warning" : eventBoardStatus.type === "success" ? "all-clear" : "status-message"}>
             {eventBoardStatus.message}
           </p>
         )}
@@ -4505,9 +4599,7 @@ function EventOperationsCorePanel({
               Status
               <select
                 value={activeEvent.status}
-                onChange={(event) =>
-                  onUpdateEvent(activeEvent.id, { ...activeEvent, status: event.target.value })
-                }
+                onChange={(event) => updateActiveEventStatus(event.target.value)}
               >
                 {["draft", "active", "finished", "cancelled"].map((status) => (
                   <option key={status} value={status}>{status}</option>
@@ -4523,10 +4615,30 @@ function EventOperationsCorePanel({
         <p className="muted">People appear here when they log in, choose an operator, or are added manually.</p>
         <form className="inline-actions" onSubmit={async (event) => {
           event.preventDefault();
-          if (!manualStaffName.trim()) return;
-          const record = await onAddStaff(manualStaffName.trim());
-          if (!record?.id) return;
-          setManualStaffName("");
+          setStaffStatus({ type: "", message: "" });
+          if (!manualStaffName.trim()) {
+            setStaffStatus({ type: "error", message: "Enter a staff name before adding manual staff." });
+            return;
+          }
+          setStaffStatus({ type: "pending", message: "Adding staff..." });
+          try {
+            const result = await onAddStaff(manualStaffName.trim());
+            const record = result?.record || result;
+            if (!record?.id) {
+              setStaffStatus({
+                type: "error",
+                message: result?.message || result?.error?.message || "Manual staff could not be added.",
+              });
+              return;
+            }
+            setManualStaffName("");
+            setStaffStatus({ type: "success", message: "Staff added." });
+          } catch (error) {
+            setStaffStatus({
+              type: "error",
+              message: error?.message || "Unexpected error while adding staff.",
+            });
+          }
         }}>
           <input
             value={manualStaffName}
@@ -4535,6 +4647,11 @@ function EventOperationsCorePanel({
           />
           <button type="submit" className="primary-button compact-button">Add staff</button>
         </form>
+        {staffStatus.message && (
+          <p className={staffStatus.type === "error" ? "critical-warning" : staffStatus.type === "success" ? "all-clear" : "status-message"}>
+            {staffStatus.message}
+          </p>
+        )}
         {eventStaffPresence.length === 0 && <p className="muted">No event staff checked in yet.</p>}
         {eventStaffPresence.map((person) => {
           const role = eventAssignments.find(
@@ -4587,6 +4704,11 @@ function EventOperationsCorePanel({
             Notes
             <input value={assignmentForm.notes} onChange={(event) => setAssignmentForm((current) => ({ ...current, notes: event.target.value }))} />
           </label>
+          {assignmentStatus.message && (
+            <p className={assignmentStatus.type === "error" ? "critical-warning" : assignmentStatus.type === "success" ? "all-clear" : "status-message"}>
+              {assignmentStatus.message}
+            </p>
+          )}
           <button type="submit" className="primary-button compact-button">Assign role</button>
         </form>
         {eventAssignments.map((assignment) => (
@@ -4783,6 +4905,11 @@ function EventOperationsCorePanel({
             Notes
             <textarea rows="2" value={handoverForm.notes} onChange={(event) => setHandoverForm((current) => ({ ...current, notes: event.target.value }))} />
           </label>
+          {handoverStatus.message && (
+            <p className={handoverStatus.type === "error" ? "critical-warning" : handoverStatus.type === "success" ? "all-clear" : "status-message"}>
+              {handoverStatus.message}
+            </p>
+          )}
           <button type="submit" className="primary-button compact-button">Confirm handover</button>
         </form>
         {eventHandoversForEvent.map((handover) => (
@@ -12963,6 +13090,7 @@ function App() {
   }
 
   function phase4Log(action, detail = {}) {
+    if (!import.meta.env.DEV) return;
     console.info(`Phase4A: ${action}`, {
       mode: detail.mode || shiftDataStatus.mode,
       ok: detail.ok,
@@ -15710,7 +15838,8 @@ function App() {
   }
 
   async function saveEventOperation(payload) {
-    if (!(await requestWriteAccess())) return null;
+    if (!(await requestWriteAccess()))
+      return { ok: false, message: "Location guard is blocking event board creation." };
     const record = {
       id: eventOpsLocalId("event-operation"),
       date: payload.date || todayKey(),
@@ -15729,7 +15858,6 @@ function App() {
       metadata: payload.metadata || {},
       updatedAt: new Date().toISOString(),
     };
-    upsertEventList(setEventOperations, record);
     const result = await createEventOperation(record);
     if (result.ok && result.record) {
       setEventOperations((current) => [
@@ -15737,23 +15865,35 @@ function App() {
         result.record,
       ]);
       refreshEventOperationsLive("event_board_created");
-      return result.record;
+      return { ok: true, record: result.record, message: "Event board created." };
     }
-    refreshEventOperationsLive("event_board_created_local");
-    return record;
+    return {
+      ok: false,
+      message: result.message || result.error?.message || "Event board could not be created in Supabase.",
+      error: result.error,
+    };
   }
 
   async function saveEventOperationUpdate(id, payload) {
-    if (!(await requestWriteAccess())) return null;
+    if (!(await requestWriteAccess()))
+      return { ok: false, message: "Location guard is blocking event board updates." };
     const record = { ...payload, id, updatedAt: new Date().toISOString() };
-    upsertEventList(setEventOperations, record);
     const result = await updateEventOperation(id, record);
-    if (result.ok && result.record) upsertEventList(setEventOperations, result.record);
-    return result.ok ? result.record : record;
+    if (result.ok && result.record) {
+      upsertEventList(setEventOperations, result.record);
+      refreshEventOperationsLive("event_board_updated");
+      return { ok: true, record: result.record, message: "Event board updated." };
+    }
+    return {
+      ok: false,
+      message: result.message || result.error?.message || "Event board could not be updated in Supabase.",
+      error: result.error,
+    };
   }
 
   async function saveManualEventStaff(name) {
-    if (!(await requestWriteAccess())) return null;
+    if (!(await requestWriteAccess()))
+      return { ok: false, message: "Location guard is blocking manual staff changes." };
     const record = {
       id: `${todayKey()}-${slug(name)}-manual`,
       date: todayKey(),
@@ -15767,35 +15907,57 @@ function App() {
       metadata: {},
     };
     upsertEventList(setEventStaffPresence, record);
-    return record;
+    const result = await upsertEventStaffPresence(record);
+    if (result.ok && result.record) {
+      upsertEventList(setEventStaffPresence, result.record);
+      refreshEventOperationsLive("event_manual_staff_added");
+      return { ok: true, record: result.record, message: "Staff added." };
+    }
+    upsertEventList(setEventStaffPresence, {
+      ...record,
+      syncError: result.message || result.error?.message || "Backend sync failed.",
+    });
+    return {
+      ok: false,
+      message: result.message || result.error?.message || "Manual staff could not be saved in Supabase.",
+      error: result.error,
+    };
   }
 
   async function saveEventRoleAssignment(payload) {
-    if (!(await requestWriteAccess())) return null;
+    if (!(await requestWriteAccess()))
+      return { ok: false, message: "Location guard is blocking role assignment changes." };
     const record = {
       id: eventOpsLocalId("event-role"),
       ...payload,
       active: true,
       updatedAt: new Date().toISOString(),
     };
-    setEventRoleAssignments((current) => [
-      ...current.filter(
-        (item) =>
-          !(
-            item.eventId === record.eventId &&
-            item.roleKey === record.roleKey &&
-            item.active
-          ),
-      ).map((item) =>
-        item.eventId === record.eventId && item.roleKey === record.roleKey
-          ? { ...item, active: false }
-          : item,
-      ),
-      record,
-    ]);
     const result = await upsertEventRoleAssignment(record);
-    if (result.ok && result.record) upsertEventList(setEventRoleAssignments, result.record);
-    return result.ok ? result.record : record;
+    if (result.ok && result.record) {
+      setEventRoleAssignments((current) => [
+        ...current.filter(
+          (item) =>
+            !(
+              item.eventId === result.record.eventId &&
+              item.roleKey === result.record.roleKey &&
+              item.active
+            ),
+        ).map((item) =>
+          item.eventId === result.record.eventId && item.roleKey === result.record.roleKey
+            ? { ...item, active: false }
+            : item,
+        ),
+        result.record,
+      ]);
+      refreshEventOperationsLive("event_role_assigned");
+      return { ok: true, record: result.record, message: "Role assigned." };
+    }
+    return {
+      ok: false,
+      message: result.message || result.error?.message || "Role assignment could not be saved in Supabase.",
+      error: result.error,
+    };
   }
 
   async function saveEventOperationTask(payload) {
@@ -15957,31 +16119,39 @@ function App() {
   }
 
   async function saveEventHandover(payload) {
-    if (!(await requestWriteAccess())) return null;
+    if (!(await requestWriteAccess()))
+      return { ok: false, message: "Location guard is blocking handover changes." };
     const record = {
       id: eventOpsLocalId("event-handover"),
       ...payload,
       createdByName: payload.createdByName || user.name,
       createdAt: new Date().toISOString(),
     };
-    upsertEventList(setEventHandovers, record);
-    if (payload.eventId) {
-      setEventOperations((current) =>
-        current.map((eventRecord) =>
-          eventRecord.id === payload.eventId
-            ? {
-                ...eventRecord,
-                activeResponsibleName: payload.toName,
-                activeResponsibleAuthUserId: payload.toAuthUserId || "",
-                updatedAt: new Date().toISOString(),
-              }
-            : eventRecord,
-        ),
-      );
-    }
     const result = await createResponsibilityHandover(record);
-    if (result.ok && result.record) upsertEventList(setEventHandovers, result.record);
-    return result.ok ? result.record : record;
+    if (result.ok && result.record) {
+      upsertEventList(setEventHandovers, result.record);
+      if (payload.eventId) {
+        setEventOperations((current) =>
+          current.map((eventRecord) =>
+            eventRecord.id === payload.eventId
+              ? {
+                  ...eventRecord,
+                  activeResponsibleName: payload.toName,
+                  activeResponsibleAuthUserId: payload.toAuthUserId || "",
+                  updatedAt: new Date().toISOString(),
+                }
+              : eventRecord,
+          ),
+        );
+      }
+      refreshEventOperationsLive("event_handover_created");
+      return { ok: true, record: result.record, message: "Handover saved." };
+    }
+    return {
+      ok: false,
+      message: result.message || result.error?.message || "Handover could not be saved in Supabase.",
+      error: result.error,
+    };
   }
 
   const activeShiftScope = normalizeShiftScope(
