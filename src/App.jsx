@@ -81,6 +81,20 @@ import {
   generateDailyEventCode,
   validateDailyEventCode,
 } from "./lib/eventAccessCodeClient.js";
+import {
+  createEventOperation,
+  createEventTask,
+  createResponsibilityHandover,
+  fetchEventOperationsForDate,
+  fetchEventRoleAssignments,
+  fetchEventStaffPresence,
+  fetchEventTasks,
+  fetchResponsibilityHandovers,
+  updateEventOperation,
+  updateEventTaskStatus,
+  upsertEventRoleAssignment,
+  upsertEventStaffPresence,
+} from "./lib/eventOperationsClient.js";
 
 function buildReviewStatusForHistoryDate(historyDate, reviewMap = {}) {
   const review = reviewMap?.[historyDate];
@@ -147,6 +161,15 @@ const CASH_SIGNOFF_KEY = "mesh-cash-invoice-signoffs-v1";
 const ASSET_REGISTRY_KEY = "mesh-asset-registry-v1";
 const ASSET_CHECK_KEY = "mesh-asset-check-records-v1";
 const EVENT_TASK_CHECK_KEY = "mesh-event-floor-task-checks-v1";
+const EVENT_OPERATIONS_KEY = "mesh-event-operations-v1";
+const EVENT_STAFF_PRESENCE_KEY = "mesh-event-staff-presence-v1";
+const EVENT_ROLE_ASSIGNMENT_KEY = "mesh-event-role-assignments-v1";
+const EVENT_OPERATION_TASK_KEY = "mesh-event-operation-tasks-v1";
+const EVENT_HANDOVER_KEY = "mesh-event-responsibility-handovers-v1";
+const EVENT_SELECTED_BOARD_KEY = "mesh-event-selected-board-v1";
+const EVENT_TASK_ALERT_STATE_KEY = "mesh-event-task-alert-state-v1";
+const EVENT_TASK_ALERT_SETTINGS_KEY = "mesh-event-task-alert-settings-v1";
+const EVENT_TASK_ALERT_POLL_SECONDS = 15;
 const weakCodes = new Set([
   "0000",
   "1111",
@@ -177,6 +200,21 @@ const weekdays = [
 const shiftLabels = Object.fromEntries(
   shiftOptions.map((shift) => [shift.id, shift.label]),
 );
+const eventRoleOptions = [
+  { key: "event_floor_manager", label: "Event Floor Manager", zone: "all", reportsTo: "Hospitality Operations Manager / Robert" },
+  { key: "cornerbar_manager", label: "Cornerbar Manager", zone: "cornerbar", reportsTo: "Event Floor Manager" },
+  { key: "atrium_manager", label: "Atrium Manager", zone: "atrium", reportsTo: "Event Floor Manager" },
+  { key: "workbar_manager", label: "Workbar Manager", zone: "workbar", reportsTo: "Event Floor Manager" },
+  { key: "headrunner", label: "Headrunner", zone: "all", reportsTo: "Event Floor Manager" },
+  { key: "runner", label: "Runner", zone: "all", reportsTo: "Headrunner" },
+  { key: "bar_staff", label: "Bar staff", zone: "bar", reportsTo: "Zone manager" },
+  { key: "cafe_staff", label: "Cafe staff", zone: "workbar", reportsTo: "Workbar Manager" },
+  { key: "support", label: "Support", zone: "all", reportsTo: "Event Floor Manager" },
+  { key: "other", label: "Other", zone: "all", reportsTo: "Event Floor Manager" },
+];
+const eventTaskStatuses = ["pending", "acknowledged", "done", "missed", "cancelled"];
+const eventZones = ["all", "atrium", "cornerbar", "workbar", "backstage", "project_rooms"];
+const eventHandoverScopes = ["all", "locking", "cash_close", "assets_check", "event_close", "cornerbar", "atrium", "workbar"];
 const alertCategories = [
   "Stock empty",
   "Equipment broken",
@@ -661,6 +699,216 @@ function shiftScopeBlockMessage(shiftType, scope) {
     return "This shift is not part of your selected role today. Choose Double shift if you are covering both Opening and Closing.";
   }
   return `${shiftLabels[shiftType] || "This shift"} is not part of your selected role today.`;
+}
+
+function eventOpsLocalId(prefix = "event") {
+  return `${prefix}-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
+}
+
+function isLocalhostRuntime() {
+  if (typeof window === "undefined") return false;
+  return ["localhost", "127.0.0.1", "::1"].includes(window.location.hostname);
+}
+
+function toDateTimeLocalValue(dateOrIso = new Date()) {
+  const date = dateOrIso instanceof Date ? dateOrIso : new Date(dateOrIso);
+  if (Number.isNaN(date.getTime())) return "";
+  const offsetDate = new Date(date.getTime() - date.getTimezoneOffset() * 60000);
+  return offsetDate.toISOString().slice(0, 16);
+}
+
+function fromDateTimeLocalValue(value) {
+  if (!value) return "";
+  const date = new Date(value);
+  if (Number.isNaN(date.getTime())) return "";
+  return date.toISOString();
+}
+
+function isValidDateTimeLocalValue(value) {
+  if (!value) return true;
+  return /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}$/.test(value) && !Number.isNaN(new Date(value).getTime());
+}
+
+function addMinutesToDateTimeLocal(value, minutes) {
+  const date = value ? new Date(value) : new Date();
+  if (Number.isNaN(date.getTime())) return "";
+  return toDateTimeLocalValue(new Date(date.getTime() + minutes * 60000));
+}
+
+function defaultEventOperationForm() {
+  const startsAt = new Date();
+  startsAt.setSeconds(0, 0);
+  const endsAt = new Date(startsAt.getTime() + 2 * 60 * 60000);
+  return {
+    title: "",
+    venue: "",
+    startsAt: toDateTimeLocalValue(startsAt),
+    endsAt: toDateTimeLocalValue(endsAt),
+    notes: "",
+  };
+}
+
+function defaultEventTaskForm() {
+  const dueAt = addMinutesToDateTimeLocal(new Date(), 10);
+  return {
+    title: "",
+    description: "",
+    dueAt,
+    remindAt: addMinutesToDateTimeLocal(dueAt, -5),
+    zone: "all",
+    priority: "normal",
+    assignedRoleKey: "",
+    assignedOperatorName: "",
+  };
+}
+
+function eventRoleLabel(roleKey) {
+  return eventRoleOptions.find((role) => role.key === roleKey)?.label || roleKey || "";
+}
+
+function isEventOpsManager(user) {
+  return !isSharedDeviceUser(user) && (isManager(user) || canUseEventFloorDashboard(user));
+}
+
+function eventTaskMatchesUser(task, assignments, user) {
+  const name = String(user?.operatorName || user?.name || "").trim().toLowerCase();
+  const authUserId = user?.authUserId || user?.backendUserId || user?.id || "";
+  if (task.assignedAuthUserId && authUserId && task.assignedAuthUserId === authUserId)
+    return true;
+  if (task.assignedOperatorName && name && task.assignedOperatorName.trim().toLowerCase() === name)
+    return true;
+  if (task.assignedRoleKey) {
+    return assignments.some((assignment) => {
+      if (!assignment.active || assignment.roleKey !== task.assignedRoleKey) return false;
+      if (assignment.assignedAuthUserId && authUserId && assignment.assignedAuthUserId === authUserId)
+        return true;
+      return (
+        assignment.assignedOperatorName &&
+        name &&
+        assignment.assignedOperatorName.trim().toLowerCase() === name
+      );
+    });
+  }
+  return false;
+}
+
+function eventTaskActorKey(user) {
+  const authUserId = user?.authUserId || user?.backendUserId || user?.id || "local";
+  const operatorName = String(user?.operatorName || user?.name || "").trim().toLowerCase();
+  return `${authUserId}::${operatorName || "unknown"}`;
+}
+
+function eventTaskAlertKey(user, task, type) {
+  const timestamp = type === "reminder" ? task.remindAt : task.dueAt;
+  return `${eventTaskActorKey(user)}::${task.id}::${type}::${timestamp || "none"}`;
+}
+
+function isOpenEventTask(task) {
+  return !["done", "cancelled", "missed"].includes(task.status || "pending");
+}
+
+function assignedEventTasksForUser(events, assignments, tasks, user) {
+  const activeEventIds = new Set(
+    events
+      .filter((event) => ["draft", "active"].includes(event.status || "draft"))
+      .map((event) => event.id),
+  );
+  return tasks
+    .filter((task) => activeEventIds.has(task.eventId))
+    .filter((task) => eventTaskMatchesUser(task, assignments, user));
+}
+
+function minutesBetweenNow(value) {
+  if (!value) return null;
+  const time = new Date(value).getTime();
+  if (Number.isNaN(time)) return null;
+  return Math.round((time - Date.now()) / 60000);
+}
+
+function eventTaskTimingLabel(task) {
+  if (!task.dueAt) return "No due time";
+  const minutes = minutesBetweenNow(task.dueAt);
+  if (minutes === null) return "Due time unavailable";
+  if (minutes < 0) return `Overdue by ${Math.abs(minutes)} min`;
+  if (minutes === 0) return "Due now";
+  return `Due in ${minutes} min`;
+}
+
+function groupAssignedEventTasks(tasks) {
+  const groups = [
+    ["Due now", []],
+    ["Due soon", []],
+    ["Pending", []],
+    ["Acknowledged", []],
+    ["Done", []],
+  ];
+  const groupMap = Object.fromEntries(groups);
+  tasks
+    .slice()
+    .sort((a, b) => new Date(a.dueAt || "9999-12-31") - new Date(b.dueAt || "9999-12-31"))
+    .forEach((task) => {
+      if (task.status === "done") groupMap.Done.push(task);
+      else if (task.status === "acknowledged") groupMap.Acknowledged.push(task);
+      else if (task.dueAt && new Date(task.dueAt).getTime() <= Date.now())
+        groupMap["Due now"].push(task);
+      else if (task.dueAt && new Date(task.dueAt).getTime() - Date.now() <= 30 * 60000)
+        groupMap["Due soon"].push(task);
+      else groupMap.Pending.push(task);
+    });
+  return groups;
+}
+
+function taskAssignedLabel(task) {
+  return task.assignedOperatorName || eventRoleLabel(task.assignedRoleKey) || "Assigned task";
+}
+
+function preferredEventBoardId(events, currentId = "") {
+  if (!events.length) return "";
+  if (currentId && events.some((event) => event.id === currentId)) return currentId;
+  return (
+    events.find((event) => event.status === "active")?.id ||
+    events.find((event) => event.status === "draft")?.id ||
+    events[0]?.id ||
+    ""
+  );
+}
+
+async function playEventTaskBeep() {
+  if (typeof window === "undefined") return false;
+  const AudioContext = window.AudioContext || window.webkitAudioContext;
+  if (!AudioContext) return false;
+  const context = new AudioContext();
+  const oscillator = context.createOscillator();
+  const gain = context.createGain();
+  oscillator.type = "sine";
+  oscillator.frequency.value = 880;
+  gain.gain.setValueAtTime(0.0001, context.currentTime);
+  gain.gain.exponentialRampToValueAtTime(0.18, context.currentTime + 0.02);
+  gain.gain.exponentialRampToValueAtTime(0.0001, context.currentTime + 0.45);
+  oscillator.connect(gain);
+  gain.connect(context.destination);
+  oscillator.start();
+  oscillator.stop(context.currentTime + 0.5);
+  await new Promise((resolve) => {
+    oscillator.onended = resolve;
+  });
+  await context.close().catch(() => {});
+  return true;
+}
+
+function showEventTaskBrowserNotification(alert) {
+  if (typeof window === "undefined" || !("Notification" in window)) return false;
+  if (window.Notification.permission !== "granted") return false;
+  const notification = new window.Notification(alert.title, {
+    body: alert.body,
+    tag: alert.id,
+    renotify: true,
+  });
+  notification.onclick = () => {
+    window.focus();
+    notification.close();
+  };
+  return true;
 }
 
 function formatDateTime(value) {
@@ -2109,6 +2357,11 @@ function Login({
             ? "Use your real first name. This is saved with completed tasks."
             : "Enter your staff code. Ask manager if you need access."}
         </p>
+        {isLocalhostRuntime() && (
+          <p className="muted">
+            Local testing tip: use separate browsers/profiles for Robert, Julie and Workbar Device because localhost shares one auth session.
+          </p>
+        )}
         <div className="login-mode-tabs" role="tablist" aria-label="Login mode">
           <button
             type="button"
@@ -2988,6 +3241,9 @@ function StaffDashboard({
   alerts,
   responsibleAssignments,
   events,
+  eventOperations,
+  eventRoleAssignments,
+  eventTasks,
   cashSignoffs,
   assetChecks,
   alertBackendStatus,
@@ -3000,6 +3256,13 @@ function StaffDashboard({
   onOpenMyShift,
   onOpenGuides,
   onChangeShift,
+  onUpdateEventTaskStatus,
+  eventTaskAlertState,
+  taskActionStatus,
+  eventTaskAlertsEnabled,
+  eventTaskNotificationPermission,
+  onEnableEventTaskAlerts,
+  onRefreshEventOperations,
   refreshAlerts,
   onAlert,
 }) {
@@ -3026,6 +3289,11 @@ function StaffDashboard({
     (item) => item.date === date,
   );
   const todayEvents = events.filter((event) => event.date === date);
+  const tomorrowDate = new Date(`${date}T00:00:00`);
+  tomorrowDate.setDate(tomorrowDate.getDate() + 1);
+  const tomorrowKey = tomorrowDate.toISOString().slice(0, 10);
+  const todayEventOps = eventOperations.filter((event) => event.date === date);
+  const tomorrowEventOps = eventOperations.filter((event) => event.date === tomorrowKey);
   const cashIssues = cashSignoffs.filter(
     (record) =>
       record.date === date &&
@@ -3039,6 +3307,7 @@ function StaffDashboard({
 
   useEffect(() => {
     refreshAlerts({ reason: "staff_dashboard_open" });
+    onRefreshEventOperations?.("staff_dashboard_open");
   }, []);
 
   return (
@@ -3141,6 +3410,49 @@ function StaffDashboard({
           );
         })}
       </section>
+
+      <section className="manager-list">
+        <h2>Event operations overview</h2>
+        <p className="muted">Manual event data only. Calendar import will be added in a later phase.</p>
+        {[["Today", todayEventOps], ["Tomorrow", tomorrowEventOps]].map(([label, eventList]) => (
+          <div key={label} className="critical-group">
+            <h3>{label}</h3>
+            {eventList.length === 0 && <p className="muted">No event operations board created.</p>}
+            {eventList.map((event) => {
+              const tasks = eventTasks.filter((task) => task.eventId === event.id);
+              const done = tasks.filter((task) => task.status === "done").length;
+              const criticalOpen = tasks.filter((task) => task.priority === "critical" && task.status !== "done").length;
+              return (
+                <article key={event.id} className="log-row">
+                  <strong>{event.title}</strong>
+                  <span>
+                    {event.venue || "No venue"} | {event.status} | Responsible{" "}
+                    {event.activeResponsibleName || "not set"}
+                  </span>
+                  <small>
+                    {event.startsAt ? formatDateTime(event.startsAt) : "No start"} | tasks {done}/{tasks.length}
+                    {criticalOpen ? ` | critical open ${criticalOpen}` : ""}
+                  </small>
+                </article>
+              );
+            })}
+          </div>
+        ))}
+      </section>
+
+      <MyEventTasksPanel
+        user={user}
+        eventOperations={eventOperations}
+        eventRoleAssignments={eventRoleAssignments}
+        eventTasks={eventTasks}
+        onUpdateTaskStatus={onUpdateEventTaskStatus}
+        eventTaskAlertState={eventTaskAlertState}
+        taskActionStatus={eventTaskActionStatus}
+        alertsEnabled={eventTaskAlertsEnabled}
+        notificationPermission={eventTaskNotificationPermission}
+        onEnableAlerts={onEnableEventTaskAlerts}
+        onRefresh={() => onRefreshEventOperations?.("manual")}
+      />
 
       <section className="manager-list">
         <h2>Responsibility roles</h2>
@@ -3680,6 +3992,814 @@ function AssetCheckPanel({
   );
 }
 
+function EventTaskAlertBanner({
+  alerts,
+  alertsEnabled,
+  notificationPermission,
+  taskActionStatus,
+  onEnableAlerts,
+  onAcknowledge,
+  onDone,
+  onOpenTasks,
+  onDismiss,
+}) {
+  if (!alerts.length) return null;
+  const activeAlert = alerts[0];
+  const activeStatus = taskActionStatus?.[activeAlert.taskId];
+  const actionPending = ["acknowledging", "completing"].includes(activeStatus?.status);
+  return (
+    <section className={`event-task-alert-banner ${activeAlert.type === "due" ? "due" : "reminder"}`}>
+      <div>
+        <p className="eyebrow">{activeAlert.type === "due" ? "Event task due now" : "Event task reminder"}</p>
+        <h2>{activeAlert.title}</h2>
+        <p>
+          {activeAlert.body}
+          {activeAlert.zone ? ` | Zone: ${activeAlert.zone}` : ""}
+        </p>
+        <small>
+          Due {activeAlert.dueAt ? formatDateTime(activeAlert.dueAt) : "not set"}
+          {activeAlert.assignedTo ? ` | ${activeAlert.assignedTo}` : ""}
+        </small>
+        {!alertsEnabled && (
+          <small>
+            Sound/browser alerts are off. In-app alerts will still appear.
+          </small>
+        )}
+        {notificationPermission === "denied" && (
+          <small>Browser notifications are blocked in this browser.</small>
+        )}
+        {activeStatus?.message && (
+          <small className={activeStatus.type === "error" ? "critical-warning" : activeStatus.type === "success" ? "all-clear" : "status-message"}>
+            {activeStatus.message}
+          </small>
+        )}
+      </div>
+      <div className="event-task-alert-actions">
+        {!alertsEnabled && (
+          <button type="button" className="ghost-button compact-button" onClick={onEnableAlerts}>
+            Enable task alerts
+          </button>
+        )}
+        <button type="button" className="ghost-button compact-button" onClick={() => onAcknowledge(activeAlert.taskId, activeAlert.id)} disabled={actionPending}>
+          {activeStatus?.status === "acknowledging" ? "Acknowledging..." : "Acknowledge"}
+        </button>
+        <button type="button" className="primary-button compact-button" onClick={() => onDone(activeAlert.taskId, activeAlert.id)} disabled={actionPending}>
+          {activeStatus?.status === "completing" ? "Completing..." : "Mark done"}
+        </button>
+        <button type="button" className="ghost-button compact-button" onClick={onOpenTasks}>
+          Open My Event Tasks
+        </button>
+        <button type="button" className="ghost-button compact-button" onClick={() => onDismiss(activeAlert.id)}>
+          Dismiss
+        </button>
+      </div>
+      {alerts.length > 1 && <small>{alerts.length - 1} more event task alert(s) waiting.</small>}
+    </section>
+  );
+}
+
+function EventTaskAlertSettingsCard({
+  alertsEnabled,
+  notificationPermission,
+  onEnableAlerts,
+  onRefresh,
+}) {
+  return (
+    <article className="event-task-alert-settings">
+      <div>
+        <strong>Event task alerts</strong>
+        <p className="muted">
+          {alertsEnabled
+            ? "Enabled on this device. The app will use in-app alerts, sound, vibration and browser notifications where supported."
+            : "Enable sound/browser task alerts on this device. In-app alerts work even if browser notifications are blocked."}
+        </p>
+        {notificationPermission && notificationPermission !== "default" && (
+          <small>Browser notification permission: {notificationPermission}</small>
+        )}
+      </div>
+      <div className="inline-actions">
+        <button type="button" className="primary-button compact-button" onClick={onEnableAlerts}>
+          Enable event task alerts
+        </button>
+        <button type="button" className="ghost-button compact-button" onClick={onRefresh}>
+          Refresh event tasks
+        </button>
+      </div>
+    </article>
+  );
+}
+
+function MyEventTasksPanel({
+  user,
+  eventOperations,
+  eventRoleAssignments,
+  eventTasks,
+  onUpdateTaskStatus,
+  eventTaskAlertState,
+  taskActionStatus,
+  alertsEnabled,
+  notificationPermission,
+  onEnableAlerts,
+  onRefresh,
+}) {
+  const [comments, setComments] = useState({});
+  const activeEvents = eventOperations.filter((event) =>
+    ["draft", "active"].includes(event.status || "draft"),
+  );
+  const myTasks = assignedEventTasksForUser(
+    activeEvents,
+    eventRoleAssignments,
+    eventTasks,
+    user,
+  );
+  const taskGroups = groupAssignedEventTasks(myTasks);
+
+  return (
+    <section className="manager-list">
+      <h2>My event tasks</h2>
+      <p className="muted">
+        Assigned event tasks only. You can acknowledge or complete these, but
+        cannot reassign or edit the event board.
+      </p>
+      <EventTaskAlertSettingsCard
+        alertsEnabled={alertsEnabled}
+        notificationPermission={notificationPermission}
+        onEnableAlerts={onEnableAlerts}
+        onRefresh={onRefresh}
+      />
+      {myTasks.length === 0 && (
+        <p className="muted">No event tasks assigned to you right now.</p>
+      )}
+      {taskGroups.map(([groupTitle, tasks]) => (
+        <div key={groupTitle} className="critical-group">
+          <h3>{groupTitle}</h3>
+          {tasks.length === 0 && <p className="muted">None.</p>}
+          {tasks.map((task) => {
+            const event = activeEvents.find((item) => item.id === task.eventId);
+            const reminderSent = Boolean(
+              task.remindAt && eventTaskAlertState[eventTaskAlertKey(user, task, "reminder")],
+            );
+            const dueSent = Boolean(
+              task.dueAt && eventTaskAlertState[eventTaskAlertKey(user, task, "due")],
+            );
+            const actionStatus = taskActionStatus?.[task.id];
+            const actionPending = ["acknowledging", "completing"].includes(actionStatus?.status);
+            return (
+              <article key={task.id} className={`log-row priority-${task.priority}`}>
+                <strong>{task.title}</strong>
+                <span>
+                  {event?.title || "Event"} | {task.zone || "all"} |{" "}
+                  {eventTaskStatuses.includes(task.status) ? task.status : "pending"}
+                </span>
+                <small>
+                  {eventTaskTimingLabel(task)}
+                  {task.remindAt ? ` | reminder ${formatDateTime(task.remindAt)}` : ""}
+                  {reminderSent ? " | Reminder sent" : ""}
+                  {dueSent ? " | Due alert sent" : ""}
+                </small>
+                {task.acknowledgedByName && (
+                  <small>
+                    Acknowledged by {task.acknowledgedByName}
+                    {task.acknowledgedAt ? ` at ${formatDateTime(task.acknowledgedAt)}` : ""}
+                  </small>
+                )}
+                {actionStatus?.message && (
+                  <small className={actionStatus.type === "error" ? "critical-warning" : actionStatus.type === "success" ? "all-clear" : "status-message"}>
+                    {actionStatus.message}
+                  </small>
+                )}
+                {task.description && <small>{task.description}</small>}
+                <label>
+                  Completion comment
+                  <textarea
+                    rows="2"
+                    value={comments[task.id] || ""}
+                    onChange={(eventValue) =>
+                      setComments((current) => ({
+                        ...current,
+                        [task.id]: eventValue.target.value,
+                      }))
+                    }
+                  />
+                </label>
+                <div className="backup-actions">
+                  <button
+                    type="button"
+                    className="ghost-button compact-button"
+                    onClick={() =>
+                      onUpdateTaskStatus(task.id, "acknowledged", comments[task.id] || "")
+                    }
+                    disabled={actionPending || task.status === "acknowledged" || task.status === "done"}
+                  >
+                    {actionStatus?.status === "acknowledging" ? "Acknowledging..." : "Acknowledge"}
+                  </button>
+                  <button
+                    type="button"
+                    className="primary-button compact-button"
+                    onClick={() =>
+                      onUpdateTaskStatus(task.id, "done", comments[task.id] || "")
+                    }
+                    disabled={actionPending || task.status === "done"}
+                  >
+                    {actionStatus?.status === "completing" ? "Completing..." : "Mark done"}
+                  </button>
+                </div>
+              </article>
+            );
+          })}
+        </div>
+      ))}
+    </section>
+  );
+}
+
+function EventOperationsCorePanel({
+  user,
+  date,
+  eventOperations,
+  eventStaffPresence,
+  eventRoleAssignments,
+  eventTasks,
+  eventHandovers,
+  onCreateEvent,
+  onUpdateEvent,
+  onAddStaff,
+  onAssignRole,
+  onCreateTask,
+  onUpdateTaskStatus,
+  taskActionStatus,
+  onCreateHandover,
+}) {
+  const todayEvents = eventOperations.filter((event) => event.date === date);
+  const [activeEventId, setActiveEventId] = useState(() => {
+    const saved = readStorage(EVENT_SELECTED_BOARD_KEY, null);
+    return saved?.date === date ? saved.eventId || "" : "";
+  });
+  const [eventBoardStatus, setEventBoardStatus] = useState({ type: "", message: "" });
+  const activeEvent =
+    todayEvents.find((event) => event.id === activeEventId) ||
+    todayEvents.find((event) => event.id === preferredEventBoardId(todayEvents, activeEventId));
+  const activeEventIdValue = activeEvent?.id || "";
+  const eventAssignments = eventRoleAssignments.filter(
+    (assignment) => assignment.eventId === activeEventIdValue && assignment.active,
+  );
+  const eventBoardTasks = eventTasks.filter(
+    (task) => task.eventId === activeEventIdValue,
+  );
+  const eventHandoversForEvent = eventHandovers.filter(
+    (handover) => handover.eventId === activeEventIdValue,
+  );
+  const [eventForm, setEventForm] = useState(() => defaultEventOperationForm());
+  const [manualStaffName, setManualStaffName] = useState("");
+  const [assignmentForm, setAssignmentForm] = useState({
+    roleKey: "event_floor_manager",
+    staffName: "",
+    notes: "",
+  });
+  const [taskForm, setTaskForm] = useState(() => defaultEventTaskForm());
+  const [taskStatus, setTaskStatus] = useState({ type: "", message: "" });
+  const [taskCreating, setTaskCreating] = useState(false);
+  const taskFormDisabled = !activeEventIdValue || taskCreating;
+  const [handoverForm, setHandoverForm] = useState({
+    toName: "",
+    responsibilityScope: "all",
+    notes: "",
+  });
+
+  const todayEventSignature = todayEvents
+    .map((event) => `${event.id}:${event.status}:${event.updatedAt || ""}`)
+    .join("|");
+
+  useEffect(() => {
+    const nextEventId = preferredEventBoardId(todayEvents, activeEventId);
+    if (!nextEventId) {
+      if (activeEventId) setActiveEventId("");
+      localStorage.removeItem(EVENT_SELECTED_BOARD_KEY);
+      return;
+    }
+    if (nextEventId !== activeEventId) setActiveEventId(nextEventId);
+    saveStorage(EVENT_SELECTED_BOARD_KEY, {
+      date,
+      eventId: nextEventId,
+      selectedAt: new Date().toISOString(),
+    });
+  }, [todayEventSignature, activeEventId, date]);
+
+  function selectEventBoard(eventId) {
+    setActiveEventId(eventId);
+    saveStorage(EVENT_SELECTED_BOARD_KEY, {
+      date,
+      eventId,
+      selectedAt: new Date().toISOString(),
+    });
+    setTaskStatus({ type: "", message: "" });
+  }
+
+  function eventTaskGroups() {
+    const now = Date.now();
+    const dueSoon = eventBoardTasks.filter(
+      (task) =>
+        !["acknowledged", "done", "missed", "cancelled"].includes(task.status) &&
+        task.dueAt &&
+        new Date(task.dueAt).getTime() - now <= 30 * 60000,
+    );
+    return [
+      ["Due soon", dueSoon],
+      ["Pending", eventBoardTasks.filter((task) => task.status === "pending" && !dueSoon.includes(task))],
+      ["Acknowledged", eventBoardTasks.filter((task) => task.status === "acknowledged")],
+      ["Done", eventBoardTasks.filter((task) => task.status === "done")],
+      ["Missed/cancelled", eventBoardTasks.filter((task) => ["missed", "cancelled"].includes(task.status))],
+    ];
+  }
+
+  async function submitEvent(event) {
+    event.preventDefault();
+    setEventBoardStatus({ type: "", message: "" });
+    if (!eventForm.title.trim()) return;
+    const result = await onCreateEvent({
+      date,
+      title: eventForm.title.trim(),
+      venue: eventForm.venue.trim(),
+      startsAt: fromDateTimeLocalValue(eventForm.startsAt),
+      endsAt: fromDateTimeLocalValue(eventForm.endsAt),
+      notes: eventForm.notes.trim(),
+      status: "draft",
+      source: "manual",
+      createdByName: user.name,
+      activeResponsibleName: user.name,
+    });
+    const record = result?.record || result;
+    if (!record?.id) return;
+    selectEventBoard(record.id);
+    setEventForm(defaultEventOperationForm());
+    setEventBoardStatus({ type: "success", message: "Event board created and selected." });
+  }
+
+  async function submitTask(event) {
+    event.preventDefault();
+    setTaskStatus({ type: "", message: "" });
+    if (!activeEventIdValue) {
+      setTaskStatus({ type: "error", message: "Create or select an event board before adding a task." });
+      return;
+    }
+    if (!taskForm.title.trim()) {
+      setTaskStatus({ type: "error", message: "Task title is required." });
+      return;
+    }
+    if (!taskForm.assignedOperatorName.trim() && !taskForm.assignedRoleKey) {
+      setTaskStatus({ type: "error", message: "Assign the task to a person, a role, or both." });
+      return;
+    }
+    if (!isValidDateTimeLocalValue(taskForm.dueAt)) {
+      setTaskStatus({ type: "error", message: "Due time must be a valid date and time." });
+      return;
+    }
+    if (!isValidDateTimeLocalValue(taskForm.remindAt)) {
+      setTaskStatus({ type: "error", message: "Reminder time must be a valid date and time, or empty." });
+      return;
+    }
+    const dueAt = fromDateTimeLocalValue(taskForm.dueAt);
+    const remindAt = taskForm.remindAt ? fromDateTimeLocalValue(taskForm.remindAt) : "";
+    if (taskForm.dueAt && !dueAt) {
+      setTaskStatus({ type: "error", message: "Due time could not be converted. Please choose it again." });
+      return;
+    }
+    if (taskForm.remindAt && !remindAt) {
+      setTaskStatus({ type: "error", message: "Reminder time could not be converted. Please choose it again or leave it empty." });
+      return;
+    }
+    setTaskCreating(true);
+    setTaskStatus({ type: "pending", message: "Creating task..." });
+    try {
+      const result = await onCreateTask({
+        eventId: activeEventIdValue,
+        title: taskForm.title.trim(),
+        description: taskForm.description.trim(),
+        dueAt,
+        remindAt,
+        zone: taskForm.zone,
+        priority: taskForm.priority,
+        assignedRoleKey: taskForm.assignedRoleKey,
+        assignedOperatorName: taskForm.assignedOperatorName.trim(),
+        status: "pending",
+        createdByName: user.name,
+      });
+      const record = result?.record || result;
+      if (!result?.ok && !record?.id) {
+        setTaskStatus({
+          type: "error",
+          message: result?.message || result?.error?.message || "Task could not be created.",
+        });
+        return;
+      }
+      if (!record?.id) {
+        setTaskStatus({ type: "error", message: "Task could not be created. No task record was returned." });
+        return;
+      }
+      setTaskForm(defaultEventTaskForm());
+      setTaskStatus({ type: "success", message: result?.message || "Task created." });
+    } catch (error) {
+      setTaskStatus({
+        type: "error",
+        message: error?.message || "Unexpected error while creating task.",
+      });
+    } finally {
+      setTaskCreating(false);
+    }
+  }
+
+  async function submitAssignment(event) {
+    event.preventDefault();
+    if (!activeEventIdValue || !assignmentForm.staffName.trim()) return;
+    const role = eventRoleOptions.find((item) => item.key === assignmentForm.roleKey);
+    const record = await onAssignRole({
+      eventId: activeEventIdValue,
+      roleKey: role.key,
+      roleLabel: role.label,
+      zone: role.zone,
+      assignedOperatorName: assignmentForm.staffName.trim(),
+      assignedByName: user.name,
+      notes: assignmentForm.notes.trim(),
+    });
+    if (!record?.id) return;
+    setAssignmentForm({ roleKey: "event_floor_manager", staffName: "", notes: "" });
+  }
+
+  async function submitHandover(event) {
+    event.preventDefault();
+    if (!activeEventIdValue || !handoverForm.toName.trim()) return;
+    const record = await onCreateHandover({
+      eventId: activeEventIdValue,
+      fromName: activeEvent?.activeResponsibleName || user.name,
+      toName: handoverForm.toName.trim(),
+      responsibilityScope: handoverForm.responsibilityScope,
+      notes: handoverForm.notes.trim(),
+      createdByName: user.name,
+    });
+    if (!record?.id) return;
+    setHandoverForm({ toName: "", responsibilityScope: "all", notes: "" });
+  }
+
+  return (
+    <>
+      <section className="manager-list">
+        <h2>Today’s event board</h2>
+        <p className="muted">
+          Manual event operations board. Calendar import will be added in a later phase.
+        </p>
+        <form className="editor-form compact-editor" onSubmit={submitEvent}>
+          <label>
+            Title
+            <input value={eventForm.title} onChange={(event) => setEventForm((current) => ({ ...current, title: event.target.value }))} />
+          </label>
+          <label>
+            Venue
+            <input value={eventForm.venue} onChange={(event) => setEventForm((current) => ({ ...current, venue: event.target.value }))} />
+          </label>
+          <label>
+            Start
+            <input type="datetime-local" value={eventForm.startsAt} onChange={(event) => setEventForm((current) => ({ ...current, startsAt: event.target.value }))} />
+          </label>
+          <label>
+            End
+            <input type="datetime-local" value={eventForm.endsAt} onChange={(event) => setEventForm((current) => ({ ...current, endsAt: event.target.value }))} />
+          </label>
+          <label>
+            Notes
+            <textarea rows="2" value={eventForm.notes} onChange={(event) => setEventForm((current) => ({ ...current, notes: event.target.value }))} />
+          </label>
+          <button type="submit" className="primary-button compact-button">
+            Create manual event
+          </button>
+        </form>
+        {eventBoardStatus.message && (
+          <p className={eventBoardStatus.type === "success" ? "all-clear" : "status-message"}>
+            {eventBoardStatus.message}
+          </p>
+        )}
+        {todayEvents.length === 0 && <p className="muted">No event board created for today.</p>}
+        {todayEvents.length > 0 && (
+          <label>
+            Active event board
+            <select value={activeEventIdValue} onChange={(event) => selectEventBoard(event.target.value)}>
+              {todayEvents.map((event) => (
+                <option key={event.id} value={event.id}>
+                  {event.title} {event.venue ? `- ${event.venue}` : ""}
+                </option>
+              ))}
+            </select>
+          </label>
+        )}
+        {activeEvent && (
+          <article className="log-row">
+            <strong>{activeEvent.title}</strong>
+            <span>
+              {activeEvent.venue || "No venue"} | {activeEvent.status} | Responsible{" "}
+              {activeEvent.activeResponsibleName || "not set"}
+            </span>
+            <small>
+              {activeEvent.startsAt ? formatDateTime(activeEvent.startsAt) : "No start time"}
+              {activeEvent.endsAt ? ` - ${formatDateTime(activeEvent.endsAt)}` : ""}
+            </small>
+            <label>
+              Status
+              <select
+                value={activeEvent.status}
+                onChange={(event) =>
+                  onUpdateEvent(activeEvent.id, { ...activeEvent, status: event.target.value })
+                }
+              >
+                {["draft", "active", "finished", "cancelled"].map((status) => (
+                  <option key={status} value={status}>{status}</option>
+                ))}
+              </select>
+            </label>
+          </article>
+        )}
+      </section>
+
+      <section className="manager-list">
+        <h2>Event staff available today</h2>
+        <p className="muted">People appear here when they log in, choose an operator, or are added manually.</p>
+        <form className="inline-actions" onSubmit={async (event) => {
+          event.preventDefault();
+          if (!manualStaffName.trim()) return;
+          const record = await onAddStaff(manualStaffName.trim());
+          if (!record?.id) return;
+          setManualStaffName("");
+        }}>
+          <input
+            value={manualStaffName}
+            onChange={(event) => setManualStaffName(event.target.value)}
+            placeholder="Add staff by name"
+          />
+          <button type="submit" className="primary-button compact-button">Add staff</button>
+        </form>
+        {eventStaffPresence.length === 0 && <p className="muted">No event staff checked in yet.</p>}
+        {eventStaffPresence.map((person) => {
+          const role = eventAssignments.find(
+            (assignment) =>
+              assignment.assignedOperatorName?.toLowerCase() === person.operatorName.toLowerCase(),
+          );
+          return (
+            <article key={person.id} className="log-row">
+              <strong>{person.operatorName}</strong>
+              <span>
+                {person.operatorSource || "manual"} | {person.selectedShiftScope || person.roleLabel || "No shift scope"}
+              </span>
+              <small>
+                Last seen {person.lastSeenAt ? formatDateTime(person.lastSeenAt) : "local"}
+                {role ? ` | ${role.roleLabel}` : ""}
+              </small>
+            </article>
+          );
+        })}
+      </section>
+
+      <section className="manager-list">
+        <h2>Role assignments</h2>
+        <p className="muted">
+          Runner reports to Headrunner. Zone managers and Headrunner report to Event Floor Manager.
+        </p>
+        <form className="editor-form compact-editor" onSubmit={submitAssignment}>
+          <label>
+            Role
+            <select value={assignmentForm.roleKey} onChange={(event) => setAssignmentForm((current) => ({ ...current, roleKey: event.target.value }))}>
+              {eventRoleOptions.map((role) => (
+                <option key={role.key} value={role.key}>{role.label}</option>
+              ))}
+            </select>
+          </label>
+          <label>
+            Staff
+            <input
+              list="event-staff-presence-list"
+              value={assignmentForm.staffName}
+              onChange={(event) => setAssignmentForm((current) => ({ ...current, staffName: event.target.value }))}
+            />
+            <datalist id="event-staff-presence-list">
+              {eventStaffPresence.map((person) => (
+                <option key={person.id} value={person.operatorName} />
+              ))}
+            </datalist>
+          </label>
+          <label>
+            Notes
+            <input value={assignmentForm.notes} onChange={(event) => setAssignmentForm((current) => ({ ...current, notes: event.target.value }))} />
+          </label>
+          <button type="submit" className="primary-button compact-button">Assign role</button>
+        </form>
+        {eventAssignments.map((assignment) => (
+          <article key={assignment.id} className="log-row">
+            <strong>{assignment.roleLabel}</strong>
+            <span>{assignment.assignedOperatorName || "Unassigned"} | {assignment.zone || "all"}</span>
+            <small>
+              Reports to {eventRoleOptions.find((role) => role.key === assignment.roleKey)?.reportsTo || "Event Floor Manager"}
+              {assignment.notes ? ` | ${assignment.notes}` : ""}
+            </small>
+          </article>
+        ))}
+      </section>
+
+      <section className="manager-list">
+        <h2>Event task board</h2>
+        <p className="muted">
+          Timed reminders are active while the app is open. Real background push will be added later.
+        </p>
+        {activeEvent ? (
+          <article className="overview-card">
+            <strong>Selected event: {activeEvent.title}</strong>
+            <span>
+              {activeEvent.venue || "No venue"}
+              {activeEvent.startsAt ? ` | ${formatDateTime(activeEvent.startsAt)}` : ""}
+              {activeEvent.endsAt ? ` - ${formatDateTime(activeEvent.endsAt)}` : ""}
+            </span>
+          </article>
+        ) : (
+          <p className="critical-warning">Create an event board above before adding tasks.</p>
+        )}
+        {todayEvents.length > 1 && (
+          <label>
+            Choose task board
+            <select value={activeEventIdValue} onChange={(event) => selectEventBoard(event.target.value)}>
+              {todayEvents.map((event) => (
+                <option key={event.id} value={event.id}>
+                  {event.title} {event.venue ? `- ${event.venue}` : ""}
+                </option>
+              ))}
+            </select>
+          </label>
+        )}
+        <form className="editor-form compact-editor" onSubmit={submitTask}>
+          <label>
+            Task title
+            <input disabled={taskFormDisabled} value={taskForm.title} onChange={(event) => setTaskForm((current) => ({ ...current, title: event.target.value }))} />
+          </label>
+          <label>
+            Description
+            <input disabled={taskFormDisabled} value={taskForm.description} onChange={(event) => setTaskForm((current) => ({ ...current, description: event.target.value }))} />
+          </label>
+          <label>
+            Due time
+            <input
+              type="datetime-local"
+              disabled={taskFormDisabled}
+              value={taskForm.dueAt}
+              onChange={(event) =>
+                setTaskForm((current) => ({
+                  ...current,
+                  dueAt: event.target.value,
+                  remindAt: event.target.value
+                    ? addMinutesToDateTimeLocal(event.target.value, -5)
+                    : "",
+                }))
+              }
+            />
+          </label>
+          <label>
+            Remind time
+            <input disabled={taskFormDisabled} type="datetime-local" value={taskForm.remindAt} onChange={(event) => setTaskForm((current) => ({ ...current, remindAt: event.target.value }))} />
+          </label>
+          <label>
+            Zone
+            <select disabled={taskFormDisabled} value={taskForm.zone} onChange={(event) => setTaskForm((current) => ({ ...current, zone: event.target.value }))}>
+              {eventZones.map((zone) => <option key={zone} value={zone}>{zone}</option>)}
+            </select>
+          </label>
+          <label>
+            Priority
+            <select disabled={taskFormDisabled} value={taskForm.priority} onChange={(event) => setTaskForm((current) => ({ ...current, priority: event.target.value }))}>
+              {["low", "normal", "important", "critical"].map((priority) => <option key={priority} value={priority}>{priority}</option>)}
+            </select>
+          </label>
+          <label>
+            Assign role
+            <select disabled={taskFormDisabled} value={taskForm.assignedRoleKey} onChange={(event) => setTaskForm((current) => ({ ...current, assignedRoleKey: event.target.value }))}>
+              <option value="">No role</option>
+              {eventRoleOptions.map((role) => <option key={role.key} value={role.key}>{role.label}</option>)}
+            </select>
+          </label>
+          <label>
+            Assign person
+            <input
+              disabled={taskFormDisabled}
+              list="event-staff-presence-list"
+              value={taskForm.assignedOperatorName}
+              onChange={(event) => setTaskForm((current) => ({ ...current, assignedOperatorName: event.target.value }))}
+            />
+          </label>
+          {taskStatus.message && (
+            <p className={taskStatus.type === "error" ? "critical-warning" : taskStatus.type === "success" ? "all-clear" : "status-message"}>
+              {taskStatus.message}
+            </p>
+          )}
+          <button type="submit" className="primary-button compact-button" disabled={taskFormDisabled}>
+            {taskCreating ? "Creating task..." : "Create event task"}
+          </button>
+        </form>
+        {eventTaskGroups().map(([title, tasks]) => (
+          <div key={title} className="critical-group">
+            <h3>{title}</h3>
+            {tasks.length === 0 && <p className="muted">None.</p>}
+            {tasks.map((task) => {
+              const actionStatus = taskActionStatus?.[task.id];
+              const actionPending = ["acknowledging", "completing"].includes(actionStatus?.status);
+              return (
+                <article key={task.id} className={`log-row priority-${task.priority}`}>
+                  <strong>{task.title}</strong>
+                  <span>
+                    {task.zone || "all"} | {task.assignedOperatorName || eventRoleLabel(task.assignedRoleKey) || "Unassigned"} |{" "}
+                    <span className={`event-task-status-chip status-${task.status || "pending"}`}>
+                      {task.status === "acknowledged" ? "Acknowledged" : task.status || "pending"}
+                    </span>
+                  </span>
+                  <small>
+                    {task.dueAt ? `Due ${formatDateTime(task.dueAt)}` : "No due time"}
+                    {task.remindAt ? ` | remind ${formatDateTime(task.remindAt)}` : ""}
+                  </small>
+                  {task.status === "acknowledged" && (
+                    <small>
+                      Acknowledged by {task.acknowledgedByName || "unknown"}
+                      {task.acknowledgedAt ? ` at ${formatDateTime(task.acknowledgedAt)}` : ""}
+                    </small>
+                  )}
+                  {task.status === "done" && task.completedByName && (
+                    <small>
+                      Done by {task.completedByName}
+                      {task.completedAt ? ` at ${formatDateTime(task.completedAt)}` : ""}
+                    </small>
+                  )}
+                  {actionStatus?.message && (
+                    <small className={actionStatus.type === "error" ? "critical-warning" : actionStatus.type === "success" ? "all-clear" : "status-message"}>
+                      {actionStatus.message}
+                    </small>
+                  )}
+                  <div className="backup-actions">
+                    {eventTaskStatuses.map((status) => (
+                      <button
+                        key={status}
+                        type="button"
+                        className={task.status === status ? "primary-button compact-button" : "ghost-button compact-button"}
+                        onClick={() => onUpdateTaskStatus(task.id, status, "")}
+                        disabled={actionPending}
+                      >
+                        {status === "acknowledged" && actionStatus?.status === "acknowledging"
+                          ? "acknowledging..."
+                          : status === "done" && actionStatus?.status === "completing"
+                            ? "completing..."
+                            : status}
+                      </button>
+                    ))}
+                  </div>
+                </article>
+              );
+            })}
+          </div>
+        ))}
+      </section>
+
+      <section className="manager-list">
+        <h2>Responsibility handover</h2>
+        <form className="editor-form compact-editor" onSubmit={submitHandover}>
+          <label>
+            From
+            <input value={activeEvent?.activeResponsibleName || user.name} readOnly />
+          </label>
+          <label>
+            To
+            <input
+              list="event-staff-presence-list"
+              value={handoverForm.toName}
+              onChange={(event) => setHandoverForm((current) => ({ ...current, toName: event.target.value }))}
+            />
+          </label>
+          <label>
+            Scope
+            <select value={handoverForm.responsibilityScope} onChange={(event) => setHandoverForm((current) => ({ ...current, responsibilityScope: event.target.value }))}>
+              {eventHandoverScopes.map((scope) => <option key={scope} value={scope}>{scope.replaceAll("_", " ")}</option>)}
+            </select>
+          </label>
+          <label>
+            Notes
+            <textarea rows="2" value={handoverForm.notes} onChange={(event) => setHandoverForm((current) => ({ ...current, notes: event.target.value }))} />
+          </label>
+          <button type="submit" className="primary-button compact-button">Confirm handover</button>
+        </form>
+        {eventHandoversForEvent.map((handover) => (
+          <article key={handover.id} className="log-row">
+            <strong>{handover.fromName || "Current responsible"} → {handover.toName}</strong>
+            <span>{handover.responsibilityScope?.replaceAll("_", " ") || "all"}</span>
+            <small>
+              {handover.createdAt ? formatDateTime(handover.createdAt) : "Local"}
+              {handover.notes ? ` | ${handover.notes}` : ""}
+            </small>
+          </article>
+        ))}
+      </section>
+    </>
+  );
+}
+
 function EventFloorDashboard({
   user,
   events,
@@ -3691,8 +4811,21 @@ function EventFloorDashboard({
   setAssetChecks,
   eventTaskChecks,
   setEventTaskChecks,
+  eventOperations,
+  eventStaffPresence,
+  eventRoleAssignments,
+  eventOperationTasks,
+  eventHandovers,
   staffUsers,
   requestWriteAccess,
+  onCreateEventOperation,
+  onUpdateEventOperation,
+  onAddEventStaffPresence,
+  onAssignEventRole,
+  onCreateEventOperationTask,
+  onUpdateEventOperationTaskStatus,
+  eventTaskActionStatus,
+  onCreateEventHandover,
   onSyncFinancialSignoff,
   onRefreshFinancialSignoffs,
   onEnsureShiftSession,
@@ -3821,6 +4954,24 @@ function EventFloorDashboard({
       </section>
 
       <EventCodeGeneratorPanel user={user} />
+
+      <EventOperationsCorePanel
+        user={user}
+        date={date}
+        eventOperations={eventOperations}
+        eventStaffPresence={eventStaffPresence}
+        eventRoleAssignments={eventRoleAssignments}
+        eventTasks={eventOperationTasks}
+        eventHandovers={eventHandovers}
+        onCreateEvent={onCreateEventOperation}
+        onUpdateEvent={onUpdateEventOperation}
+        onAddStaff={onAddEventStaffPresence}
+        onAssignRole={onAssignEventRole}
+        onCreateTask={onCreateEventOperationTask}
+        onUpdateTaskStatus={onUpdateEventOperationTaskStatus}
+        taskActionStatus={eventTaskActionStatus}
+        onCreateHandover={onCreateEventHandover}
+      />
 
       <section className="manager-list">
         <h2>Today's events</h2>
@@ -11339,6 +12490,36 @@ function App() {
   const [eventTaskChecks, setEventTaskChecks] = useState(() =>
     normalizeRecords(readStorage(EVENT_TASK_CHECK_KEY, [])),
   );
+  const [eventOperations, setEventOperations] = useState(() =>
+    normalizeRecords(readStorage(EVENT_OPERATIONS_KEY, [])),
+  );
+  const [eventStaffPresence, setEventStaffPresence] = useState(() =>
+    normalizeRecords(readStorage(EVENT_STAFF_PRESENCE_KEY, [])),
+  );
+  const [eventRoleAssignments, setEventRoleAssignments] = useState(() =>
+    normalizeRecords(readStorage(EVENT_ROLE_ASSIGNMENT_KEY, [])),
+  );
+  const [eventOperationTasks, setEventOperationTasks] = useState(() =>
+    normalizeRecords(readStorage(EVENT_OPERATION_TASK_KEY, [])),
+  );
+  const [eventHandovers, setEventHandovers] = useState(() =>
+    normalizeRecords(readStorage(EVENT_HANDOVER_KEY, [])),
+  );
+  const [eventTaskAlertState, setEventTaskAlertState] = useState(() =>
+    readStorage(EVENT_TASK_ALERT_STATE_KEY, {}),
+  );
+  const [eventTaskAlertSettings, setEventTaskAlertSettings] = useState(() =>
+    readStorage(EVENT_TASK_ALERT_SETTINGS_KEY, {
+      enabled: false,
+      notificationPermission:
+        typeof window !== "undefined" && "Notification" in window
+          ? window.Notification.permission
+          : "unsupported",
+      enabledAt: "",
+    }),
+  );
+  const [eventTaskAlerts, setEventTaskAlerts] = useState([]);
+  const [eventTaskActionStatus, setEventTaskActionStatus] = useState({});
   const [siteAccess, setSiteAccess] = useState({
     status: siteSettings.locationCheckEnabled ? "unknown" : "off",
     distance: null,
@@ -11567,12 +12748,24 @@ function App() {
     () => saveStorage(EVENT_TASK_CHECK_KEY, eventTaskChecks),
     [eventTaskChecks],
   );
+  useEffect(() => saveStorage(EVENT_OPERATIONS_KEY, eventOperations), [eventOperations]);
+  useEffect(() => saveStorage(EVENT_STAFF_PRESENCE_KEY, eventStaffPresence), [eventStaffPresence]);
+  useEffect(() => saveStorage(EVENT_ROLE_ASSIGNMENT_KEY, eventRoleAssignments), [eventRoleAssignments]);
+  useEffect(() => saveStorage(EVENT_OPERATION_TASK_KEY, eventOperationTasks), [eventOperationTasks]);
+  useEffect(() => saveStorage(EVENT_HANDOVER_KEY, eventHandovers), [eventHandovers]);
+  useEffect(() => saveStorage(EVENT_TASK_ALERT_STATE_KEY, eventTaskAlertState), [eventTaskAlertState]);
+  useEffect(
+    () => saveStorage(EVENT_TASK_ALERT_SETTINGS_KEY, eventTaskAlertSettings),
+    [eventTaskAlertSettings],
+  );
 
   const alertsRef = useRef(alerts);
   const logsRef = useRef(logs);
   const handoverNotesRef = useRef(handoverNotes);
   const cashSignoffsRef = useRef(cashSignoffs);
   const assetChecksRef = useRef(assetChecks);
+  const eventTaskAlertStateRef = useRef(eventTaskAlertState);
+  const eventOperationsRefreshRef = useRef(false);
 
   useEffect(() => {
     alertsRef.current = alerts;
@@ -11594,10 +12787,19 @@ function App() {
     assetChecksRef.current = assetChecks;
   }, [assetChecks]);
 
+  useEffect(() => {
+    eventTaskAlertStateRef.current = eventTaskAlertState;
+  }, [eventTaskAlertState]);
+
   const activeOverride = isOverrideActive(siteOverrides);
   const activeManagerOverride =
     siteSettings.managerOverrideEnabled && isManager(user) ? activeOverride : null;
-  const siteAccessStatus = activeManagerOverride ? "override" : siteAccess.status;
+  const managerLocalTestingBypass =
+    siteSettings.locationCheckEnabled && isManager(user) && isLocalhostRuntime();
+  const siteAccessStatus =
+    activeManagerOverride || managerLocalTestingBypass ? "override" : siteAccess.status;
+  const effectiveActor = getEffectiveActor(user, currentOperator);
+  const effectiveUser = userForActor(user, effectiveActor);
 
   function checkLocation() {
     return new Promise((resolve) => {
@@ -11661,8 +12863,15 @@ function App() {
     });
   }
 
-  async function requestWriteAccess() {
-    if (!siteSettings.locationCheckEnabled || activeManagerOverride) return true;
+  async function requestWriteAccess(
+    blockedMessage = "Location guard is blocking operational changes.\n\nDisable Location Check in Manager Dashboard or use temporary manager override for local testing.",
+  ) {
+    if (
+      !siteSettings.locationCheckEnabled ||
+      activeManagerOverride ||
+      managerLocalTestingBypass
+    )
+      return true;
     if (!hasSiteCoordinates(siteSettings)) {
       window.alert(
         "Location guard not configured\n\nSite coordinates are missing in Youngs Site Mode. Save site settings before using this as a hard guard.",
@@ -11671,10 +12880,49 @@ function App() {
     }
     const result = await checkLocation();
     if (result.status === "on_site") return true;
-    window.alert(
-      "On-site required\n\nThis action changes operational records. Please use it at Youngs or ask manager for override.",
-    );
+    window.alert(blockedMessage);
     return false;
+  }
+
+  async function enableEventTaskAlerts() {
+    let notificationPermission =
+      typeof window !== "undefined" && "Notification" in window
+        ? window.Notification.permission
+        : "unsupported";
+    if (typeof window !== "undefined" && "Notification" in window) {
+      try {
+        notificationPermission = await window.Notification.requestPermission();
+      } catch {
+        notificationPermission = window.Notification.permission || "default";
+      }
+    }
+    let soundUnlocked = false;
+    try {
+      soundUnlocked = await playEventTaskBeep();
+    } catch {
+      soundUnlocked = false;
+    }
+    if (navigator.vibrate) navigator.vibrate([120]);
+    const settings = {
+      enabled: true,
+      notificationPermission,
+      soundUnlocked,
+      enabledAt: new Date().toISOString(),
+    };
+    setEventTaskAlertSettings(settings);
+    saveStorage(EVENT_TASK_ALERT_SETTINGS_KEY, settings);
+    return settings;
+  }
+
+  function triggerEventTaskAlert(alertRecord) {
+    setEventTaskAlerts((current) => {
+      const withoutExisting = current.filter((item) => item.id !== alertRecord.id);
+      return [alertRecord, ...withoutExisting].slice(0, 5);
+    });
+    if (!eventTaskAlertSettings.enabled) return;
+    playEventTaskBeep().catch(() => {});
+    if (navigator.vibrate) navigator.vibrate([300, 150, 300]);
+    showEventTaskBrowserNotification(alertRecord);
   }
 
   function updateAuthStatusFromUser(nextUser, error = "", details = {}) {
@@ -14033,6 +15281,130 @@ function App() {
     if (!normalized) localStorage.removeItem(SHIFT_SCOPE_KEY);
   }, [user?.id, user?.authUserId, user?.code, user?.name, currentOperator?.name]);
 
+  useEffect(() => {
+    if (!user) return;
+    registerEventStaffPresence(user, currentOperator, currentShiftScope, currentRoleMode);
+  }, [
+    user?.id,
+    user?.authUserId,
+    user?.backendUserId,
+    user?.name,
+    currentOperator?.name,
+    currentOperator?.source,
+    currentShiftScope?.selectedScope,
+    currentRoleMode?.roleMode,
+  ]);
+
+  useEffect(() => {
+    if (user?.loginSource === "supabase_auth") refreshEventOperationsBackend(todayKey());
+  }, [user?.id, user?.loginSource]);
+
+  useEffect(() => {
+    if (!user) {
+      setEventTaskAlerts([]);
+      return undefined;
+    }
+    refreshEventOperationsLive("event_task_login");
+    const intervalId = window.setInterval(
+      () => refreshEventOperationsLive("event_task_poll"),
+      EVENT_TASK_ALERT_POLL_SECONDS * 1000,
+    );
+    function refreshOnFocus() {
+      refreshEventOperationsLive("event_task_focus");
+    }
+    function refreshOnVisible() {
+      if (document.visibilityState === "visible")
+        refreshEventOperationsLive("event_task_visible");
+    }
+    window.addEventListener("focus", refreshOnFocus);
+    document.addEventListener("visibilitychange", refreshOnVisible);
+    return () => {
+      window.clearInterval(intervalId);
+      window.removeEventListener("focus", refreshOnFocus);
+      document.removeEventListener("visibilitychange", refreshOnVisible);
+    };
+  }, [user?.id, user?.loginSource, currentOperator?.name]);
+
+  useEffect(() => {
+    if (!user) return;
+    if (["overview", "event"].includes(selectedShift) || showEventFloorManager)
+      refreshEventOperationsLive("event_task_view_open");
+  }, [selectedShift, showEventFloorManager, user?.id]);
+
+  useEffect(() => {
+    if (!user) return;
+    const assignedTasks = assignedEventTasksForUser(
+      eventOperations,
+      eventRoleAssignments,
+      eventOperationTasks,
+      effectiveUser,
+    ).filter(isOpenEventTask);
+    const currentState = eventTaskAlertStateRef.current || {};
+    const nextState = { ...currentState };
+    const now = Date.now();
+    const newAlerts = [];
+
+    assignedTasks.forEach((task) => {
+      if (task.remindAt) {
+        const remindTime = new Date(task.remindAt).getTime();
+        const reminderKey = eventTaskAlertKey(effectiveUser, task, "reminder");
+        if (!Number.isNaN(remindTime) && remindTime <= now && !currentState[reminderKey]) {
+          nextState[reminderKey] = { alertedAt: new Date().toISOString() };
+          const minutes = minutesBetweenNow(task.dueAt);
+          newAlerts.push({
+            id: reminderKey,
+            taskId: task.id,
+            type: "reminder",
+            title: `Upcoming event task: ${task.title}`,
+            body:
+              minutes !== null && minutes >= 0
+                ? `${task.title} is due in ${minutes} min.`
+                : `${task.title} is coming up.`,
+            zone: task.zone || "all",
+            dueAt: task.dueAt,
+            assignedTo: taskAssignedLabel(task),
+          });
+        }
+      }
+      if (task.dueAt) {
+        const dueTime = new Date(task.dueAt).getTime();
+        const dueKey = eventTaskAlertKey(effectiveUser, task, "due");
+        if (!Number.isNaN(dueTime) && dueTime <= now && !currentState[dueKey]) {
+          nextState[dueKey] = { alertedAt: new Date().toISOString() };
+          newAlerts.push({
+            id: dueKey,
+            taskId: task.id,
+            type: "due",
+            title: `DO NOW: ${task.title}`,
+            body: `DO NOW: ${task.title}`,
+            zone: task.zone || "all",
+            dueAt: task.dueAt,
+            assignedTo: taskAssignedLabel(task),
+          });
+        }
+      }
+    });
+
+    const activeTaskIds = new Set(assignedTasks.map((task) => task.id));
+    setEventTaskAlerts((current) =>
+      current.filter((alert) => activeTaskIds.has(alert.taskId)),
+    );
+    if (!newAlerts.length) return;
+    eventTaskAlertStateRef.current = nextState;
+    setEventTaskAlertState(nextState);
+    saveStorage(EVENT_TASK_ALERT_STATE_KEY, nextState);
+    newAlerts.forEach(triggerEventTaskAlert);
+  }, [
+    user?.id,
+    effectiveUser?.name,
+    effectiveUser?.operatorName,
+    currentOperator?.name,
+    eventOperations,
+    eventRoleAssignments,
+    eventOperationTasks,
+    eventTaskAlertSettings.enabled,
+  ]);
+
   if (!user) {
     return (
       <>
@@ -14241,8 +15613,377 @@ function App() {
     setShowEventFloorManager(false);
   }
 
-  const effectiveActor = getEffectiveActor(user, currentOperator);
-  const effectiveUser = userForActor(user, effectiveActor);
+  function mergeById(current, records) {
+    const map = new Map(current.map((item) => [item.id, item]));
+    records.filter(Boolean).forEach((record) => map.set(record.id, record));
+    return [...map.values()];
+  }
+
+  function upsertEventList(setter, record) {
+    if (!record?.id) return;
+    setter((current) => [
+      ...current.filter((item) => item.id !== record.id),
+      record,
+    ]);
+  }
+
+  async function refreshEventOperationsBackend(date = todayKey()) {
+    const tomorrow = new Date(`${date}T00:00:00`);
+    tomorrow.setDate(tomorrow.getDate() + 1);
+    const tomorrowKey = tomorrow.toISOString().slice(0, 10);
+    const [todayResult, tomorrowResult, presenceResult] = await Promise.all([
+      fetchEventOperationsForDate(date),
+      fetchEventOperationsForDate(tomorrowKey),
+      fetchEventStaffPresence(date),
+    ]);
+    const events = [
+      ...(todayResult.records || []),
+      ...(tomorrowResult.records || []),
+    ];
+    if (events.length) setEventOperations((current) => mergeById(current, events));
+    if (presenceResult.records?.length)
+      setEventStaffPresence((current) => mergeById(current, presenceResult.records));
+
+    const eventIds = events.map((event) => event.id).filter(Boolean);
+    if (!eventIds.length) return;
+    const assignmentResults = await Promise.all(
+      eventIds.map((eventId) => fetchEventRoleAssignments(eventId)),
+    );
+    const taskResults = await Promise.all(
+      eventIds.map((eventId) => fetchEventTasks(eventId)),
+    );
+    const handoverResults = await Promise.all(
+      eventIds.map((eventId) => fetchResponsibilityHandovers(eventId)),
+    );
+    const assignments = assignmentResults.flatMap((result) => result.records || []);
+    const tasks = taskResults.flatMap((result) => result.records || []);
+    const handovers = handoverResults.flatMap((result) => result.records || []);
+    if (assignments.length)
+      setEventRoleAssignments((current) => mergeById(current, assignments));
+    if (tasks.length)
+      setEventOperationTasks((current) => mergeById(current, tasks));
+    if (handovers.length)
+      setEventHandovers((current) => mergeById(current, handovers));
+  }
+
+  async function refreshEventOperationsLive(reason = "event_task_poll") {
+    if (!user || eventOperationsRefreshRef.current) return;
+    eventOperationsRefreshRef.current = true;
+    try {
+      await refreshEventOperationsBackend(todayKey());
+    } finally {
+      eventOperationsRefreshRef.current = false;
+    }
+  }
+
+  async function registerEventStaffPresence(
+    presenceUser = user,
+    operator = currentOperator,
+    shiftScope = currentShiftScope,
+    roleMode = currentRoleMode,
+  ) {
+    if (!presenceUser?.name) return;
+    const operatorName = operator?.name || presenceUser.operatorName || presenceUser.name;
+    const record = {
+      id: `${todayKey()}-${slug(operatorName)}-${presenceUser.authUserId || presenceUser.backendUserId || presenceUser.id || "local"}`,
+      date: todayKey(),
+      authUserId: presenceUser.authUserId || presenceUser.backendUserId || "",
+      operatorName,
+      operatorSource:
+        operator?.source ||
+        presenceUser.operatorSource ||
+        presenceUser.loginSource ||
+        "staff_code",
+      roleLabel: roleMode?.label || shiftScope?.label || presenceUser.role || "",
+      selectedShiftScope: shiftScope?.selectedScope || "",
+      available: true,
+      checkedInAt: new Date().toISOString(),
+      lastSeenAt: new Date().toISOString(),
+      metadata: {
+        roleMode: roleMode?.roleMode || "",
+        sharedDevice: isSharedDeviceUser(presenceUser),
+      },
+    };
+    upsertEventList(setEventStaffPresence, record);
+    const result = await upsertEventStaffPresence(record);
+    if (result.ok && result.record) upsertEventList(setEventStaffPresence, result.record);
+  }
+
+  async function saveEventOperation(payload) {
+    if (!(await requestWriteAccess())) return null;
+    const record = {
+      id: eventOpsLocalId("event-operation"),
+      date: payload.date || todayKey(),
+      title: payload.title,
+      venue: payload.venue || "",
+      startsAt: payload.startsAt || "",
+      endsAt: payload.endsAt || "",
+      status: payload.status || "draft",
+      description: payload.description || "",
+      source: payload.source || "manual",
+      sourceRef: payload.sourceRef || "",
+      createdByName: payload.createdByName || user.name,
+      activeResponsibleName: payload.activeResponsibleName || "",
+      activeResponsibleAuthUserId: payload.activeResponsibleAuthUserId || "",
+      notes: payload.notes || "",
+      metadata: payload.metadata || {},
+      updatedAt: new Date().toISOString(),
+    };
+    upsertEventList(setEventOperations, record);
+    const result = await createEventOperation(record);
+    if (result.ok && result.record) {
+      setEventOperations((current) => [
+        ...current.filter((item) => item.id !== record.id && item.id !== result.record.id),
+        result.record,
+      ]);
+      refreshEventOperationsLive("event_board_created");
+      return result.record;
+    }
+    refreshEventOperationsLive("event_board_created_local");
+    return record;
+  }
+
+  async function saveEventOperationUpdate(id, payload) {
+    if (!(await requestWriteAccess())) return null;
+    const record = { ...payload, id, updatedAt: new Date().toISOString() };
+    upsertEventList(setEventOperations, record);
+    const result = await updateEventOperation(id, record);
+    if (result.ok && result.record) upsertEventList(setEventOperations, result.record);
+    return result.ok ? result.record : record;
+  }
+
+  async function saveManualEventStaff(name) {
+    if (!(await requestWriteAccess())) return null;
+    const record = {
+      id: `${todayKey()}-${slug(name)}-manual`,
+      date: todayKey(),
+      operatorName: name,
+      operatorSource: "manual",
+      roleLabel: "manual event staff",
+      selectedShiftScope: "",
+      available: true,
+      checkedInAt: new Date().toISOString(),
+      lastSeenAt: new Date().toISOString(),
+      metadata: {},
+    };
+    upsertEventList(setEventStaffPresence, record);
+    return record;
+  }
+
+  async function saveEventRoleAssignment(payload) {
+    if (!(await requestWriteAccess())) return null;
+    const record = {
+      id: eventOpsLocalId("event-role"),
+      ...payload,
+      active: true,
+      updatedAt: new Date().toISOString(),
+    };
+    setEventRoleAssignments((current) => [
+      ...current.filter(
+        (item) =>
+          !(
+            item.eventId === record.eventId &&
+            item.roleKey === record.roleKey &&
+            item.active
+          ),
+      ).map((item) =>
+        item.eventId === record.eventId && item.roleKey === record.roleKey
+          ? { ...item, active: false }
+          : item,
+      ),
+      record,
+    ]);
+    const result = await upsertEventRoleAssignment(record);
+    if (result.ok && result.record) upsertEventList(setEventRoleAssignments, result.record);
+    return result.ok ? result.record : record;
+  }
+
+  async function saveEventOperationTask(payload) {
+    if (
+      !(await requestWriteAccess(
+        "Location guard is blocking task creation. Disable Location Check in Manager Dashboard or use temporary manager override for local testing.",
+      ))
+    ) {
+      return {
+        ok: false,
+        message:
+          "Location guard is blocking task creation. Disable Location Check in Manager Dashboard or use temporary manager override for local testing.",
+      };
+    }
+    const record = {
+      id: eventOpsLocalId("event-task"),
+      ...payload,
+      status: payload.status || "pending",
+      createdByName: payload.createdByName || user.name,
+      updatedAt: new Date().toISOString(),
+    };
+    const result = await createEventTask(record);
+    if (result.ok && result.record) {
+      setEventOperationTasks((current) => [
+        ...current.filter((item) => item.id !== record.id && item.id !== result.record.id),
+        result.record,
+      ]);
+      refreshEventOperationsLive("event_task_created");
+      return { ok: true, record: result.record, message: "Task created." };
+    }
+    if (result.ok) {
+      upsertEventList(setEventOperationTasks, record);
+      return { ok: true, record, message: "Task created locally." };
+    }
+    return {
+      ok: false,
+      message:
+        result.message ||
+        result.error?.message ||
+        "Task could not be created in Supabase.",
+      error: result.error,
+    };
+  }
+
+  async function saveEventOperationTaskStatus(taskId, status, completionComment = "") {
+    if (
+      !(await requestWriteAccess(
+        "Location guard is blocking task updates. You can view the task, but cannot acknowledge/complete until site access is allowed.",
+      ))
+    )
+      return {
+        ok: false,
+        message:
+          "Location guard is blocking task updates. You can view the task, but cannot acknowledge/complete until site access is allowed.",
+      };
+    const task = eventOperationTasks.find((item) => item.id === taskId);
+    if (!task) return { ok: false, message: "Task was not found." };
+    const now = new Date().toISOString();
+    const record = {
+      ...task,
+      status,
+      acknowledgedAt: status === "acknowledged" ? now : task.acknowledgedAt,
+      acknowledgedByName: status === "acknowledged" ? effectiveUser.name : task.acknowledgedByName,
+      completedAt: status === "done" ? now : task.completedAt,
+      completedByName: status === "done" ? effectiveUser.name : task.completedByName,
+      completionComment: status === "done" ? completionComment : task.completionComment,
+      updatedAt: now,
+    };
+    upsertEventList(setEventOperationTasks, record);
+    const result = await updateEventTaskStatus({
+      taskId,
+      status,
+      completedByName: effectiveUser.name,
+      actorName: effectiveUser.operatorName || effectiveUser.name,
+      completionComment,
+    });
+    if (result.ok && result.record) {
+      upsertEventList(setEventOperationTasks, result.record);
+      refreshEventOperationsLive(`event_task_${status}`);
+      return {
+        ok: true,
+        record: result.record,
+        message: status === "acknowledged" ? "Task acknowledged." : "Task completed.",
+      };
+    }
+    if (!result.ok) {
+      upsertEventList(setEventOperationTasks, task);
+      return {
+        ok: false,
+        message:
+          result.message ||
+          result.error?.message ||
+          `Could not ${status === "acknowledged" ? "acknowledge" : "complete"} task.`,
+        error: result.error,
+      };
+    }
+    refreshEventOperationsLive(`event_task_${status}_local`);
+    return {
+      ok: true,
+      record,
+      message: status === "acknowledged" ? "Task acknowledged." : "Task completed.",
+    };
+  }
+
+  async function handleEventTaskStatusUpdate(taskId, status, completionComment = "", alertId = "") {
+    const isAcknowledge = status === "acknowledged";
+    const pendingStatus = isAcknowledge ? "acknowledging" : "completing";
+    const successMessage = isAcknowledge ? "Task acknowledged." : "Task completed.";
+    const failurePrefix = isAcknowledge ? "Could not acknowledge task" : "Could not complete task";
+    setEventTaskActionStatus((current) => ({
+      ...current,
+      [taskId]: {
+        status: pendingStatus,
+        type: "pending",
+        message: isAcknowledge ? "Acknowledging..." : "Completing...",
+      },
+    }));
+    try {
+      const result = await saveEventOperationTaskStatus(taskId, status, completionComment);
+      if (!result?.ok && !result?.record?.id) {
+        setEventTaskActionStatus((current) => ({
+          ...current,
+          [taskId]: {
+            status: isAcknowledge ? "acknowledge_error" : "complete_error",
+            type: "error",
+            message: `${failurePrefix}: ${result?.message || "Unknown error"}`,
+          },
+        }));
+        return result;
+      }
+      setEventTaskActionStatus((current) => ({
+        ...current,
+        [taskId]: {
+          status: isAcknowledge ? "acknowledged" : "completed",
+          type: "success",
+          message: result?.message || successMessage,
+        },
+      }));
+      if (alertId) {
+        setEventTaskAlerts((current) => current.filter((alert) => alert.id !== alertId));
+      }
+      return result;
+    } catch (error) {
+      const result = {
+        ok: false,
+        message: error?.message || "Unexpected error",
+        error,
+      };
+      setEventTaskActionStatus((current) => ({
+        ...current,
+        [taskId]: {
+          status: isAcknowledge ? "acknowledge_error" : "complete_error",
+          type: "error",
+          message: `${failurePrefix}: ${result.message}`,
+        },
+      }));
+      return result;
+    }
+  }
+
+  async function saveEventHandover(payload) {
+    if (!(await requestWriteAccess())) return null;
+    const record = {
+      id: eventOpsLocalId("event-handover"),
+      ...payload,
+      createdByName: payload.createdByName || user.name,
+      createdAt: new Date().toISOString(),
+    };
+    upsertEventList(setEventHandovers, record);
+    if (payload.eventId) {
+      setEventOperations((current) =>
+        current.map((eventRecord) =>
+          eventRecord.id === payload.eventId
+            ? {
+                ...eventRecord,
+                activeResponsibleName: payload.toName,
+                activeResponsibleAuthUserId: payload.toAuthUserId || "",
+                updatedAt: new Date().toISOString(),
+              }
+            : eventRecord,
+        ),
+      );
+    }
+    const result = await createResponsibilityHandover(record);
+    if (result.ok && result.record) upsertEventList(setEventHandovers, result.record);
+    return result.ok ? result.record : record;
+  }
+
   const activeShiftScope = normalizeShiftScope(
     currentShiftScope,
     effectiveUser,
@@ -14323,12 +16064,39 @@ function App() {
       {siteSettings.locationCheckEnabled &&
         hasSiteCoordinates(siteSettings) &&
         ["away", "unknown"].includes(siteAccess.status) &&
-        !activeManagerOverride && (
+        !activeManagerOverride &&
+        !managerLocalTestingBypass && (
           <p className="status-message page-status">
             You appear to be away from Youngs. You can view the app, but
             operational changes require being on site.
           </p>
         )}
+      {managerLocalTestingBypass && (
+        <p className="status-message page-status">
+          Local manager testing: location guard is bypassed on localhost only.
+        </p>
+      )}
+      <EventTaskAlertBanner
+        alerts={eventTaskAlerts}
+        alertsEnabled={eventTaskAlertSettings.enabled}
+        notificationPermission={eventTaskAlertSettings.notificationPermission}
+        taskActionStatus={eventTaskActionStatus}
+        onEnableAlerts={enableEventTaskAlerts}
+        onAcknowledge={(taskId, alertId) =>
+          handleEventTaskStatusUpdate(taskId, "acknowledged", "", alertId)
+        }
+        onDone={(taskId, alertId) =>
+          handleEventTaskStatusUpdate(taskId, "done", "", alertId)
+        }
+        onOpenTasks={() => {
+          setShowManager(false);
+          setShowEventFloorManager(false);
+          setSelectedShift("overview");
+        }}
+        onDismiss={(alertId) =>
+          setEventTaskAlerts((current) => current.filter((alert) => alert.id !== alertId))
+        }
+      />
       {!activeShift &&
         !showManager &&
         !showEventFloorManager &&
@@ -14357,8 +16125,21 @@ function App() {
             setAssetChecks={setAssetChecks}
             eventTaskChecks={eventTaskChecks}
             setEventTaskChecks={setEventTaskChecks}
+            eventOperations={eventOperations}
+            eventStaffPresence={eventStaffPresence}
+            eventRoleAssignments={eventRoleAssignments}
+            eventOperationTasks={eventOperationTasks}
+            eventHandovers={eventHandovers}
             staffUsers={staffUsers}
             requestWriteAccess={requestWriteAccess}
+            onCreateEventOperation={saveEventOperation}
+            onUpdateEventOperation={saveEventOperationUpdate}
+            onAddEventStaffPresence={saveManualEventStaff}
+            onAssignEventRole={saveEventRoleAssignment}
+            onCreateEventOperationTask={saveEventOperationTask}
+            onUpdateEventOperationTaskStatus={handleEventTaskStatusUpdate}
+            eventTaskActionStatus={eventTaskActionStatus}
+            onCreateEventHandover={saveEventHandover}
             onSyncFinancialSignoff={syncFinancialSignoff}
             onRefreshFinancialSignoffs={refreshFinancialSignoffsFromBackend}
             onEnsureShiftSession={ensureShiftSession}
@@ -14401,8 +16182,21 @@ function App() {
             setAssetChecks={setAssetChecks}
             eventTaskChecks={eventTaskChecks}
             setEventTaskChecks={setEventTaskChecks}
+            eventOperations={eventOperations}
+            eventStaffPresence={eventStaffPresence}
+            eventRoleAssignments={eventRoleAssignments}
+            eventOperationTasks={eventOperationTasks}
+            eventHandovers={eventHandovers}
             staffUsers={staffUsers}
             requestWriteAccess={requestWriteAccess}
+            onCreateEventOperation={saveEventOperation}
+            onUpdateEventOperation={saveEventOperationUpdate}
+            onAddEventStaffPresence={saveManualEventStaff}
+            onAssignEventRole={saveEventRoleAssignment}
+            onCreateEventOperationTask={saveEventOperationTask}
+            onUpdateEventOperationTaskStatus={handleEventTaskStatusUpdate}
+            eventTaskActionStatus={eventTaskActionStatus}
+            onCreateEventHandover={saveEventHandover}
             onSyncFinancialSignoff={syncFinancialSignoff}
             onRefreshFinancialSignoffs={refreshFinancialSignoffsFromBackend}
             onEnsureShiftSession={ensureShiftSession}
@@ -14517,6 +16311,9 @@ function App() {
             alerts={alerts}
             responsibleAssignments={responsibleAssignments}
             events={events}
+            eventOperations={eventOperations}
+            eventRoleAssignments={eventRoleAssignments}
+            eventTasks={eventOperationTasks}
             cashSignoffs={cashSignoffs}
             assetChecks={assetChecks}
             alertBackendStatus={alertBackendStatus}
@@ -14529,6 +16326,13 @@ function App() {
             onOpenMyShift={openMyShiftFromScope}
             onOpenGuides={() => setSelectedShift("guides")}
             onChangeShift={clearShiftScopeAndSelection}
+            onUpdateEventTaskStatus={handleEventTaskStatusUpdate}
+            eventTaskAlertState={eventTaskAlertState}
+            taskActionStatus={eventTaskActionStatus}
+            eventTaskAlertsEnabled={eventTaskAlertSettings.enabled}
+            eventTaskNotificationPermission={eventTaskAlertSettings.notificationPermission}
+            onEnableEventTaskAlerts={enableEventTaskAlerts}
+            onRefreshEventOperations={refreshEventOperationsLive}
             refreshAlerts={loadSupabaseAlerts}
             onAlert={() => setShowGlobalAlert(true)}
           />

@@ -591,6 +591,77 @@ textarea {
   white-space: normal;
 }
 
+.event-task-alert-banner {
+  position: sticky;
+  top: 10px;
+  z-index: 30;
+  display: grid;
+  gap: 10px;
+  width: min(100% - 24px, 980px);
+  margin: 12px auto 0;
+  border: 1px solid color-mix(in srgb, var(--important) 45%, var(--line));
+  border-left: 8px solid var(--important);
+  border-radius: 8px;
+  background: var(--surface);
+  box-shadow: 0 18px 40px rgba(15, 23, 42, 0.16);
+  padding: 14px;
+}
+
+.event-task-alert-banner.due {
+  border-color: color-mix(in srgb, var(--critical) 45%, var(--line));
+  border-left-color: var(--critical);
+}
+
+.event-task-alert-banner h2 {
+  margin: 0;
+  font-size: 1.1rem;
+}
+
+.event-task-alert-banner p,
+.event-task-alert-banner small {
+  margin: 0;
+  color: var(--muted);
+  font-weight: 800;
+}
+
+.event-task-alert-actions,
+.event-task-alert-settings {
+  display: flex;
+  gap: 8px;
+  flex-wrap: wrap;
+  align-items: center;
+}
+
+.event-task-alert-settings {
+  justify-content: space-between;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  background: var(--surface-strong);
+  padding: 12px;
+}
+
+.event-task-status-chip {
+  display: inline-flex;
+  width: fit-content;
+  border-radius: 999px;
+  background: var(--surface-strong);
+  color: var(--muted);
+  padding: 3px 8px;
+  font-size: 0.72rem;
+  font-weight: 900;
+  text-transform: uppercase;
+}
+
+.event-task-status-chip.status-acknowledged {
+  background: color-mix(in srgb, var(--important) 16%, var(--surface));
+  color: var(--important);
+}
+
+.event-task-status-chip.status-done {
+  background: color-mix(in srgb, var(--brand) 16%, var(--surface));
+  color: var(--brand-strong);
+}
+
 .critical-warning,
 .all-clear {
   margin: 12px 0 0;
