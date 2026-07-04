@@ -201,20 +201,54 @@ const shiftLabels = Object.fromEntries(
   shiftOptions.map((shift) => [shift.id, shift.label]),
 );
 const eventRoleOptions = [
-  { key: "event_floor_manager", label: "Event Floor Manager", zone: "all", reportsTo: "Hospitality Operations Manager / Robert" },
-  { key: "cornerbar_manager", label: "Cornerbar Manager", zone: "cornerbar", reportsTo: "Event Floor Manager" },
-  { key: "atrium_manager", label: "Atrium Manager", zone: "atrium", reportsTo: "Event Floor Manager" },
-  { key: "workbar_manager", label: "Workbar Manager", zone: "workbar", reportsTo: "Event Floor Manager" },
-  { key: "headrunner", label: "Headrunner", zone: "all", reportsTo: "Event Floor Manager" },
-  { key: "runner", label: "Runner", zone: "all", reportsTo: "Headrunner" },
-  { key: "bar_staff", label: "Bar staff", zone: "bar", reportsTo: "Zone manager" },
-  { key: "cafe_staff", label: "Cafe staff", zone: "workbar", reportsTo: "Workbar Manager" },
-  { key: "support", label: "Support", zone: "all", reportsTo: "Event Floor Manager" },
-  { key: "other", label: "Other", zone: "all", reportsTo: "Event Floor Manager" },
+  { key: "event_floor_manager", label: "Event Floor Manager", zone: "all", reportsTo: "Hospitality Operations Manager / Robert", singleLead: true, group: "command" },
+  { key: "cornerbar_manager", label: "Cornerbar Manager", zone: "cornerbar", reportsTo: "Event Floor Manager", singleLead: true, group: "command" },
+  { key: "atrium_manager", label: "Atrium Manager", zone: "atrium", reportsTo: "Event Floor Manager", singleLead: true, group: "command" },
+  { key: "workbar_manager", label: "Workbar Manager", zone: "workbar", reportsTo: "Event Floor Manager", singleLead: true, group: "command" },
+  { key: "headrunner", label: "Headrunner", zone: "runners", reportsTo: "Event Floor Manager", singleLead: true, group: "command" },
+  { key: "runner", label: "Runner", zone: "runners", reportsTo: "Headrunner", singleLead: false, group: "team" },
+  { key: "cornerbar_staff", label: "Cornerbar Staff", zone: "cornerbar", reportsTo: "Cornerbar Manager", singleLead: false, group: "team" },
+  { key: "atrium_staff", label: "Atrium Staff", zone: "atrium", reportsTo: "Atrium Manager", singleLead: false, group: "team" },
+  { key: "workbar_staff", label: "Workbar Staff", zone: "workbar", reportsTo: "Workbar Manager", singleLead: false, group: "team" },
+  { key: "bar_staff", label: "Bar Staff", zone: "all", reportsTo: "Zone manager", singleLead: false, group: "team" },
+  { key: "support", label: "Support", zone: "all", reportsTo: "Event Floor Manager", singleLead: false, group: "team" },
+  { key: "other", label: "Other", zone: "other", reportsTo: "Event Floor Manager", singleLead: false, group: "team" },
 ];
 const eventTaskStatuses = ["pending", "acknowledged", "done", "missed", "cancelled"];
-const eventZones = ["all", "atrium", "cornerbar", "workbar", "backstage", "project_rooms"];
+const eventZones = ["all", "cornerbar", "atrium", "workbar", "runners", "bar", "support", "other", "backstage", "project_rooms"];
 const eventHandoverScopes = ["all", "locking", "cash_close", "assets_check", "event_close", "cornerbar", "atrium", "workbar"];
+const eventCommandZones = [
+  {
+    key: "all",
+    label: "Event Floor",
+    managerRole: "event_floor_manager",
+    staffRoles: ["support", "bar_staff"],
+  },
+  {
+    key: "cornerbar",
+    label: "Cornerbar",
+    managerRole: "cornerbar_manager",
+    staffRoles: ["cornerbar_staff", "bar_staff", "support"],
+  },
+  {
+    key: "atrium",
+    label: "Atrium",
+    managerRole: "atrium_manager",
+    staffRoles: ["atrium_staff", "bar_staff", "support"],
+  },
+  {
+    key: "workbar",
+    label: "Workbar",
+    managerRole: "workbar_manager",
+    staffRoles: ["workbar_staff", "support"],
+  },
+  {
+    key: "runners",
+    label: "Runners",
+    managerRole: "headrunner",
+    staffRoles: ["runner"],
+  },
+];
 const alertCategories = [
   "Stock empty",
   "Equipment broken",
@@ -710,6 +744,12 @@ function isLocalhostRuntime() {
   return ["localhost", "127.0.0.1", "::1"].includes(window.location.hostname);
 }
 
+function eventBoardPriority(event) {
+  if ((event?.status || "draft") === "active") return 0;
+  if ((event?.status || "draft") === "draft") return 1;
+  return 2;
+}
+
 function toDateTimeLocalValue(dateOrIso = new Date()) {
   const date = dateOrIso instanceof Date ? dateOrIso : new Date(dateOrIso);
   if (Number.isNaN(date.getTime())) return "";
@@ -764,6 +804,10 @@ function defaultEventTaskForm() {
 
 function eventRoleLabel(roleKey) {
   return eventRoleOptions.find((role) => role.key === roleKey)?.label || roleKey || "";
+}
+
+function eventRoleOption(roleKey) {
+  return eventRoleOptions.find((role) => role.key === roleKey) || null;
 }
 
 function isEventOpsManager(user) {
@@ -860,6 +904,261 @@ function groupAssignedEventTasks(tasks) {
 
 function taskAssignedLabel(task) {
   return task.assignedOperatorName || eventRoleLabel(task.assignedRoleKey) || "Assigned task";
+}
+
+function normalizedPersonName(value) {
+  return String(value || "").trim().toLowerCase();
+}
+
+function eventStaffSourcePriority(source = "") {
+  const normalizedSource = String(source || "").trim().toLowerCase();
+  if (["time2staff", "workbar_device", "workbar device"].includes(normalizedSource)) return 0;
+  if (["staff", "supabase_auth", "email"].includes(normalizedSource)) return 1;
+  if (normalizedSource === "manual") return 2;
+  return 3;
+}
+
+function eventPresenceTimestamp(person) {
+  const timestamp =
+    new Date(person?.lastSeenAt || person?.updatedAt || person?.checkedInAt || 0).getTime() || 0;
+  return timestamp;
+}
+
+function dedupeEventStaffPresence(presence = []) {
+  const grouped = new Map();
+  presence.forEach((person) => {
+    const name = String(person?.operatorName || "").trim();
+    const key = normalizedPersonName(name);
+    if (!key) return;
+    const current = grouped.get(key);
+    const candidateScore = [
+      person.available === false ? 1 : 0,
+      eventStaffSourcePriority(person.operatorSource),
+      -eventPresenceTimestamp(person),
+    ];
+    const currentScore = current
+      ? [
+          current.available === false ? 1 : 0,
+          eventStaffSourcePriority(current.operatorSource),
+          -eventPresenceTimestamp(current),
+        ]
+      : null;
+    if (
+      !current ||
+      candidateScore[0] < currentScore[0] ||
+      (candidateScore[0] === currentScore[0] && candidateScore[1] < currentScore[1]) ||
+      (candidateScore[0] === currentScore[0] &&
+        candidateScore[1] === currentScore[1] &&
+        candidateScore[2] < currentScore[2])
+    ) {
+      grouped.set(key, { ...person, operatorName: name });
+    }
+  });
+  return [...grouped.values()].sort((a, b) =>
+    normalizedPersonName(a.operatorName).localeCompare(normalizedPersonName(b.operatorName)),
+  );
+}
+
+function eventRoleEffectiveZone(roleKey, zone = "") {
+  const requestedZone = String(zone || "").trim();
+  if (roleKey === "runner" || roleKey === "headrunner") return "runners";
+  if (roleKey === "cornerbar_staff" || roleKey === "cornerbar_manager") return "cornerbar";
+  if (roleKey === "atrium_staff" || roleKey === "atrium_manager") return "atrium";
+  if (roleKey === "workbar_staff" || roleKey === "workbar_manager") return "workbar";
+  if (roleKey === "bar_staff") return "all";
+  if (roleKey === "support") return "support";
+  if (roleKey === "other") return "other";
+  return requestedZone || eventRoleOption(roleKey)?.zone || "all";
+}
+
+function zoneDisplayLabel(zone = "") {
+  const labelMap = {
+    all: "Event Floor",
+    cornerbar: "Cornerbar",
+    atrium: "Atrium",
+    workbar: "Workbar",
+    runners: "Runners",
+    support: "Support",
+    other: "Other",
+  };
+  return labelMap[zone] || zone || "All";
+}
+
+function assignmentNames(assignments = []) {
+  const names = [];
+  assignments.forEach((assignment) => {
+    const name = String(assignment.assignedOperatorName || "").trim();
+    if (name && !names.some((item) => normalizedPersonName(item) === normalizedPersonName(name)))
+      names.push(name);
+  });
+  return names;
+}
+
+function eventRoleImportance(roleKey = "") {
+  const order = [
+    "event_floor_manager",
+    "cornerbar_manager",
+    "atrium_manager",
+    "workbar_manager",
+    "headrunner",
+    "runner",
+    "cornerbar_staff",
+    "atrium_staff",
+    "workbar_staff",
+    "bar_staff",
+    "support",
+    "other",
+  ];
+  const index = order.indexOf(roleKey);
+  return index === -1 ? order.length : index;
+}
+
+function eventRolesForPerson(person, assignments = []) {
+  const personName = normalizedPersonName(person?.operatorName);
+  const authUserId = person?.authUserId || person?.backendUserId || person?.id || "";
+  return assignments
+    .filter((assignment) => {
+      if (!assignment.active) return false;
+      if (assignment.assignedOperatorName)
+        return personName && normalizedPersonName(assignment.assignedOperatorName) === personName;
+      return Boolean(authUserId && assignment.assignedAuthUserId === authUserId);
+    })
+    .sort((a, b) => eventRoleImportance(a.roleKey) - eventRoleImportance(b.roleKey));
+}
+
+function eventRoleSummaryForPerson(person, assignments = []) {
+  const labels = [];
+  eventRolesForPerson(person, assignments).forEach((assignment) => {
+    const label = eventRoleLabel(assignment.roleKey);
+    if (label && !labels.includes(label)) labels.push(label);
+  });
+  return labels.join(", ") || "Available";
+}
+
+function eventStaffOptionLabel(person, assignments = []) {
+  const name = String(person?.operatorName || "").trim();
+  return `${name} - ${eventRoleSummaryForPerson(person, assignments)}`;
+}
+
+function zoneTaskDefaults(zoneKey = "all") {
+  const zone = zoneKey || "all";
+  const assignedRoleKeyByZone = {
+    all: "event_floor_manager",
+    cornerbar: "cornerbar_manager",
+    atrium: "atrium_manager",
+    workbar: "workbar_manager",
+    runners: "headrunner",
+  };
+  return {
+    zone,
+    assignedRoleKey: assignedRoleKeyByZone[zone] || "",
+    priority: zone === "all" ? "normal" : "important",
+  };
+}
+
+function userIdentityNames(user) {
+  const names = [
+    user?.operatorName,
+    user?.name,
+    user?.staffName,
+    user?.displayName,
+    user?.display_name,
+    user?.authDisplayName,
+    user?.baseName,
+  ];
+  if (user?.email) names.push(String(user.email).split("@")[0]);
+  return [...new Set(names.map(normalizedPersonName).filter(Boolean))];
+}
+
+function assignmentMatchesUser(assignment, user) {
+  const authUserId = user?.authUserId || user?.backendUserId || user?.id || "";
+  const names = userIdentityNames(user);
+  if (assignment.assignedOperatorName)
+    return names.includes(normalizedPersonName(assignment.assignedOperatorName));
+  return Boolean(assignment.assignedAuthUserId && authUserId && assignment.assignedAuthUserId === authUserId);
+}
+
+function assignmentMatchesPerson(assignment, roleKey, operatorName, authUserId = "") {
+  if (!assignment.active || assignment.roleKey !== roleKey) return false;
+  const normalizedOperatorName = normalizedPersonName(operatorName);
+  if (normalizedOperatorName) {
+    return (
+      assignment.assignedOperatorName &&
+      normalizedPersonName(assignment.assignedOperatorName) === normalizedOperatorName
+    );
+  }
+  return Boolean(authUserId && assignment.assignedAuthUserId && assignment.assignedAuthUserId === authUserId);
+}
+
+function commandRoleAssignments(assignments, roleKey, zone = "") {
+  return assignments.filter((assignment) => {
+    if (!assignment.active || assignment.roleKey !== roleKey) return false;
+    if (!zone || zone === "all") return true;
+    return eventRoleEffectiveZone(roleKey, assignment.zone) === zone;
+  });
+}
+
+function eventZoneForTask(task) {
+  if (task.zone && task.zone !== "all") return task.zone;
+  return eventRoleEffectiveZone(task.assignedRoleKey, task.zone);
+}
+
+function taskProgress(tasks) {
+  const now = Date.now();
+  return {
+    total: tasks.length,
+    pending: tasks.filter((task) => (task.status || "pending") === "pending").length,
+    acknowledged: tasks.filter((task) => task.status === "acknowledged").length,
+    done: tasks.filter((task) => task.status === "done").length,
+    dueNow: tasks.filter(
+      (task) =>
+        isOpenEventTask(task) &&
+        task.dueAt &&
+        new Date(task.dueAt).getTime() <= now,
+    ).length,
+    critical: tasks.filter(
+      (task) => isOpenEventTask(task) && task.priority === "critical",
+    ).length,
+  };
+}
+
+function commandZoneSummary(zoneConfig, assignments, tasks) {
+  const managerAssignments = commandRoleAssignments(
+    assignments,
+    zoneConfig.managerRole,
+    zoneConfig.key,
+  );
+  const eventFloorTeamRoles = ["cornerbar_manager", "atrium_manager", "workbar_manager", "headrunner"];
+  const staffAssignments = assignments.filter(
+    (assignment) => {
+      if (!assignment.active) return false;
+      if (zoneConfig.key === "all" && eventFloorTeamRoles.includes(assignment.roleKey))
+        return true;
+      if (!zoneConfig.staffRoles.includes(assignment.roleKey)) return false;
+      const assignmentZone = eventRoleEffectiveZone(assignment.roleKey, assignment.zone);
+      return zoneConfig.key === "all" || assignmentZone === zoneConfig.key || assignmentZone === "all";
+    },
+  );
+  const zoneTasks = tasks.filter((task) => {
+    if (zoneConfig.key === "all") return task.zone === "all" || !task.zone;
+    return eventZoneForTask(task) === zoneConfig.key;
+  });
+  return {
+    ...zoneConfig,
+    managerAssignments,
+    staffAssignments,
+    tasks: zoneTasks,
+    progress: taskProgress(zoneTasks),
+  };
+}
+
+function userCommandAssignments(assignments, user) {
+  return assignments.filter(
+    (assignment) =>
+      assignment.active &&
+      assignmentMatchesUser(assignment, user) &&
+      ["cornerbar_manager", "atrium_manager", "workbar_manager", "headrunner"].includes(assignment.roleKey),
+  );
 }
 
 function preferredEventBoardId(events, currentId = "") {
@@ -3267,6 +3566,7 @@ function StaffDashboard({
   onAlert,
 }) {
   const date = todayKey();
+  const safeTaskActionStatus = taskActionStatus || {};
   const todayLogs = logs.filter((log) => log.date === date);
   const todayHandovers = Object.values(handoverNotes).filter(
     (note) => note.date === date && handoverHasContent(note),
@@ -3293,7 +3593,36 @@ function StaffDashboard({
   tomorrowDate.setDate(tomorrowDate.getDate() + 1);
   const tomorrowKey = tomorrowDate.toISOString().slice(0, 10);
   const todayEventOps = eventOperations.filter((event) => event.date === date);
+  const todayRelevantEventOps = todayEventOps
+    .filter((event) => !["cancelled", "canceled"].includes(event.status || ""))
+    .sort(
+      (a, b) =>
+        eventBoardPriority(a) - eventBoardPriority(b) ||
+        new Date(b.updatedAt || b.createdAt || b.startsAt || 0) -
+          new Date(a.updatedAt || a.createdAt || a.startsAt || 0),
+    );
   const tomorrowEventOps = eventOperations.filter((event) => event.date === tomorrowKey);
+  const overviewEventIds = new Set(
+    [...todayEventOps, ...tomorrowEventOps].map((event) => event.id),
+  );
+  const todayRoleEventIds = new Set(
+    (todayRelevantEventOps.length ? todayRelevantEventOps : todayEventOps).map((event) => event.id),
+  );
+  const overviewEventAssignments = eventRoleAssignments.filter((assignment) =>
+    overviewEventIds.has(assignment.eventId),
+  );
+  const overviewEventTasks = eventTasks.filter((task) =>
+    overviewEventIds.has(task.eventId),
+  );
+  const todayRoleAssignments = eventRoleAssignments.filter((assignment) =>
+    todayRoleEventIds.has(assignment.eventId),
+  );
+  const todayRoleTasks = eventTasks.filter((task) =>
+    todayRoleEventIds.has(task.eventId),
+  );
+  const matchedTodayRoleAssignments = todayRoleAssignments.filter(
+    (assignment) => assignment.active && assignmentMatchesUser(assignment, user),
+  );
   const cashIssues = cashSignoffs.filter(
     (record) =>
       record.date === date &&
@@ -3440,6 +3769,31 @@ function StaffDashboard({
         ))}
       </section>
 
+      {(todayEventOps.length > 0 || tomorrowEventOps.length > 0) && (
+        <EventCommandStructurePanel
+          assignments={overviewEventAssignments}
+          tasks={overviewEventTasks}
+          compact
+        />
+      )}
+
+      <MyZoneCommandPanel
+        user={user}
+        eventOperations={todayRelevantEventOps.length ? todayRelevantEventOps : todayEventOps}
+        eventRoleAssignments={todayRoleAssignments}
+        eventTasks={todayRoleTasks}
+        onUpdateTaskStatus={onUpdateEventTaskStatus}
+        taskActionStatus={safeTaskActionStatus}
+      />
+      {isLocalhostRuntime() && (
+        <p className="muted">
+          Local My Zone debug: actor {user.operatorName || user.name || "unknown"} | auth{" "}
+          {user.authUserId || user.backendUserId || user.id || "none"} | today boards{" "}
+          {todayRoleEventIds.size} | role assignments {todayRoleAssignments.length} | matched{" "}
+          {matchedTodayRoleAssignments.map((assignment) => eventRoleLabel(assignment.roleKey)).join(", ") || "none"}
+        </p>
+      )}
+
       <MyEventTasksPanel
         user={user}
         eventOperations={eventOperations}
@@ -3447,7 +3801,7 @@ function StaffDashboard({
         eventTasks={eventTasks}
         onUpdateTaskStatus={onUpdateEventTaskStatus}
         eventTaskAlertState={eventTaskAlertState}
-        taskActionStatus={eventTaskActionStatus}
+        taskActionStatus={safeTaskActionStatus}
         alertsEnabled={eventTaskAlertsEnabled}
         notificationPermission={eventTaskNotificationPermission}
         onEnableAlerts={onEnableEventTaskAlerts}
@@ -4213,6 +4567,197 @@ function MyEventTasksPanel({
   );
 }
 
+function EventCommandStructurePanel({
+  assignments,
+  tasks,
+  onCreateTaskForZone,
+  canManage = false,
+  compact = false,
+}) {
+  const summaries = eventCommandZones.map((zone) =>
+    commandZoneSummary(zone, assignments, tasks),
+  );
+  const eventFloorManager = commandRoleAssignments(
+    assignments,
+    "event_floor_manager",
+    "all",
+  )[0];
+
+  return (
+    <section className="manager-list command-structure-panel">
+      <h2>{compact ? "Event command structure" : "Command Structure"}</h2>
+      <p className="muted">
+        Event Floor Manager coordinates zone managers and Headrunner. Team roles can have multiple people.
+      </p>
+      {eventFloorManager && (
+        <article className="overview-card">
+          <strong>Event Floor Manager: {eventFloorManager.assignedOperatorName || "Assigned"}</strong>
+          <span>Reports to Hospitality Operations Manager / Robert.</span>
+        </article>
+      )}
+      <div className="command-grid">
+        {summaries.map((zone) => (
+          <article key={zone.key} className="command-card">
+            <div className="alert-header">
+              <strong>{zone.label}</strong>
+              <span>{zone.progress.total} task(s)</span>
+            </div>
+            <div className="command-line">
+              <span>Lead</span>
+              <strong>{assignmentNames(zone.managerAssignments).join(", ") || "Not assigned"}</strong>
+            </div>
+            <div className="command-line">
+              <span>Team</span>
+              <strong>{assignmentNames(zone.staffAssignments).join(", ") || "No team assigned"}</strong>
+            </div>
+            <div className="progress-breakdown">
+              <span>Pending {zone.progress.pending}</span>
+              <span>Ack {zone.progress.acknowledged}</span>
+              <span>Done {zone.progress.done}</span>
+              <span>Due now {zone.progress.dueNow}</span>
+              <span>Critical {zone.progress.critical}</span>
+            </div>
+            {canManage && (
+              <button
+                type="button"
+                className="ghost-button compact-button"
+                onClick={() => onCreateTaskForZone?.(zone.key)}
+              >
+                Create task for {zone.label}
+              </button>
+            )}
+          </article>
+        ))}
+      </div>
+    </section>
+  );
+}
+
+function MyZoneCommandPanel({
+  user,
+  eventOperations,
+  eventRoleAssignments,
+  eventTasks,
+  onUpdateTaskStatus,
+  taskActionStatus,
+}) {
+  const visibleEventIds = new Set([
+    ...eventOperations.map((event) => event.id),
+    ...eventRoleAssignments.map((assignment) => assignment.eventId),
+    ...eventTasks.map((task) => task.eventId),
+  ].filter(Boolean));
+  const activeAssignments = eventRoleAssignments.filter(
+    (assignment) => assignment.active && visibleEventIds.has(assignment.eventId),
+  );
+  const myCommandAssignments = userCommandAssignments(activeAssignments, user);
+  const myTeamAssignments = activeAssignments.filter((assignment) => assignmentMatchesUser(assignment, user));
+  const visibleAssignments = myCommandAssignments.length ? myCommandAssignments : myTeamAssignments;
+  if (!visibleAssignments.length) return null;
+
+  const relatedTasks = eventTasks.filter((task) => {
+    if (!visibleEventIds.has(task.eventId)) return false;
+    if (eventTaskMatchesUser(task, activeAssignments, user)) return true;
+    return myCommandAssignments.some((assignment) => {
+      const zone = eventRoleEffectiveZone(assignment.roleKey, assignment.zone);
+      if (assignment.roleKey === "headrunner")
+        return task.assignedRoleKey === "runner" || eventZoneForTask(task) === "runners";
+      return zone && eventZoneForTask(task) === zone;
+    });
+  });
+  const grouped = groupAssignedEventTasks(relatedTasks);
+
+  return (
+    <section className="manager-list">
+      <h2>{myCommandAssignments.length ? "My Zone" : "My Event Role"}</h2>
+      {visibleAssignments.map((assignment) => {
+        const commandZone = eventCommandZones.find((zone) => zone.managerRole === assignment.roleKey);
+        const teamAssignments = commandZone
+          ? activeAssignments.filter(
+              (item) =>
+                item.eventId === assignment.eventId &&
+                commandZone.staffRoles.includes(item.roleKey) &&
+                (commandZone.key === "all" ||
+                  eventRoleEffectiveZone(item.roleKey, item.zone) === commandZone.key ||
+                  eventRoleEffectiveZone(item.roleKey, item.zone) === "all"),
+            )
+          : [];
+        const progress = commandZone
+          ? taskProgress(
+              relatedTasks.filter((task) =>
+                assignment.roleKey === "headrunner"
+                  ? task.assignedRoleKey === "runner" || eventZoneForTask(task) === "runners"
+                  : eventZoneForTask(task) === commandZone.key,
+              ),
+            )
+          : null;
+        return (
+          <article key={assignment.id} className="overview-card">
+            <strong>{eventRoleLabel(assignment.roleKey)}</strong>
+            <span>Reports to {eventRoleOption(assignment.roleKey)?.reportsTo || "Event Floor Manager"}</span>
+            <span>Zone: {zoneDisplayLabel(eventRoleEffectiveZone(assignment.roleKey, assignment.zone))}</span>
+            {commandZone && (
+              <small>
+                Team:{" "}
+                {assignmentNames(teamAssignments).join(", ") || "No team assigned yet"}
+                {progress
+                  ? ` | Tasks pending ${progress.pending}, acknowledged ${progress.acknowledged}, done ${progress.done}`
+                  : ""}
+              </small>
+            )}
+          </article>
+        );
+      })}
+      {myCommandAssignments.length > 0 && (
+        <p className="muted">Zone task delegation will be added in a later phase.</p>
+      )}
+      {grouped.map(([title, tasks]) => (
+        <div key={title} className="critical-group">
+          <h3>{title}</h3>
+          {tasks.length === 0 && <p className="muted">None.</p>}
+          {tasks.map((task) => {
+            const actionStatus = taskActionStatus?.[task.id];
+            const actionPending = ["acknowledging", "completing"].includes(actionStatus?.status);
+            const canUpdateTask = eventTaskMatchesUser(task, activeAssignments, user);
+            return (
+              <article key={task.id} className={`log-row priority-${task.priority}`}>
+                <strong>{task.title}</strong>
+                <span>
+                  {task.zone || "all"} | {task.assignedOperatorName || eventRoleLabel(task.assignedRoleKey) || "Role task"} | {task.status || "pending"}
+                </span>
+                <small>{eventTaskTimingLabel(task)}</small>
+                {!canUpdateTask && <small>Read-only zone task. Assign it to your name or role to update it.</small>}
+                {actionStatus?.message && (
+                  <small className={actionStatus.type === "error" ? "critical-warning" : actionStatus.type === "success" ? "all-clear" : "status-message"}>
+                    {actionStatus.message}
+                  </small>
+                )}
+                <div className="backup-actions">
+                  <button
+                    type="button"
+                    className="ghost-button compact-button"
+                    onClick={() => onUpdateTaskStatus(task.id, "acknowledged", "")}
+                    disabled={!canUpdateTask || actionPending || task.status === "acknowledged" || task.status === "done"}
+                  >
+                    {actionStatus?.status === "acknowledging" ? "Acknowledging..." : "Acknowledge"}
+                  </button>
+                  <button
+                    type="button"
+                    className="primary-button compact-button"
+                    onClick={() => onUpdateTaskStatus(task.id, "done", "")}
+                    disabled={!canUpdateTask || actionPending || task.status === "done"}
+                  >
+                    {actionStatus?.status === "completing" ? "Completing..." : "Mark done"}
+                  </button>
+                </div>
+              </article>
+            );
+          })}
+        </div>
+      ))}
+    </section>
+  );
+}
+
 function EventOperationsCorePanel({
   user,
   date,
@@ -4256,12 +4801,15 @@ function EventOperationsCorePanel({
   const [assignmentForm, setAssignmentForm] = useState({
     roleKey: "event_floor_manager",
     staffName: "",
+    zone: "all",
     notes: "",
   });
   const [assignmentStatus, setAssignmentStatus] = useState({ type: "", message: "" });
   const [taskForm, setTaskForm] = useState(() => defaultEventTaskForm());
   const [taskStatus, setTaskStatus] = useState({ type: "", message: "" });
   const [taskCreating, setTaskCreating] = useState(false);
+  const taskFormRef = useRef(null);
+  const taskTitleInputRef = useRef(null);
   const taskFormDisabled = !activeEventIdValue || taskCreating;
   const [handoverForm, setHandoverForm] = useState({
     toName: "",
@@ -4299,6 +4847,16 @@ function EventOperationsCorePanel({
     setTaskStatus({ type: "", message: "" });
   }
 
+  const assignmentsByZone = eventCommandZones.map((zone) => ({
+    ...zone,
+    assignments: eventAssignments.filter((assignment) => {
+      const assignmentZone = eventRoleEffectiveZone(assignment.roleKey, assignment.zone);
+      if (zone.key === "all") return assignmentZone === "all";
+      return assignmentZone === zone.key;
+    }),
+  }));
+  const visibleEventStaffPresence = dedupeEventStaffPresence(eventStaffPresence);
+
   function eventTaskGroups() {
     const now = Date.now();
     const dueSoon = eventBoardTasks.filter(
@@ -4314,6 +4872,29 @@ function EventOperationsCorePanel({
       ["Done", eventBoardTasks.filter((task) => task.status === "done")],
       ["Missed/cancelled", eventBoardTasks.filter((task) => ["missed", "cancelled"].includes(task.status))],
     ];
+  }
+
+  function prepareTaskForZone(zoneKey) {
+    if (!activeEventIdValue) {
+      setTaskStatus({ type: "error", message: "Select or create an event board before preparing a zone task." });
+      return;
+    }
+    const defaults = zoneTaskDefaults(zoneKey);
+    setTaskForm((current) => ({
+      ...current,
+      zone: defaults.zone,
+      assignedRoleKey: defaults.assignedRoleKey,
+      assignedOperatorName: "",
+      priority: defaults.priority,
+    }));
+    setTaskStatus({
+      type: "pending",
+      message: `Task form prepared for ${zoneDisplayLabel(defaults.zone)}.`,
+    });
+    window.requestAnimationFrame(() => {
+      taskFormRef.current?.scrollIntoView?.({ behavior: "smooth", block: "start" });
+      taskTitleInputRef.current?.focus?.();
+    });
   }
 
   async function submitEvent(event) {
@@ -4466,13 +5047,32 @@ function EventOperationsCorePanel({
       return;
     }
     const role = eventRoleOptions.find((item) => item.key === assignmentForm.roleKey);
+    if (!role) {
+      setAssignmentStatus({ type: "error", message: "Choose a valid event role before assigning." });
+      return;
+    }
+    const effectiveZone = eventRoleEffectiveZone(role.key, assignmentForm.zone || role.zone);
+    const alreadyAssigned = !role.singleLead && eventAssignments.some((assignment) =>
+      assignmentMatchesPerson(
+        assignment,
+        role.key,
+        assignmentForm.staffName,
+      ),
+    );
+    if (alreadyAssigned) {
+      setAssignmentStatus({
+        type: "error",
+        message: `${assignmentForm.staffName.trim()} is already assigned as ${role.label}.`,
+      });
+      return;
+    }
     setAssignmentStatus({ type: "pending", message: "Assigning role..." });
     try {
       const result = await onAssignRole({
         eventId: activeEventIdValue,
         roleKey: role.key,
         roleLabel: role.label,
-        zone: role.zone,
+        zone: effectiveZone,
         assignedOperatorName: assignmentForm.staffName.trim(),
         assignedByName: user.name,
         notes: assignmentForm.notes.trim(),
@@ -4485,7 +5085,7 @@ function EventOperationsCorePanel({
         });
         return;
       }
-      setAssignmentForm({ roleKey: "event_floor_manager", staffName: "", notes: "" });
+      setAssignmentForm({ roleKey: "event_floor_manager", staffName: "", zone: "all", notes: "" });
       setAssignmentStatus({ type: "success", message: "Role assigned." });
     } catch (error) {
       setAssignmentStatus({
@@ -4610,6 +5210,13 @@ function EventOperationsCorePanel({
         )}
       </section>
 
+      <EventCommandStructurePanel
+        assignments={eventAssignments}
+        tasks={eventBoardTasks}
+        canManage
+        onCreateTaskForZone={prepareTaskForZone}
+      />
+
       <section className="manager-list">
         <h2>Event staff available today</h2>
         <p className="muted">People appear here when they log in, choose an operator, or are added manually.</p>
@@ -4618,6 +5225,13 @@ function EventOperationsCorePanel({
           setStaffStatus({ type: "", message: "" });
           if (!manualStaffName.trim()) {
             setStaffStatus({ type: "error", message: "Enter a staff name before adding manual staff." });
+            return;
+          }
+          const existingStaff = visibleEventStaffPresence.find(
+            (person) => normalizedPersonName(person.operatorName) === normalizedPersonName(manualStaffName),
+          );
+          if (existingStaff) {
+            setStaffStatus({ type: "error", message: `${manualStaffName.trim()} is already available today.` });
             return;
           }
           setStaffStatus({ type: "pending", message: "Adding staff..." });
@@ -4652,21 +5266,18 @@ function EventOperationsCorePanel({
             {staffStatus.message}
           </p>
         )}
-        {eventStaffPresence.length === 0 && <p className="muted">No event staff checked in yet.</p>}
-        {eventStaffPresence.map((person) => {
-          const role = eventAssignments.find(
-            (assignment) =>
-              assignment.assignedOperatorName?.toLowerCase() === person.operatorName.toLowerCase(),
-          );
+        {visibleEventStaffPresence.length === 0 && <p className="muted">No event staff checked in yet.</p>}
+        {visibleEventStaffPresence.map((person) => {
+          const roleSummary = eventRoleSummaryForPerson(person, eventAssignments);
           return (
-            <article key={person.id} className="log-row">
+            <article key={`${normalizedPersonName(person.operatorName)}-${person.id}`} className="log-row">
               <strong>{person.operatorName}</strong>
               <span>
                 {person.operatorSource || "manual"} | {person.selectedShiftScope || person.roleLabel || "No shift scope"}
               </span>
               <small>
                 Last seen {person.lastSeenAt ? formatDateTime(person.lastSeenAt) : "local"}
-                {role ? ` | ${role.roleLabel}` : ""}
+                {` | ${roleSummary}`}
               </small>
             </article>
           );
@@ -4681,10 +5292,43 @@ function EventOperationsCorePanel({
         <form className="editor-form compact-editor" onSubmit={submitAssignment}>
           <label>
             Role
-            <select value={assignmentForm.roleKey} onChange={(event) => setAssignmentForm((current) => ({ ...current, roleKey: event.target.value }))}>
-              {eventRoleOptions.map((role) => (
-                <option key={role.key} value={role.key}>{role.label}</option>
-              ))}
+            <select
+              value={assignmentForm.roleKey}
+              onChange={(event) => {
+                const role = eventRoleOption(event.target.value);
+                setAssignmentForm((current) => ({
+                  ...current,
+                  roleKey: event.target.value,
+                  zone: role?.zone || "all",
+                }));
+              }}
+            >
+              <optgroup label="Command roles - single lead">
+                {eventRoleOptions.filter((role) => role.group === "command").map((role) => (
+                  <option key={role.key} value={role.key}>{role.label}</option>
+                ))}
+              </optgroup>
+              <optgroup label="Team roles - multiple people allowed">
+                {eventRoleOptions.filter((role) => role.group === "team").map((role) => (
+                  <option key={role.key} value={role.key}>{role.label}</option>
+                ))}
+              </optgroup>
+            </select>
+            <small>
+              {eventRoleOption(assignmentForm.roleKey)?.singleLead
+                ? "Single-lead role: assigning a new person replaces the active lead for this event."
+                : "Team role: multiple people can be assigned."}
+            </small>
+          </label>
+          <label>
+            Zone
+            <select
+              value={assignmentForm.zone}
+              onChange={(event) =>
+                setAssignmentForm((current) => ({ ...current, zone: event.target.value }))
+              }
+            >
+              {eventZones.map((zone) => <option key={zone} value={zone}>{zone}</option>)}
             </select>
           </label>
           <label>
@@ -4695,8 +5339,14 @@ function EventOperationsCorePanel({
               onChange={(event) => setAssignmentForm((current) => ({ ...current, staffName: event.target.value }))}
             />
             <datalist id="event-staff-presence-list">
-              {eventStaffPresence.map((person) => (
-                <option key={person.id} value={person.operatorName} />
+              {visibleEventStaffPresence.map((person) => (
+                <option
+                  key={`${normalizedPersonName(person.operatorName)}-${person.id}`}
+                  value={person.operatorName}
+                  label={eventStaffOptionLabel(person, eventAssignments)}
+                >
+                  {eventStaffOptionLabel(person, eventAssignments)}
+                </option>
               ))}
             </datalist>
           </label>
@@ -4711,15 +5361,24 @@ function EventOperationsCorePanel({
           )}
           <button type="submit" className="primary-button compact-button">Assign role</button>
         </form>
-        {eventAssignments.map((assignment) => (
-          <article key={assignment.id} className="log-row">
-            <strong>{assignment.roleLabel}</strong>
-            <span>{assignment.assignedOperatorName || "Unassigned"} | {assignment.zone || "all"}</span>
-            <small>
-              Reports to {eventRoleOptions.find((role) => role.key === assignment.roleKey)?.reportsTo || "Event Floor Manager"}
-              {assignment.notes ? ` | ${assignment.notes}` : ""}
-            </small>
-          </article>
+        {assignmentsByZone.map((zone) => (
+          <div key={zone.key} className="critical-group">
+            <h3>{zone.label}</h3>
+            {zone.assignments.length === 0 && <p className="muted">No assignments.</p>}
+            {zone.assignments.map((assignment) => (
+              <article key={assignment.id} className="log-row">
+                <strong>{assignment.roleLabel}</strong>
+                <span>
+                  {assignment.assignedOperatorName || "Unassigned"} |{" "}
+                  {eventRoleOption(assignment.roleKey)?.singleLead ? "single lead" : "team role"}
+                </span>
+                <small>
+                  Reports to {eventRoleOption(assignment.roleKey)?.reportsTo || "Event Floor Manager"}
+                  {assignment.notes ? ` | ${assignment.notes}` : ""}
+                </small>
+              </article>
+            ))}
+          </div>
         ))}
       </section>
 
@@ -4752,10 +5411,10 @@ function EventOperationsCorePanel({
             </select>
           </label>
         )}
-        <form className="editor-form compact-editor" onSubmit={submitTask}>
+        <form className="editor-form compact-editor" onSubmit={submitTask} ref={taskFormRef}>
           <label>
             Task title
-            <input disabled={taskFormDisabled} value={taskForm.title} onChange={(event) => setTaskForm((current) => ({ ...current, title: event.target.value }))} />
+            <input ref={taskTitleInputRef} disabled={taskFormDisabled} value={taskForm.title} onChange={(event) => setTaskForm((current) => ({ ...current, title: event.target.value }))} />
           </label>
           <label>
             Description
@@ -15935,21 +16594,29 @@ function App() {
     };
     const result = await upsertEventRoleAssignment(record);
     if (result.ok && result.record) {
-      setEventRoleAssignments((current) => [
-        ...current.filter(
-          (item) =>
-            !(
+      const singleLead = eventRoleOption(result.record.roleKey)?.singleLead;
+      setEventRoleAssignments((current) => {
+        const withoutSameRecord = current.filter((item) => item.id !== result.record.id);
+        const next = singleLead
+          ? withoutSameRecord.map((item) =>
               item.eventId === result.record.eventId &&
               item.roleKey === result.record.roleKey &&
               item.active
-            ),
-        ).map((item) =>
-          item.eventId === result.record.eventId && item.roleKey === result.record.roleKey
-            ? { ...item, active: false }
-            : item,
-        ),
-        result.record,
-      ]);
+                ? { ...item, active: false }
+                : item,
+            )
+          : withoutSameRecord.map((item) =>
+              assignmentMatchesPerson(
+                item,
+                result.record.roleKey,
+                result.record.assignedOperatorName,
+                result.record.assignedAuthUserId,
+              )
+                ? { ...item, active: false }
+                : item,
+            );
+        return [...next, result.record];
+      });
       refreshEventOperationsLive("event_role_assigned");
       return { ok: true, record: result.record, message: "Role assigned." };
     }

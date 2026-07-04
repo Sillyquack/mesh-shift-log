@@ -662,6 +662,61 @@ textarea {
   color: var(--brand-strong);
 }
 
+.command-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(240px, 1fr));
+  gap: 12px;
+}
+
+.command-card {
+  display: grid;
+  min-width: 0;
+  gap: 10px;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  background: var(--surface);
+  padding: 12px;
+}
+
+.command-card .alert-header {
+  align-items: flex-start;
+  gap: 8px;
+}
+
+.command-card small {
+  color: var(--muted);
+  font-weight: 800;
+  overflow-wrap: anywhere;
+}
+
+.command-line {
+  display: grid;
+  gap: 3px;
+  min-width: 0;
+}
+
+.command-line span {
+  color: var(--muted);
+  font-size: 0.74rem;
+  font-weight: 900;
+  text-transform: uppercase;
+}
+
+.command-line strong {
+  min-width: 0;
+  overflow-wrap: anywhere;
+}
+
+.command-card .progress-breakdown,
+.command-card .backup-actions,
+.command-card .inline-actions {
+  flex-wrap: wrap;
+}
+
+.command-card button {
+  white-space: normal;
+}
+
 .critical-warning,
 .all-clear {
   margin: 12px 0 0;
@@ -1276,8 +1331,16 @@ textarea {
 }
 
 .overview-card {
+  display: grid;
+  gap: 6px;
+  min-width: 0;
   border-color: color-mix(in srgb, var(--brand) 45%, var(--line));
   background: color-mix(in srgb, var(--brand) 8%, var(--surface));
+}
+
+.overview-card > * {
+  min-width: 0;
+  overflow-wrap: anywhere;
 }
 
 .alert-row {
