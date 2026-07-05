@@ -717,6 +717,131 @@ textarea {
   white-space: normal;
 }
 
+.template-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(230px, 1fr));
+  gap: 12px;
+}
+
+.template-card {
+  display: grid;
+  min-width: 0;
+  gap: 7px;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  background: var(--surface);
+  color: var(--text);
+  padding: 12px;
+  text-align: left;
+}
+
+.template-card:hover,
+.template-card.selected-template {
+  border-color: color-mix(in srgb, var(--brand) 55%, var(--line));
+  background: color-mix(in srgb, var(--brand) 7%, var(--surface));
+}
+
+.template-card span,
+.template-card small {
+  min-width: 0;
+  color: var(--muted);
+  overflow-wrap: anywhere;
+}
+
+.run-sheet-preview {
+  display: grid;
+  gap: 12px;
+  margin-top: 14px;
+}
+
+.run-sheet-setup {
+  display: grid;
+  gap: 10px;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  background: color-mix(in srgb, var(--surface-strong) 58%, var(--surface));
+  padding: 12px;
+}
+
+.setup-warning-list {
+  display: grid;
+  gap: 6px;
+}
+
+.setup-grid,
+.preview-edit-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(190px, 1fr));
+  gap: 10px;
+}
+
+.setup-grid fieldset {
+  display: grid;
+  min-width: 0;
+  gap: 7px;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  padding: 10px;
+}
+
+.setup-grid legend {
+  color: var(--muted);
+  font-size: 0.78rem;
+  font-weight: 900;
+}
+
+.run-sheet-task-list {
+  display: grid;
+  gap: 10px;
+}
+
+.preview-task-heading {
+  display: flex;
+  min-width: 0;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 10px;
+  flex-wrap: wrap;
+}
+
+.preview-task-heading strong {
+  min-width: 0;
+  flex: 1 1 220px;
+  overflow-wrap: anywhere;
+}
+
+.event-mode-page {
+  gap: 14px;
+}
+
+.event-mode-hero {
+  display: grid;
+  gap: 10px;
+}
+
+.event-mode-actions,
+.live-event-mode .backup-actions {
+  align-items: stretch;
+}
+
+.event-mode-actions .compact-button,
+.live-event-mode .compact-button {
+  white-space: normal;
+}
+
+.live-event-mode {
+  display: grid;
+  gap: 14px;
+}
+
+.preview-task-heading button {
+  white-space: normal;
+}
+
+.muted-card {
+  opacity: 0.58;
+}
+
 .critical-warning,
 .all-clear {
   margin: 12px 0 0;

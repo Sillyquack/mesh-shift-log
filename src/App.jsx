@@ -14,6 +14,7 @@ import {
   shiftOptions,
   staffCodes,
   } from "./data/routines.js";
+import { eventTaskTemplates } from "./data/eventTaskTemplates.js";
 import {
   isBackendAuthRequired,
   isSupabaseConfigured,
@@ -775,6 +776,47 @@ function addMinutesToDateTimeLocal(value, minutes) {
   return toDateTimeLocalValue(new Date(date.getTime() + minutes * 60000));
 }
 
+function addMinutesToIso(value, minutes) {
+  if (!value) return "";
+  const date = new Date(value);
+  if (Number.isNaN(date.getTime())) return "";
+  return new Date(date.getTime() + minutes * 60000).toISOString();
+}
+
+function templateTaskDueAt(taskTemplate, event) {
+  if (Number.isFinite(taskTemplate.offsetMinutesFromStart))
+    return addMinutesToIso(event?.startsAt, taskTemplate.offsetMinutesFromStart);
+  if (Number.isFinite(taskTemplate.offsetMinutesFromEnd))
+    return addMinutesToIso(event?.endsAt, taskTemplate.offsetMinutesFromEnd);
+  return "";
+}
+
+function templateTaskNeedsMissingTime(taskTemplate, event) {
+  return (
+    (Number.isFinite(taskTemplate.offsetMinutesFromStart) && !event?.startsAt) ||
+    (Number.isFinite(taskTemplate.offsetMinutesFromEnd) && !event?.endsAt)
+  );
+}
+
+function buildTemplateTaskPreview(template, event) {
+  if (!template) return [];
+  return template.tasks.map((taskTemplate, index) => {
+    const dueAt = templateTaskDueAt(taskTemplate, event);
+    const remindAt =
+      dueAt && Number.isFinite(taskTemplate.remindMinutesBefore)
+        ? addMinutesToIso(dueAt, -taskTemplate.remindMinutesBefore)
+        : "";
+    return {
+      ...taskTemplate,
+      templateTaskId: taskTemplate.id || `${template.id}-${index}`,
+      dueAt,
+      remindAt,
+      timingMissing: templateTaskNeedsMissingTime(taskTemplate, event),
+      roleLabel: taskTemplate.assignedRoleLabel || eventRoleLabel(taskTemplate.assignedRoleKey),
+    };
+  });
+}
+
 function defaultEventOperationForm() {
   const startsAt = new Date();
   startsAt.setSeconds(0, 0);
@@ -797,12 +839,14 @@ function defaultEventTaskForm() {
     remindAt: addMinutesToDateTimeLocal(dueAt, -5),
     zone: "all",
     priority: "normal",
+    targetType: "role",
     assignedRoleKey: "",
     assignedOperatorName: "",
   };
 }
 
 function eventRoleLabel(roleKey) {
+  if (roleKey === "all_event_staff") return "All event staff";
   return eventRoleOptions.find((role) => role.key === roleKey)?.label || roleKey || "";
 }
 
@@ -815,24 +859,28 @@ function isEventOpsManager(user) {
 }
 
 function eventTaskMatchesUser(task, assignments, user) {
-  const name = String(user?.operatorName || user?.name || "").trim().toLowerCase();
+  if (isSharedDeviceUser(user) && !normalizedPersonName(user?.operatorName))
+    return false;
+  const names = userIdentityNames(user);
   const authUserId = user?.authUserId || user?.backendUserId || user?.id || "";
+  const activeAssignments = assignments.filter((assignment) => assignment.active && assignment.eventId === task.eventId);
+  if (task.assignedOperatorName)
+    return names.includes(normalizedPersonName(task.assignedOperatorName));
   if (task.assignedAuthUserId && authUserId && task.assignedAuthUserId === authUserId)
     return true;
-  if (task.assignedOperatorName && name && task.assignedOperatorName.trim().toLowerCase() === name)
-    return true;
-  if (task.assignedRoleKey) {
-    return assignments.some((assignment) => {
+  if (task.assignedRoleKey && task.assignedRoleKey !== "all_event_staff") {
+    return activeAssignments.some((assignment) => {
       if (!assignment.active || assignment.roleKey !== task.assignedRoleKey) return false;
-      if (assignment.assignedAuthUserId && authUserId && assignment.assignedAuthUserId === authUserId)
-        return true;
-      return (
-        assignment.assignedOperatorName &&
-        name &&
-        assignment.assignedOperatorName.trim().toLowerCase() === name
-      );
+      return assignmentMatchesUser(assignment, user);
     });
   }
+  const audience = task.metadata?.audience || (task.assignedRoleKey === "all_event_staff" ? "all_event_staff" : "");
+  if (audience === "all_event_staff")
+    return Boolean(names.length || authUserId);
+  if (audience)
+    return activeAssignments.some(
+      (assignment) => assignment.roleKey === audience && assignmentMatchesUser(assignment, user),
+    );
   return false;
 }
 
@@ -844,7 +892,7 @@ function eventTaskActorKey(user) {
 
 function eventTaskAlertKey(user, task, type) {
   const timestamp = type === "reminder" ? task.remindAt : task.dueAt;
-  return `${eventTaskActorKey(user)}::${task.id}::${type}::${timestamp || "none"}`;
+  return `${getOsloDateKey()}::${task.eventId || "event"}::${eventTaskActorKey(user)}::${task.id}::${type}::${timestamp || "none"}`;
 }
 
 function isOpenEventTask(task) {
@@ -897,6 +945,32 @@ function groupAssignedEventTasks(tasks) {
         groupMap["Due now"].push(task);
       else if (task.dueAt && new Date(task.dueAt).getTime() - Date.now() <= 30 * 60000)
         groupMap["Due soon"].push(task);
+      else groupMap.Pending.push(task);
+  });
+  return groups;
+}
+
+function eventTaskTimelineGroups(tasks) {
+  const now = Date.now();
+  const groups = [
+    ["Due now", []],
+    ["Due soon", []],
+    ["Pending", []],
+    ["Acknowledged", []],
+    ["Done", []],
+    ["Missed/cancelled", []],
+  ];
+  const groupMap = Object.fromEntries(groups);
+  tasks
+    .slice()
+    .sort((a, b) => new Date(a.dueAt || a.remindAt || "9999-12-31") - new Date(b.dueAt || b.remindAt || "9999-12-31"))
+    .forEach((task) => {
+      const status = task.status || "pending";
+      if (status === "done") groupMap.Done.push(task);
+      else if (status === "acknowledged") groupMap.Acknowledged.push(task);
+      else if (["missed", "cancelled"].includes(status)) groupMap["Missed/cancelled"].push(task);
+      else if (task.dueAt && new Date(task.dueAt).getTime() <= now) groupMap["Due now"].push(task);
+      else if (task.dueAt && new Date(task.dueAt).getTime() - now <= 30 * 60000) groupMap["Due soon"].push(task);
       else groupMap.Pending.push(task);
     });
   return groups;
@@ -1513,14 +1587,15 @@ function normalizeOperator(operator) {
 function getEffectiveActor(user, currentOperator) {
   const operator = normalizeOperator(currentOperator);
   const authDisplayName = user?.name || user?.email || "Unknown auth user";
+  const sharedDevice = isSharedDeviceUser(user);
   return {
     authUserId: user?.authUserId || user?.backendUserId || user?.id || "",
     authDisplayName,
     authLoginSource: user?.loginSource || "unknown",
-    operatorName: operator?.name || authDisplayName || "Unknown operator",
+    operatorName: operator?.name || (sharedDevice ? "" : authDisplayName || "Unknown operator"),
     operatorSource: operator?.source || user?.loginSource || "unknown",
     operatorRoleLabel: operator?.roleLabel || "",
-    isSharedDevice: isSharedDeviceUser(user),
+    isSharedDevice: sharedDevice,
   };
 }
 
@@ -3148,6 +3223,148 @@ function EventCodeGate({
   );
 }
 
+function EventMode({
+  user,
+  currentOperator,
+  eventOperations,
+  eventRoleAssignments,
+  eventTasks,
+  onUpdateTaskStatus,
+  eventTaskAlertState,
+  taskActionStatus,
+  alertsEnabled,
+  notificationPermission,
+  onEnableAlerts,
+  onRefresh,
+  onChangeOperator,
+  onOpenGuides,
+}) {
+  const activeEventId = preferredEventBoardId(
+    eventOperations.filter((event) => ["draft", "active"].includes(event.status || "draft")),
+  );
+  const activeEvent = eventOperations.find((event) => event.id === activeEventId);
+  const operatorName = currentOperator?.name || user?.operatorName || user?.name || "Operator";
+  const myTasks = assignedEventTasksForUser(
+    activeEvent ? [activeEvent] : eventOperations,
+    eventRoleAssignments,
+    eventTasks,
+    user,
+  );
+  const groupedTasks = groupAssignedEventTasks(myTasks);
+
+  return (
+    <main className="page event-mode-page">
+      <section className="intro compact event-mode-hero">
+        <p className="eyebrow">Event Mode</p>
+        <h1>{activeEvent?.title || "Event shift"}</h1>
+        <p className="muted">
+          {activeEvent?.venue || "No event venue set"}
+          {activeEvent?.startsAt ? ` | ${formatDateTime(activeEvent.startsAt)}` : ""}
+          {activeEvent?.endsAt ? ` - ${formatDateTime(activeEvent.endsAt)}` : ""}
+        </p>
+        <p className="status-message">Current operator: {operatorName}</p>
+        <div className="backup-actions event-mode-actions">
+          <button type="button" className="primary-button compact-button" onClick={onRefresh}>
+            Refresh event tasks
+          </button>
+          <button type="button" className="ghost-button compact-button" onClick={onChangeOperator}>
+            Change operator
+          </button>
+          <button type="button" className="ghost-button compact-button" onClick={onOpenGuides}>
+            Guides
+          </button>
+        </div>
+      </section>
+
+      <MyZoneCommandPanel
+        user={user}
+        eventOperations={activeEvent ? [activeEvent] : eventOperations}
+        eventRoleAssignments={eventRoleAssignments}
+        eventTasks={eventTasks}
+        onUpdateTaskStatus={onUpdateTaskStatus}
+        taskActionStatus={taskActionStatus}
+      />
+
+      <section className="manager-list">
+        <h2>My event tasks</h2>
+        <p className="muted">Only tasks for your name, your event role, or all event staff.</p>
+        <EventTaskAlertSettingsCard
+          alertsEnabled={alertsEnabled}
+          notificationPermission={notificationPermission}
+          onEnableAlerts={onEnableAlerts}
+          onRefresh={onRefresh}
+        />
+        {myTasks.length === 0 && (
+          <p className="muted">No tasks assigned to your role/person right now.</p>
+        )}
+        {groupedTasks.map(([title, tasks]) => (
+          <div key={title} className="critical-group">
+            <h3>{title}</h3>
+            {tasks.length === 0 && <p className="muted">None.</p>}
+            {tasks.map((task) => {
+              const reminderSent = Boolean(
+                task.remindAt && eventTaskAlertState[eventTaskAlertKey(user, task, "reminder")],
+              );
+              const dueSent = Boolean(
+                task.dueAt && eventTaskAlertState[eventTaskAlertKey(user, task, "due")],
+              );
+              const actionStatus = taskActionStatus?.[task.id];
+              const actionPending = ["acknowledging", "completing"].includes(actionStatus?.status);
+              return (
+                <article key={task.id} className={`log-row priority-${task.priority}`}>
+                  <strong>{task.title}</strong>
+                  <span>
+                    {task.zone || "all"} | {taskAssignedLabel(task)} |{" "}
+                    <span className={`event-task-status-chip status-${task.status || "pending"}`}>
+                      {task.status === "acknowledged" ? "Acknowledged" : task.status || "pending"}
+                    </span>
+                  </span>
+                  <small>
+                    {eventTaskTimingLabel(task)}
+                    {task.remindAt ? ` | reminder ${formatDateTime(task.remindAt)}` : ""}
+                    {reminderSent ? " | Reminder sent" : ""}
+                    {dueSent ? " | Due alert sent" : ""}
+                  </small>
+                  {task.description && <small>{task.description}</small>}
+                  {task.acknowledgedByName && (
+                    <small>
+                      Acknowledged by {task.acknowledgedByName}
+                      {task.acknowledgedAt ? ` at ${formatDateTime(task.acknowledgedAt)}` : ""}
+                    </small>
+                  )}
+                  {actionStatus?.message && (
+                    <small className={actionStatus.type === "error" ? "critical-warning" : actionStatus.type === "success" ? "all-clear" : "status-message"}>
+                      {actionStatus.message}
+                    </small>
+                  )}
+                  <div className="backup-actions">
+                    <button
+                      type="button"
+                      className="ghost-button compact-button"
+                      onClick={() => onUpdateTaskStatus(task.id, "acknowledged", "")}
+                      disabled={actionPending || task.status === "acknowledged" || task.status === "done"}
+                    >
+                      {actionStatus?.status === "acknowledging" ? "Acknowledging..." : "Acknowledge"}
+                    </button>
+                    <button
+                      type="button"
+                      className="primary-button compact-button"
+                      onClick={() => onUpdateTaskStatus(task.id, "done", "")}
+                      disabled={actionPending || task.status === "done"}
+                    >
+                      {actionStatus?.status === "completing" ? "Completing..." : "Mark done"}
+                    </button>
+                  </div>
+                </article>
+              );
+            })}
+          </div>
+        ))}
+      </section>
+    </main>
+  );
+}
+
 function ShiftPicker({
   user,
   onSelect,
@@ -3560,6 +3777,7 @@ function StaffDashboard({
   taskActionStatus,
   eventTaskAlertsEnabled,
   eventTaskNotificationPermission,
+  eventActorReadyForAlerts = false,
   onEnableEventTaskAlerts,
   onRefreshEventOperations,
   refreshAlerts,
@@ -3777,36 +3995,40 @@ function StaffDashboard({
         />
       )}
 
-      <MyZoneCommandPanel
-        user={user}
-        eventOperations={todayRelevantEventOps.length ? todayRelevantEventOps : todayEventOps}
-        eventRoleAssignments={todayRoleAssignments}
-        eventTasks={todayRoleTasks}
-        onUpdateTaskStatus={onUpdateEventTaskStatus}
-        taskActionStatus={safeTaskActionStatus}
-      />
-      {isLocalhostRuntime() && (
-        <p className="muted">
-          Local My Zone debug: actor {user.operatorName || user.name || "unknown"} | auth{" "}
-          {user.authUserId || user.backendUserId || user.id || "none"} | today boards{" "}
-          {todayRoleEventIds.size} | role assignments {todayRoleAssignments.length} | matched{" "}
-          {matchedTodayRoleAssignments.map((assignment) => eventRoleLabel(assignment.roleKey)).join(", ") || "none"}
-        </p>
-      )}
+      {eventActorReadyForAlerts && (
+        <>
+          <MyZoneCommandPanel
+            user={user}
+            eventOperations={todayRelevantEventOps.length ? todayRelevantEventOps : todayEventOps}
+            eventRoleAssignments={todayRoleAssignments}
+            eventTasks={todayRoleTasks}
+            onUpdateTaskStatus={onUpdateEventTaskStatus}
+            taskActionStatus={safeTaskActionStatus}
+          />
+          {isLocalhostRuntime() && (
+            <p className="muted">
+              Local My Zone debug: actor {user.operatorName || user.name || "unknown"} | auth{" "}
+              {user.authUserId || user.backendUserId || user.id || "none"} | today boards{" "}
+              {todayRoleEventIds.size} | role assignments {todayRoleAssignments.length} | matched{" "}
+              {matchedTodayRoleAssignments.map((assignment) => eventRoleLabel(assignment.roleKey)).join(", ") || "none"}
+            </p>
+          )}
 
-      <MyEventTasksPanel
-        user={user}
-        eventOperations={eventOperations}
-        eventRoleAssignments={eventRoleAssignments}
-        eventTasks={eventTasks}
-        onUpdateTaskStatus={onUpdateEventTaskStatus}
-        eventTaskAlertState={eventTaskAlertState}
-        taskActionStatus={safeTaskActionStatus}
-        alertsEnabled={eventTaskAlertsEnabled}
-        notificationPermission={eventTaskNotificationPermission}
-        onEnableAlerts={onEnableEventTaskAlerts}
-        onRefresh={() => onRefreshEventOperations?.("manual")}
-      />
+          <MyEventTasksPanel
+            user={user}
+            eventOperations={eventOperations}
+            eventRoleAssignments={eventRoleAssignments}
+            eventTasks={eventTasks}
+            onUpdateTaskStatus={onUpdateEventTaskStatus}
+            eventTaskAlertState={eventTaskAlertState}
+            taskActionStatus={safeTaskActionStatus}
+            alertsEnabled={eventTaskAlertsEnabled}
+            notificationPermission={eventTaskNotificationPermission}
+            onEnableAlerts={onEnableEventTaskAlerts}
+            onRefresh={() => onRefreshEventOperations?.("manual")}
+          />
+        </>
+      )}
 
       <section className="manager-list">
         <h2>Responsibility roles</h2>
@@ -4654,16 +4876,9 @@ function MyZoneCommandPanel({
   const visibleAssignments = myCommandAssignments.length ? myCommandAssignments : myTeamAssignments;
   if (!visibleAssignments.length) return null;
 
-  const relatedTasks = eventTasks.filter((task) => {
-    if (!visibleEventIds.has(task.eventId)) return false;
-    if (eventTaskMatchesUser(task, activeAssignments, user)) return true;
-    return myCommandAssignments.some((assignment) => {
-      const zone = eventRoleEffectiveZone(assignment.roleKey, assignment.zone);
-      if (assignment.roleKey === "headrunner")
-        return task.assignedRoleKey === "runner" || eventZoneForTask(task) === "runners";
-      return zone && eventZoneForTask(task) === zone;
-    });
-  });
+  const relatedTasks = eventTasks.filter(
+    (task) => visibleEventIds.has(task.eventId) && eventTaskMatchesUser(task, activeAssignments, user),
+  );
   const grouped = groupAssignedEventTasks(relatedTasks);
 
   return (
@@ -4758,6 +4973,752 @@ function MyZoneCommandPanel({
   );
 }
 
+function EventRunSheetTemplatesPanel({
+  activeEvent,
+  eventAssignments = [],
+  eventTasks,
+  onCreateTask,
+  createdByName,
+}) {
+  const defaultSetup = {
+    zones: {
+      all: true,
+      workbar: true,
+      cornerbar: false,
+      atrium: false,
+      runners: false,
+      support: true,
+      other: false,
+    },
+    service: {
+      bar: true,
+      runners: false,
+      table: false,
+      coffee: false,
+      food: false,
+      tech: false,
+      conference: false,
+      football: false,
+    },
+    roles: {
+      event_floor_manager: true,
+      headrunner: false,
+      runner: false,
+      workbar_manager: true,
+      workbar_staff: true,
+      cornerbar_manager: false,
+      cornerbar_staff: false,
+      atrium_manager: false,
+      atrium_staff: false,
+      bar_staff: true,
+      support: true,
+    },
+  };
+  const [selectedTemplateId, setSelectedTemplateId] = useState(eventTaskTemplates[0]?.id || "");
+  const [excludedTaskIds, setExcludedTaskIds] = useState([]);
+  const [manualIncludedTaskIds, setManualIncludedTaskIds] = useState([]);
+  const [taskEdits, setTaskEdits] = useState({});
+  const [setup, setSetup] = useState(defaultSetup);
+  const [allowDuplicateApply, setAllowDuplicateApply] = useState(false);
+  const [confirmUntimedTasks, setConfirmUntimedTasks] = useState(false);
+  const [applyStatus, setApplyStatus] = useState({ type: "", message: "" });
+  const [applying, setApplying] = useState(false);
+  const selectedTemplate =
+    eventTaskTemplates.find((template) => template.id === selectedTemplateId) ||
+    eventTaskTemplates[0];
+  const generatedPreviewTasks = buildTemplateTaskPreview(selectedTemplate, activeEvent);
+  const activeRoleKeys = new Set(eventAssignments.filter((assignment) => assignment.active).map((assignment) => assignment.roleKey));
+  function setupIncludesTask(task) {
+    const zone = task.zone || "all";
+    const role = task.assignedRoleKey || "";
+    if (zone !== "all" && !setup.zones[zone]) return false;
+    if (["headrunner", "runner"].includes(role) && !setup.service.runners) return false;
+    if (role && setup.roles[role] === false) return false;
+    if (task.id?.includes("coffee") && !setup.service.coffee) return false;
+    if ((task.id?.includes("food") || task.id?.includes("catering")) && !setup.service.food) return false;
+    if ((task.id?.includes("tech") || task.id?.includes("signage")) && !setup.service.tech && !setup.service.conference) return false;
+    if (task.id?.includes("conference") && !setup.service.conference) return false;
+    if (task.id?.includes("football") && !setup.service.football) return false;
+    return true;
+  }
+  function routeTemplateTask(task) {
+    const fallbackRoles = {
+      cornerbar_manager: "cornerbar_staff",
+      atrium_manager: "atrium_staff",
+      workbar_manager: "workbar_staff",
+      headrunner: "runner",
+    };
+    const fallbackRole = fallbackRoles[task.assignedRoleKey];
+    if (fallbackRole && !activeRoleKeys.has(task.assignedRoleKey)) {
+      return {
+        ...task,
+        assignedRoleKey: fallbackRole,
+        audience: fallbackRole,
+        roleLabel: eventRoleLabel(fallbackRole),
+        routingNote: `${eventRoleLabel(task.assignedRoleKey)} is not assigned, so this task will target ${eventRoleLabel(fallbackRole)}.`,
+      };
+    }
+    return task;
+  }
+  const previewTasks = generatedPreviewTasks.map((task) => {
+    const edit = taskEdits[task.templateTaskId] || {};
+    const routedTask = routeTemplateTask({ ...task, ...edit });
+    const setupIncluded = setupIncludesTask(routedTask);
+    const manuallyIncluded = manualIncludedTaskIds.includes(task.templateTaskId);
+    const manuallyExcluded = excludedTaskIds.includes(task.templateTaskId);
+    return {
+      ...routedTask,
+      setupIncluded,
+      included: manuallyIncluded || (setupIncluded && !manuallyExcluded),
+    };
+  });
+  const includedPreviewTasks = previewTasks.filter((task) => task.included);
+  const excludedBySetupCount = previewTasks.filter((task) => !task.setupIncluded && !task.included).length;
+  const activeZoneLabels = Object.entries(setup.zones)
+    .filter(([, enabled]) => enabled)
+    .map(([zone]) => zoneDisplayLabel(zone));
+  const targetedRoles = [
+    ...new Set(includedPreviewTasks.map((task) => eventRoleLabel(task.assignedRoleKey)).filter(Boolean)),
+  ];
+  const existingTemplateTaskCount = activeEvent?.id
+    ? eventTasks.filter((task) => task.metadata?.templateId === selectedTemplate?.id).length
+    : 0;
+  const hasMissingTiming = includedPreviewTasks.some((task) => task.timingMissing);
+  const setupWarnings = [
+    setup.zones.cornerbar && !activeRoleKeys.has("cornerbar_manager")
+      ? "Cornerbar is active but no Cornerbar Manager is assigned. Cornerbar manager tasks may fall back to staff."
+      : "",
+    setup.zones.atrium && !activeRoleKeys.has("atrium_manager")
+      ? "Atrium is active but no Atrium Manager is assigned. Atrium manager tasks may fall back to staff."
+      : "",
+    setup.zones.workbar && !activeRoleKeys.has("workbar_manager")
+      ? "Workbar is active but no Workbar Manager is assigned. Workbar manager tasks may fall back to staff."
+      : "",
+    setup.zones.runners && !activeRoleKeys.has("headrunner")
+      ? "Runners are active but no Headrunner is assigned. Runner coordination tasks may fall back to runners."
+      : "",
+  ].filter(Boolean);
+
+  useEffect(() => {
+    setExcludedTaskIds([]);
+    setManualIncludedTaskIds([]);
+    setTaskEdits({});
+    setAllowDuplicateApply(false);
+    setConfirmUntimedTasks(false);
+    setApplyStatus({ type: "", message: "" });
+  }, [selectedTemplateId, activeEvent?.id]);
+
+  function togglePreviewTask(taskId) {
+    const task = previewTasks.find((item) => item.templateTaskId === taskId);
+    if (!task) return;
+    if (task.included) {
+      setManualIncludedTaskIds((current) => current.filter((item) => item !== taskId));
+      setExcludedTaskIds((current) => current.includes(taskId) ? current : [...current, taskId]);
+    } else {
+      setExcludedTaskIds((current) => current.filter((item) => item !== taskId));
+      setManualIncludedTaskIds((current) => current.includes(taskId) ? current : [...current, taskId]);
+    }
+  }
+
+  function updatePreviewTask(taskId, patch) {
+    setTaskEdits((current) => ({
+      ...current,
+      [taskId]: {
+        ...(current[taskId] || {}),
+        ...patch,
+      },
+    }));
+  }
+
+  function toggleSetup(group, key) {
+    setSetup((current) => {
+      const nextValue = !current[group][key];
+      const next = {
+        ...current,
+        [group]: { ...current[group], [key]: nextValue },
+      };
+      if (group === "service" && key === "runners") {
+        next.zones = { ...next.zones, runners: nextValue };
+        next.roles = { ...next.roles, headrunner: nextValue, runner: nextValue };
+      }
+      if (group === "zones" && key === "runners") {
+        next.service = { ...next.service, runners: nextValue };
+        next.roles = { ...next.roles, headrunner: nextValue, runner: nextValue };
+      }
+      return next;
+    });
+  }
+
+  async function applyTemplate() {
+    setApplyStatus({ type: "", message: "" });
+    if (!activeEvent?.id) {
+      setApplyStatus({ type: "error", message: "Select or create an event board before applying a run sheet." });
+      return;
+    }
+    if (!includedPreviewTasks.length) {
+      setApplyStatus({ type: "error", message: "Keep at least one task in the preview before applying." });
+      return;
+    }
+    if (existingTemplateTaskCount > 0 && !allowDuplicateApply) {
+      setApplyStatus({
+        type: "error",
+        message: "This template may already have been applied to this event. Tick Apply again anyway to continue.",
+      });
+      return;
+    }
+    if (hasMissingTiming && !confirmUntimedTasks) {
+      setApplyStatus({
+        type: "error",
+        message: "Event start/end time is missing for some tasks. Confirm untimed tasks before applying.",
+      });
+      return;
+    }
+    setApplying(true);
+    const failures = [];
+    try {
+      for (let index = 0; index < includedPreviewTasks.length; index += 1) {
+        const task = includedPreviewTasks[index];
+        setApplyStatus({
+          type: "pending",
+          message: `Creating ${index + 1} of ${includedPreviewTasks.length}: ${task.title}`,
+        });
+        const result = await onCreateTask({
+          eventId: activeEvent.id,
+          title: task.title,
+          description: task.description || "",
+          dueAt: task.dueAt,
+          remindAt: task.remindAt,
+          zone: task.zone || "all",
+          priority: task.priority || "normal",
+          assignedRoleKey: task.assignedRoleKey === "all_event_staff" ? "" : task.assignedRoleKey || "",
+          assignedOperatorName: "",
+          status: "pending",
+          createdByName,
+          metadata: {
+            templateId: selectedTemplate.id,
+            templateTitle: selectedTemplate.title,
+            templateTaskId: task.templateTaskId,
+            audience:
+              task.audience ||
+              (task.assignedRoleKey === "all_event_staff" ? "all_event_staff" : task.assignedRoleKey || ""),
+            setup: {
+              zones: Object.entries(setup.zones).filter(([, enabled]) => enabled).map(([key]) => key),
+              services: Object.entries(setup.service).filter(([, enabled]) => enabled).map(([key]) => key),
+            },
+          },
+        });
+        const record = result?.record || result;
+        if (!result?.ok && !record?.id) failures.push(`${task.title}: ${result?.message || "Not created"}`);
+      }
+      if (failures.length) {
+        setApplyStatus({
+          type: "error",
+          message: `Run sheet partly applied. Failed: ${failures.join("; ")}`,
+        });
+        return;
+      }
+      setAllowDuplicateApply(false);
+      setApplyStatus({ type: "success", message: `${selectedTemplate.title} applied.` });
+    } catch (error) {
+      setApplyStatus({
+        type: "error",
+        message: error?.message || "Unexpected error while applying run sheet.",
+      });
+    } finally {
+      setApplying(false);
+    }
+  }
+
+  return (
+    <section className="manager-list run-sheet-panel">
+      <h2>Run Sheets / Templates</h2>
+      <p className="muted">Assign people in Command Structure before or after applying this run sheet.</p>
+      {!activeEvent && (
+        <p className="critical-warning">Select or create an event board before applying a run sheet.</p>
+      )}
+      <section className="run-sheet-setup">
+        <h3>Run sheet setup</h3>
+        <p className="muted">Choose what is active today. The preview will include matching tasks by default.</p>
+        <div className="setup-grid">
+          <fieldset>
+            <legend>Active zones / bars</legend>
+            {[
+              ["all", "Event floor / general"],
+              ["workbar", "Workbar"],
+              ["cornerbar", "Cornerbar"],
+              ["atrium", "Atrium pop-up bar"],
+              ["runners", "Runners"],
+              ["support", "Support"],
+            ].map(([key, label]) => (
+              <label key={key} className="check-row">
+                <input type="checkbox" checked={setup.zones[key]} onChange={() => toggleSetup("zones", key)} />
+                {label}
+              </label>
+            ))}
+          </fieldset>
+          <fieldset>
+            <legend>Service model</legend>
+            {[
+              ["bar", "Bar service only"],
+              ["runners", "Runners active"],
+              ["table", "Table service"],
+              ["coffee", "Coffee/water station"],
+              ["food", "Food/catering"],
+              ["tech", "Technical setup / presentation"],
+              ["conference", "Conference / meeting rooms"],
+              ["football", "Football / screening"],
+            ].map(([key, label]) => (
+              <label key={key} className="check-row">
+                <input type="checkbox" checked={setup.service[key]} onChange={() => toggleSetup("service", key)} />
+                {label}
+              </label>
+            ))}
+          </fieldset>
+          <fieldset>
+            <legend>Expected roles</legend>
+            {[
+              ["event_floor_manager", "Event Floor Manager"],
+              ["headrunner", "Headrunner"],
+              ["runner", "Runners"],
+              ["workbar_manager", "Workbar Manager"],
+              ["workbar_staff", "Workbar Staff"],
+              ["cornerbar_manager", "Cornerbar Manager"],
+              ["cornerbar_staff", "Cornerbar Staff"],
+              ["atrium_manager", "Atrium Manager"],
+              ["atrium_staff", "Atrium Staff"],
+              ["bar_staff", "Bar Staff"],
+              ["support", "Support"],
+            ].map(([key, label]) => (
+              <label key={key} className="check-row">
+                <input type="checkbox" checked={setup.roles[key]} onChange={() => toggleSetup("roles", key)} />
+                {label}
+              </label>
+            ))}
+          </fieldset>
+        </div>
+        {setupWarnings.length > 0 && (
+          <div className="setup-warning-list">
+            {setupWarnings.map((warning) => (
+              <p key={warning} className="critical-warning">{warning}</p>
+            ))}
+          </div>
+        )}
+      </section>
+      <div className="template-grid">
+        {eventTaskTemplates.map((template) => {
+          const zones = [...new Set(template.tasks.map((task) => zoneDisplayLabel(task.zone || "all")))];
+          const roles = [...new Set(template.tasks.map((task) => eventRoleLabel(task.assignedRoleKey)).filter(Boolean))];
+          return (
+            <button
+              key={template.id}
+              type="button"
+              className={`template-card ${template.id === selectedTemplate?.id ? "selected-template" : ""}`}
+              onClick={() => setSelectedTemplateId(template.id)}
+            >
+              <strong>{template.title}</strong>
+              <span>{template.description}</span>
+              <small>{template.recommendedFor}</small>
+              <small>{template.tasks.length} tasks | Zones: {zones.join(", ")}</small>
+              <small>Roles: {roles.join(", ") || "Unassigned"}</small>
+            </button>
+          );
+        })}
+      </div>
+
+      {selectedTemplate && (
+        <section className="run-sheet-preview">
+          <div className="section-heading static-heading">
+            <p className="eyebrow">{selectedTemplate.category}</p>
+            <h3>{selectedTemplate.title}</h3>
+            <span>{includedPreviewTasks.length}/{previewTasks.length} tasks selected</span>
+          </div>
+          <p className="muted">
+            Included {includedPreviewTasks.length}; excluded by setup {excludedBySetupCount}. Active zones: {activeZoneLabels.join(", ") || "none"}. Target roles: {targetedRoles.join(", ") || "none"}.
+          </p>
+          <p className="muted">
+            Suggested roles: {selectedTemplate.suggestedRoles.join(", ")}
+          </p>
+          {includedPreviewTasks.length === 0 && (
+            <p className="critical-warning">No tasks are included. Enable zones/roles or add tasks back before applying.</p>
+          )}
+          <p className="muted">
+            These are preview tasks. They will be created when you apply the template.
+          </p>
+          {existingTemplateTaskCount > 0 && (
+            <label className="check-row">
+              <input
+                type="checkbox"
+                checked={allowDuplicateApply}
+                onChange={(event) => setAllowDuplicateApply(event.target.checked)}
+              />
+              This template may already have been applied. Apply again anyway.
+            </label>
+          )}
+          {hasMissingTiming && (
+            <label className="check-row">
+              <input
+                type="checkbox"
+                checked={confirmUntimedTasks}
+                onChange={(event) => setConfirmUntimedTasks(event.target.checked)}
+              />
+              Create untimed tasks where event start/end time is missing.
+            </label>
+          )}
+          <div className="run-sheet-task-list">
+            {previewTasks.map((task) => {
+              const included = !excludedTaskIds.includes(task.templateTaskId);
+              return (
+                <article key={task.templateTaskId} className={`log-row ${included ? "" : "muted-card"}`}>
+                  <div className="preview-task-heading">
+                    <strong>{task.title}</strong>
+                    <button
+                      type="button"
+                      className="ghost-button compact-button"
+                      onClick={() => togglePreviewTask(task.templateTaskId)}
+                    >
+                      {included ? "Remove from apply" : "Add back"}
+                    </button>
+                  </div>
+                  <span>
+                    {zoneDisplayLabel(task.zone)} | {task.roleLabel || "No role"} | {task.priority || "normal"}
+                  </span>
+                  {!task.setupIncluded && !included && (
+                    <small>Excluded by setup. Add back to create this task anyway.</small>
+                  )}
+                  {task.routingNote && <small className="status-message">{task.routingNote}</small>}
+                  <div className="preview-edit-grid">
+                    <label>
+                      Due
+                      <input
+                        type="datetime-local"
+                        value={toDateTimeLocalValue(task.dueAt)}
+                        onChange={(event) => {
+                          const dueAt = fromDateTimeLocalValue(event.target.value);
+                          updatePreviewTask(task.templateTaskId, {
+                            dueAt,
+                            remindAt:
+                              dueAt && Number.isFinite(task.remindMinutesBefore)
+                                ? addMinutesToIso(dueAt, -task.remindMinutesBefore)
+                                : task.remindAt,
+                          });
+                        }}
+                      />
+                    </label>
+                    <label>
+                      Remind
+                      <input
+                        type="datetime-local"
+                        value={toDateTimeLocalValue(task.remindAt)}
+                        onChange={(event) =>
+                          updatePreviewTask(task.templateTaskId, {
+                            remindAt: fromDateTimeLocalValue(event.target.value),
+                          })
+                        }
+                      />
+                    </label>
+                    <label>
+                      Zone
+                      <select
+                        value={task.zone || "all"}
+                        onChange={(event) => updatePreviewTask(task.templateTaskId, { zone: event.target.value })}
+                      >
+                        {eventZones.map((zone) => <option key={zone} value={zone}>{zoneDisplayLabel(zone)}</option>)}
+                      </select>
+                    </label>
+                    <label>
+                      Audience / role
+                      <select
+                        value={task.assignedRoleKey || ""}
+                        onChange={(event) =>
+                          updatePreviewTask(task.templateTaskId, {
+                            assignedRoleKey: event.target.value,
+                            roleLabel: eventRoleLabel(event.target.value),
+                          })
+                        }
+                      >
+                        <option value="">No role</option>
+                        <option value="all_event_staff">All event staff</option>
+                        {eventRoleOptions.map((role) => <option key={role.key} value={role.key}>{role.label}</option>)}
+                      </select>
+                    </label>
+                  </div>
+                  {task.description && <small>{task.description}</small>}
+                </article>
+              );
+            })}
+          </div>
+          {applyStatus.message && (
+            <p className={applyStatus.type === "error" ? "critical-warning" : applyStatus.type === "success" ? "all-clear" : "status-message"}>
+              {applyStatus.message}
+            </p>
+          )}
+          <button
+            type="button"
+            className="primary-button compact-button"
+            onClick={applyTemplate}
+            disabled={applying || !activeEvent?.id}
+          >
+            {applying ? "Applying run sheet..." : "Apply template"}
+          </button>
+        </section>
+      )}
+    </section>
+  );
+}
+
+function EventLiveModePanel({
+  user,
+  activeEvent,
+  eventAssignments,
+  eventTasks,
+  eventStaffPresence,
+  onCreateTask,
+  onUpdateTaskStatus,
+  taskActionStatus,
+  onClose,
+}) {
+  const [zoneFilter, setZoneFilter] = useState("all");
+  const [status, setStatus] = useState({ type: "", message: "" });
+  const [sending, setSending] = useState(false);
+  const [quickTask, setQuickTask] = useState({
+    title: "",
+    description: "",
+    target: "all_event_staff",
+    personName: "",
+    zone: "all",
+    priority: "important",
+    dueInMinutes: "0",
+    remindMinutesBefore: "",
+    kind: "live_message",
+  });
+  const visibleTasks =
+    zoneFilter === "all"
+      ? eventTasks
+      : eventTasks.filter((task) => eventZoneForTask(task) === zoneFilter || task.zone === zoneFilter);
+  const timelineGroups = eventTaskTimelineGroups(visibleTasks);
+  const activeStaff = dedupeEventStaffPresence(eventStaffPresence);
+
+  async function sendLiveTask(event) {
+    event.preventDefault();
+    setStatus({ type: "", message: "" });
+    if (!activeEvent?.id) {
+      setStatus({ type: "error", message: "Select or create an event board before sending a live task." });
+      return;
+    }
+    if (!quickTask.title.trim()) {
+      setStatus({ type: "error", message: "Add a title or message first." });
+      return;
+    }
+    if (quickTask.target === "person" && !quickTask.personName.trim()) {
+      setStatus({ type: "error", message: "Choose a specific person or change the target." });
+      return;
+    }
+    const dueAt = addMinutesToIso(new Date().toISOString(), Number(quickTask.dueInMinutes || 0));
+    const remindAt =
+      quickTask.remindMinutesBefore === ""
+        ? ""
+        : addMinutesToIso(dueAt, -Number(quickTask.remindMinutesBefore || 0));
+    setSending(true);
+    setStatus({ type: "pending", message: "Sending live event task..." });
+    try {
+      const targetIsAll = quickTask.target === "all_event_staff";
+      const result = await onCreateTask({
+        eventId: activeEvent.id,
+        title: quickTask.title.trim(),
+        description: quickTask.description.trim(),
+        dueAt,
+        remindAt,
+        zone: quickTask.zone,
+        priority: quickTask.priority,
+        assignedRoleKey: targetIsAll || quickTask.target === "person" ? "" : quickTask.target,
+        assignedOperatorName: quickTask.target === "person" ? quickTask.personName.trim() : "",
+        status: "pending",
+        createdByName: user.name,
+        metadata: {
+          kind: quickTask.kind,
+          audience: targetIsAll ? "all_event_staff" : quickTask.target === "person" ? "" : quickTask.target,
+        },
+      });
+      const record = result?.record || result;
+      if (!result?.ok && !record?.id) {
+        setStatus({ type: "error", message: result?.message || "Live event task could not be sent." });
+        return;
+      }
+      setQuickTask((current) => ({ ...current, title: "", description: "", personName: "" }));
+      setStatus({ type: "success", message: result?.message || "Live event task sent." });
+    } catch (error) {
+      setStatus({ type: "error", message: error?.message || "Unexpected error while sending live event task." });
+    } finally {
+      setSending(false);
+    }
+  }
+
+  return (
+    <section className="live-event-mode">
+      <div className="section-heading static-heading">
+        <div>
+          <p className="eyebrow">Live Event Mode</p>
+          <h2>{activeEvent?.title || "No event selected"}</h2>
+          <span>
+            {activeEvent?.venue || "No venue"}
+            {activeEvent?.startsAt ? ` | ${formatDateTime(activeEvent.startsAt)}` : ""}
+          </span>
+        </div>
+        <button type="button" className="ghost-button compact-button" onClick={onClose}>
+          Back to Event Operations
+        </button>
+      </div>
+
+      <EventCommandStructurePanel assignments={eventAssignments} tasks={eventTasks} compact />
+
+      <section className="manager-list">
+        <h2>Send live event message/task</h2>
+        <form className="editor-form compact-editor" onSubmit={sendLiveTask}>
+          <label>
+            Title / message
+            <input value={quickTask.title} onChange={(event) => setQuickTask((current) => ({ ...current, title: event.target.value }))} />
+          </label>
+          <label>
+            Description
+            <input value={quickTask.description} onChange={(event) => setQuickTask((current) => ({ ...current, description: event.target.value }))} />
+          </label>
+          <label>
+            Target
+            <select value={quickTask.target} onChange={(event) => setQuickTask((current) => ({ ...current, target: event.target.value }))}>
+              <option value="all_event_staff">All event staff</option>
+              {eventRoleOptions.map((role) => <option key={role.key} value={role.key}>{role.label}</option>)}
+              <option value="person">Specific person/operator</option>
+            </select>
+            <small>For everyone: choose Target = All event staff.</small>
+          </label>
+          {quickTask.target === "person" && (
+            <label>
+              Person
+              <input
+                list="event-live-staff-list"
+                value={quickTask.personName}
+                onChange={(event) => setQuickTask((current) => ({ ...current, personName: event.target.value }))}
+              />
+              <datalist id="event-live-staff-list">
+                {activeStaff.map((person) => (
+                  <option key={`${person.id}-${person.operatorName}`} value={person.operatorName} label={eventStaffOptionLabel(person, eventAssignments)}>
+                    {eventStaffOptionLabel(person, eventAssignments)}
+                  </option>
+                ))}
+              </datalist>
+            </label>
+          )}
+          <label>
+            Zone
+            <select value={quickTask.zone} onChange={(event) => setQuickTask((current) => ({ ...current, zone: event.target.value }))}>
+              {eventZones.map((zone) => <option key={zone} value={zone}>{zoneDisplayLabel(zone)}</option>)}
+            </select>
+          </label>
+          <label>
+            Priority
+            <select value={quickTask.priority} onChange={(event) => setQuickTask((current) => ({ ...current, priority: event.target.value }))}>
+              {["normal", "important", "critical"].map((priority) => <option key={priority} value={priority}>{priority}</option>)}
+            </select>
+          </label>
+          <label>
+            Due in minutes
+            <input type="number" min="0" value={quickTask.dueInMinutes} onChange={(event) => setQuickTask((current) => ({ ...current, dueInMinutes: event.target.value }))} />
+          </label>
+          <label>
+            Reminder minutes before
+            <input type="number" min="0" value={quickTask.remindMinutesBefore} onChange={(event) => setQuickTask((current) => ({ ...current, remindMinutesBefore: event.target.value }))} />
+          </label>
+          <label>
+            Type
+            <select value={quickTask.kind} onChange={(event) => setQuickTask((current) => ({ ...current, kind: event.target.value }))}>
+              <option value="live_message">Live message</option>
+              <option value="live_task">Live task</option>
+            </select>
+          </label>
+          {status.message && (
+            <p className={status.type === "error" ? "critical-warning" : status.type === "success" ? "all-clear" : "status-message"}>
+              {status.message}
+            </p>
+          )}
+          <button type="submit" className="primary-button compact-button" disabled={sending || !activeEvent?.id}>
+            {sending ? "Sending..." : "Send live event task"}
+          </button>
+        </form>
+      </section>
+
+      <section className="manager-list">
+        <div className="section-heading static-heading">
+          <div>
+            <h2>Live task timeline</h2>
+            <span>{visibleTasks.length} task(s)</span>
+          </div>
+          <label>
+            Zone filter
+            <select value={zoneFilter} onChange={(event) => setZoneFilter(event.target.value)}>
+              {["all", "cornerbar", "atrium", "workbar", "runners", "support"].map((zone) => (
+                <option key={zone} value={zone}>{zoneDisplayLabel(zone)}</option>
+              ))}
+            </select>
+          </label>
+        </div>
+        {timelineGroups.map(([title, tasks]) => (
+          <div key={title} className="critical-group">
+            <h3>{title}</h3>
+            {tasks.length === 0 && <p className="muted">None.</p>}
+            {tasks.map((task) => {
+              const actionStatus = taskActionStatus?.[task.id];
+              return (
+                <article key={task.id} className={`log-row priority-${task.priority}`}>
+                  <strong>{task.title}</strong>
+                  <span>
+                    {zoneDisplayLabel(eventZoneForTask(task))} | {taskAssignedLabel(task)} |{" "}
+                    <span className={`event-task-status-chip status-${task.status || "pending"}`}>
+                      {task.status || "pending"}
+                    </span>
+                  </span>
+                  <small>
+                    {task.dueAt ? `Due ${formatDateTime(task.dueAt)}` : "No due time"}
+                    {task.remindAt ? ` | remind ${formatDateTime(task.remindAt)}` : ""}
+                  </small>
+                  {task.acknowledgedByName && (
+                    <small>
+                      Acknowledged by {task.acknowledgedByName}
+                      {task.acknowledgedAt ? ` at ${formatDateTime(task.acknowledgedAt)}` : ""}
+                    </small>
+                  )}
+                  {task.completedByName && (
+                    <small>
+                      Done by {task.completedByName}
+                      {task.completedAt ? ` at ${formatDateTime(task.completedAt)}` : ""}
+                    </small>
+                  )}
+                  {actionStatus?.message && (
+                    <small className={actionStatus.type === "error" ? "critical-warning" : actionStatus.type === "success" ? "all-clear" : "status-message"}>
+                      {actionStatus.message}
+                    </small>
+                  )}
+                  <div className="backup-actions">
+                    {eventTaskStatuses.map((nextStatus) => (
+                      <button
+                        key={nextStatus}
+                        type="button"
+                        className={task.status === nextStatus ? "primary-button compact-button" : "ghost-button compact-button"}
+                        onClick={() => onUpdateTaskStatus(task.id, nextStatus, "")}
+                      >
+                        {nextStatus}
+                      </button>
+                    ))}
+                  </div>
+                </article>
+              );
+            })}
+          </div>
+        ))}
+      </section>
+    </section>
+  );
+}
+
 function EventOperationsCorePanel({
   user,
   date,
@@ -4808,6 +5769,7 @@ function EventOperationsCorePanel({
   const [taskForm, setTaskForm] = useState(() => defaultEventTaskForm());
   const [taskStatus, setTaskStatus] = useState({ type: "", message: "" });
   const [taskCreating, setTaskCreating] = useState(false);
+  const [showLiveEventMode, setShowLiveEventMode] = useState(false);
   const taskFormRef = useRef(null);
   const taskTitleInputRef = useRef(null);
   const taskFormDisabled = !activeEventIdValue || taskCreating;
@@ -4965,6 +5927,7 @@ function EventOperationsCorePanel({
   async function submitTask(event) {
     event.preventDefault();
     setTaskStatus({ type: "", message: "" });
+    const targetType = taskForm.targetType || "role";
     if (!activeEventIdValue) {
       setTaskStatus({ type: "error", message: "Create or select an event board before adding a task." });
       return;
@@ -4973,8 +5936,12 @@ function EventOperationsCorePanel({
       setTaskStatus({ type: "error", message: "Task title is required." });
       return;
     }
-    if (!taskForm.assignedOperatorName.trim() && !taskForm.assignedRoleKey) {
-      setTaskStatus({ type: "error", message: "Assign the task to a person, a role, or both." });
+    if (targetType === "person" && !taskForm.assignedOperatorName.trim()) {
+      setTaskStatus({ type: "error", message: "Choose a person/operator for this task." });
+      return;
+    }
+    if (targetType === "role" && !taskForm.assignedRoleKey) {
+      setTaskStatus({ type: "error", message: "Choose a role for this task, or change target to All event staff." });
       return;
     }
     if (!isValidDateTimeLocalValue(taskForm.dueAt)) {
@@ -5006,10 +5973,13 @@ function EventOperationsCorePanel({
         remindAt,
         zone: taskForm.zone,
         priority: taskForm.priority,
-        assignedRoleKey: taskForm.assignedRoleKey,
-        assignedOperatorName: taskForm.assignedOperatorName.trim(),
+        assignedRoleKey: targetType === "role" ? taskForm.assignedRoleKey : "",
+        assignedOperatorName: targetType === "person" ? taskForm.assignedOperatorName.trim() : "",
         status: "pending",
         createdByName: user.name,
+        metadata: {
+          audience: targetType === "all_event_staff" ? "all_event_staff" : "",
+        },
       });
       const record = result?.record || result;
       if (!result?.ok && !record?.id) {
@@ -5134,6 +6104,22 @@ function EventOperationsCorePanel({
     }
   }
 
+  if (showLiveEventMode) {
+    return (
+      <EventLiveModePanel
+        user={user}
+        activeEvent={activeEvent}
+        eventAssignments={eventAssignments}
+        eventTasks={eventBoardTasks}
+        eventStaffPresence={visibleEventStaffPresence}
+        onCreateTask={onCreateTask}
+        onUpdateTaskStatus={onUpdateTaskStatus}
+        taskActionStatus={taskActionStatus}
+        onClose={() => setShowLiveEventMode(false)}
+      />
+    );
+  }
+
   return (
     <>
       <section className="manager-list">
@@ -5206,6 +6192,13 @@ function EventOperationsCorePanel({
                 ))}
               </select>
             </label>
+            <button
+              type="button"
+              className="primary-button compact-button"
+              onClick={() => setShowLiveEventMode(true)}
+            >
+              Open Live Event Mode
+            </button>
           </article>
         )}
       </section>
@@ -5215,6 +6208,14 @@ function EventOperationsCorePanel({
         tasks={eventBoardTasks}
         canManage
         onCreateTaskForZone={prepareTaskForZone}
+      />
+
+      <EventRunSheetTemplatesPanel
+        activeEvent={activeEvent}
+        eventAssignments={eventAssignments}
+        eventTasks={eventBoardTasks}
+        onCreateTask={onCreateTask}
+        createdByName={user.name}
       />
 
       <section className="manager-list">
@@ -5454,8 +6455,32 @@ function EventOperationsCorePanel({
             </select>
           </label>
           <label>
+            Target
+            <select
+              disabled={taskFormDisabled}
+              value={taskForm.targetType || "role"}
+              onChange={(event) =>
+                setTaskForm((current) => ({
+                  ...current,
+                  targetType: event.target.value,
+                  assignedRoleKey: event.target.value === "role" ? current.assignedRoleKey : "",
+                  assignedOperatorName: event.target.value === "person" ? current.assignedOperatorName : "",
+                }))
+              }
+            >
+              <option value="person">Specific person</option>
+              <option value="role">Role</option>
+              <option value="all_event_staff">All event staff</option>
+            </select>
+            <small>Use All event staff only for messages/tasks everyone working the event should see.</small>
+          </label>
+          <label>
             Assign role
-            <select disabled={taskFormDisabled} value={taskForm.assignedRoleKey} onChange={(event) => setTaskForm((current) => ({ ...current, assignedRoleKey: event.target.value }))}>
+            <select
+              disabled={taskFormDisabled || (taskForm.targetType || "role") !== "role"}
+              value={taskForm.assignedRoleKey}
+              onChange={(event) => setTaskForm((current) => ({ ...current, assignedRoleKey: event.target.value }))}
+            >
               <option value="">No role</option>
               {eventRoleOptions.map((role) => <option key={role.key} value={role.key}>{role.label}</option>)}
             </select>
@@ -5463,7 +6488,7 @@ function EventOperationsCorePanel({
           <label>
             Assign person
             <input
-              disabled={taskFormDisabled}
+              disabled={taskFormDisabled || (taskForm.targetType || "role") !== "person"}
               list="event-staff-presence-list"
               value={taskForm.assignedOperatorName}
               onChange={(event) => setTaskForm((current) => ({ ...current, assignedOperatorName: event.target.value }))}
@@ -16069,6 +17094,18 @@ function App() {
   }, [user?.id, user?.authUserId, user?.code, user?.name, currentOperator?.name]);
 
   useEffect(() => {
+    setEventTaskAlerts([]);
+    setEventTaskActionStatus({});
+  }, [currentOperator?.name]);
+
+  useEffect(() => {
+    if (isSharedDeviceUser(user) && !normalizeOperator(currentOperator)) {
+      setEventTaskAlerts([]);
+      setEventTaskActionStatus({});
+    }
+  }, [user?.id, user?.authUserId, currentOperator?.name]);
+
+  useEffect(() => {
     if (!user) return;
     registerEventStaffPresence(user, currentOperator, currentShiftScope, currentRoleMode);
   }, [
@@ -16120,6 +17157,22 @@ function App() {
 
   useEffect(() => {
     if (!user) return;
+    const operator = normalizeOperator(currentOperator);
+    const sharedDevice = isSharedDeviceUser(user);
+    const operatorReady = !sharedDevice || Boolean(operator?.name);
+    const operatorName = normalizedPersonName(operator?.name);
+    const operatorEventAccessValid =
+      eventCodeAccess?.codeDate === getOsloDateKey() &&
+      (!sharedDevice || normalizedPersonName(eventCodeAccess?.operatorName) === operatorName) &&
+      (!eventCodeAccess.expiresAt || new Date(eventCodeAccess.expiresAt) > new Date());
+    const eventActorReadyForAlerts =
+      selectedShift === "event" &&
+      operatorReady &&
+      (isManager(effectiveUser) || canUseEventFloorDashboard(effectiveUser) || operatorEventAccessValid);
+    if (!eventActorReadyForAlerts) {
+      setEventTaskAlerts([]);
+      return;
+    }
     const assignedTasks = assignedEventTasksForUser(
       eventOperations,
       eventRoleAssignments,
@@ -16186,6 +17239,10 @@ function App() {
     effectiveUser?.name,
     effectiveUser?.operatorName,
     currentOperator?.name,
+    selectedShift,
+    eventCodeAccess?.codeDate,
+    eventCodeAccess?.operatorName,
+    eventCodeAccess?.expiresAt,
     eventOperations,
     eventRoleAssignments,
     eventOperationTasks,
@@ -16837,8 +17894,14 @@ function App() {
       : null);
   const selectedShiftAccess = getShiftAccessStatus(activeShift, effectiveUser);
   const eventCodeDate = getOsloDateKey();
+  const sharedDeviceEventOperatorName = normalizedPersonName(currentOperator?.name);
+  const eventCodeMatchesSharedDeviceOperator =
+    !effectiveActor.isSharedDevice ||
+    !sharedDeviceEventOperatorName ||
+    normalizedPersonName(eventCodeAccess?.operatorName) === sharedDeviceEventOperatorName;
   const eventAccessIsValid =
     eventCodeAccess?.codeDate === eventCodeDate &&
+    eventCodeMatchesSharedDeviceOperator &&
     (!eventCodeAccess.expiresAt || new Date(eventCodeAccess.expiresAt) > new Date());
   const eventCodeRequired =
     activeShift === "event" &&
@@ -16859,6 +17922,13 @@ function App() {
     (!sharedDeviceNeedsOperator && !selectedShiftBlocked && !selectedScopeBlocked) ||
     activeShift === "guides" ||
     activeShift === "overview";
+  const eventActorReadyForAlerts =
+    activeShift === "event" &&
+    canOpenOperationalView &&
+    !eventCodeNeeded &&
+    !sharedDeviceNeedsOperator &&
+    (!effectiveActor.isSharedDevice || Boolean(sharedDeviceEventOperatorName)) &&
+    (isManager(effectiveUser) || canUseEventFloorDashboard(effectiveUser) || eventAccessIsValid);
 
   return (
     <>
@@ -16877,6 +17947,8 @@ function App() {
           setShowManager(false);
           setShowEventFloorManager(false);
           setCurrentShiftScope(null);
+          setEventTaskAlerts([]);
+          setEventTaskActionStatus({});
           localStorage.removeItem(SHIFT_SCOPE_KEY);
           saveCurrentOperator(null);
         }}
@@ -16914,7 +17986,7 @@ function App() {
         </p>
       )}
       <EventTaskAlertBanner
-        alerts={eventTaskAlerts}
+        alerts={eventActorReadyForAlerts ? eventTaskAlerts : []}
         alertsEnabled={eventTaskAlertSettings.enabled}
         notificationPermission={eventTaskAlertSettings.notificationPermission}
         taskActionStatus={eventTaskActionStatus}
@@ -16934,6 +18006,12 @@ function App() {
           setEventTaskAlerts((current) => current.filter((alert) => alert.id !== alertId))
         }
       />
+      {isLocalhostRuntime() && user && (
+        <p className="muted page-status">
+          Event alert debug: operator {currentOperator?.name || "none"} | shift {activeShift || "none"} | event code{" "}
+          {eventAccessIsValid ? "valid" : "not valid"} | ready {eventActorReadyForAlerts ? "true" : "false"}
+        </p>
+      )}
       {!activeShift &&
         !showManager &&
         !showEventFloorManager &&
@@ -17168,10 +18246,35 @@ function App() {
             taskActionStatus={eventTaskActionStatus}
             eventTaskAlertsEnabled={eventTaskAlertSettings.enabled}
             eventTaskNotificationPermission={eventTaskAlertSettings.notificationPermission}
+            eventActorReadyForAlerts={eventActorReadyForAlerts}
             onEnableEventTaskAlerts={enableEventTaskAlerts}
             onRefreshEventOperations={refreshEventOperationsLive}
             refreshAlerts={loadSupabaseAlerts}
             onAlert={() => setShowGlobalAlert(true)}
+          />
+        ) : activeShift === "event" ? (
+          <EventMode
+            user={effectiveUser}
+            currentOperator={currentOperator}
+            eventOperations={eventOperations}
+            eventRoleAssignments={eventRoleAssignments}
+            eventTasks={eventOperationTasks}
+            onUpdateTaskStatus={handleEventTaskStatusUpdate}
+            eventTaskAlertState={eventTaskAlertState}
+            taskActionStatus={eventTaskActionStatus}
+            alertsEnabled={eventTaskAlertSettings.enabled}
+            notificationPermission={eventTaskAlertSettings.notificationPermission}
+            onEnableAlerts={enableEventTaskAlerts}
+            onRefresh={refreshEventOperationsLive}
+            onChangeOperator={() => {
+              setSelectedShift(null);
+              setCurrentShiftScope(null);
+              setEventTaskAlerts([]);
+              setEventTaskActionStatus({});
+              localStorage.removeItem(SHIFT_SCOPE_KEY);
+              saveCurrentOperator(null);
+            }}
+            onOpenGuides={() => setSelectedShift("guides")}
           />
         ) : (
           <Checklist
