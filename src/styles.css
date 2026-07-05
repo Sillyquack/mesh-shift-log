@@ -834,6 +834,22 @@ textarea {
   gap: 14px;
 }
 
+.guide-quick-links {
+  display: flex;
+  gap: 8px;
+  flex-wrap: wrap;
+  align-items: center;
+}
+
+.guide-quick-links .compact-button {
+  white-space: normal;
+}
+
+.guide-section {
+  display: grid;
+  gap: 12px;
+}
+
 .preview-task-heading button {
   white-space: normal;
 }

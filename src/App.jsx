@@ -3238,6 +3238,7 @@ function EventMode({
   onRefresh,
   onChangeOperator,
   onOpenGuides,
+  onOpenGuide,
 }) {
   const activeEventId = preferredEventBoardId(
     eventOperations.filter((event) => ["draft", "active"].includes(event.status || "draft")),
@@ -3249,6 +3250,9 @@ function EventMode({
     eventRoleAssignments,
     eventTasks,
     user,
+  );
+  const activeEventAssignments = eventRoleAssignments.filter(
+    (assignment) => assignment.active && (!activeEvent?.id || assignment.eventId === activeEvent.id),
   );
   const groupedTasks = groupAssignedEventTasks(myTasks);
 
@@ -3274,6 +3278,18 @@ function EventMode({
             Guides
           </button>
         </div>
+        <GuideQuickLinks
+          onOpenGuide={onOpenGuide}
+          links={[
+            { id: "how-event-mode-works", label: "How Event Mode works" },
+            { id: "event-operations-troubleshooting", label: "Troubleshooting" },
+          ]}
+        />
+        <EventRoleGuideLinks
+          assignments={activeEventAssignments}
+          user={user}
+          onOpenGuide={onOpenGuide}
+        />
       </section>
 
       <MyZoneCommandPanel
@@ -3283,6 +3299,7 @@ function EventMode({
         eventTasks={eventTasks}
         onUpdateTaskStatus={onUpdateTaskStatus}
         taskActionStatus={taskActionStatus}
+        onOpenGuide={onOpenGuide}
       />
 
       <section className="manager-list">
@@ -3621,6 +3638,52 @@ function GuideCard({ guide, compact = false }) {
       )}
     </article>
   );
+}
+
+function GuideQuickLinks({ links = [], onOpenGuide }) {
+  if (!onOpenGuide || !links.length) return null;
+  return (
+    <div className="guide-quick-links">
+      {links.map((link) => (
+        <button
+          key={link.id}
+          type="button"
+          className="ghost-button compact-button"
+          onClick={() => onOpenGuide(link.id)}
+        >
+          {link.label}
+        </button>
+      ))}
+    </div>
+  );
+}
+
+function EventRoleGuideLinks({ assignments = [], user, onOpenGuide }) {
+  const roleGuideMap = {
+    event_floor_manager: "event-floor-manager-live-control",
+    cornerbar_manager: "cornerbar-manager-event-role",
+    atrium_manager: "atrium-manager-event-role",
+    workbar_manager: "workbar-manager-event-role",
+    headrunner: "headrunner-runner-control",
+    runner: "runner-event-role",
+    cornerbar_staff: "bar-staff-zone-staff-event-tasks",
+    atrium_staff: "bar-staff-zone-staff-event-tasks",
+    workbar_staff: "bar-staff-zone-staff-event-tasks",
+    bar_staff: "bar-staff-zone-staff-event-tasks",
+    support: "support-event-role",
+    other: "support-event-role",
+  };
+  const links = [];
+  eventRolesForPerson(
+    { operatorName: user?.operatorName || user?.name, authUserId: user?.authUserId || user?.backendUserId || user?.id },
+    assignments,
+  ).forEach((assignment) => {
+    const guideId = roleGuideMap[assignment.roleKey];
+    const label = guideId ? `Guide: ${eventRoleLabel(assignment.roleKey)}` : "";
+    if (guideId && !links.some((link) => link.id === guideId)) links.push({ id: guideId, label });
+  });
+  if (!links.length) links.push({ id: "bar-staff-zone-staff-event-tasks", label: "Guide: Event staff" });
+  return <GuideQuickLinks links={links} onOpenGuide={onOpenGuide} />;
 }
 
 function HandoverNotes({
@@ -4862,6 +4925,7 @@ function MyZoneCommandPanel({
   eventTasks,
   onUpdateTaskStatus,
   taskActionStatus,
+  onOpenGuide,
 }) {
   const visibleEventIds = new Set([
     ...eventOperations.map((event) => event.id),
@@ -4884,6 +4948,11 @@ function MyZoneCommandPanel({
   return (
     <section className="manager-list">
       <h2>{myCommandAssignments.length ? "My Zone" : "My Event Role"}</h2>
+      <EventRoleGuideLinks
+        assignments={visibleAssignments}
+        user={user}
+        onOpenGuide={onOpenGuide}
+      />
       {visibleAssignments.map((assignment) => {
         const commandZone = eventCommandZones.find((zone) => zone.managerRole === assignment.roleKey);
         const teamAssignments = commandZone
@@ -4979,6 +5048,7 @@ function EventRunSheetTemplatesPanel({
   eventTasks,
   onCreateTask,
   createdByName,
+  onOpenGuide,
 }) {
   const defaultSetup = {
     zones: {
@@ -5233,6 +5303,13 @@ function EventRunSheetTemplatesPanel({
     <section className="manager-list run-sheet-panel">
       <h2>Run Sheets / Templates</h2>
       <p className="muted">Assign people in Command Structure before or after applying this run sheet.</p>
+      <GuideQuickLinks
+        onOpenGuide={onOpenGuide}
+        links={[
+          { id: "how-to-use-run-sheets", label: "Guide: Run Sheets" },
+          { id: "event-floor-manager-live-control", label: "Guide: Event Floor Manager" },
+        ]}
+      />
       {!activeEvent && (
         <p className="critical-warning">Select or create an event board before applying a run sheet.</p>
       )}
@@ -5475,6 +5552,7 @@ function EventLiveModePanel({
   onCreateTask,
   onUpdateTaskStatus,
   taskActionStatus,
+  onOpenGuide,
   onClose,
 }) {
   const [zoneFilter, setZoneFilter] = useState("all");
@@ -5568,6 +5646,14 @@ function EventLiveModePanel({
           Back to Event Operations
         </button>
       </div>
+      <GuideQuickLinks
+        onOpenGuide={onOpenGuide}
+        links={[
+          { id: "sending-live-event-messages-tasks", label: "How to send live task/message" },
+          { id: "event-close-and-handover", label: "Event close/handover guide" },
+          { id: "event-floor-manager-live-control", label: "Guide: Event Floor Manager" },
+        ]}
+      />
 
       <EventCommandStructurePanel assignments={eventAssignments} tasks={eventTasks} compact />
 
@@ -5735,6 +5821,7 @@ function EventOperationsCorePanel({
   onUpdateTaskStatus,
   taskActionStatus,
   onCreateHandover,
+  onOpenGuide,
 }) {
   const todayEvents = eventOperations.filter((event) => event.date === date);
   const [activeEventId, setActiveEventId] = useState(() => {
@@ -6115,6 +6202,7 @@ function EventOperationsCorePanel({
         onCreateTask={onCreateTask}
         onUpdateTaskStatus={onUpdateTaskStatus}
         taskActionStatus={taskActionStatus}
+        onOpenGuide={onOpenGuide}
         onClose={() => setShowLiveEventMode(false)}
       />
     );
@@ -6127,6 +6215,13 @@ function EventOperationsCorePanel({
         <p className="muted">
           Manual event operations board. Calendar import will be added in a later phase.
         </p>
+        <GuideQuickLinks
+          onOpenGuide={onOpenGuide}
+          links={[
+            { id: "event-floor-manager-live-control", label: "Guide: Event Floor Manager" },
+            { id: "event-operations-troubleshooting", label: "Troubleshooting" },
+          ]}
+        />
         <form className="editor-form compact-editor" onSubmit={submitEvent}>
           <label>
             Title
@@ -6216,6 +6311,7 @@ function EventOperationsCorePanel({
         eventTasks={eventBoardTasks}
         onCreateTask={onCreateTask}
         createdByName={user.name}
+        onOpenGuide={onOpenGuide}
       />
 
       <section className="manager-list">
@@ -6388,6 +6484,14 @@ function EventOperationsCorePanel({
         <p className="muted">
           Timed reminders are active while the app is open. Real background push will be added later.
         </p>
+        <GuideQuickLinks
+          onOpenGuide={onOpenGuide}
+          links={[
+            { id: "sending-live-event-messages-tasks", label: "Guide: Live messages/tasks" },
+            { id: "how-event-mode-works", label: "Guide: Event Mode" },
+            { id: "event-operations-troubleshooting", label: "Troubleshooting" },
+          ]}
+        />
         {activeEvent ? (
           <article className="overview-card">
             <strong>Selected event: {activeEvent.title}</strong>
@@ -6646,6 +6750,7 @@ function EventFloorDashboard({
   onGuides,
   onBackToManager,
   onChangeRole,
+  onOpenGuide,
 }) {
   const date = todayKey();
   const todayEvents = events.filter((event) => event.date === date);
@@ -6762,6 +6867,14 @@ function EventFloorDashboard({
             Guides
           </button>
         </div>
+        <GuideQuickLinks
+          onOpenGuide={onOpenGuide}
+          links={[
+            { id: "event-floor-manager-live-control", label: "Guide: Event Floor Manager" },
+            { id: "how-to-use-run-sheets", label: "Guide: Run Sheets" },
+            { id: "sending-live-event-messages-tasks", label: "Guide: Live messages" },
+          ]}
+        />
       </section>
 
       <EventCodeGeneratorPanel user={user} />
@@ -6782,6 +6895,7 @@ function EventFloorDashboard({
         onUpdateTaskStatus={onUpdateEventOperationTaskStatus}
         taskActionStatus={eventTaskActionStatus}
         onCreateHandover={onCreateEventHandover}
+        onOpenGuide={onOpenGuide}
       />
 
       <section className="manager-list">
@@ -7220,17 +7334,35 @@ function Checklist({
   }
 
   if (shiftType === "guides") {
+    const normalizedGuides = knowledgeBase.map(normalizeGuide);
+    const eventOperationGuides = normalizedGuides.filter((guide) => guide.category === "Event Operations");
+    const otherGuides = normalizedGuides.filter((guide) => guide.category !== "Event Operations");
     return (
       <main className="page">
         <section className="intro compact">
           <p className="eyebrow">Guides</p>
           <h1>Knowledge base</h1>
         </section>
+        {eventOperationGuides.length > 0 && (
+          <section className="guide-section">
+            <div className="section-heading static-heading">
+              <div>
+                <p className="eyebrow">Event Operations</p>
+                <h2>Event guides and how-to</h2>
+              </div>
+              <span>{eventOperationGuides.length} guides</span>
+            </div>
+            <div className="guide-list">
+              {eventOperationGuides.map((guide) => (
+                <GuideCard key={guide.id} guide={guide} />
+              ))}
+            </div>
+          </section>
+        )}
         <section className="guide-list">
-          {knowledgeBase.map((guide) => {
-            const normalizedGuide = normalizeGuide(guide);
-            return <GuideCard key={normalizedGuide.id} guide={normalizedGuide} />;
-          })}
+          {otherGuides.map((guide) => (
+            <GuideCard key={guide.id} guide={guide} />
+          ))}
         </section>
       </main>
     );
@@ -14259,6 +14391,7 @@ function App() {
     readStorage(EVENT_CODE_ACCESS_KEY, null),
   );
   const [showGlobalAlert, setShowGlobalAlert] = useState(false);
+  const [activeGuideId, setActiveGuideId] = useState("");
   const [logs, setLogs] = useState(() =>
     normalizeLogs(readStorage(LOG_KEY, [])),
   );
@@ -18077,6 +18210,7 @@ function App() {
                 : null
             }
             onChangeRole={activeRoleMode ? clearRoleMode : null}
+            onOpenGuide={setActiveGuideId}
           />
         )}
       {!activeShift &&
@@ -18120,6 +18254,7 @@ function App() {
             onShowOverview={() => setSelectedShift("overview")}
             onGuides={() => setSelectedShift("guides")}
             onChangeRole={clearRoleMode}
+            onOpenGuide={setActiveGuideId}
           />
         ) : (
           <ShiftPicker
@@ -18275,6 +18410,7 @@ function App() {
               saveCurrentOperator(null);
             }}
             onOpenGuides={() => setSelectedShift("guides")}
+            onOpenGuide={setActiveGuideId}
           />
         ) : (
           <Checklist
@@ -18413,6 +18549,41 @@ function App() {
             );
           }}
         />
+      )}
+      {activeGuideId && (
+        <div className="modal-backdrop" role="dialog" aria-modal="true">
+          <section className="pilot-modal guide-modal">
+            {findGuideById(activeGuideId) ? (
+              <GuideCard guide={findGuideById(activeGuideId)} compact />
+            ) : (
+              <div className="empty-state">
+                <h2>Guide not found</h2>
+                <p className="muted">This guide has not been added yet.</p>
+              </div>
+            )}
+            <div className="backup-actions">
+              <button
+                type="button"
+                className="primary-button"
+                onClick={() => setActiveGuideId("")}
+              >
+                Close
+              </button>
+              <button
+                type="button"
+                className="ghost-button"
+                onClick={() => {
+                  setActiveGuideId("");
+                  setSelectedShift("guides");
+                  setShowManager(false);
+                  setShowEventFloorManager(false);
+                }}
+              >
+                Open Knowledge Base
+              </button>
+            </div>
+          </section>
+        </div>
       )}
       <UpdateBanner waitingWorker={waitingWorker} />
     </>
