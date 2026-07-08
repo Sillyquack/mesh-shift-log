@@ -96,6 +96,15 @@ import {
   upsertEventRoleAssignment,
   upsertEventStaffPresence,
 } from "./lib/eventOperationsClient.js";
+import {
+  createCalendarSource,
+  createEventOperationFromCalendarEvent,
+  linkCalendarEventToEventOperation,
+  listCalendarSources,
+  listImportedCalendarEvents,
+  syncGoogleCalendar,
+} from "./lib/calendarImportClient.js";
+import { subscribeToEventOperationsRealtime } from "./lib/eventOperationsRealtime.js";
 
 function buildReviewStatusForHistoryDate(historyDate, reviewMap = {}) {
   const review = reviewMap?.[historyDate];
@@ -5805,6 +5814,432 @@ function EventLiveModePanel({
   );
 }
 
+const STANDARD_MESH_EVENT_CALENDAR_PRESETS = [
+  { name: "MY-0-CommunityStage (200)", alias: "MY_0_COMMUNITY_STAGE_200" },
+  { name: "MY-1-Atrium (100)", alias: "MY_1_ATRIUM_100" },
+  { name: "MY-1-Bar (20)", alias: "MY_1_BAR_20" },
+  { name: "MY-1-LoungeVenue (40)", alias: "MY_1_LOUNGE_VENUE_40" },
+  { name: "MY-1-Workbar (100)", alias: "MY_1_WORKBAR_100" },
+];
+
+function normalizeCalendarAliasForUi(value = "") {
+  return value
+    .trim()
+    .toUpperCase()
+    .replace(/[^A-Z0-9]+/g, "_")
+    .replace(/_+/g, "_")
+    .replace(/^_+|_+$/g, "");
+}
+
+function EventCalendarImportPanel({
+  eventOperations,
+  activeEventId,
+  onSelectEvent,
+  onRefresh,
+  onOpenGuide,
+}) {
+  const defaultFrom = toDateTimeLocalValue(new Date());
+  const defaultTo = addMinutesToDateTimeLocal(defaultFrom, 60 * 24 * 60);
+  const [sources, setSources] = useState([]);
+  const [importedEvents, setImportedEvents] = useState([]);
+  const [sourceForm, setSourceForm] = useState({ name: "", calendarId: "" });
+  const [selectedSourceId, setSelectedSourceId] = useState("");
+  const [range, setRange] = useState({ from: defaultFrom, to: defaultTo });
+  const [status, setStatus] = useState({ type: "", message: "" });
+  const [loading, setLoading] = useState(false);
+  const calendarSyncDebug = status.debug ? JSON.stringify(status.debug, null, 2) : "";
+  const calendarSyncDiagnostics = status.diagnostics ? JSON.stringify(status.diagnostics, null, 2) : "";
+  const sourceByAlias = new Map(
+    sources.map((source) => [normalizeCalendarAliasForUi(source.calendarId || source.name), source]),
+  );
+  const presetRows = STANDARD_MESH_EVENT_CALENDAR_PRESETS.map((preset) => ({
+    ...preset,
+    source: sourceByAlias.get(preset.alias) || null,
+  }));
+
+  async function loadCalendarData(nextRange = range) {
+    setLoading(true);
+    const [sourceResult, eventResult] = await Promise.all([
+      listCalendarSources(),
+      listImportedCalendarEvents({
+        from: fromDateTimeLocalValue(nextRange.from),
+        to: fromDateTimeLocalValue(nextRange.to),
+      }),
+    ]);
+    setLoading(false);
+    if (sourceResult.ok) {
+      setSources(sourceResult.records || []);
+      setSelectedSourceId((current) => current || sourceResult.records?.[0]?.id || "");
+    }
+    if (eventResult.ok) setImportedEvents(eventResult.records || []);
+    if (!sourceResult.ok || !eventResult.ok) {
+      setStatus({
+        type: "error",
+        message:
+          sourceResult.message ||
+          eventResult.message ||
+          "Calendar import data could not be loaded.",
+      });
+    }
+  }
+
+  useEffect(() => {
+    loadCalendarData();
+  }, []);
+
+  async function addSource(event) {
+    event.preventDefault();
+    setStatus({ type: "", message: "" });
+    if (!sourceForm.name.trim()) {
+      setStatus({ type: "error", message: "Add source name." });
+      return;
+    }
+    setLoading(true);
+    const result = await createCalendarSource({
+      name: sourceForm.name.trim(),
+      calendarId: sourceForm.calendarId.trim(),
+    });
+    setLoading(false);
+    if (!result.ok) {
+      setStatus({ type: "error", message: result.message || "Calendar source could not be saved." });
+      return;
+    }
+    setSourceForm({ name: "", calendarId: "" });
+    setStatus({ type: "success", message: "Calendar source saved." });
+    await loadCalendarData();
+  }
+
+  async function addMissingEventSources() {
+    setStatus({ type: "pending", message: "Adding missing Mesh event calendar sources..." });
+    const missingPresets = presetRows.filter((preset) => !preset.source);
+    if (!missingPresets.length) {
+      setStatus({ type: "success", message: "All standard Mesh event calendar sources already exist." });
+      return;
+    }
+    const details = [];
+    for (const preset of missingPresets) {
+      const result = await createCalendarSource({ name: preset.name, calendarId: preset.alias });
+      details.push({
+        label: preset.name,
+        ok: result.ok,
+        message: result.ok ? "Added" : result.message || "Could not add source.",
+      });
+    }
+    await loadCalendarData();
+    const failed = details.filter((detail) => !detail.ok);
+    setStatus({
+      type: failed.length ? "error" : "success",
+      message: failed.length
+        ? "Some Mesh event calendar sources could not be added."
+        : "Missing Mesh event calendar sources added.",
+      details,
+    });
+  }
+
+  async function syncCalendar() {
+    setStatus({ type: "", message: "" });
+    if (!selectedSourceId) {
+      setStatus({ type: "error", message: "Create or choose a calendar source first." });
+      return;
+    }
+    setLoading(true);
+    const result = await syncGoogleCalendar({
+      sourceId: selectedSourceId,
+      timeMin: fromDateTimeLocalValue(range.from),
+      timeMax: fromDateTimeLocalValue(range.to),
+    });
+    setLoading(false);
+    if (!result.ok) {
+      const selectedSource = sources.find((source) => source.id === selectedSourceId);
+      const message =
+        result.mode === "ics_missing_source_secret"
+          ? `No iCal secret configured for ${selectedSource?.name || "this calendar source"}. Expected Supabase secret: ${result.expectedSecretName || "missing source secret"}.`
+          : result.mode === "not_configured"
+          ? "Google Calendar sync needs server-side configuration before it can import events."
+          : result.message ||
+            "Google Calendar sync needs server-side configuration before it can import events.";
+      setStatus({
+        type: "error",
+        message,
+        debug: result.debug || null,
+      });
+      return;
+    }
+    setStatus({
+      type: "success",
+      message: result.message || "Google Calendar sync complete.",
+      helper:
+        result.mode === "ics" && result.syncedCount === 0
+          ? "No events were imported from the iCal feed for this range. Check that the iCal secret belongs to the selected calendar, the date range includes events, and whether the events are recurring."
+          : "",
+      diagnostics: result.diagnostics || null,
+    });
+    await loadCalendarData();
+  }
+
+  async function syncAllEventCalendars() {
+    const eventSources = presetRows
+      .map((preset) => preset.source)
+      .filter((source) => source?.id && source.active !== false);
+    if (!eventSources.length) {
+      setStatus({ type: "error", message: "Add standard Mesh event calendar sources before syncing all." });
+      return;
+    }
+    setLoading(true);
+    const details = [];
+    let totalSynced = 0;
+    for (let index = 0; index < eventSources.length; index += 1) {
+      const source = eventSources[index];
+      setStatus({
+        type: "pending",
+        message: `Syncing ${index + 1}/${eventSources.length} sources...`,
+        details,
+      });
+      const result = await syncGoogleCalendar({
+        sourceId: source.id,
+        timeMin: fromDateTimeLocalValue(range.from),
+        timeMax: fromDateTimeLocalValue(range.to),
+      });
+      const syncedCount = result.syncedCount ?? result.data?.syncedCount ?? result.data?.importedCount ?? 0;
+      if (result.ok) totalSynced += syncedCount;
+      const missingSecret = result.mode === "ics_missing_source_secret";
+      details.push({
+        label: source.name,
+        ok: result.ok,
+        state: result.ok ? "synced" : missingSecret ? "missing secret" : "failed",
+        message: result.ok
+          ? `Synced ${syncedCount} event(s).`
+          : missingSecret
+          ? `Missing secret: ${result.expectedSecretName || "expected source secret not returned"}.`
+          : result.message || "Sync failed.",
+      });
+    }
+    setLoading(false);
+    await loadCalendarData();
+    const failed = details.filter((detail) => !detail.ok);
+    setStatus({
+      type: failed.length ? "error" : "success",
+      message: failed.length
+        ? `Synced ${eventSources.length - failed.length}/${eventSources.length} sources. ${totalSynced} event(s) synced total.`
+        : `Synced ${eventSources.length}/${eventSources.length} sources. ${totalSynced} event(s) synced total.`,
+      details,
+    });
+  }
+
+  async function createBoard(calendarEvent) {
+    setStatus({ type: "pending", message: "Creating event board from calendar event..." });
+    const result = await createEventOperationFromCalendarEvent(calendarEvent.id);
+    if (!result.ok) {
+      setStatus({ type: "error", message: result.message || "Event board could not be created." });
+      return;
+    }
+    const record = result.record || result.row || {};
+    if (record.id) onSelectEvent?.(record.id);
+    await onRefresh?.("calendar_event_board_created");
+    await loadCalendarData();
+    setStatus({
+      type: "success",
+      message: "Event board created. Next: set Command Structure, review Run Sheets, then open Live Event Mode.",
+    });
+  }
+
+  async function linkToActiveBoard(calendarEvent) {
+    if (!activeEventId) {
+      setStatus({ type: "error", message: "Select an event board before linking." });
+      return;
+    }
+    setStatus({ type: "pending", message: "Linking imported event to selected board..." });
+    const result = await linkCalendarEventToEventOperation(calendarEvent.id, activeEventId);
+    if (!result.ok) {
+      setStatus({ type: "error", message: result.message || "Calendar event could not be linked." });
+      return;
+    }
+    await onRefresh?.("calendar_event_linked");
+    await loadCalendarData();
+    setStatus({ type: "success", message: "Calendar event linked to selected event board." });
+  }
+
+  return (
+    <section className="manager-list calendar-import-panel">
+      <div className="section-heading static-heading">
+        <div>
+          <p className="eyebrow">Calendar Import</p>
+          <h2>Google Calendar import</h2>
+        </div>
+        <span>{sources.length} source(s)</span>
+      </div>
+      <p className="muted">
+        Calendar sync can use either Google API credentials or a server-side iCal secret URL. Calendar descriptions may contain internal event details.
+      </p>
+      <p className="muted">
+        For quick setup, ask a manager to configure the Google Calendar secret iCal URL as a Supabase Edge Function secret.
+      </p>
+      <p className="muted">
+        Calendars without iCal secrets need either Workspace admin access or Google Calendar API/service account later.
+      </p>
+      <GuideQuickLinks
+        onOpenGuide={onOpenGuide}
+        links={[{ id: "google-calendar-import", label: "Guide: Google Calendar Import" }]}
+      />
+      <section className="manager-list calendar-preset-panel">
+        <div className="section-heading static-heading">
+          <div>
+            <p className="eyebrow">Standard Mesh event calendars</p>
+            <h3>Event sources</h3>
+          </div>
+          <button type="button" className="ghost-button compact-button" onClick={addMissingEventSources} disabled={loading}>
+            Add missing event sources
+          </button>
+        </div>
+        <div className="mini-grid">
+          {presetRows.map((preset) => (
+            <article key={preset.alias} className="status-card">
+              <strong>{preset.name}</strong>
+              <span>{preset.alias}</span>
+              <small>{preset.source ? "Source exists" : "Missing source"}</small>
+            </article>
+          ))}
+        </div>
+      </section>
+      <form className="editor-form compact-editor" onSubmit={addSource}>
+        <label>
+          Source name
+          <input
+            value={sourceForm.name}
+            onChange={(event) => setSourceForm((current) => ({ ...current, name: event.target.value }))}
+            placeholder="Youngs event calendar"
+          />
+        </label>
+        <label>
+          Calendar ID / iCal secret alias
+          <input
+            value={sourceForm.calendarId}
+            onChange={(event) => setSourceForm((current) => ({ ...current, calendarId: event.target.value }))}
+            placeholder="MY_1_BAR_20"
+          />
+          <small>
+            For iCal mode, enter a safe alias like MY_1_BAR_20. The matching Supabase secret should be GOOGLE_CALENDAR_ICS_URL_MY_1_BAR_20. Do not paste the iCal URL here.
+          </small>
+        </label>
+        <button type="submit" className="primary-button compact-button" disabled={loading}>
+          Add source
+        </button>
+      </form>
+      <p className="muted">
+        iCal mode imports from the server-side iCal feed configured in Supabase, not from the visible Google Calendar ID field.
+      </p>
+      <div className="editor-form compact-editor">
+        <label>
+          Source
+          <select value={selectedSourceId} onChange={(event) => setSelectedSourceId(event.target.value)}>
+            <option value="">Choose source</option>
+            {sources.map((source) => (
+              <option key={source.id} value={source.id}>
+                {source.name} {source.lastSyncedAt ? `(synced ${formatDateTime(source.lastSyncedAt)})` : ""}
+              </option>
+            ))}
+          </select>
+        </label>
+        <label>
+          From
+          <input type="datetime-local" value={range.from} onChange={(event) => setRange((current) => ({ ...current, from: event.target.value }))} />
+        </label>
+        <label>
+          To
+          <input type="datetime-local" value={range.to} onChange={(event) => setRange((current) => ({ ...current, to: event.target.value }))} />
+        </label>
+        <button type="button" className="primary-button compact-button" onClick={syncCalendar} disabled={loading || !selectedSourceId}>
+          {loading ? "Working..." : "Sync Google Calendar"}
+        </button>
+        <button type="button" className="primary-button compact-button" onClick={syncAllEventCalendars} disabled={loading}>
+          Sync all event calendars
+        </button>
+        <button type="button" className="ghost-button compact-button" onClick={() => loadCalendarData()} disabled={loading}>
+          Refresh imported events
+        </button>
+      </div>
+      {status.message && (
+        <>
+          <p className={status.type === "error" ? "critical-warning" : status.type === "success" ? "all-clear" : "status-message"}>
+            {status.message}
+          </p>
+          {isLocalhostRuntime() && calendarSyncDebug && (
+            <details className="calendar-sync-debug">
+              <summary>Calendar sync debug</summary>
+              <pre>{calendarSyncDebug}</pre>
+            </details>
+          )}
+          {status.helper && <p className="muted">{status.helper}</p>}
+          {status.details?.length > 0 && (
+            <div className="calendar-sync-results">
+              {status.details.map((detail) => (
+                <p key={`${detail.label}-${detail.message}`} className={detail.ok ? "all-clear" : "critical-warning"}>
+                  {detail.label}: {detail.state ? `${detail.state} - ` : ""}{detail.message}
+                </p>
+              ))}
+            </div>
+          )}
+          {isLocalhostRuntime() && calendarSyncDiagnostics && (
+            <details className="calendar-sync-debug">
+              <summary>iCal sync diagnostics</summary>
+              <pre>{calendarSyncDiagnostics}</pre>
+            </details>
+          )}
+        </>
+      )}
+      {sources.length === 0 && (
+        <p className="muted">No calendar source yet. Add a source, then configure Google API credentials or the iCal secret URL server-side before syncing.</p>
+      )}
+      {importedEvents.length === 0 ? (
+        <p className="muted">No imported calendar events yet.</p>
+      ) : (
+        <div className="critical-group">
+          <h3>Imported events</h3>
+          {importedEvents.map((calendarEvent) => {
+            const linkedBoard = eventOperations.find((event) => event.id === calendarEvent.linkedEventOperationId);
+            return (
+              <article key={calendarEvent.id} className="log-row">
+                <strong>{calendarEvent.title}</strong>
+                <span>
+                  {calendarEvent.location || "No location"} | {calendarEvent.status || "calendar"} | {calendarEvent.sourceName || "Google"}
+                </span>
+                <small>Source: {calendarEvent.sourceName || "Unknown calendar source"}</small>
+                <small>
+                  {calendarEvent.startsAt ? formatDateTime(calendarEvent.startsAt) : "No start"}
+                  {calendarEvent.endsAt ? ` - ${formatDateTime(calendarEvent.endsAt)}` : ""}
+                  {calendarEvent.importedAt ? ` | imported ${formatDateTime(calendarEvent.importedAt)}` : ""}
+                </small>
+                {linkedBoard && <small>Linked board: {linkedBoard.title}</small>}
+                <div className="backup-actions">
+                  {linkedBoard ? (
+                    <button type="button" className="primary-button compact-button" onClick={() => onSelectEvent?.(linkedBoard.id)}>
+                      Open linked board
+                    </button>
+                  ) : (
+                    <>
+                      <button type="button" className="primary-button compact-button" onClick={() => createBoard(calendarEvent)}>
+                        Create Event Board
+                      </button>
+                      <button type="button" className="ghost-button compact-button" onClick={() => linkToActiveBoard(calendarEvent)} disabled={!activeEventId}>
+                        Link to selected board
+                      </button>
+                    </>
+                  )}
+                  {calendarEvent.htmlLink && (
+                    <a className="ghost-button compact-button" href={calendarEvent.htmlLink} target="_blank" rel="noreferrer">
+                      Open calendar event
+                    </a>
+                  )}
+                </div>
+              </article>
+            );
+          })}
+        </div>
+      )}
+    </section>
+  );
+}
+
 function EventOperationsCorePanel({
   user,
   date,
@@ -5822,6 +6257,7 @@ function EventOperationsCorePanel({
   taskActionStatus,
   onCreateHandover,
   onOpenGuide,
+  onRefreshEventOperations,
 }) {
   const todayEvents = eventOperations.filter((event) => event.date === date);
   const [activeEventId, setActiveEventId] = useState(() => {
@@ -6213,7 +6649,7 @@ function EventOperationsCorePanel({
       <section className="manager-list">
         <h2>Today’s event board</h2>
         <p className="muted">
-          Manual event operations board. Calendar import will be added in a later phase.
+          Manual or imported event operations board.
         </p>
         <GuideQuickLinks
           onOpenGuide={onOpenGuide}
@@ -6297,6 +6733,14 @@ function EventOperationsCorePanel({
           </article>
         )}
       </section>
+
+      <EventCalendarImportPanel
+        eventOperations={eventOperations}
+        activeEventId={activeEventIdValue}
+        onSelectEvent={selectEventBoard}
+        onRefresh={onRefreshEventOperations}
+        onOpenGuide={onOpenGuide}
+      />
 
       <EventCommandStructurePanel
         assignments={eventAssignments}
@@ -6751,6 +7195,7 @@ function EventFloorDashboard({
   onBackToManager,
   onChangeRole,
   onOpenGuide,
+  onRefreshEventOperations,
 }) {
   const date = todayKey();
   const todayEvents = events.filter((event) => event.date === date);
@@ -6896,6 +7341,7 @@ function EventFloorDashboard({
         taskActionStatus={eventTaskActionStatus}
         onCreateHandover={onCreateEventHandover}
         onOpenGuide={onOpenGuide}
+        onRefreshEventOperations={onRefreshEventOperations}
       />
 
       <section className="manager-list">
@@ -14464,6 +14910,11 @@ function App() {
   );
   const [eventTaskAlerts, setEventTaskAlerts] = useState([]);
   const [eventTaskActionStatus, setEventTaskActionStatus] = useState({});
+  const [eventRealtimeStatus, setEventRealtimeStatus] = useState({
+    state: "disabled",
+    message: "",
+    lastEventAt: "",
+  });
   const [siteAccess, setSiteAccess] = useState({
     status: siteSettings.locationCheckEnabled ? "unknown" : "off",
     distance: null,
@@ -17289,6 +17740,30 @@ function App() {
   }, [selectedShift, showEventFloorManager, user?.id]);
 
   useEffect(() => {
+    const organizationId =
+      user?.organizationId || user?.organization_id || authStatus.organizationId || "";
+    const enabled =
+      user?.loginSource === "supabase_auth" &&
+      Boolean(organizationId) &&
+      (selectedShift === "event" || showEventFloorManager);
+    const subscription = subscribeToEventOperationsRealtime({
+      organizationId,
+      enabled,
+      onRefresh: (reason) => refreshEventOperationsLive(reason),
+      onStatus: setEventRealtimeStatus,
+    });
+    return () => subscription.unsubscribe();
+  }, [
+    user?.id,
+    user?.loginSource,
+    user?.organizationId,
+    user?.organization_id,
+    authStatus.organizationId,
+    selectedShift,
+    showEventFloorManager,
+  ]);
+
+  useEffect(() => {
     if (!user) return;
     const operator = normalizeOperator(currentOperator);
     const sharedDevice = isSharedDeviceUser(user);
@@ -18142,7 +18617,9 @@ function App() {
       {isLocalhostRuntime() && user && (
         <p className="muted page-status">
           Event alert debug: operator {currentOperator?.name || "none"} | shift {activeShift || "none"} | event code{" "}
-          {eventAccessIsValid ? "valid" : "not valid"} | ready {eventActorReadyForAlerts ? "true" : "false"}
+          {eventAccessIsValid ? "valid" : "not valid"} | ready {eventActorReadyForAlerts ? "true" : "false"} | realtime{" "}
+          {eventRealtimeStatus.state}
+          {eventRealtimeStatus.lastEventAt ? ` at ${formatDateTime(eventRealtimeStatus.lastEventAt)}` : ""}
         </p>
       )}
       {!activeShift &&
@@ -18211,6 +18688,7 @@ function App() {
             }
             onChangeRole={activeRoleMode ? clearRoleMode : null}
             onOpenGuide={setActiveGuideId}
+            onRefreshEventOperations={refreshEventOperationsLive}
           />
         )}
       {!activeShift &&
@@ -18255,6 +18733,7 @@ function App() {
             onGuides={() => setSelectedShift("guides")}
             onChangeRole={clearRoleMode}
             onOpenGuide={setActiveGuideId}
+            onRefreshEventOperations={refreshEventOperationsLive}
           />
         ) : (
           <ShiftPicker

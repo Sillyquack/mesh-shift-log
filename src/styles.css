@@ -876,6 +876,63 @@ textarea {
   color: var(--brand-strong);
 }
 
+.calendar-sync-debug {
+  margin-top: 10px;
+  border-radius: 8px;
+  background: #111827;
+  color: #e5e7eb;
+  padding: 10px 12px;
+  font-size: 0.82rem;
+}
+
+.calendar-sync-debug summary {
+  cursor: pointer;
+  font-weight: 850;
+}
+
+.calendar-sync-debug pre {
+  margin: 10px 0 0;
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+  font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono", monospace;
+  line-height: 1.45;
+}
+
+.calendar-preset-panel {
+  margin-top: 14px;
+}
+
+.mini-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(190px, 1fr));
+  gap: 10px;
+}
+
+.status-card {
+  display: grid;
+  gap: 4px;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  padding: 10px;
+  background: var(--surface);
+}
+
+.status-card span,
+.status-card small {
+  overflow-wrap: anywhere;
+}
+
+.calendar-sync-results {
+  display: grid;
+  gap: 6px;
+  margin-top: 10px;
+}
+
+.calendar-sync-results .all-clear,
+.calendar-sync-results .critical-warning {
+  margin: 0;
+}
+
 .checklist-controls {
   display: grid;
   gap: 10px;
