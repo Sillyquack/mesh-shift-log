@@ -34,6 +34,11 @@ LocalStorage remains in this phase so existing Workbar Device, offline fallback 
 
 - Google service account credentials must be configured as Supabase Edge Function secrets.
 - The target Google Calendar must be shared with the service account email, or domain-wide delegation/impersonation must be configured.
+- Calendar import supports two modes: iCal alias mode and Google Calendar API mode.
+- iCal alias mode is simpler, but requires Google Calendar "Secret address in iCal format".
+- Google Calendar API mode is for resource calendars and room calendars where iCal secret URLs are unavailable.
+- Google API mode stores only the Google Calendar ID in `event_calendar_sources.settings.googleCalendarId`. Service account JSON/private keys must never be stored in frontend, Git or database.
+- Google API setup requires Google Calendar API enabled, service account credentials as Supabase Edge Function secrets, and either calendar sharing with the service account or domain-wide delegation/impersonated user with access.
 - Quick setup can use the Google Calendar secret iCal address as the `GOOGLE_CALENDAR_ICS_URL` Supabase Edge Function secret. This avoids Google Cloud Console for now.
 - Treat the secret iCal address as a password. Do not paste it into chat, frontend code, Git or public docs.
 - Mesh Youngstorget uses multiple event calendars/resources. Each source should store only a safe alias in the app, while the actual iCal URL stays as a Supabase Edge Function secret.

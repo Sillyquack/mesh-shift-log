@@ -1380,6 +1380,11 @@ export const knowledgeBase = [
     body: 'Managers and Event Floor Managers can import Google Calendar events into Event Operations when server-side calendar sync is configured.',
     steps: [
       'Only Manager and Event Floor Manager users can create calendar sources or sync calendar events.',
+      'Calendar import supports two modes: iCal alias mode and Google Calendar API mode.',
+      'iCal alias mode is simpler, but requires Google Calendar Secret address in iCal format.',
+      'Google Calendar API mode is for resource calendars and room calendars where iCal secret URLs are unavailable.',
+      'For Google API mode, store only the Google Calendar ID in source settings. Never store service account JSON/private keys in frontend, Git or database.',
+      'Google API setup requires Google Calendar API enabled, service account credentials as Supabase Edge Function secrets, and either calendar sharing with the service account or domain-wide delegation/impersonated user with access.',
       'Google service account credentials must be configured as Supabase Edge Function secrets before sync works.',
       'The target Google Calendar must be shared with the service account email, or domain-wide delegation/impersonation must be configured.',
       'Quick setup can use the Google Calendar secret iCal address as a Supabase Edge Function secret, which avoids Google Cloud Console for now.',

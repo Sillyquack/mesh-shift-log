@@ -19,6 +19,7 @@ type CalendarSource = {
   name: string;
   calendar_id: string | null;
   active: boolean;
+  settings?: Record<string, any> | null;
 };
 
 type IcsContentLine = {
@@ -28,6 +29,18 @@ type IcsContentLine = {
 };
 
 type ParsedIcsEvent = Record<string, IcsContentLine | undefined>;
+
+const GOOGLE_API_PRESET_ALIASES = new Set([
+  'MY_0_COMMUNITY_STAGE_200',
+  'MY_1_BAR_20',
+  'MY_0_001_16',
+  'MY_0_002_7',
+  'MY_0_003_7',
+  'MY_0_004_5',
+  'MY_0_006_CISCO_WEBEX_8',
+  'MY_0_007_CISCO_WEBEX_12',
+  'MY_1_MEZZANINE_BOARDROOM_MEZZ_16',
+]);
 
 function jsonResponse(body: Record<string, unknown>, status = 200) {
   return new Response(JSON.stringify(body), {
@@ -395,16 +408,16 @@ async function getGoogleAccessToken() {
   return { ok: true, accessToken: body.access_token as string };
 }
 
-function normalizeGoogleEvent(event: Record<string, any>, source: CalendarSource) {
+function normalizeGoogleEvent(event: Record<string, any>, source: CalendarSource, googleCalendarId: string, provider = 'google_api') {
   const start = event.start || {};
   const end = event.end || {};
   const allDay = Boolean(start.date && !start.dateTime);
   return {
     organization_id: source.organization_id,
     source_id: source.id,
-    provider: 'google',
+    provider,
     provider_event_id: String(event.id || ''),
-    provider_calendar_id: source.calendar_id,
+    provider_calendar_id: googleCalendarId,
     ical_uid: event.iCalUID || null,
     title: event.summary || 'Untitled event',
     description: event.description || null,
@@ -414,7 +427,7 @@ function normalizeGoogleEvent(event: Record<string, any>, source: CalendarSource
     all_day: allDay,
     status: event.status || null,
     html_link: event.htmlLink || null,
-    raw_payload: event,
+    raw_payload: { ...event, metadata: { mode: provider } },
     imported_at: new Date().toISOString(),
     provider_updated_at: event.updated || null,
   };
@@ -522,8 +535,115 @@ Deno.serve(async (request) => {
       .eq('id', run.id);
   }
 
-  const googleAuth = await getGoogleAccessToken();
-  if (!googleAuth.ok) {
+  const sourceAliasForDiagnostics = normalizeCalendarAlias(calendarSource.calendar_id || '');
+  const sourceSettingsPresent = Boolean(calendarSource.settings && Object.keys(calendarSource.settings).length);
+  const sourceSettingsKeys = Object.keys(calendarSource.settings || {});
+  const sourceLooksLikeGoogleApiPreset = GOOGLE_API_PRESET_ALIASES.has(sourceAliasForDiagnostics);
+  const importMode = String(calendarSource.settings?.importMode || 'ics');
+  const includeDiagnostics = calendarSyncDebugEnabled(request);
+
+  if (importMode === 'google_api') {
+    const googleCalendarId = String(calendarSource.settings?.googleCalendarId || '').trim();
+    if (!googleCalendarId) {
+      const error = 'Google Calendar ID is missing for this source.';
+      await finishRun({ status: 'failed', error_message: error });
+      return jsonResponse({ ok: false, mode: 'google_api_missing_calendar_id', error });
+    }
+    const googleAuth = await getGoogleAccessToken();
+    if (!googleAuth.ok) {
+      const error = 'Google API credentials are not configured on the server.';
+      await finishRun({ status: 'failed', error_message: error });
+      return jsonResponse({ ok: false, mode: 'google_api_not_configured', error });
+    }
+    const params = new URLSearchParams({
+      singleEvents: 'true',
+      orderBy: 'startTime',
+      maxResults: '250',
+    });
+    if (payload.timeMin) params.set('timeMin', payload.timeMin);
+    if (payload.timeMax) params.set('timeMax', payload.timeMax);
+    const googleResponse = await fetch(
+      `https://www.googleapis.com/calendar/v3/calendars/${encodeURIComponent(googleCalendarId)}/events?${params}`,
+      { headers: { Authorization: `Bearer ${googleAuth.accessToken}` } },
+    );
+    const googleBody = await googleResponse.json().catch(() => ({}));
+    if (!googleResponse.ok) {
+      const error = googleBody.error?.message || `Google Calendar API failed with ${googleResponse.status}`;
+      await finishRun({ status: 'failed', error_message: error });
+      return jsonResponse({
+        ok: false,
+        mode: 'google_api_error',
+        error: 'Google API could not access this calendar. Check service account/domain-wide delegation/calendar sharing.',
+        apiWarning: error,
+        ...(includeDiagnostics
+          ? {
+              diagnostics: {
+                sourceName: calendarSource.name,
+                sourceAlias: normalizeCalendarAlias(calendarSource.calendar_id || ''),
+                importMode: 'google_api',
+                sourceSettingsPresent,
+                sourceSettingsKeys,
+                googleCalendarIdPresent: Boolean(googleCalendarId),
+                impersonatedUserConfigured: Boolean(Deno.env.get('GOOGLE_CALENDAR_IMPERSONATED_USER')),
+                fetchedItemCount: 0,
+                syncedCount: 0,
+                apiWarning: error,
+              },
+            }
+          : {}),
+      }, 502);
+    }
+    const items = Array.isArray(googleBody.items) ? googleBody.items : [];
+    const rows = items
+      .filter((event: Record<string, unknown>) => event.id)
+      .map((event: Record<string, any>) => normalizeGoogleEvent(event, calendarSource, googleCalendarId, 'google_api'));
+    let syncedCount = 0;
+    if (rows.length) {
+      const { error: upsertError } = await adminClient
+        .from('external_calendar_events')
+        .upsert(rows, { onConflict: 'organization_id,source_id,provider_event_id' });
+      if (upsertError) {
+        await finishRun({ status: 'failed', error_message: upsertError.message });
+        return jsonResponse({ ok: false, error: upsertError.message }, 500);
+      }
+      syncedCount = rows.length;
+    }
+    await adminClient
+      .from('event_calendar_sources')
+      .update({ last_synced_at: new Date().toISOString() })
+      .eq('id', calendarSource.id);
+    await finishRun({ status: 'success', imported_count: syncedCount, metadata: { timeMin: payload.timeMin || null, timeMax: payload.timeMax || null, mode: 'google_api' } });
+    const eventSummaries = rows
+      .map((row) => ({ title: String(row.title || 'Untitled event'), startsAt: row.starts_at || null }))
+      .sort((first, second) => String(first.startsAt || '').localeCompare(String(second.startsAt || '')));
+    return jsonResponse({
+      ok: true,
+      mode: 'google_api',
+      syncedCount,
+      importedCount: syncedCount,
+      skippedCount: Math.max(0, items.length - rows.length),
+      runId: run?.id || null,
+      ...(includeDiagnostics
+        ? {
+            diagnostics: {
+              sourceName: calendarSource.name,
+              sourceAlias: normalizeCalendarAlias(calendarSource.calendar_id || ''),
+              importMode: 'google_api',
+              sourceSettingsPresent,
+              sourceSettingsKeys,
+              googleCalendarIdPresent: Boolean(googleCalendarId),
+              impersonatedUserConfigured: Boolean(Deno.env.get('GOOGLE_CALENDAR_IMPERSONATED_USER')),
+              fetchedItemCount: items.length,
+              syncedCount,
+              firstEvents: eventSummaries.slice(0, 5),
+              lastEvents: eventSummaries.slice(-5),
+            },
+          }
+        : {}),
+    });
+  }
+
+  if (importMode === 'ics') {
     const sourceAlias = normalizeCalendarAlias(calendarSource.calendar_id || '');
     const expectedSecretName = sourceAlias ? `GOOGLE_CALENDAR_ICS_URL_${sourceAlias}` : null;
     const specificIcsUrl = expectedSecretName ? Deno.env.get(expectedSecretName) : '';
@@ -538,6 +658,21 @@ Deno.serve(async (request) => {
           error: 'No iCal secret configured for this calendar source.',
           expectedSecretName,
           sourceAlias,
+          ...(includeDiagnostics
+            ? {
+                diagnostics: {
+                  sourceName: calendarSource.name,
+                  sourceAlias,
+                  expectedSecretName,
+                  importMode,
+                  sourceSettingsPresent,
+                  sourceSettingsKeys,
+                  parserWarnings: sourceLooksLikeGoogleApiPreset && !calendarSource.settings?.importMode
+                    ? ['This source looks like a Google API preset but settings.importMode is missing.']
+                    : [],
+                },
+              }
+            : {}),
         });
       }
       const error = 'Calendar iCal sync is not configured. Add a source alias or configure GOOGLE_CALENDAR_ICS_URL.';
@@ -560,19 +695,24 @@ Deno.serve(async (request) => {
       .filter((row) => row.provider_event_id);
     const analysis = analyzeIcsRows(parsedEvents, parsedRows, payload.timeMin, payload.timeMax);
     const rows = analysis.rows;
+    const metadataWarnings = sourceLooksLikeGoogleApiPreset && !calendarSource.settings?.importMode
+      ? ['This source looks like a Google API preset but settings.importMode is missing.']
+      : [];
     const diagnostics = {
       mode: 'ics',
       sourceName: calendarSource.name,
       sourceAlias,
       expectedSecretName,
+      importMode,
+      sourceSettingsPresent,
+      sourceSettingsKeys,
       usedSpecificIcsSecret: Boolean(specificIcsUrl),
       fallbackGlobalIcsSecretUsed: !specificIcsUrl && Boolean(globalIcsUrl),
       ...calendarMetadata,
       fetchedBytes: new TextEncoder().encode(icsText).length,
       ...analysis.diagnostics,
+      parserWarnings: [...metadataWarnings, ...(analysis.diagnostics.parserWarnings || [])],
     };
-    const includeDiagnostics = calendarSyncDebugEnabled(request);
-
     let syncedCount = 0;
     if (rows.length) {
       const { error: upsertError } = await adminClient
@@ -612,57 +752,7 @@ Deno.serve(async (request) => {
     });
   }
 
-  if (!calendarSource.calendar_id) {
-    await finishRun({ status: 'failed', error_message: 'Calendar source is missing Google Calendar ID.' });
-    return jsonResponse({ ok: false, error: 'Calendar source is missing Google Calendar ID.' }, 400);
-  }
-
-  const params = new URLSearchParams({
-    singleEvents: 'true',
-    orderBy: 'startTime',
-    maxResults: '250',
-  });
-  if (payload.timeMin) params.set('timeMin', payload.timeMin);
-  if (payload.timeMax) params.set('timeMax', payload.timeMax);
-  const googleResponse = await fetch(
-    `https://www.googleapis.com/calendar/v3/calendars/${encodeURIComponent(calendarSource.calendar_id)}/events?${params}`,
-    { headers: { Authorization: `Bearer ${googleAuth.accessToken}` } },
-  );
-  const googleBody = await googleResponse.json().catch(() => ({}));
-  if (!googleResponse.ok) {
-    const error = googleBody.error?.message || `Google Calendar API failed with ${googleResponse.status}`;
-    await finishRun({ status: 'failed', error_message: error });
-    return jsonResponse({ ok: false, error }, 502);
-  }
-
-  const items = Array.isArray(googleBody.items) ? googleBody.items : [];
-  const rows = items
-    .filter((event: Record<string, unknown>) => event.id)
-    .map((event: Record<string, any>) => normalizeGoogleEvent(event, calendarSource));
-
-  let syncedCount = 0;
-  if (rows.length) {
-    const { error: upsertError } = await adminClient
-      .from('external_calendar_events')
-      .upsert(rows, { onConflict: 'organization_id,source_id,provider_event_id' });
-    if (upsertError) {
-      await finishRun({ status: 'failed', error_message: upsertError.message });
-      return jsonResponse({ ok: false, error: upsertError.message }, 500);
-    }
-    syncedCount = rows.length;
-  }
-
-  await adminClient
-    .from('event_calendar_sources')
-    .update({ last_synced_at: new Date().toISOString() })
-    .eq('id', calendarSource.id);
-  await finishRun({ status: 'success', imported_count: syncedCount });
-
-  return jsonResponse({
-    ok: true,
-    syncedCount,
-    importedCount: syncedCount,
-    skippedCount: Math.max(0, items.length - rows.length),
-    runId: run?.id || null,
-  });
+  const error = `Unknown calendar import mode: ${importMode}`;
+  await finishRun({ status: 'failed', error_message: error });
+  return jsonResponse({ ok: false, mode: 'unknown_import_mode', error }, 400);
 });

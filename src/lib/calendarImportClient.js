@@ -66,7 +66,18 @@ async function readFunctionErrorMessage(error) {
       const jsonResponse = typeof response.clone === 'function' ? response.clone() : response;
       const body = await jsonResponse.json();
       const message = body?.error || body?.message;
-      if (message) return { message, mode: body?.mode || 'sync_error', debug: body?.debug || null, status, data: body };
+      if (message) {
+        return {
+          message,
+          mode: body?.mode || 'sync_error',
+          debug: body?.debug || null,
+          diagnostics: body?.diagnostics || null,
+          expectedSecretName: body?.expectedSecretName || null,
+          sourceAlias: body?.sourceAlias || null,
+          status,
+          data: body,
+        };
+      }
     } catch {
       // Fall through to text/message fallback.
     }
@@ -75,12 +86,12 @@ async function readFunctionErrorMessage(error) {
     try {
       const textResponse = typeof response.clone === 'function' ? response.clone() : response;
       const text = await textResponse.text();
-      if (text) return { message: text, mode: 'sync_error', debug: null, status, data: null };
+      if (text) return { message: text, mode: 'sync_error', debug: null, diagnostics: null, expectedSecretName: null, sourceAlias: null, status, data: null };
     } catch {
       // Fall through to Supabase error message.
     }
   }
-  return { message: error?.message || 'Google Calendar sync failed.', mode: 'sync_error', debug: null, status, data: null };
+  return { message: error?.message || 'Google Calendar sync failed.', mode: 'sync_error', debug: null, diagnostics: null, expectedSecretName: null, sourceAlias: null, status, data: null };
 }
 
 export async function listCalendarSources() {
@@ -94,7 +105,7 @@ export async function listCalendarSources() {
   return result(true, { mode: 'authenticated', records: (data || []).map(normalizeSource).filter(Boolean), rows: data || [] });
 }
 
-export async function createCalendarSource({ name, calendarId }) {
+export async function createCalendarSource({ name, calendarId, settings = {}, active = true }) {
   const ctx = await context();
   if (!ctx.ok) return ctx;
   const { data, error } = await supabaseAuthClient
@@ -103,8 +114,8 @@ export async function createCalendarSource({ name, calendarId }) {
       provider: 'google',
       name,
       calendar_id: calendarId,
-      settings: {},
-      active: true,
+      settings,
+      active,
     })
     .select('*')
     .single();
@@ -115,13 +126,22 @@ export async function createCalendarSource({ name, calendarId }) {
 export async function updateCalendarSource(id, patch = {}) {
   const ctx = await context();
   if (!ctx.ok) return ctx;
+  const update = {};
+  if (Object.prototype.hasOwnProperty.call(patch, 'name')) update.name = patch.name;
+  if (Object.prototype.hasOwnProperty.call(patch, 'calendarId')) update.calendar_id = patch.calendarId;
+  if (Object.prototype.hasOwnProperty.call(patch, 'active')) update.active = patch.active;
+  if (Object.prototype.hasOwnProperty.call(patch, 'settings')) {
+    const { data: current, error: currentError } = await supabaseAuthClient
+      .from('event_calendar_sources')
+      .select('settings')
+      .eq('id', id)
+      .maybeSingle();
+    if (currentError) return result(false, { mode: 'sync_error', message: currentError.message, error: currentError });
+    update.settings = { ...(current?.settings || {}), ...(patch.settings || {}) };
+  }
   const { data, error } = await supabaseAuthClient
     .from('event_calendar_sources')
-    .update({
-      name: patch.name,
-      calendar_id: patch.calendarId,
-      active: patch.active,
-    })
+    .update(update)
     .eq('id', id)
     .select('*')
     .single();
@@ -155,6 +175,9 @@ export async function syncGoogleCalendar({ sourceId, timeMin, timeMax }) {
       mode: parsedError.mode,
       message: parsedError.message,
       debug: parsedError.debug,
+      diagnostics: parsedError.diagnostics,
+      expectedSecretName: parsedError.expectedSecretName,
+      sourceAlias: parsedError.sourceAlias,
       status: parsedError.status,
       error,
       data: parsedError.data,
@@ -165,6 +188,7 @@ export async function syncGoogleCalendar({ sourceId, timeMin, timeMax }) {
       mode: data.mode || 'sync_error',
       message: data.error || 'Google Calendar sync failed.',
       debug: data.debug || null,
+      diagnostics: data.diagnostics || null,
       expectedSecretName: data.expectedSecretName || null,
       sourceAlias: data.sourceAlias || null,
       status: null,
@@ -179,6 +203,15 @@ export async function syncGoogleCalendar({ sourceId, timeMin, timeMax }) {
       diagnostics: data.diagnostics || null,
       syncedCount,
       message: `Synced ${syncedCount} event(s) from iCal feed.`,
+    });
+  }
+  if (data?.mode === 'google_api') {
+    return result(true, {
+      mode: 'google_api',
+      data,
+      diagnostics: data.diagnostics || null,
+      syncedCount,
+      message: `Synced ${syncedCount} event(s) from Google Calendar API.`,
     });
   }
   return result(true, { mode: 'authenticated', data, message: `Synced ${syncedCount} event(s).` });

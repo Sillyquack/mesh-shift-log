@@ -103,6 +103,7 @@ import {
   listCalendarSources,
   listImportedCalendarEvents,
   syncGoogleCalendar,
+  updateCalendarSource,
 } from "./lib/calendarImportClient.js";
 import { subscribeToEventOperationsRealtime } from "./lib/eventOperationsRealtime.js";
 
@@ -5815,11 +5816,21 @@ function EventLiveModePanel({
 }
 
 const STANDARD_MESH_EVENT_CALENDAR_PRESETS = [
-  { name: "MY-0-CommunityStage (200)", alias: "MY_0_COMMUNITY_STAGE_200" },
-  { name: "MY-1-Atrium (100)", alias: "MY_1_ATRIUM_100" },
-  { name: "MY-1-Bar (20)", alias: "MY_1_BAR_20" },
-  { name: "MY-1-LoungeVenue (40)", alias: "MY_1_LOUNGE_VENUE_40" },
-  { name: "MY-1-Workbar (100)", alias: "MY_1_WORKBAR_100" },
+  { name: "MY-0-CommunityStage (200)", alias: "MY_0_COMMUNITY_STAGE_200", importMode: "google_api", sourceCategory: "event", venueCapacity: 200, venueFloor: "MY-0" },
+  { name: "MY-1-Atrium (100)", alias: "MY_1_ATRIUM_100", importMode: "ics", sourceCategory: "event", venueCapacity: 100, venueFloor: "MY-1" },
+  { name: "MY-1-Bar (20)", alias: "MY_1_BAR_20", importMode: "google_api", sourceCategory: "event", venueCapacity: 20, venueFloor: "MY-1" },
+  { name: "MY-1-LoungeVenue (40)", alias: "MY_1_LOUNGE_VENUE_40", importMode: "ics", sourceCategory: "event", venueCapacity: 40, venueFloor: "MY-1" },
+  { name: "MY-1-Workbar (100)", alias: "MY_1_WORKBAR_100", importMode: "ics", sourceCategory: "event", venueCapacity: 100, venueFloor: "MY-1" },
+];
+
+const MESH_MEETING_ROOM_CALENDAR_PRESETS = [
+  { name: "MY-0-001 (16)", alias: "MY_0_001_16", importMode: "google_api", sourceCategory: "meeting_room", venueCapacity: 16, venueFloor: "MY-0" },
+  { name: "MY-0-002 (7)", alias: "MY_0_002_7", importMode: "google_api", sourceCategory: "meeting_room", venueCapacity: 7, venueFloor: "MY-0" },
+  { name: "MY-0-003 (7)", alias: "MY_0_003_7", importMode: "google_api", sourceCategory: "meeting_room", venueCapacity: 7, venueFloor: "MY-0" },
+  { name: "MY-0-004 (5)", alias: "MY_0_004_5", importMode: "google_api", sourceCategory: "meeting_room", venueCapacity: 5, venueFloor: "MY-0" },
+  { name: "MY-0-006 (8) Cisco Webex", alias: "MY_0_006_CISCO_WEBEX_8", importMode: "google_api", sourceCategory: "meeting_room", venueCapacity: 8, venueFloor: "MY-0" },
+  { name: "MY-0-007 (12) Cisco Webex", alias: "MY_0_007_CISCO_WEBEX_12", importMode: "google_api", sourceCategory: "meeting_room", venueCapacity: 12, venueFloor: "MY-0" },
+  { name: "MY-1-Mezzanine-Boardroom-Mezz (16)", alias: "MY_1_MEZZANINE_BOARDROOM_MEZZ_16", importMode: "google_api", sourceCategory: "meeting_room", venueCapacity: 16, venueFloor: "MY-1" },
 ];
 
 function normalizeCalendarAliasForUi(value = "") {
@@ -5829,6 +5840,64 @@ function normalizeCalendarAliasForUi(value = "") {
     .replace(/[^A-Z0-9]+/g, "_")
     .replace(/_+/g, "_")
     .replace(/^_+|_+$/g, "");
+}
+
+function calendarPresetSettings(preset) {
+  return {
+    importMode: preset.importMode || "ics",
+    sourceCategory: preset.sourceCategory || "event",
+    venueCapacity: preset.venueCapacity || null,
+    venueFloor: preset.venueFloor || "",
+    notes: preset.notes || "",
+  };
+}
+
+function calendarSourceImportModeLabel(source) {
+  if (!source?.settings || !source.settings.importMode) return "import mode missing / defaults to iCal";
+  return source.settings.importMode === "google_api" ? "Google API" : "iCal alias";
+}
+
+function calendarPresetNeedsMetadataUpdate(preset, source) {
+  if (!source) return false;
+  const settings = source.settings || {};
+  return (
+    source.name !== preset.name ||
+    normalizeCalendarAliasForUi(source.calendarId) !== preset.alias ||
+    source.active === false ||
+    settings.importMode !== preset.importMode ||
+    settings.sourceCategory !== preset.sourceCategory ||
+    Number(settings.venueCapacity || 0) !== Number(preset.venueCapacity || 0) ||
+    (settings.venueFloor || "") !== (preset.venueFloor || "")
+  );
+}
+
+function calendarPresetRepairPatch(preset, source) {
+  const existingSettings = source?.settings || {};
+  return {
+    name: preset.name,
+    calendarId: preset.alias,
+    active: true,
+    settings: {
+      ...existingSettings,
+      ...calendarPresetSettings(preset),
+      googleCalendarId: existingSettings.googleCalendarId || preset.googleCalendarId || "",
+    },
+  };
+}
+
+function calendarSourceFormFromSource(source) {
+  return {
+    id: source?.id || "",
+    name: source?.name || "",
+    calendarId: source?.calendarId || "",
+    active: source?.active !== false,
+    importMode: source?.settings?.importMode || "ics",
+    googleCalendarId: source?.settings?.googleCalendarId || "",
+    sourceCategory: source?.settings?.sourceCategory || "event",
+    venueCapacity: source?.settings?.venueCapacity || "",
+    venueFloor: source?.settings?.venueFloor || "",
+    notes: source?.settings?.notes || "",
+  };
 }
 
 function EventCalendarImportPanel({
@@ -5842,7 +5911,17 @@ function EventCalendarImportPanel({
   const defaultTo = addMinutesToDateTimeLocal(defaultFrom, 60 * 24 * 60);
   const [sources, setSources] = useState([]);
   const [importedEvents, setImportedEvents] = useState([]);
-  const [sourceForm, setSourceForm] = useState({ name: "", calendarId: "" });
+  const [sourceForm, setSourceForm] = useState({
+    name: "",
+    calendarId: "",
+    importMode: "ics",
+    googleCalendarId: "",
+    sourceCategory: "event",
+    venueCapacity: "",
+    venueFloor: "",
+    notes: "",
+  });
+  const [editingSourceId, setEditingSourceId] = useState("");
   const [selectedSourceId, setSelectedSourceId] = useState("");
   const [range, setRange] = useState({ from: defaultFrom, to: defaultTo });
   const [status, setStatus] = useState({ type: "", message: "" });
@@ -5855,6 +5934,16 @@ function EventCalendarImportPanel({
   const presetRows = STANDARD_MESH_EVENT_CALENDAR_PRESETS.map((preset) => ({
     ...preset,
     source: sourceByAlias.get(preset.alias) || null,
+  })).map((preset) => ({
+    ...preset,
+    needsMetadataUpdate: calendarPresetNeedsMetadataUpdate(preset, preset.source),
+  }));
+  const meetingRoomPresetRows = MESH_MEETING_ROOM_CALENDAR_PRESETS.map((preset) => ({
+    ...preset,
+    source: sourceByAlias.get(preset.alias) || null,
+  })).map((preset) => ({
+    ...preset,
+    needsMetadataUpdate: calendarPresetNeedsMetadataUpdate(preset, preset.source),
   }));
 
   async function loadCalendarData(nextRange = range) {
@@ -5887,6 +5976,17 @@ function EventCalendarImportPanel({
     loadCalendarData();
   }, []);
 
+  function buildSourceSettingsFromForm(form) {
+    return {
+      importMode: form.importMode || "ics",
+      ...(form.importMode === "google_api" ? { googleCalendarId: form.googleCalendarId.trim() } : {}),
+      sourceCategory: form.sourceCategory || "event",
+      venueCapacity: form.venueCapacity ? Number(form.venueCapacity) : null,
+      venueFloor: form.venueFloor || "",
+      notes: form.notes || "",
+    };
+  }
+
   async function addSource(event) {
     event.preventDefault();
     setStatus({ type: "", message: "" });
@@ -5898,27 +5998,76 @@ function EventCalendarImportPanel({
     const result = await createCalendarSource({
       name: sourceForm.name.trim(),
       calendarId: sourceForm.calendarId.trim(),
+      settings: buildSourceSettingsFromForm(sourceForm),
+      active: true,
     });
     setLoading(false);
     if (!result.ok) {
       setStatus({ type: "error", message: result.message || "Calendar source could not be saved." });
       return;
     }
-    setSourceForm({ name: "", calendarId: "" });
+    setSourceForm({
+      name: "",
+      calendarId: "",
+      importMode: "ics",
+      googleCalendarId: "",
+      sourceCategory: "event",
+      venueCapacity: "",
+      venueFloor: "",
+      notes: "",
+    });
     setStatus({ type: "success", message: "Calendar source saved." });
     await loadCalendarData();
   }
 
-  async function addMissingEventSources() {
-    setStatus({ type: "pending", message: "Adding missing Mesh event calendar sources..." });
-    const missingPresets = presetRows.filter((preset) => !preset.source);
+  async function saveEditedSource(event) {
+    event.preventDefault();
+    if (!editingSourceId) return;
+    const result = await updateCalendarSource(editingSourceId, {
+      name: sourceForm.name.trim(),
+      calendarId: sourceForm.calendarId.trim(),
+      active: sourceForm.active !== false,
+      settings: buildSourceSettingsFromForm(sourceForm),
+    });
+    if (!result.ok) {
+      setStatus({ type: "error", message: result.message || "Calendar source could not be updated." });
+      return;
+    }
+    setEditingSourceId("");
+    setSourceForm({
+      name: "",
+      calendarId: "",
+      importMode: "ics",
+      googleCalendarId: "",
+      sourceCategory: "event",
+      venueCapacity: "",
+      venueFloor: "",
+      notes: "",
+    });
+    setStatus({ type: "success", message: "Calendar source updated." });
+    await loadCalendarData();
+  }
+
+  function editSource(source) {
+    setEditingSourceId(source.id);
+    setSourceForm(calendarSourceFormFromSource(source));
+  }
+
+  async function addMissingSources(rows, label) {
+    setStatus({ type: "pending", message: `Adding missing ${label} sources...` });
+    const missingPresets = rows.filter((preset) => !preset.source);
     if (!missingPresets.length) {
-      setStatus({ type: "success", message: "All standard Mesh event calendar sources already exist." });
+      setStatus({ type: "success", message: `All ${label} sources already exist.` });
       return;
     }
     const details = [];
     for (const preset of missingPresets) {
-      const result = await createCalendarSource({ name: preset.name, calendarId: preset.alias });
+      const result = await createCalendarSource({
+        name: preset.name,
+        calendarId: preset.alias,
+        settings: calendarPresetSettings(preset),
+        active: true,
+      });
       details.push({
         label: preset.name,
         ok: result.ok,
@@ -5930,8 +6079,45 @@ function EventCalendarImportPanel({
     setStatus({
       type: failed.length ? "error" : "success",
       message: failed.length
-        ? "Some Mesh event calendar sources could not be added."
-        : "Missing Mesh event calendar sources added.",
+        ? `Some ${label} sources could not be added.`
+        : `Missing ${label} sources added.`,
+      details,
+    });
+  }
+
+  async function updatePresetMetadata(preset) {
+    if (!preset.source?.id) return;
+    const result = await updateCalendarSource(preset.source.id, calendarPresetRepairPatch(preset, preset.source));
+    if (!result.ok) {
+      setStatus({ type: "error", message: result.message || "Calendar source metadata could not be updated." });
+      return;
+    }
+    setStatus({ type: "success", message: `${preset.name} metadata updated.` });
+    await loadCalendarData();
+  }
+
+  async function updatePresetMetadataBatch(rows, label) {
+    const repairRows = rows.filter((preset) => preset.source?.id && preset.needsMetadataUpdate);
+    if (!repairRows.length) {
+      setStatus({ type: "success", message: `All existing ${label} source metadata is up to date.` });
+      return;
+    }
+    const details = [];
+    for (const preset of repairRows) {
+      const result = await updateCalendarSource(preset.source.id, calendarPresetRepairPatch(preset, preset.source));
+      details.push({
+        label: preset.name,
+        ok: result.ok,
+        message: result.ok ? "Metadata updated" : result.message || "Update failed.",
+      });
+    }
+    await loadCalendarData();
+    const failed = details.filter((detail) => !detail.ok);
+    setStatus({
+      type: failed.length ? "error" : "success",
+      message: failed.length
+        ? `Some ${label} source metadata could not be updated.`
+        : `${repairRows.length} ${label} source metadata update(s) applied.`,
       details,
     });
   }
@@ -5954,6 +6140,12 @@ function EventCalendarImportPanel({
       const message =
         result.mode === "ics_missing_source_secret"
           ? `No iCal secret configured for ${selectedSource?.name || "this calendar source"}. Expected Supabase secret: ${result.expectedSecretName || "missing source secret"}.`
+          : result.mode === "google_api_missing_calendar_id"
+          ? "Google Calendar ID is missing for this source."
+          : result.mode === "google_api_not_configured"
+          ? "Google API credentials are not configured on the server."
+          : result.mode === "google_api_error"
+          ? "Google API could not access this calendar. Check service account/domain-wide delegation/calendar sharing."
           : result.mode === "not_configured"
           ? "Google Calendar sync needs server-side configuration before it can import events."
           : result.message ||
@@ -5962,6 +6154,7 @@ function EventCalendarImportPanel({
         type: "error",
         message,
         debug: result.debug || null,
+        diagnostics: result.diagnostics || null,
       });
       return;
     }
@@ -5978,9 +6171,9 @@ function EventCalendarImportPanel({
   }
 
   async function syncAllEventCalendars() {
-    const eventSources = presetRows
-      .map((preset) => preset.source)
-      .filter((source) => source?.id && source.active !== false);
+    const eventSources = sources.filter(
+      (source) => source?.id && source.active !== false && (source.settings?.sourceCategory || "event") === "event",
+    );
     if (!eventSources.length) {
       setStatus({ type: "error", message: "Add standard Mesh event calendar sources before syncing all." });
       return;
@@ -6003,14 +6196,22 @@ function EventCalendarImportPanel({
       const syncedCount = result.syncedCount ?? result.data?.syncedCount ?? result.data?.importedCount ?? 0;
       if (result.ok) totalSynced += syncedCount;
       const missingSecret = result.mode === "ics_missing_source_secret";
+      const configNeeded = ["google_api_missing_calendar_id", "google_api_not_configured"].includes(result.mode);
+      const sourceMode = source.settings?.importMode || "ics";
       details.push({
         label: source.name,
         ok: result.ok,
-        state: result.ok ? "synced" : missingSecret ? "missing secret" : "failed",
+        state: `${sourceMode} - ${result.ok ? "synced" : missingSecret ? "missing secret" : configNeeded ? "config needed" : "failed"}`,
         message: result.ok
           ? `Synced ${syncedCount} event(s).`
           : missingSecret
           ? `Missing secret: ${result.expectedSecretName || "expected source secret not returned"}.`
+          : result.mode === "google_api_missing_calendar_id"
+          ? "Google Calendar ID is missing for this source."
+          : result.mode === "google_api_not_configured"
+          ? "Google API credentials are not configured on the server."
+          : result.mode === "google_api_error"
+          ? "Google API could not access this calendar. Check service account/domain-wide delegation/calendar sharing."
           : result.message || "Sync failed.",
       });
     }
@@ -6087,8 +6288,11 @@ function EventCalendarImportPanel({
             <p className="eyebrow">Standard Mesh event calendars</p>
             <h3>Event sources</h3>
           </div>
-          <button type="button" className="ghost-button compact-button" onClick={addMissingEventSources} disabled={loading}>
+          <button type="button" className="ghost-button compact-button" onClick={() => addMissingSources(presetRows, "event calendar")} disabled={loading}>
             Add missing event sources
+          </button>
+          <button type="button" className="ghost-button compact-button" onClick={() => updatePresetMetadataBatch(presetRows, "event calendar")} disabled={loading}>
+            Update event source metadata
           </button>
         </div>
         <div className="mini-grid">
@@ -6096,12 +6300,49 @@ function EventCalendarImportPanel({
             <article key={preset.alias} className="status-card">
               <strong>{preset.name}</strong>
               <span>{preset.alias}</span>
-              <small>{preset.source ? "Source exists" : "Missing source"}</small>
+              <small>
+                Preset: {preset.importMode === "google_api" ? "Google API" : "iCal alias"} | Actual: {preset.source ? calendarSourceImportModeLabel(preset.source) : "missing source"}
+              </small>
+              {preset.needsMetadataUpdate && <small>Needs metadata update</small>}
+              {preset.needsMetadataUpdate && (
+                <button type="button" className="ghost-button compact-button" onClick={() => updatePresetMetadata(preset)} disabled={loading}>
+                  Update source metadata
+                </button>
+              )}
             </article>
           ))}
         </div>
       </section>
-      <form className="editor-form compact-editor" onSubmit={addSource}>
+      <section className="manager-list calendar-preset-panel">
+        <div className="section-heading static-heading">
+          <div>
+            <p className="eyebrow">Future daily operations</p>
+            <h3>Meeting room sources</h3>
+          </div>
+          <button type="button" className="ghost-button compact-button" onClick={() => addMissingSources(meetingRoomPresetRows, "meeting room")} disabled={loading}>
+            Add missing meeting room sources
+          </button>
+          <button type="button" className="ghost-button compact-button" onClick={() => updatePresetMetadataBatch(meetingRoomPresetRows, "meeting room")} disabled={loading}>
+            Update meeting room source metadata
+          </button>
+        </div>
+        <div className="mini-grid">
+          {meetingRoomPresetRows.map((preset) => (
+            <article key={preset.alias} className="status-card">
+              <strong>{preset.name}</strong>
+              <span>{preset.alias}</span>
+              <small>Preset: Google API | Actual: {preset.source ? calendarSourceImportModeLabel(preset.source) : "optional future source"}</small>
+              {preset.needsMetadataUpdate && <small>Needs metadata update</small>}
+              {preset.needsMetadataUpdate && (
+                <button type="button" className="ghost-button compact-button" onClick={() => updatePresetMetadata(preset)} disabled={loading}>
+                  Update source metadata
+                </button>
+              )}
+            </article>
+          ))}
+        </div>
+      </section>
+      <form className="editor-form compact-editor" onSubmit={editingSourceId ? saveEditedSource : addSource}>
         <label>
           Source name
           <input
@@ -6111,19 +6352,87 @@ function EventCalendarImportPanel({
           />
         </label>
         <label>
-          Calendar ID / iCal secret alias
+          Safe source alias
           <input
             value={sourceForm.calendarId}
             onChange={(event) => setSourceForm((current) => ({ ...current, calendarId: event.target.value }))}
             placeholder="MY_1_BAR_20"
           />
+        </label>
+        <label>
+          Import mode
+          <select value={sourceForm.importMode} onChange={(event) => setSourceForm((current) => ({ ...current, importMode: event.target.value }))}>
+            <option value="ics">iCal alias</option>
+            <option value="google_api">Google Calendar API</option>
+          </select>
           <small>
-            For iCal mode, enter a safe alias like MY_1_BAR_20. The matching Supabase secret should be GOOGLE_CALENDAR_ICS_URL_MY_1_BAR_20. Do not paste the iCal URL here.
+            {sourceForm.importMode === "google_api"
+              ? "Requires server-side Google API credentials in Supabase Edge Function secrets."
+              : "Requires Supabase secret GOOGLE_CALENDAR_ICS_URL_<ALIAS>. Do not paste the iCal URL here."}
           </small>
         </label>
+        {sourceForm.importMode === "google_api" && (
+          <label>
+            Google Calendar ID
+            <input
+              value={sourceForm.googleCalendarId}
+              onChange={(event) => setSourceForm((current) => ({ ...current, googleCalendarId: event.target.value }))}
+              placeholder="actual-calendar-id@resource.calendar.google.com"
+            />
+          </label>
+        )}
+        <label>
+          Category
+          <select value={sourceForm.sourceCategory} onChange={(event) => setSourceForm((current) => ({ ...current, sourceCategory: event.target.value }))}>
+            <option value="event">Event</option>
+            <option value="meeting_room">Meeting room</option>
+            <option value="daily_operations">Daily operations</option>
+          </select>
+        </label>
+        <label>
+          Capacity
+          <input
+            type="number"
+            min="0"
+            value={sourceForm.venueCapacity}
+            onChange={(event) => setSourceForm((current) => ({ ...current, venueCapacity: event.target.value }))}
+            placeholder="100"
+          />
+        </label>
+        {editingSourceId && (
+          <label className="toggle-row">
+            <input
+              type="checkbox"
+              checked={sourceForm.active !== false}
+              onChange={(event) => setSourceForm((current) => ({ ...current, active: event.target.checked }))}
+            />
+            Active source
+          </label>
+        )}
         <button type="submit" className="primary-button compact-button" disabled={loading}>
-          Add source
+          {editingSourceId ? "Save source" : "Add source"}
         </button>
+        {editingSourceId && (
+          <button
+            type="button"
+            className="ghost-button compact-button"
+            onClick={() => {
+              setEditingSourceId("");
+              setSourceForm({
+                name: "",
+                calendarId: "",
+                importMode: "ics",
+                googleCalendarId: "",
+                sourceCategory: "event",
+                venueCapacity: "",
+                venueFloor: "",
+                notes: "",
+              });
+            }}
+          >
+            Cancel edit
+          </button>
+        )}
       </form>
       <p className="muted">
         iCal mode imports from the server-side iCal feed configured in Supabase, not from the visible Google Calendar ID field.
@@ -6158,6 +6467,23 @@ function EventCalendarImportPanel({
           Refresh imported events
         </button>
       </div>
+      {sources.length > 0 && (
+        <section className="manager-list calendar-preset-panel">
+          <h3>Existing calendar sources</h3>
+          <div className="mini-grid">
+            {sources.map((source) => (
+              <article key={source.id} className="status-card">
+                <strong>{source.name}</strong>
+                <span>{source.calendarId || "No alias"}</span>
+                <small>{calendarSourceImportModeLabel(source)} | {source.active ? "Active" : "Inactive"}{source.lastSyncedAt ? ` | synced ${formatDateTime(source.lastSyncedAt)}` : ""}</small>
+                <button type="button" className="ghost-button compact-button" onClick={() => editSource(source)}>
+                  Edit
+                </button>
+              </article>
+            ))}
+          </div>
+        </section>
+      )}
       {status.message && (
         <>
           <p className={status.type === "error" ? "critical-warning" : status.type === "success" ? "all-clear" : "status-message"}>
