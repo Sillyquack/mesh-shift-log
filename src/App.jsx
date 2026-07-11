@@ -15,6 +15,12 @@ import {
   staffCodes,
   } from "./data/routines.js";
 import { eventTaskTemplates } from "./data/eventTaskTemplates.js";
+import { eventRigGuides } from "./data/eventRigGuides.js";
+import {
+  deriveEventPlanOperationalWindow,
+  recalculateEventPlanTimes,
+  suggestEventPlan,
+} from "./data/eventPlanSuggestionRules.js";
 import {
   isBackendAuthRequired,
   isSupabaseConfigured,
@@ -104,6 +110,14 @@ import {
   listImportedCalendarEvents,
   syncGoogleCalendar,
 } from "./lib/calendarImportClient.js";
+import {
+  createSuggestedEventPlan,
+  dismissEventPlan,
+  listEventPlans,
+  markEventPlanApplied,
+  supersedePreviousPlans,
+  updateEventPlan,
+} from "./lib/eventPlanClient.js";
 import { subscribeToEventOperationsRealtime } from "./lib/eventOperationsRealtime.js";
 
 function buildReviewStatusForHistoryDate(historyDate, reviewMap = {}) {
@@ -777,6 +791,74 @@ function fromDateTimeLocalValue(value) {
 function isValidDateTimeLocalValue(value) {
   if (!value) return true;
   return /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}$/.test(value) && !Number.isNaN(new Date(value).getTime());
+}
+
+function dateTimePartsInZone(date, timeZone = "Europe/Oslo") {
+  return Object.fromEntries(
+    new Intl.DateTimeFormat("en-CA", {
+      timeZone,
+      year: "numeric",
+      month: "2-digit",
+      day: "2-digit",
+      hour: "2-digit",
+      minute: "2-digit",
+      hourCycle: "h23",
+    })
+      .formatToParts(date)
+      .filter((part) => part.type !== "literal")
+      .map((part) => [part.type, part.value]),
+  );
+}
+
+function toOsloDateTimeLocalValue(dateOrIso) {
+  if (!dateOrIso) return "";
+  const date = dateOrIso instanceof Date ? dateOrIso : new Date(dateOrIso);
+  if (Number.isNaN(date.getTime())) return "";
+  const parts = dateTimePartsInZone(date);
+  return `${parts.year}-${parts.month}-${parts.day}T${parts.hour}:${parts.minute}`;
+}
+
+function fromOsloDateTimeLocalValue(value) {
+  const match = String(value || "").match(/^(\d{4})-(\d{2})-(\d{2})T(\d{2}):(\d{2})$/);
+  if (!match) return "";
+  const [, yearText, monthText, dayText, hourText, minuteText] = match;
+  const year = Number(yearText);
+  const month = Number(monthText);
+  const day = Number(dayText);
+  const hour = Number(hourText);
+  const minute = Number(minuteText);
+  const wallTime = Date.UTC(year, month - 1, day, hour, minute);
+  const calendarCheck = new Date(wallTime);
+  if (
+    calendarCheck.getUTCFullYear() !== year ||
+    calendarCheck.getUTCMonth() !== month - 1 ||
+    calendarCheck.getUTCDate() !== day ||
+    calendarCheck.getUTCHours() !== hour ||
+    calendarCheck.getUTCMinutes() !== minute
+  )
+    return "";
+
+  let candidateTime = wallTime;
+  for (let attempt = 0; attempt < 4; attempt += 1) {
+    const parts = dateTimePartsInZone(new Date(candidateTime));
+    const representedWallTime = Date.UTC(
+      Number(parts.year),
+      Number(parts.month) - 1,
+      Number(parts.day),
+      Number(parts.hour),
+      Number(parts.minute),
+    );
+    const difference = wallTime - representedWallTime;
+    if (difference === 0) break;
+    candidateTime += difference;
+  }
+
+  const candidate = new Date(candidateTime);
+  return toOsloDateTimeLocalValue(candidate) === value ? candidate.toISOString() : "";
+}
+
+function isValidOsloDateTimeLocalValue(value) {
+  return !value || Boolean(fromOsloDateTimeLocalValue(value));
 }
 
 function addMinutesToDateTimeLocal(value, minutes) {
@@ -6240,6 +6322,1022 @@ function EventCalendarImportPanel({
   );
 }
 
+function confidenceLabel(value = 0) {
+  if (value >= 0.8) return "High";
+  if (value >= 0.65) return "Medium";
+  return "Low";
+}
+
+function editablePlanItems(planItems = []) {
+  return planItems.map((item) => ({
+    ...item,
+    included: item.included !== false,
+    dueAt: toOsloDateTimeLocalValue(item.dueAt || ""),
+    remindAt: toOsloDateTimeLocalValue(item.remindAt || ""),
+  }));
+}
+
+function planItemsForStorage(planItems = []) {
+  return planItems.map((item) => ({
+    ...item,
+    dueAt: item.dueAt ? fromOsloDateTimeLocalValue(item.dueAt) : "",
+    remindAt: item.remindAt ? fromOsloDateTimeLocalValue(item.remindAt) : "",
+  }));
+}
+
+function smartPlanItemAudience(item = {}) {
+  return (
+    item.audience ||
+    item.metadata?.audience ||
+    (item.assignedRoleKey === "all_event_staff" ? "all_event_staff" : "")
+  );
+}
+
+function validateSmartPlanItems(planItems = []) {
+  for (const item of planItems) {
+    const itemLabel = item.title?.trim() || item.planItemId || "Plan item";
+    if (item.included !== false && !item.title?.trim())
+      return "Every included plan item needs a title.";
+    if (item.dueAt && !isValidOsloDateTimeLocalValue(item.dueAt))
+      return `${itemLabel} has an invalid due time. Choose a valid Oslo date and time.`;
+    if (item.remindAt && !isValidOsloDateTimeLocalValue(item.remindAt))
+      return `${itemLabel} has an invalid reminder time. Choose a valid Oslo date and time.`;
+  }
+  return "";
+}
+
+function isSmartPlanDuplicateResult(result) {
+  const errorCode = result?.error?.code || result?.code || "";
+  const errorText = [result?.message, result?.error?.message, result?.error?.details]
+    .filter(Boolean)
+    .join(" ")
+    .toLowerCase();
+  return errorCode === "23505" || errorText.includes("event_tasks_smart_plan_item_unique_idx");
+}
+
+function editableEventPlan(plan, eventOperation) {
+  if (!plan) return null;
+  return {
+    ...plan,
+    setup: deriveEventPlanOperationalWindow(eventOperation, plan.setup || {}),
+    planItems: editablePlanItems(plan.planItems || []),
+  };
+}
+
+function formatOsloClock(value) {
+  const localValue = toOsloDateTimeLocalValue(value);
+  return localValue ? localValue.slice(11, 16) : "--:--";
+}
+
+function formatOsloTimeRange(startsAt, endsAt) {
+  return `${formatOsloClock(startsAt)}-${formatOsloClock(endsAt)}`;
+}
+
+function smartPlanIncludedStats(plan) {
+  const items = plan?.planItems || [];
+  return {
+    included: items.filter((item) => item.included !== false).length,
+    total: items.length,
+  };
+}
+
+function smartPlanNeedsLongerPrep(plan) {
+  const current = Number(plan?.setup?.prepMinutesBefore || 60);
+  const recommended = Number(plan?.setup?.recommendedPrepMinutes || 60);
+  return recommended > current ? recommended : 0;
+}
+
+function smartPlanWarningCount(plan) {
+  return (plan?.warnings || plan?.setup?.warnings || []).length +
+    (smartPlanNeedsLongerPrep(plan) ? 1 : 0);
+}
+
+function smartPlanStatusLabel(status = "") {
+  if (!status) return "No plan generated";
+  return `${status.slice(0, 1).toUpperCase()}${status.slice(1)}`;
+}
+
+function SmartEventPlanPanel({
+  user,
+  activeEvent,
+  eventAssignments,
+  eventTasks,
+  onCreateTask,
+  onRefreshEventOperations,
+  reviewMode = false,
+  onOpenReview,
+  onCloseReview,
+}) {
+  const [plans, setPlans] = useState([]);
+  const [planStatus, setPlanStatus] = useState({ type: "", message: "" });
+  const [loadingPlan, setLoadingPlan] = useState(false);
+  const [editor, setEditor] = useState(null);
+  const [expandedPlanItems, setExpandedPlanItems] = useState({});
+  const [expandedPhases, setExpandedPhases] = useState({ before: true, during: false, after: false });
+  const [customWindowMode, setCustomWindowMode] = useState({ prep: false, close: false });
+  const [linkedCalendarEvents, setLinkedCalendarEvents] = useState([]);
+  const [calendarSources, setCalendarSources] = useState([]);
+  const [loadingCalendarContext, setLoadingCalendarContext] = useState(false);
+  const activePlan = plans[0] || null;
+  const linkedResources = linkedCalendarEvents.filter(
+    (calendarEvent) => calendarEvent.linkedEventOperationId === activeEvent?.id,
+  );
+  const linkedSourceIds = new Set(linkedResources.map((resource) => resource.sourceId).filter(Boolean));
+  const linkedCalendarSources = calendarSources.filter((source) => linkedSourceIds.has(source.id));
+  const relevantRigIds = new Set([
+    ...(editor?.rigRefs || activePlan?.rigRefs || []),
+    ...(editor?.planItems || activePlan?.planItems || []).map((item) => item.rigRef).filter(Boolean),
+  ]);
+  const relevantRigGuides = eventRigGuides.filter((guide) => relevantRigIds.has(guide.id));
+
+  function setEditorFromRecord(plan) {
+    const nextEditor = editableEventPlan(plan, activeEvent);
+    setEditor(nextEditor);
+    const standardValues = [30, 60, 90, 120];
+    setCustomWindowMode({
+      prep: nextEditor ? !standardValues.includes(Number(nextEditor.setup?.prepMinutesBefore)) : false,
+      close: nextEditor ? !standardValues.includes(Number(nextEditor.setup?.closeMinutesAfter)) : false,
+    });
+  }
+
+  async function loadPlans() {
+    if (!activeEvent?.id) {
+      setPlans([]);
+      setEditor(null);
+      return;
+    }
+    const result = await listEventPlans(activeEvent.id);
+    if (result.ok) {
+      setPlans(result.records || []);
+      const current = result.records?.[0] || null;
+      if (reviewMode && current) setEditorFromRecord(current);
+      else if (!reviewMode) setEditor(null);
+    } else {
+      setPlanStatus({ type: "error", message: result.message || "Could not load suggested plans." });
+    }
+  }
+
+  async function loadCalendarContext() {
+    if (!activeEvent?.id) {
+      setLinkedCalendarEvents([]);
+      setCalendarSources([]);
+      setLoadingCalendarContext(false);
+      return;
+    }
+    setLoadingCalendarContext(true);
+    const from = activeEvent.startsAt
+      ? addMinutesToDateTimeLocal(toDateTimeLocalValue(activeEvent.startsAt), -24 * 60)
+      : toDateTimeLocalValue(new Date());
+    const to = activeEvent.endsAt
+      ? addMinutesToDateTimeLocal(toDateTimeLocalValue(activeEvent.endsAt), 24 * 60)
+      : addMinutesToDateTimeLocal(from, 48 * 60);
+    try {
+      const [sourceResult, eventResult] = await Promise.all([
+        listCalendarSources(),
+        listImportedCalendarEvents({
+          from: fromDateTimeLocalValue(from),
+          to: fromDateTimeLocalValue(to),
+        }),
+      ]);
+      setCalendarSources(sourceResult.ok ? sourceResult.records || [] : []);
+      setLinkedCalendarEvents(
+        eventResult.ok
+          ? (eventResult.records || []).filter(
+              (calendarEvent) => calendarEvent.linkedEventOperationId === activeEvent.id,
+            )
+          : [],
+      );
+    } catch (error) {
+      setCalendarSources([]);
+      setLinkedCalendarEvents([]);
+      setPlanStatus({
+        type: "error",
+        message: error?.message || "Linked calendar context could not be loaded.",
+      });
+    } finally {
+      setLoadingCalendarContext(false);
+    }
+  }
+
+  useEffect(() => {
+    setPlanStatus({ type: "", message: "" });
+    setEditor(null);
+    setExpandedPlanItems({});
+    setExpandedPhases({ before: true, during: false, after: false });
+    loadPlans();
+    loadCalendarContext();
+  }, [activeEvent?.id, reviewMode]);
+
+  async function generateSuggestion() {
+    if (!activeEvent?.id) {
+      setPlanStatus({ type: "error", message: "Select an event board before generating a plan." });
+      return;
+    }
+    setLoadingPlan(true);
+    setPlanStatus({ type: "pending", message: "Generating suggested event plan..." });
+    try {
+      const currentPlansResult = await listEventPlans(activeEvent.id);
+      if (!currentPlansResult.ok) {
+        setPlanStatus({
+          type: "error",
+          message: currentPlansResult.message || "Existing plan versions could not be checked.",
+        });
+        return;
+      }
+      const suggestion = suggestEventPlan({
+        eventOperation: activeEvent,
+        linkedCalendarEvents: linkedResources,
+        calendarSources: linkedCalendarSources,
+        roleAssignments: eventAssignments,
+        existingTasks: eventTasks,
+      });
+      const nextVersion =
+        Math.max(0, ...(currentPlansResult.records || []).map((plan) => Number(plan.version) || 0)) + 1;
+      const result = await createSuggestedEventPlan({
+        eventOperationId: activeEvent.id,
+        status: "suggested",
+        source: "automatic",
+        title: suggestion.title,
+        suggestedTemplateId: suggestion.suggestedTemplateId,
+        confidence: suggestion.confidence,
+        detectedSignals: suggestion.detectedSignals,
+        rationale: suggestion.rationale,
+        warnings: suggestion.warnings,
+        setup: suggestion.setup,
+        planItems: suggestion.planItems,
+        guideRefs: suggestion.guideRefs,
+        rigRefs: suggestion.rigRefs,
+        version: nextVersion,
+      });
+      if (!result.ok || !result.record?.id) {
+        setPlanStatus({ type: "error", message: result.message || "Suggested plan could not be saved." });
+        return;
+      }
+      const supersedeResult = await supersedePreviousPlans(activeEvent.id, result.record.id);
+      setPlans((current) => [
+        result.record,
+        ...current
+          .filter((plan) => plan.id !== result.record.id)
+          .map((plan) =>
+            supersedeResult.ok && ["suggested", "draft"].includes(plan.status)
+              ? { ...plan, status: "superseded" }
+              : plan,
+          ),
+      ]);
+      if (reviewMode) setEditorFromRecord(result.record);
+      setPlanStatus({
+        type: supersedeResult.ok ? "success" : "error",
+        message: supersedeResult.ok
+          ? `Suggested plan version ${result.record.version} generated. Review before applying.`
+          : `Suggested plan was saved, but older drafts could not be superseded: ${supersedeResult.message || "Unknown error."}`,
+      });
+      onRefreshEventOperations?.("smart_event_plan_generated");
+    } catch (error) {
+      setPlanStatus({ type: "error", message: error?.message || "Unexpected error while generating suggestion." });
+    } finally {
+      setLoadingPlan(false);
+    }
+  }
+
+  function updatePlanItem(planItemId, patch) {
+    setEditor((current) => ({
+      ...current,
+      planItems: (current?.planItems || []).map((item) =>
+        item.planItemId === planItemId ? { ...item, ...patch } : item,
+      ),
+    }));
+  }
+
+  function updatePlanItemAudience(planItemId, audience) {
+    setEditor((current) => ({
+      ...current,
+      planItems: (current?.planItems || []).map((item) => {
+        if (item.planItemId !== planItemId) return item;
+        const metadata = { ...(item.metadata || {}) };
+        if (audience) metadata.audience = audience;
+        else delete metadata.audience;
+        return { ...item, audience, metadata };
+      }),
+    }));
+  }
+
+  function setPhaseIncluded(phase, included) {
+    setEditor((current) => ({
+      ...current,
+      planItems: (current?.planItems || []).map((item) =>
+        (item.phase || "before") === phase ? { ...item, included } : item,
+      ),
+    }));
+  }
+
+  function updateOperationalWindow(kind, value) {
+    const minutes = Math.max(0, Math.min(480, Math.round(Number(value) || 0)));
+    const field = kind === "prep" ? "prepMinutesBefore" : "closeMinutesAfter";
+    setEditor((current) => {
+      if (!current || current.status === "applied") return current;
+      return {
+        ...current,
+        setup: deriveEventPlanOperationalWindow(
+          activeEvent,
+          { ...(current.setup || {}), [field]: minutes },
+          { recalculateBounds: true },
+        ),
+      };
+    });
+    setPlanStatus({
+      type: "pending",
+      message: "Operational window updated. Task times are unchanged until you choose Recalculate suggested times.",
+    });
+  }
+
+  function selectWindowOption(kind, value) {
+    if (value === "custom") {
+      setCustomWindowMode((current) => ({ ...current, [kind]: true }));
+      return;
+    }
+    setCustomWindowMode((current) => ({ ...current, [kind]: false }));
+    updateOperationalWindow(kind, Number(value));
+  }
+
+  function recalculateSuggestedTimes() {
+    if (!editor || editor.status === "applied") return;
+    const recalculatedItems = recalculateEventPlanTimes({
+      planItems: planItemsForStorage(editor.planItems || []),
+      eventOperation: activeEvent,
+      setup: editor.setup,
+    });
+    setEditor((current) => ({
+      ...current,
+      planItems: editablePlanItems(recalculatedItems),
+    }));
+    setPlanStatus({
+      type: "success",
+      message: "Suggested times recalculated for the operational window. Review the changes, then save the draft.",
+    });
+  }
+
+  async function saveDraft() {
+    if (!editor?.id) return;
+    if (editor.status === "applied") {
+      setPlanStatus({ type: "error", message: "Applied plans are read-only. Regenerate to create a new editable version." });
+      return;
+    }
+    if (!editor.title?.trim()) {
+      setPlanStatus({ type: "error", message: "Plan title is required." });
+      return;
+    }
+    const validationMessage = validateSmartPlanItems(editor.planItems || []);
+    if (validationMessage) {
+      setPlanStatus({ type: "error", message: validationMessage });
+      return;
+    }
+    setPlanStatus({ type: "pending", message: "Saving draft..." });
+    const result = await updateEventPlan(editor.id, {
+      status: "draft",
+      title: editor.title.trim(),
+      setup: editor.setup,
+      warnings: editor.warnings || [],
+      planItems: planItemsForStorage(editor.planItems),
+      guideRefs: editor.guideRefs,
+      rigRefs: editor.rigRefs,
+      version: (editor.version || 1) + 1,
+    });
+    if (!result.ok) {
+      setPlanStatus({ type: "error", message: result.message || "Draft could not be saved." });
+      return;
+    }
+    setPlans((current) => [result.record, ...current.filter((plan) => plan.id !== result.record.id)]);
+    setEditorFromRecord(result.record);
+    setPlanStatus({ type: "success", message: "Draft saved." });
+    onRefreshEventOperations?.("smart_event_plan_draft_saved");
+  }
+
+  async function dismissPlan() {
+    const planId = editor?.id || activePlan?.id;
+    if (!planId) return;
+    setPlanStatus({ type: "pending", message: "Dismissing suggestion..." });
+    const result = await dismissEventPlan(planId);
+    if (!result.ok) {
+      setPlanStatus({ type: "error", message: result.message || "Suggestion could not be dismissed." });
+      return;
+    }
+    setPlans((current) => [result.record, ...current.filter((plan) => plan.id !== result.record.id)]);
+    setEditor(null);
+    setPlanStatus({ type: "success", message: "Suggestion dismissed." });
+    if (reviewMode) onCloseReview?.();
+    onRefreshEventOperations?.("smart_event_plan_dismissed");
+  }
+
+  async function applyPlan() {
+    if (!editor?.id || !activeEvent?.id) return;
+    if (editor.status === "applied") return;
+    const includedItems = (editor.planItems || []).filter((item) => item.included !== false);
+    if (!includedItems.length) {
+      setPlanStatus({ type: "error", message: "Choose at least one plan item before applying." });
+      return;
+    }
+    if (!editor.title?.trim()) {
+      setPlanStatus({ type: "error", message: "Plan title is required." });
+      return;
+    }
+    const validationMessage = validateSmartPlanItems(editor.planItems || []);
+    if (validationMessage) {
+      setPlanStatus({ type: "error", message: validationMessage });
+      return;
+    }
+    setLoadingPlan(true);
+    setPlanStatus({ type: "pending", message: "Saving the latest plan before applying..." });
+    try {
+      const storedPlanItems = planItemsForStorage(editor.planItems);
+      const saved = await updateEventPlan(editor.id, {
+        status: "draft",
+        title: editor.title.trim(),
+        setup: editor.setup,
+        warnings: editor.warnings || [],
+        planItems: storedPlanItems,
+        guideRefs: editor.guideRefs,
+        rigRefs: editor.rigRefs,
+        version: editor.version || 1,
+      });
+      if (!saved.ok || !saved.record?.id) {
+        setPlanStatus({
+          type: "error",
+          message: saved.message || "The edited plan could not be saved, so no tasks were created.",
+        });
+        return;
+      }
+
+      setPlans((current) => [saved.record, ...current.filter((plan) => plan.id !== saved.record.id)]);
+      setEditorFromRecord(saved.record);
+
+      const existingPlanItemIds = new Set(
+        eventTasks
+          .filter((task) => task.metadata?.eventPlanId === editor.id)
+          .map((task) => task.metadata?.planItemId)
+          .filter(Boolean),
+      );
+      let createdCount = 0;
+      let skippedCount = 0;
+      const failures = [];
+
+      for (let index = 0; index < includedItems.length; index += 1) {
+        const item = includedItems[index];
+        setPlanStatus({
+          type: "pending",
+          message: `Applying plan item ${index + 1} of ${includedItems.length}: ${item.title.trim()}`,
+        });
+        if (existingPlanItemIds.has(item.planItemId)) {
+          skippedCount += 1;
+          continue;
+        }
+
+        const dueAt = item.dueAt ? fromOsloDateTimeLocalValue(item.dueAt) : "";
+        const remindAt = item.remindAt ? fromOsloDateTimeLocalValue(item.remindAt) : "";
+        const audience = smartPlanItemAudience(item);
+        let result;
+        try {
+          result = await onCreateTask({
+            eventId: activeEvent.id,
+            title: item.title.trim(),
+            description: item.description?.trim() || "",
+            dueAt,
+            remindAt,
+            zone: item.zone || "all",
+            priority: item.priority || "normal",
+            assignedRoleKey: item.assignedRoleKey || "",
+            assignedOperatorName: "",
+            status: "pending",
+            createdByName: user.name,
+            metadata: {
+              ...(item.metadata || {}),
+              ...(audience ? { audience } : {}),
+              eventPlanId: editor.id,
+              eventPlanVersion: saved.record.version || editor.version || 1,
+              planItemId: item.planItemId,
+              suggestedTemplateId: saved.record.suggestedTemplateId || editor.suggestedTemplateId,
+              source: "smart_event_plan",
+              guideRef: item.guideRef || "",
+              rigRef: item.rigRef || "",
+              phase: item.phase || "",
+            },
+          });
+        } catch (error) {
+          failures.push({
+            planItemId: item.planItemId,
+            title: item.title,
+            message: error?.message || "Unexpected task creation error.",
+          });
+          continue;
+        }
+        const record = result?.record || result;
+        if (result?.ok || record?.id) {
+          createdCount += 1;
+          existingPlanItemIds.add(item.planItemId);
+        } else if (isSmartPlanDuplicateResult(result)) {
+          skippedCount += 1;
+          existingPlanItemIds.add(item.planItemId);
+        } else {
+          failures.push({
+            planItemId: item.planItemId,
+            title: item.title,
+            message: result?.message || result?.error?.message || "Unknown task creation error.",
+          });
+        }
+      }
+
+      await onRefreshEventOperations?.("smart_event_plan_apply_progress");
+      if (failures.length) {
+        const firstFailure = failures[0];
+        setPlanStatus({
+          type: "error",
+          message: `${createdCount} created, ${skippedCount} already existed, ${failures.length} failed. The plan remains a draft and can be retried. ${firstFailure.title}: ${firstFailure.message}`,
+        });
+        return;
+      }
+
+      const applied = await markEventPlanApplied(editor.id);
+      if (!applied.ok) {
+        setPlanStatus({
+          type: "error",
+          message: `${createdCount} created and ${skippedCount} already existed, but the plan could not be marked applied. Retry to finish safely. ${applied.message || ""}`.trim(),
+        });
+        return;
+      }
+      setPlans((current) => [applied.record, ...current.filter((plan) => plan.id !== applied.record.id)]);
+      setEditorFromRecord(applied.record);
+      setPlanStatus({
+        type: "success",
+        message: `Plan applied: ${createdCount} task${createdCount === 1 ? "" : "s"} created, ${skippedCount} already present.`,
+      });
+      await onRefreshEventOperations?.("smart_event_plan_applied");
+    } catch (error) {
+      setPlanStatus({ type: "error", message: error?.message || "Unexpected error while applying plan." });
+    } finally {
+      setLoadingPlan(false);
+    }
+  }
+
+  const compactPlan = editableEventPlan(activePlan, activeEvent);
+  const displayedPlan = reviewMode ? editor : compactPlan;
+  const displayedSetup = deriveEventPlanOperationalWindow(
+    activeEvent,
+    displayedPlan?.setup || {},
+  );
+  const includedStats = smartPlanIncludedStats(displayedPlan);
+  const linkedResourceNames = [
+    ...new Set(
+      linkedResources
+        .map((resource) => resource.sourceName || resource.location || resource.title)
+        .filter(Boolean),
+    ),
+  ];
+  const planReadOnly = displayedPlan?.status === "applied";
+  const recommendedPrepMinutes = smartPlanNeedsLongerPrep(displayedPlan);
+  const planStatusClass =
+    planStatus.type === "error"
+      ? "critical-warning"
+      : planStatus.type === "success"
+        ? "all-clear"
+        : "status-message";
+
+  if (reviewMode) {
+    if (!activeEvent || !editor) {
+      return (
+        <section className="manager-list smart-plan-review-view">
+          <button type="button" className="ghost-button compact-button smart-plan-back" onClick={onCloseReview}>
+            Back to Event Operations
+          </button>
+          <h2>Smart Plan review</h2>
+          <p className="muted">{activeEvent ? "Loading the selected plan..." : "Select an Event Board first."}</p>
+          {planStatus.message && <p className={planStatusClass}>{planStatus.message}</p>}
+        </section>
+      );
+    }
+
+    return (
+      <section className="manager-list smart-plan-review-view">
+        <button type="button" className="ghost-button compact-button smart-plan-back" onClick={onCloseReview}>
+          Back to Event Operations
+        </button>
+
+        <div className="section-heading static-heading">
+          <div>
+            <p className="eyebrow">Smart Plan review</p>
+            <h2>{activeEvent.title}</h2>
+          </div>
+          <span>{smartPlanStatusLabel(editor.status)}</span>
+        </div>
+
+        <div className="smart-plan-review-summary">
+          <div>
+            <small>Event</small>
+            <strong>{activeEvent.title}</strong>
+            <span>{activeEvent.venue || "No venue"}</span>
+          </div>
+          <div>
+            <small>Official event</small>
+            <strong>{formatOsloTimeRange(activeEvent.startsAt, activeEvent.endsAt)}</strong>
+            <span>Europe/Oslo</span>
+          </div>
+          <div>
+            <small>Operational window</small>
+            <strong>{formatOsloTimeRange(displayedSetup.prepStartsAt, displayedSetup.closeEndsAt)}</strong>
+            <span>
+              Prep {displayedSetup.prepMinutesBefore} min | Close {displayedSetup.closeMinutesAfter} min
+            </span>
+          </div>
+          <div>
+            <small>Plan</small>
+            <strong>{editor.title || "Untitled plan"}</strong>
+            <span>Version {editor.version} | {confidenceLabel(editor.confidence)} confidence</span>
+          </div>
+          <div>
+            <small>Included</small>
+            <strong>{includedStats.included} of {includedStats.total}</strong>
+            <span>tasks</span>
+          </div>
+          <div>
+            <small>Warnings</small>
+            <strong>{smartPlanWarningCount(editor)}</strong>
+            <span>{linkedResourceNames.length ? linkedResourceNames.join(", ") : "No linked resources"}</span>
+          </div>
+        </div>
+
+        <div className="smart-plan-sticky-actions" role="toolbar" aria-label="Smart Plan actions">
+          <button
+            type="button"
+            className="primary-button compact-button"
+            onClick={saveDraft}
+            disabled={loadingPlan || planReadOnly}
+          >
+            Save draft
+          </button>
+          <button
+            type="button"
+            className="primary-button compact-button"
+            onClick={applyPlan}
+            disabled={loadingPlan || planReadOnly}
+          >
+            Apply plan
+          </button>
+        </div>
+
+        {planStatus.message && <p className={planStatusClass}>{planStatus.message}</p>}
+        {planReadOnly && (
+          <p className="muted">Applied plans are read-only. Regenerate from Event Operations to create a new editable version.</p>
+        )}
+
+        <label className="smart-plan-title-field">
+          Plan title
+          <input
+            value={editor.title}
+            disabled={planReadOnly}
+            onChange={(event) => setEditor((current) => ({ ...current, title: event.target.value }))}
+          />
+        </label>
+
+        <section className="smart-plan-review-section">
+          <div className="smart-plan-section-title">
+            <div>
+              <h3>Operational window</h3>
+              <p className="muted">
+                Official event time stays unchanged. Recalculation only changes the suggested plan task times.
+              </p>
+            </div>
+            <button
+              type="button"
+              className="ghost-button compact-button"
+              onClick={recalculateSuggestedTimes}
+              disabled={planReadOnly}
+            >
+              Recalculate suggested times
+            </button>
+          </div>
+          <div className="smart-plan-window-grid">
+            <label>
+              Prep begins
+              <select
+                value={customWindowMode.prep ? "custom" : String(displayedSetup.prepMinutesBefore)}
+                disabled={planReadOnly}
+                onChange={(event) => selectWindowOption("prep", event.target.value)}
+              >
+                {[30, 60, 90, 120].map((minutes) => (
+                  <option key={minutes} value={minutes}>{minutes} min before</option>
+                ))}
+                <option value="custom">Custom</option>
+              </select>
+              {customWindowMode.prep && (
+                <input
+                  type="number"
+                  min="0"
+                  max="480"
+                  step="5"
+                  value={displayedSetup.prepMinutesBefore}
+                  disabled={planReadOnly}
+                  onChange={(event) => {
+                    if (event.target.value !== "") updateOperationalWindow("prep", event.target.value);
+                  }}
+                />
+              )}
+            </label>
+            <label>
+              Close ends
+              <select
+                value={customWindowMode.close ? "custom" : String(displayedSetup.closeMinutesAfter)}
+                disabled={planReadOnly}
+                onChange={(event) => selectWindowOption("close", event.target.value)}
+              >
+                {[30, 60, 90, 120].map((minutes) => (
+                  <option key={minutes} value={minutes}>{minutes} min after</option>
+                ))}
+                <option value="custom">Custom</option>
+              </select>
+              {customWindowMode.close && (
+                <input
+                  type="number"
+                  min="0"
+                  max="480"
+                  step="5"
+                  value={displayedSetup.closeMinutesAfter}
+                  disabled={planReadOnly}
+                  onChange={(event) => {
+                    if (event.target.value !== "") updateOperationalWindow("close", event.target.value);
+                  }}
+                />
+              )}
+            </label>
+          </div>
+          <p className="smart-plan-window-line">
+            Operational window: {formatOsloTimeRange(displayedSetup.prepStartsAt, displayedSetup.closeEndsAt)}
+            {" | "}Event service: {formatOsloTimeRange(activeEvent.startsAt, activeEvent.endsAt)}
+          </p>
+          {recommendedPrepMinutes > 0 && (
+            <div className="smart-plan-recommendation">
+              <p>
+                This setup may need {recommendedPrepMinutes} minutes rather than the current {displayedSetup.prepMinutesBefore}-minute prep window.
+                {editor.setup?.prepRecommendationReasons?.length
+                  ? ` Signals: ${editor.setup.prepRecommendationReasons.join(", ")}.`
+                  : ""}
+              </p>
+              <button
+                type="button"
+                className="ghost-button compact-button"
+                disabled={planReadOnly}
+                onClick={() => {
+                  setCustomWindowMode((current) => ({ ...current, prep: false }));
+                  updateOperationalWindow("prep", recommendedPrepMinutes);
+                }}
+              >
+                Extend prep to {recommendedPrepMinutes} minutes
+              </button>
+            </div>
+          )}
+        </section>
+
+        <section className="smart-plan-review-section">
+          <h3>Why this plan was suggested</h3>
+          {(editor.rationale || []).map((reason) => <p key={reason} className="muted">{reason}</p>)}
+          {(editor.warnings || editor.setup?.warnings || []).map((warning) => (
+            <p key={warning} className="critical-warning">{warning}</p>
+          ))}
+        </section>
+
+        {relevantRigGuides.length > 0 && (
+          <section className="smart-plan-review-section">
+            <h3>Rig references</h3>
+            <div className="smart-plan-rig-list">
+              {relevantRigGuides.map((guide) => (
+                <article key={guide.id} className="log-row">
+                  <strong>{guide.title}</strong>
+                  <small>{guide.notes || "Rig image not added yet."}</small>
+                  {guide.checklist?.length > 0 && <small>{guide.checklist.join(" | ")}</small>}
+                </article>
+              ))}
+            </div>
+          </section>
+        )}
+
+        {["before", "during", "after"].map((phase) => {
+          const phaseItems = (editor.planItems || []).filter(
+            (item) => (item.phase || "before") === phase,
+          );
+          const included = phaseItems.filter((item) => item.included !== false).length;
+          const phaseIsExpanded = expandedPhases[phase] === true;
+          return (
+            <section key={phase} className="smart-plan-phase">
+              <div className="smart-plan-phase-header">
+                <button
+                  type="button"
+                  className="smart-plan-phase-toggle"
+                  onClick={() => setExpandedPhases((current) => ({ ...current, [phase]: !current[phase] }))}
+                >
+                  <strong>{phase.toUpperCase()}</strong>
+                  <span>{included}/{phaseItems.length} included | {phaseIsExpanded ? "Hide" : "Show"}</span>
+                </button>
+                {!planReadOnly && phaseItems.length > 0 && (
+                  <div className="smart-plan-phase-actions">
+                    <button type="button" className="text-button" onClick={() => setPhaseIncluded(phase, true)}>Include all</button>
+                    <button type="button" className="text-button" onClick={() => setPhaseIncluded(phase, false)}>Exclude all</button>
+                  </div>
+                )}
+              </div>
+              {phaseIsExpanded && (
+                <div className="smart-plan-item-list">
+                  {phaseItems.length === 0 && <p className="muted">No tasks in this phase.</p>}
+                  {phaseItems.map((item) => {
+                    const itemExpanded = expandedPlanItems[item.planItemId] === true;
+                    const audience = smartPlanItemAudience(item);
+                    return (
+                      <article key={item.planItemId} className={`smart-plan-item ${item.included === false ? "is-excluded" : ""}`}>
+                        <div className="smart-plan-item-row">
+                          <label className="smart-plan-item-check">
+                            <input
+                              type="checkbox"
+                              checked={item.included !== false}
+                              disabled={planReadOnly}
+                              aria-label={`Include ${item.title || "plan item"}`}
+                              onChange={(event) => updatePlanItem(item.planItemId, { included: event.target.checked })}
+                            />
+                          </label>
+                          <div className="smart-plan-item-summary">
+                            <strong>{item.title || "Untitled task"}</strong>
+                            <small>
+                              {item.dueAt ? item.dueAt.slice(11, 16) : "No due time"} |{" "}
+                              {eventRoleLabel(item.assignedRoleKey) || "No role"} |{" "}
+                              {zoneDisplayLabel(item.zone || "all")} | {item.priority || "normal"}
+                            </small>
+                          </div>
+                          <button
+                            type="button"
+                            className="ghost-button compact-button"
+                            onClick={() => setExpandedPlanItems((current) => ({
+                              ...current,
+                              [item.planItemId]: !current[item.planItemId],
+                            }))}
+                          >
+                            {itemExpanded ? "Close" : planReadOnly ? "View" : "Edit"}
+                          </button>
+                        </div>
+                        {itemExpanded && (
+                          <div className="smart-plan-item-editor">
+                            <label>
+                              Title
+                              <input disabled={planReadOnly} value={item.title} onChange={(event) => updatePlanItem(item.planItemId, { title: event.target.value })} />
+                            </label>
+                            <label className="smart-plan-wide-field">
+                              Description
+                              <textarea disabled={planReadOnly} rows="3" value={item.description || ""} onChange={(event) => updatePlanItem(item.planItemId, { description: event.target.value })} />
+                            </label>
+                            <label>
+                              Due time (Oslo)
+                              <input disabled={planReadOnly} type="datetime-local" value={item.dueAt || ""} onChange={(event) => updatePlanItem(item.planItemId, { dueAt: event.target.value })} />
+                            </label>
+                            <label>
+                              Reminder time (Oslo)
+                              <input disabled={planReadOnly} type="datetime-local" value={item.remindAt || ""} onChange={(event) => updatePlanItem(item.planItemId, { remindAt: event.target.value })} />
+                            </label>
+                            <label>
+                              Phase
+                              <select disabled={planReadOnly} value={item.phase || "before"} onChange={(event) => updatePlanItem(item.planItemId, { phase: event.target.value })}>
+                                {["before", "during", "after"].map((value) => <option key={value} value={value}>{value}</option>)}
+                              </select>
+                            </label>
+                            <label>
+                              Zone
+                              <select disabled={planReadOnly} value={item.zone || "all"} onChange={(event) => updatePlanItem(item.planItemId, { zone: event.target.value })}>
+                                {eventZones.map((zone) => <option key={zone} value={zone}>{zone}</option>)}
+                              </select>
+                            </label>
+                            <label>
+                              Role
+                              <select disabled={planReadOnly} value={item.assignedRoleKey || ""} onChange={(event) => updatePlanItem(item.planItemId, { assignedRoleKey: event.target.value })}>
+                                <option value="">No role</option>
+                                {eventRoleOptions.map((role) => <option key={role.key} value={role.key}>{role.label}</option>)}
+                              </select>
+                            </label>
+                            <label>
+                              Audience
+                              <select disabled={planReadOnly} value={audience} onChange={(event) => updatePlanItemAudience(item.planItemId, event.target.value)}>
+                                <option value="">Assignment/role only</option>
+                                <option value="all_event_staff">All event staff</option>
+                                {audience && audience !== "all_event_staff" && <option value={audience}>{audience}</option>}
+                              </select>
+                            </label>
+                            <label>
+                              Priority
+                              <select disabled={planReadOnly} value={item.priority || "normal"} onChange={(event) => updatePlanItem(item.planItemId, { priority: event.target.value })}>
+                                {["low", "normal", "important", "critical"].map((priority) => <option key={priority} value={priority}>{priority}</option>)}
+                              </select>
+                            </label>
+                            <label>
+                              Guide reference
+                              <input value={item.guideRef || "None"} readOnly />
+                            </label>
+                            <label>
+                              Rig reference
+                              <input value={item.rigRef || "None"} readOnly />
+                            </label>
+                          </div>
+                        )}
+                      </article>
+                    );
+                  })}
+                </div>
+              )}
+            </section>
+          );
+        })}
+
+        <div className="backup-actions smart-plan-bottom-actions">
+          <button type="button" className="primary-button compact-button" onClick={saveDraft} disabled={loadingPlan || planReadOnly}>
+            Save draft
+          </button>
+          <button type="button" className="primary-button compact-button" onClick={applyPlan} disabled={loadingPlan || planReadOnly}>
+            Apply plan
+          </button>
+          <button type="button" className="ghost-button compact-button" onClick={onCloseReview}>
+            Back to Event Operations
+          </button>
+        </div>
+      </section>
+    );
+  }
+
+  return (
+    <section className="manager-list smart-plan-compact">
+      <div className="section-heading static-heading">
+        <div>
+          <p className="eyebrow">Smart Plan</p>
+          <h2>Suggested Event Plan</h2>
+        </div>
+        <span>{smartPlanStatusLabel(activePlan?.status)}</span>
+      </div>
+      {!activeEvent ? (
+        <p className="muted">Select or create an event board before generating a suggested plan.</p>
+      ) : (
+        <>
+          <div className="smart-plan-compact-body">
+            <div className="smart-plan-compact-title">
+              <strong>{compactPlan?.title || "No plan generated"}</strong>
+              <span>
+                {compactPlan
+                  ? `Version ${compactPlan.version} | ${confidenceLabel(compactPlan.confidence)} confidence`
+                  : "Generate a deterministic starting plan, then review before applying."}
+              </span>
+            </div>
+            <div className="smart-plan-compact-grid">
+              <div>
+                <small>Event time</small>
+                <strong>{formatOsloTimeRange(activeEvent.startsAt, activeEvent.endsAt)}</strong>
+              </div>
+              <div>
+                <small>Operational window</small>
+                <strong>{formatOsloTimeRange(displayedSetup.prepStartsAt, displayedSetup.closeEndsAt)}</strong>
+              </div>
+              <div>
+                <small>Included tasks</small>
+                <strong>{compactPlan ? `${includedStats.included}/${includedStats.total}` : "-"}</strong>
+              </div>
+              <div>
+                <small>Warnings</small>
+                <strong>{compactPlan ? smartPlanWarningCount(compactPlan) : "-"}</strong>
+              </div>
+            </div>
+            <p className="muted smart-plan-linked-resources">
+              Linked resources: {linkedResourceNames.length ? linkedResourceNames.join(", ") : "none"}
+            </p>
+          </div>
+          <div className="backup-actions smart-plan-compact-actions">
+            {!compactPlan && (
+              <button type="button" className="primary-button compact-button" onClick={generateSuggestion} disabled={loadingPlan || loadingCalendarContext}>
+                Generate plan
+              </button>
+            )}
+            {compactPlan && compactPlan.status !== "dismissed" && (
+              <button type="button" className="primary-button compact-button" onClick={onOpenReview}>
+                Review plan
+              </button>
+            )}
+            {compactPlan && (
+              <button type="button" className="ghost-button compact-button" onClick={generateSuggestion} disabled={loadingPlan || loadingCalendarContext}>
+                {compactPlan.status === "dismissed" ? "Generate new plan" : "Regenerate"}
+              </button>
+            )}
+            {compactPlan && ["suggested", "draft"].includes(compactPlan.status) && (
+              <button type="button" className="ghost-button compact-button" onClick={dismissPlan} disabled={loadingPlan}>
+                Dismiss
+              </button>
+            )}
+          </div>
+          {planStatus.message && (
+            <p className={planStatusClass}>{planStatus.message}</p>
+          )}
+        </>
+      )}
+    </section>
+  );
+}
+
 function EventOperationsCorePanel({
   user,
   date,
@@ -6293,6 +7391,7 @@ function EventOperationsCorePanel({
   const [taskStatus, setTaskStatus] = useState({ type: "", message: "" });
   const [taskCreating, setTaskCreating] = useState(false);
   const [showLiveEventMode, setShowLiveEventMode] = useState(false);
+  const [showSmartPlanReview, setShowSmartPlanReview] = useState(false);
   const taskFormRef = useRef(null);
   const taskTitleInputRef = useRef(null);
   const taskFormDisabled = !activeEventIdValue || taskCreating;
@@ -6324,6 +7423,7 @@ function EventOperationsCorePanel({
 
   function selectEventBoard(eventId) {
     setActiveEventId(eventId);
+    setShowSmartPlanReview(false);
     saveStorage(EVENT_SELECTED_BOARD_KEY, {
       date,
       eventId,
@@ -6627,6 +7727,21 @@ function EventOperationsCorePanel({
     }
   }
 
+  if (showSmartPlanReview) {
+    return (
+      <SmartEventPlanPanel
+        user={user}
+        activeEvent={activeEvent}
+        eventAssignments={eventAssignments}
+        eventTasks={eventBoardTasks}
+        onCreateTask={onCreateTask}
+        onRefreshEventOperations={onRefreshEventOperations}
+        reviewMode
+        onCloseReview={() => setShowSmartPlanReview(false)}
+      />
+    );
+  }
+
   if (showLiveEventMode) {
     return (
       <EventLiveModePanel
@@ -6658,31 +7773,6 @@ function EventOperationsCorePanel({
             { id: "event-operations-troubleshooting", label: "Troubleshooting" },
           ]}
         />
-        <form className="editor-form compact-editor" onSubmit={submitEvent}>
-          <label>
-            Title
-            <input value={eventForm.title} onChange={(event) => setEventForm((current) => ({ ...current, title: event.target.value }))} />
-          </label>
-          <label>
-            Venue
-            <input value={eventForm.venue} onChange={(event) => setEventForm((current) => ({ ...current, venue: event.target.value }))} />
-          </label>
-          <label>
-            Start
-            <input type="datetime-local" value={eventForm.startsAt} onChange={(event) => setEventForm((current) => ({ ...current, startsAt: event.target.value }))} />
-          </label>
-          <label>
-            End
-            <input type="datetime-local" value={eventForm.endsAt} onChange={(event) => setEventForm((current) => ({ ...current, endsAt: event.target.value }))} />
-          </label>
-          <label>
-            Notes
-            <textarea rows="2" value={eventForm.notes} onChange={(event) => setEventForm((current) => ({ ...current, notes: event.target.value }))} />
-          </label>
-          <button type="submit" className="primary-button compact-button" disabled={eventBoardCreating}>
-            {eventBoardCreating ? "Creating event board..." : "Create manual event"}
-          </button>
-        </form>
         {eventBoardStatus.message && (
           <p className={eventBoardStatus.type === "error" ? "critical-warning" : eventBoardStatus.type === "success" ? "all-clear" : "status-message"}>
             {eventBoardStatus.message}
@@ -6723,16 +7813,60 @@ function EventOperationsCorePanel({
                 ))}
               </select>
             </label>
-            <button
-              type="button"
-              className="primary-button compact-button"
-              onClick={() => setShowLiveEventMode(true)}
-            >
-              Open Live Event Mode
-            </button>
           </article>
         )}
       </section>
+
+      <SmartEventPlanPanel
+        user={user}
+        activeEvent={activeEvent}
+        eventAssignments={eventAssignments}
+        eventTasks={eventBoardTasks}
+        onCreateTask={onCreateTask}
+        onRefreshEventOperations={onRefreshEventOperations}
+        onOpenReview={() => setShowSmartPlanReview(true)}
+      />
+
+      {activeEvent && (
+        <div className="backup-actions event-operations-primary-actions">
+          <button
+            type="button"
+            className="primary-button compact-button"
+            onClick={() => setShowLiveEventMode(true)}
+          >
+            Open Live Event Mode
+          </button>
+        </div>
+      )}
+
+      <details className="manager-list event-board-create-details">
+        <summary>Create manual event board</summary>
+        <form className="editor-form compact-editor" onSubmit={submitEvent}>
+          <label>
+            Title
+            <input value={eventForm.title} onChange={(event) => setEventForm((current) => ({ ...current, title: event.target.value }))} />
+          </label>
+          <label>
+            Venue
+            <input value={eventForm.venue} onChange={(event) => setEventForm((current) => ({ ...current, venue: event.target.value }))} />
+          </label>
+          <label>
+            Start
+            <input type="datetime-local" value={eventForm.startsAt} onChange={(event) => setEventForm((current) => ({ ...current, startsAt: event.target.value }))} />
+          </label>
+          <label>
+            End
+            <input type="datetime-local" value={eventForm.endsAt} onChange={(event) => setEventForm((current) => ({ ...current, endsAt: event.target.value }))} />
+          </label>
+          <label>
+            Notes
+            <textarea rows="2" value={eventForm.notes} onChange={(event) => setEventForm((current) => ({ ...current, notes: event.target.value }))} />
+          </label>
+          <button type="submit" className="primary-button compact-button" disabled={eventBoardCreating}>
+            {eventBoardCreating ? "Creating event board..." : "Create manual event"}
+          </button>
+        </form>
+      </details>
 
       <EventCalendarImportPanel
         eventOperations={eventOperations}

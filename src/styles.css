@@ -1984,6 +1984,301 @@ textarea {
   flex-wrap: wrap;
 }
 
+.smart-plan-compact {
+  border-color: color-mix(in srgb, var(--brand) 48%, var(--line));
+  background: color-mix(in srgb, var(--brand) 6%, var(--surface));
+}
+
+.smart-plan-compact-body,
+.smart-plan-review-view,
+.smart-plan-review-section,
+.smart-plan-item-list {
+  display: grid;
+  gap: 12px;
+}
+
+.smart-plan-compact-title {
+  display: grid;
+  gap: 3px;
+}
+
+.smart-plan-compact-title strong {
+  font-size: 1.05rem;
+}
+
+.smart-plan-compact-title span,
+.smart-plan-linked-resources {
+  color: var(--muted);
+  font-size: 0.82rem;
+  font-weight: 750;
+}
+
+.smart-plan-compact-grid,
+.smart-plan-review-summary {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 1px;
+  overflow: hidden;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  background: var(--line);
+}
+
+.smart-plan-compact-grid > div,
+.smart-plan-review-summary > div {
+  min-width: 0;
+  background: var(--surface);
+  padding: 10px;
+}
+
+.smart-plan-compact-grid small,
+.smart-plan-review-summary small,
+.smart-plan-review-summary span {
+  display: block;
+  color: var(--muted);
+  font-size: 0.74rem;
+  font-weight: 800;
+  overflow-wrap: anywhere;
+}
+
+.smart-plan-compact-grid strong,
+.smart-plan-review-summary strong {
+  display: block;
+  margin-top: 3px;
+  overflow-wrap: anywhere;
+}
+
+.smart-plan-compact-actions > *,
+.smart-plan-bottom-actions > * {
+  flex: 1 1 140px;
+}
+
+.event-operations-primary-actions {
+  margin: -6px 0 16px;
+}
+
+.event-board-create-details > summary {
+  cursor: pointer;
+  color: var(--text);
+  font-weight: 850;
+}
+
+.event-board-create-details[open] > summary {
+  margin-bottom: 14px;
+}
+
+.smart-plan-review-view {
+  padding-bottom: 24px;
+}
+
+.smart-plan-back {
+  width: max-content;
+  max-width: 100%;
+}
+
+.smart-plan-review-summary {
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+}
+
+.smart-plan-review-summary strong {
+  font-size: 0.94rem;
+}
+
+.smart-plan-sticky-actions {
+  position: sticky;
+  top: 72px;
+  z-index: 7;
+  display: flex;
+  gap: 8px;
+  flex-wrap: wrap;
+  margin-inline: -8px;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  background: color-mix(in srgb, var(--surface) 94%, transparent);
+  box-shadow: 0 8px 18px rgba(22, 32, 29, 0.12);
+  padding: 8px;
+  backdrop-filter: blur(12px);
+}
+
+.smart-plan-sticky-actions > * {
+  flex: 1 1 150px;
+}
+
+.smart-plan-title-field {
+  margin-top: 2px;
+}
+
+.smart-plan-review-section {
+  border-top: 1px solid var(--line);
+  padding-top: 14px;
+}
+
+.smart-plan-review-section h3,
+.smart-plan-phase h3 {
+  margin: 0;
+  font-size: 0.96rem;
+}
+
+.smart-plan-section-title,
+.smart-plan-phase-header {
+  display: flex;
+  min-width: 0;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 10px;
+  flex-wrap: wrap;
+}
+
+.smart-plan-section-title p {
+  margin: 4px 0 0;
+}
+
+.smart-plan-window-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 10px;
+}
+
+.smart-plan-window-grid label {
+  align-content: start;
+}
+
+.smart-plan-window-line {
+  margin: 0;
+  color: var(--text);
+  font-size: 0.88rem;
+  font-weight: 850;
+}
+
+.smart-plan-recommendation {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  flex-wrap: wrap;
+  border-left: 4px solid var(--important);
+  background: color-mix(in srgb, var(--important) 8%, var(--surface));
+  padding: 10px 12px;
+}
+
+.smart-plan-recommendation p {
+  flex: 1 1 280px;
+  margin: 0;
+  font-size: 0.86rem;
+  font-weight: 800;
+}
+
+.smart-plan-rig-list {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 8px;
+}
+
+.smart-plan-rig-list .log-row {
+  margin: 0;
+}
+
+.smart-plan-phase {
+  border-top: 1px solid var(--line);
+  padding-top: 12px;
+}
+
+.smart-plan-phase-toggle {
+  display: grid;
+  min-width: min(100%, 230px);
+  gap: 3px;
+  border: 0;
+  background: transparent;
+  color: var(--text);
+  padding: 0;
+  text-align: left;
+  cursor: pointer;
+}
+
+.smart-plan-phase-toggle span {
+  color: var(--muted);
+  font-size: 0.78rem;
+  font-weight: 800;
+}
+
+.smart-plan-phase-actions {
+  display: flex;
+  gap: 12px;
+  flex-wrap: wrap;
+}
+
+.smart-plan-item-list {
+  margin-top: 10px;
+  gap: 0;
+  border-top: 1px solid var(--line);
+}
+
+.smart-plan-item {
+  min-width: 0;
+  border-bottom: 1px solid var(--line);
+  padding: 10px 0;
+}
+
+.smart-plan-item.is-excluded {
+  opacity: 0.58;
+}
+
+.smart-plan-item-row {
+  display: grid;
+  grid-template-columns: 24px minmax(0, 1fr) auto;
+  align-items: center;
+  gap: 10px;
+  min-width: 0;
+}
+
+.smart-plan-item-check {
+  display: block;
+}
+
+.smart-plan-item-check input {
+  width: 20px;
+  min-height: 20px;
+  margin: 0;
+  accent-color: var(--brand);
+}
+
+.smart-plan-item-summary {
+  min-width: 0;
+}
+
+.smart-plan-item-summary strong,
+.smart-plan-item-summary small {
+  display: block;
+  overflow-wrap: anywhere;
+}
+
+.smart-plan-item-summary small {
+  margin-top: 4px;
+  color: var(--muted);
+  font-size: 0.78rem;
+  font-weight: 750;
+}
+
+.smart-plan-item-editor {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 10px;
+  margin: 10px 0 2px 34px;
+  border-left: 3px solid color-mix(in srgb, var(--brand) 35%, var(--line));
+  background: var(--surface-strong);
+  padding: 12px;
+}
+
+.smart-plan-wide-field {
+  grid-column: 1 / -1;
+}
+
+.smart-plan-bottom-actions {
+  margin-top: 8px;
+  border-top: 1px solid var(--line);
+  padding-top: 14px;
+}
+
 .date-chips button,
 .file-button {
   display: inline-grid;
@@ -2199,5 +2494,55 @@ textarea {
 
   .top-actions {
     max-width: 160px;
+  }
+}
+
+@media (max-width: 600px) {
+  .smart-plan-review-summary {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+
+  .smart-plan-sticky-actions {
+    top: 82px;
+  }
+
+  .smart-plan-section-title,
+  .smart-plan-phase-header {
+    display: grid;
+  }
+
+  .smart-plan-window-grid,
+  .smart-plan-rig-list,
+  .smart-plan-item-editor {
+    grid-template-columns: 1fr;
+  }
+
+  .smart-plan-item-editor {
+    margin-left: 0;
+  }
+
+  .smart-plan-wide-field {
+    grid-column: auto;
+  }
+
+  .smart-plan-item-row {
+    grid-template-columns: 24px minmax(0, 1fr);
+  }
+
+  .smart-plan-item-row > .compact-button {
+    grid-column: 2;
+    justify-self: start;
+  }
+
+  .smart-plan-compact-actions,
+  .smart-plan-sticky-actions,
+  .smart-plan-bottom-actions {
+    align-items: stretch;
+  }
+
+  .smart-plan-compact-actions > *,
+  .smart-plan-sticky-actions > *,
+  .smart-plan-bottom-actions > * {
+    flex: 1 1 135px;
   }
 }
