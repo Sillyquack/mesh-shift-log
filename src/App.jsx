@@ -22,6 +22,21 @@ import {
   suggestEventPlan,
 } from "./data/eventPlanSuggestionRules.js";
 import {
+  analyzeStaffingAssignmentConflicts,
+  isAssignableStaffProfile,
+  mergeStaffingProposals,
+  normalizeStaffingProposalAssignedAuthUserIds,
+  staffProfileMatchesSearch,
+  staffingAssignmentAction,
+  staffingAssignmentMatchesProfile,
+  staffingProfileAuthUserId,
+  staffingProfileDisplayName,
+  staffingProposalStats,
+  staffingRoleOptions,
+  suggestEventStaffing,
+  syncStaffingProposalAssignments,
+} from "./data/eventStaffingSuggestionRules.js";
+import {
   isBackendAuthRequired,
   isSupabaseConfigured,
   supabase,
@@ -92,6 +107,8 @@ import {
   createEventOperation,
   createEventTask,
   createResponsibilityHandover,
+  deactivateEventRoleAssignment,
+  fetchAssignableEventStaff,
   fetchEventOperationsForDate,
   fetchEventRoleAssignments,
   fetchEventStaffPresence,
@@ -234,8 +251,8 @@ const eventRoleOptions = [
   { key: "cornerbar_staff", label: "Cornerbar Staff", zone: "cornerbar", reportsTo: "Cornerbar Manager", singleLead: false, group: "team" },
   { key: "atrium_staff", label: "Atrium Staff", zone: "atrium", reportsTo: "Atrium Manager", singleLead: false, group: "team" },
   { key: "workbar_staff", label: "Workbar Staff", zone: "workbar", reportsTo: "Workbar Manager", singleLead: false, group: "team" },
-  { key: "bar_staff", label: "Bar Staff", zone: "all", reportsTo: "Zone manager", singleLead: false, group: "team" },
-  { key: "support", label: "Support", zone: "all", reportsTo: "Event Floor Manager", singleLead: false, group: "team" },
+  { key: "bar_staff", label: "Bar Staff", zone: "bar", reportsTo: "Zone manager", singleLead: false, group: "team" },
+  { key: "support", label: "Support", zone: "support", reportsTo: "Event Floor Manager", singleLead: false, group: "team" },
   { key: "other", label: "Other", zone: "other", reportsTo: "Event Floor Manager", singleLead: false, group: "team" },
 ];
 const eventTaskStatuses = ["pending", "acknowledged", "done", "missed", "cancelled"];
@@ -272,6 +289,11 @@ const eventCommandZones = [
     managerRole: "headrunner",
     staffRoles: ["runner"],
   },
+  { key: "bar", label: "Bar", managerRole: "", staffRoles: ["bar_staff", "support", "other"] },
+  { key: "support", label: "Support", managerRole: "", staffRoles: ["support", "other"] },
+  { key: "backstage", label: "Backstage / Technical", managerRole: "", staffRoles: ["support", "other"] },
+  { key: "project_rooms", label: "Project Rooms", managerRole: "", staffRoles: ["support", "other"] },
+  { key: "other", label: "Other", managerRole: "", staffRoles: ["other", "support"] },
 ];
 const alertCategories = [
   "Stock empty",
@@ -962,7 +984,11 @@ function eventTaskMatchesUser(task, assignments, user) {
   if (task.assignedRoleKey && task.assignedRoleKey !== "all_event_staff") {
     return activeAssignments.some((assignment) => {
       if (!assignment.active || assignment.roleKey !== task.assignedRoleKey) return false;
-      return assignmentMatchesUser(assignment, user);
+      const taskZone = eventZoneForTask(task);
+      const assignmentZone = eventRoleEffectiveZone(assignment.roleKey, assignment.zone);
+      const zoneMatches =
+        taskZone === "all" || assignmentZone === "all" || assignmentZone === taskZone;
+      return zoneMatches && assignmentMatchesUser(assignment, user);
     });
   }
   const audience = task.metadata?.audience || (task.assignedRoleKey === "all_event_staff" ? "all_event_staff" : "");
@@ -1125,15 +1151,16 @@ function dedupeEventStaffPresence(presence = []) {
 }
 
 function eventRoleEffectiveZone(roleKey, zone = "") {
-  const requestedZone = String(zone || "").trim();
+  const requestedZone = String(zone || "").trim().toLowerCase();
+  const validZone = eventZones.includes(requestedZone) ? requestedZone : "";
   if (roleKey === "runner" || roleKey === "headrunner") return "runners";
   if (roleKey === "cornerbar_staff" || roleKey === "cornerbar_manager") return "cornerbar";
   if (roleKey === "atrium_staff" || roleKey === "atrium_manager") return "atrium";
   if (roleKey === "workbar_staff" || roleKey === "workbar_manager") return "workbar";
-  if (roleKey === "bar_staff") return "all";
-  if (roleKey === "support") return "support";
-  if (roleKey === "other") return "other";
-  return requestedZone || eventRoleOption(roleKey)?.zone || "all";
+  if (roleKey === "bar_staff") return validZone || "bar";
+  if (roleKey === "support") return validZone || "support";
+  if (roleKey === "other") return validZone || "other";
+  return validZone || eventRoleOption(roleKey)?.zone || "all";
 }
 
 function zoneDisplayLabel(zone = "") {
@@ -1143,8 +1170,11 @@ function zoneDisplayLabel(zone = "") {
     atrium: "Atrium",
     workbar: "Workbar",
     runners: "Runners",
+    bar: "Bar",
     support: "Support",
     other: "Other",
+    backstage: "Backstage / Technical",
+    project_rooms: "Project Rooms",
   };
   return labelMap[zone] || zone || "All";
 }
@@ -1180,13 +1210,18 @@ function eventRoleImportance(roleKey = "") {
 
 function eventRolesForPerson(person, assignments = []) {
   const personName = normalizedPersonName(person?.operatorName);
-  const authUserId = person?.authUserId || person?.backendUserId || person?.id || "";
+  const authUserId = person?.authUserId || person?.backendUserId || "";
   return assignments
     .filter((assignment) => {
       if (!assignment.active) return false;
-      if (assignment.assignedOperatorName)
-        return personName && normalizedPersonName(assignment.assignedOperatorName) === personName;
-      return Boolean(authUserId && assignment.assignedAuthUserId === authUserId);
+      if (assignment.assignedAuthUserId && authUserId)
+        return assignment.assignedAuthUserId === authUserId;
+      if (assignment.assignedAuthUserId) return false;
+      return Boolean(
+        personName &&
+        assignment.assignedOperatorName &&
+        normalizedPersonName(assignment.assignedOperatorName) === personName,
+      );
     })
     .sort((a, b) => eventRoleImportance(a.roleKey) - eventRoleImportance(b.roleKey));
 }
@@ -1213,6 +1248,11 @@ function zoneTaskDefaults(zoneKey = "all") {
     atrium: "atrium_manager",
     workbar: "workbar_manager",
     runners: "headrunner",
+    bar: "bar_staff",
+    support: "support",
+    backstage: "support",
+    project_rooms: "support",
+    other: "other",
   };
   return {
     zone,
@@ -1238,21 +1278,26 @@ function userIdentityNames(user) {
 function assignmentMatchesUser(assignment, user) {
   const authUserId = user?.authUserId || user?.backendUserId || user?.id || "";
   const names = userIdentityNames(user);
-  if (assignment.assignedOperatorName)
-    return names.includes(normalizedPersonName(assignment.assignedOperatorName));
-  return Boolean(assignment.assignedAuthUserId && authUserId && assignment.assignedAuthUserId === authUserId);
+  if (assignment.assignedAuthUserId && authUserId)
+    return assignment.assignedAuthUserId === authUserId;
+  if (assignment.assignedAuthUserId) return false;
+  return Boolean(
+    assignment.assignedOperatorName &&
+    names.includes(normalizedPersonName(assignment.assignedOperatorName)),
+  );
 }
 
 function assignmentMatchesPerson(assignment, roleKey, operatorName, authUserId = "") {
   if (!assignment.active || assignment.roleKey !== roleKey) return false;
+  if (assignment.assignedAuthUserId && authUserId)
+    return assignment.assignedAuthUserId === authUserId;
+  if (assignment.assignedAuthUserId || authUserId) return false;
   const normalizedOperatorName = normalizedPersonName(operatorName);
-  if (normalizedOperatorName) {
-    return (
-      assignment.assignedOperatorName &&
-      normalizedPersonName(assignment.assignedOperatorName) === normalizedOperatorName
-    );
-  }
-  return Boolean(authUserId && assignment.assignedAuthUserId && assignment.assignedAuthUserId === authUserId);
+  return Boolean(
+    normalizedOperatorName &&
+    assignment.assignedOperatorName &&
+    normalizedPersonName(assignment.assignedOperatorName) === normalizedOperatorName
+  );
 }
 
 function commandRoleAssignments(assignments, roleKey, zone = "") {
@@ -1301,7 +1346,7 @@ function commandZoneSummary(zoneConfig, assignments, tasks) {
         return true;
       if (!zoneConfig.staffRoles.includes(assignment.roleKey)) return false;
       const assignmentZone = eventRoleEffectiveZone(assignment.roleKey, assignment.zone);
-      return zoneConfig.key === "all" || assignmentZone === zoneConfig.key || assignmentZone === "all";
+      return assignmentZone === zoneConfig.key || (zoneConfig.key !== "all" && assignmentZone === "all");
     },
   );
   const zoneTasks = tasks.filter((task) => {
@@ -4960,7 +5005,7 @@ function EventCommandStructurePanel({
   )[0];
 
   return (
-    <section className="manager-list command-structure-panel">
+    <section id="event-command-structure" className="manager-list command-structure-panel">
       <h2>{compact ? "Event command structure" : "Command Structure"}</h2>
       <p className="muted">
         Event Floor Manager coordinates zone managers and Headrunner. Team roles can have multiple people.
@@ -5051,9 +5096,9 @@ function MyZoneCommandPanel({
               (item) =>
                 item.eventId === assignment.eventId &&
                 commandZone.staffRoles.includes(item.roleKey) &&
-                (commandZone.key === "all" ||
-                  eventRoleEffectiveZone(item.roleKey, item.zone) === commandZone.key ||
-                  eventRoleEffectiveZone(item.roleKey, item.zone) === "all"),
+                (eventRoleEffectiveZone(item.roleKey, item.zone) === commandZone.key ||
+                  (commandZone.key !== "all" &&
+                    eventRoleEffectiveZone(item.roleKey, item.zone) === "all")),
             )
           : [];
         const progress = commandZone
@@ -6409,7 +6454,37 @@ function smartPlanNeedsLongerPrep(plan) {
 
 function smartPlanWarningCount(plan) {
   return (plan?.warnings || plan?.setup?.warnings || []).length +
+    (plan?.setup?.staffingProposal?.warnings || []).length +
     (smartPlanNeedsLongerPrep(plan) ? 1 : 0);
+}
+
+function staffingAssignmentMatches(assignment, requirement, profile) {
+  return staffingAssignmentMatchesProfile(assignment, requirement, profile);
+}
+
+function staffingRequirementAssignments(requirement, assignments = []) {
+  return assignments.filter(
+    (assignment) =>
+      assignment.active &&
+      assignment.roleKey === requirement.roleKey &&
+      eventRoleEffectiveZone(assignment.roleKey, assignment.zone) === requirement.zoneKey,
+  );
+}
+
+function staffingRequirementOpenCount(requirement, assignments = []) {
+  return Math.max(
+    0,
+    Number(requirement.recommendedCount || 0) - staffingRequirementAssignments(requirement, assignments).length,
+  );
+}
+
+function staffingOverlapWarnings(proposal = {}, profiles = [], assignments = []) {
+  return analyzeStaffingAssignmentConflicts(
+    proposal,
+    profiles,
+    assignments,
+    staffingRoleOptions.filter((role) => role.singleLead).map((role) => role.key),
+  ).overrideWarnings;
 }
 
 function smartPlanStatusLabel(status = "") {
@@ -6423,8 +6498,11 @@ function SmartEventPlanPanel({
   eventAssignments,
   eventTasks,
   onCreateTask,
+  onAssignRole,
+  onRemoveRole,
   onRefreshEventOperations,
   reviewMode = false,
+  reviewFocus = "",
   onOpenReview,
   onCloseReview,
 }) {
@@ -6438,6 +6516,14 @@ function SmartEventPlanPanel({
   const [linkedCalendarEvents, setLinkedCalendarEvents] = useState([]);
   const [calendarSources, setCalendarSources] = useState([]);
   const [loadingCalendarContext, setLoadingCalendarContext] = useState(false);
+  const [calendarContextLoaded, setCalendarContextLoaded] = useState(false);
+  const [staffProfiles, setStaffProfiles] = useState([]);
+  const [staffProfileStatus, setStaffProfileStatus] = useState("");
+  const [staffSearch, setStaffSearch] = useState("");
+  const [expandedStaffing, setExpandedStaffing] = useState({});
+  const [showRegenerationOptions, setShowRegenerationOptions] = useState(false);
+  const [confirmStaffingOverlap, setConfirmStaffingOverlap] = useState(false);
+  const staffingSectionRef = useRef(null);
   const activePlan = plans[0] || null;
   const linkedResources = linkedCalendarEvents.filter(
     (calendarEvent) => calendarEvent.linkedEventOperationId === activeEvent?.id,
@@ -6449,6 +6535,20 @@ function SmartEventPlanPanel({
     ...(editor?.planItems || activePlan?.planItems || []).map((item) => item.rigRef).filter(Boolean),
   ]);
   const relevantRigGuides = eventRigGuides.filter((guide) => relevantRigIds.has(guide.id));
+
+  function derivedStaffingProposal(plan, generatedAt = "") {
+    if (!plan || !activeEvent) return null;
+    const proposal = plan.setup?.staffingProposal || suggestEventStaffing({
+      eventOperation: activeEvent,
+      linkedCalendarEvents: linkedResources,
+      linkedCalendarSources,
+      eventPlan: plan,
+      roleAssignments: eventAssignments,
+      existingTasks: eventTasks,
+      generatedAt,
+    });
+    return syncStaffingProposalAssignments(proposal, eventAssignments);
+  }
 
   function setEditorFromRecord(plan) {
     const nextEditor = editableEventPlan(plan, activeEvent);
@@ -6482,9 +6582,11 @@ function SmartEventPlanPanel({
       setLinkedCalendarEvents([]);
       setCalendarSources([]);
       setLoadingCalendarContext(false);
+      setCalendarContextLoaded(false);
       return;
     }
     setLoadingCalendarContext(true);
+    setCalendarContextLoaded(false);
     const from = activeEvent.startsAt
       ? addMinutesToDateTimeLocal(toDateTimeLocalValue(activeEvent.startsAt), -24 * 60)
       : toDateTimeLocalValue(new Date());
@@ -6516,6 +6618,7 @@ function SmartEventPlanPanel({
       });
     } finally {
       setLoadingCalendarContext(false);
+      setCalendarContextLoaded(true);
     }
   }
 
@@ -6528,7 +6631,78 @@ function SmartEventPlanPanel({
     loadCalendarContext();
   }, [activeEvent?.id, reviewMode]);
 
-  async function generateSuggestion() {
+  useEffect(() => {
+    if (!reviewMode || !calendarContextLoaded || !activeEvent?.id || !editor || editor.setup?.staffingProposal) return;
+    setEditor((current) => current
+      ? {
+          ...current,
+          setup: {
+            ...current.setup,
+            staffingProposal: derivedStaffingProposal(current),
+          },
+        }
+      : current);
+  }, [reviewMode, calendarContextLoaded, activeEvent?.id, linkedCalendarEvents, calendarSources, editor?.id]);
+
+  useEffect(() => {
+    if (!reviewMode || !isEventOpsManager(user)) return;
+    let cancelled = false;
+    setStaffProfileStatus("Loading available staff...");
+    fetchAssignableEventStaff().then((result) => {
+      if (cancelled) return;
+      if (!result.ok) {
+        setStaffProfiles([]);
+        setStaffProfileStatus(result.message || "Could not load available staff.");
+        return;
+      }
+      const organizationId = user?.organizationId || user?.organization_id || "";
+      const profiles = (result.profiles || []).filter((profile) =>
+        isAssignableStaffProfile(profile, organizationId),
+      );
+      setStaffProfiles(profiles);
+      setEditor((current) => current?.setup?.staffingProposal
+        ? {
+            ...current,
+            setup: {
+              ...current.setup,
+              staffingProposal: normalizeStaffingProposalAssignedAuthUserIds(
+                current.setup.staffingProposal,
+                profiles,
+              ),
+            },
+          }
+        : current);
+      setStaffProfileStatus(profiles.length ? "" : "No assignable staff profiles were found.");
+    });
+    return () => { cancelled = true; };
+  }, [reviewMode, activeEvent?.id, user?.id, user?.organizationId, user?.organization_id]);
+
+  const staffProfileIdentitySignature = staffProfiles
+    .map((profile) => `${profile.profileId}:${profile.authUserId}`)
+    .join("|");
+  useEffect(() => {
+    if (!editor?.setup?.staffingProposal || !staffProfiles.length) return;
+    setEditor((current) => current
+      ? {
+          ...current,
+          setup: {
+            ...current.setup,
+            staffingProposal: normalizeStaffingProposalAssignedAuthUserIds(
+              current.setup.staffingProposal,
+              staffProfiles,
+            ),
+          },
+        }
+      : current);
+  }, [editor?.id, staffProfileIdentitySignature]);
+
+  useEffect(() => {
+    if (reviewMode && reviewFocus === "staffing") {
+      window.requestAnimationFrame(() => staffingSectionRef.current?.scrollIntoView?.({ behavior: "smooth", block: "start" }));
+    }
+  }, [reviewMode, reviewFocus, editor?.id]);
+
+  async function generateSuggestion(staffingMergeMode = "merge") {
     if (!activeEvent?.id) {
       setPlanStatus({ type: "error", message: "Select an event board before generating a plan." });
       return;
@@ -6551,6 +6725,19 @@ function SmartEventPlanPanel({
         roleAssignments: eventAssignments,
         existingTasks: eventTasks,
       });
+      const suggestedStaffing = suggestEventStaffing({
+        eventOperation: activeEvent,
+        linkedCalendarEvents: linkedResources,
+        linkedCalendarSources,
+        eventPlan: suggestion,
+        roleAssignments: eventAssignments,
+        existingTasks: eventTasks,
+        generatedAt: new Date().toISOString(),
+      });
+      const previousPlan = currentPlansResult.records?.[0] || null;
+      const staffingProposal = previousPlan?.setup?.staffingProposal
+        ? mergeStaffingProposals(previousPlan.setup.staffingProposal, suggestedStaffing, staffingMergeMode)
+        : suggestedStaffing;
       const nextVersion =
         Math.max(0, ...(currentPlansResult.records || []).map((plan) => Number(plan.version) || 0)) + 1;
       const result = await createSuggestedEventPlan({
@@ -6563,7 +6750,7 @@ function SmartEventPlanPanel({
         detectedSignals: suggestion.detectedSignals,
         rationale: suggestion.rationale,
         warnings: suggestion.warnings,
-        setup: suggestion.setup,
+        setup: { ...suggestion.setup, staffingProposal },
         planItems: suggestion.planItems,
         guideRefs: suggestion.guideRefs,
         rigRefs: suggestion.rigRefs,
@@ -6592,6 +6779,7 @@ function SmartEventPlanPanel({
           : `Suggested plan was saved, but older drafts could not be superseded: ${supersedeResult.message || "Unknown error."}`,
       });
       onRefreshEventOperations?.("smart_event_plan_generated");
+      setShowRegenerationOptions(false);
     } catch (error) {
       setPlanStatus({ type: "error", message: error?.message || "Unexpected error while generating suggestion." });
     } finally {
@@ -6674,6 +6862,287 @@ function SmartEventPlanPanel({
       type: "success",
       message: "Suggested times recalculated for the operational window. Review the changes, then save the draft.",
     });
+  }
+
+  function updateStaffingRequirement(requirementId, patch) {
+    setEditor((current) => {
+      if (!current || current.status === "applied") return current;
+      const proposal = current.setup?.staffingProposal || derivedStaffingProposal(current);
+      return {
+        ...current,
+        setup: {
+          ...current.setup,
+          staffingProposal: {
+            ...proposal,
+            manuallyEdited: true,
+            requirements: (proposal?.requirements || []).map((item) =>
+              item.requirementId === requirementId
+                ? { ...item, ...patch, manuallyEdited: true }
+                : item,
+            ),
+          },
+        },
+      };
+    });
+    setConfirmStaffingOverlap(false);
+  }
+
+  function addStaffingRequirement() {
+    const proposal = editor?.setup?.staffingProposal || derivedStaffingProposal(editor);
+    const index = (proposal?.requirements || []).filter((item) => item.requirementId.startsWith("manual:")).length + 1;
+    const role = staffingRoleOptions.find((item) => item.key === "other");
+    const requirementId = `manual:${Date.now()}:${index}`;
+    setEditor((current) => ({
+      ...current,
+      setup: {
+        ...current.setup,
+        staffingProposal: {
+          ...proposal,
+          manuallyEdited: true,
+          requirements: [
+            ...(proposal?.requirements || []),
+            {
+              requirementId,
+              roleKey: role.key,
+              roleLabel: "Custom support role",
+              zoneKey: role.zone,
+              zoneLabel: zoneDisplayLabel(role.zone),
+              recommendedCount: 1,
+              minimumCount: 0,
+              preferredCount: 1,
+              required: false,
+              shiftStartsAt: displayedSetup.prepStartsAt || "",
+              shiftEndsAt: displayedSetup.closeEndsAt || "",
+              rationale: ["Added manually by Event Operations manager."],
+              confidence: 1,
+              sourceSignals: ["manual"],
+              linkedAssignmentIds: [],
+              assignedUserIds: [],
+              manuallyEdited: true,
+              included: true,
+            },
+          ],
+        },
+      },
+    }));
+    setExpandedStaffing((current) => ({ ...current, [requirementId]: true }));
+  }
+
+  function resetStaffingRecommendation() {
+    if (!editor || editor.status === "applied") return;
+    const suggested = suggestEventStaffing({
+      eventOperation: activeEvent,
+      linkedCalendarEvents: linkedResources,
+      linkedCalendarSources,
+      eventPlan: editor,
+      roleAssignments: eventAssignments,
+      existingTasks: eventTasks,
+      generatedAt: new Date().toISOString(),
+    });
+    setEditor((current) => ({
+      ...current,
+      setup: { ...current.setup, staffingProposal: suggested },
+    }));
+    setPlanStatus({ type: "pending", message: "Staffing recommendation reset. Save the draft to keep it." });
+  }
+
+  function toggleProfileForRequirement(requirement, profile) {
+    const selected = requirement.assignedUserIds || [];
+    const authUserId = staffingProfileAuthUserId(profile);
+    const displayName = staffingProfileDisplayName(profile);
+    const alreadySelected = selected.includes(authUserId);
+    const existing = eventAssignments.find((assignment) =>
+      staffingAssignmentMatches(assignment, requirement, profile),
+    );
+    if (!alreadySelected && existing) {
+      setPlanStatus({ type: "pending", message: `${displayName} is already assigned as ${requirement.roleLabel}. Existing assignment reused.` });
+    }
+    const singleLead = staffingRoleOptions.find((role) => role.key === requirement.roleKey)?.singleLead;
+    const selectedOtherAuthUserId = singleLead
+      ? selected.find((id) => id !== authUserId)
+      : "";
+    const occupiedLead = singleLead
+      ? eventAssignments.find(
+          (assignment) => assignment.active && assignment.roleKey === requirement.roleKey,
+        )
+      : null;
+    const replacingOccupiedLead = Boolean(
+      occupiedLead && !staffingAssignmentMatches(occupiedLead, requirement, profile),
+    );
+    if (!alreadySelected && (selectedOtherAuthUserId || replacingOccupiedLead)) {
+      const currentName = occupiedLead?.assignedOperatorName || "the currently selected person";
+      if (!window.confirm(
+        `${requirement.roleLabel} is a single-lead role. Replace ${currentName} with ${displayName}? The existing Event Command Structure assignment will only be deactivated when you apply staffing assignments.`,
+      )) return;
+    }
+    updateStaffingRequirement(requirement.requirementId, {
+      assignedUserIds: alreadySelected
+        ? selected.filter((id) => id !== authUserId)
+        : singleLead
+          ? [authUserId]
+          : [...new Set([...selected, authUserId])],
+      linkedAssignmentIds: existing
+        ? [...new Set([...(requirement.linkedAssignmentIds || []), existing.id])]
+        : (requirement.linkedAssignmentIds || []).filter((id) => id !== occupiedLead?.id),
+      replaceSingleLeadAssignment: !alreadySelected && replacingOccupiedLead,
+      replaceSingleLeadAssignmentId: !alreadySelected && replacingOccupiedLead
+        ? occupiedLead.id
+        : "",
+    });
+  }
+
+  async function removeOperationalStaffingAssignment(requirement, assignment) {
+    const name = assignment.assignedOperatorName || "this person";
+    if (!window.confirm(`Remove ${name} from the Smart Plan and Event Command Structure?`)) return;
+    setPlanStatus({ type: "pending", message: `Removing ${name}...` });
+    const result = await onRemoveRole?.(assignment.id);
+    if (!result?.ok) {
+      setPlanStatus({ type: "error", message: result?.message || "Role assignment could not be removed." });
+      return;
+    }
+    updateStaffingRequirement(requirement.requirementId, {
+      linkedAssignmentIds: (requirement.linkedAssignmentIds || []).filter((id) => id !== assignment.id),
+      assignedUserIds: (requirement.assignedUserIds || []).filter((id) => id !== assignment.assignedAuthUserId),
+    });
+    setPlanStatus({ type: "success", message: `${name} removed from the plan and Event Command Structure.` });
+    await onRefreshEventOperations?.("smart_staffing_assignment_removed");
+  }
+
+  async function applyStaffingAssignments() {
+    if (!editor?.id || editor.status === "applied") return;
+    const proposal = syncStaffingProposalAssignments(
+      editor.setup?.staffingProposal || derivedStaffingProposal(editor),
+      eventAssignments,
+    );
+    const overlapAnalysis = analyzeStaffingAssignmentConflicts(
+      proposal,
+      staffProfiles,
+      eventAssignments,
+      staffingRoleOptions.filter((role) => role.singleLead).map((role) => role.key),
+    );
+    const overlaps = overlapAnalysis.overrideWarnings;
+    if (overlaps.length && !confirmStaffingOverlap) {
+      setConfirmStaffingOverlap(true);
+      setPlanStatus({ type: "error", message: `${overlaps[0]} Review it, then choose Confirm staffing overlaps to continue.` });
+      return;
+    }
+    setLoadingPlan(true);
+    setPlanStatus({ type: "pending", message: "Saving staffing proposal before assignment..." });
+    let workingProposal = proposal;
+    let created = 0;
+    let reused = 0;
+    let skipped = 0;
+    let conflicts = 0;
+    let failed = 0;
+    const appliedAssignments = [...eventAssignments];
+    try {
+      const saved = await updateEventPlan(editor.id, {
+        status: "draft",
+        title: editor.title.trim(),
+        setup: { ...editor.setup, staffingProposal: workingProposal },
+        warnings: editor.warnings || [],
+        planItems: planItemsForStorage(editor.planItems),
+        guideRefs: editor.guideRefs,
+        rigRefs: editor.rigRefs,
+        version: editor.version || 1,
+      });
+      if (!saved.ok) {
+        setPlanStatus({ type: "error", message: saved.message || "Staffing proposal could not be saved." });
+        return;
+      }
+
+      for (const requirement of workingProposal.requirements.filter((item) => item.included !== false)) {
+        for (const userId of requirement.assignedUserIds || []) {
+          const profile = staffProfiles.find((item) => staffingProfileAuthUserId(item) === userId);
+          if (!profile) {
+            skipped += 1;
+            continue;
+          }
+          const role = eventRoleOption(requirement.roleKey);
+          if (!role || !eventZones.includes(requirement.zoneKey)) {
+            skipped += 1;
+            continue;
+          }
+          const effectiveRequirement = {
+            ...requirement,
+            zoneKey: eventRoleEffectiveZone(role.key, requirement.zoneKey),
+          };
+          const action = staffingAssignmentAction(
+            appliedAssignments,
+            effectiveRequirement,
+            profile,
+            role.singleLead,
+          );
+          if (action.action === "reuse") {
+            reused += 1;
+            requirement.linkedAssignmentIds = [...new Set([...(requirement.linkedAssignmentIds || []), action.assignment.id])];
+            continue;
+          }
+          if (
+            action.action === "conflict" &&
+            (
+              !requirement.replaceSingleLeadAssignment ||
+              requirement.replaceSingleLeadAssignmentId !== action.assignment.id
+            )
+          ) {
+            conflicts += 1;
+            continue;
+          }
+          const result = await onAssignRole?.({
+            eventId: activeEvent.id,
+            roleKey: requirement.roleKey,
+            roleLabel: requirement.roleLabel,
+            zone: effectiveRequirement.zoneKey,
+            assignedAuthUserId: staffingProfileAuthUserId(profile),
+            assignedOperatorName: staffingProfileDisplayName(profile),
+            assignedOperatorSource: "supabase_auth",
+            assignedByName: user.name,
+            notes: `Smart Plan staffing: ${requirement.requirementId}; ${formatOsloTimeRange(requirement.shiftStartsAt, requirement.shiftEndsAt)}`,
+            replaceSingleLead: action.action === "conflict" && requirement.replaceSingleLeadAssignment === true,
+            expectedCurrentAssignmentId: action.action === "conflict"
+              ? requirement.replaceSingleLeadAssignmentId
+              : "",
+          });
+          if (result?.ok && result.record?.id) {
+            created += 1;
+            appliedAssignments.push(result.record);
+            requirement.linkedAssignmentIds = [...new Set([...(requirement.linkedAssignmentIds || []), result.record.id])];
+          } else {
+            const message = String(result?.message || result?.error?.message || "").toLowerCase();
+            if (message.includes("single-lead") || message.includes("already assigned")) conflicts += 1;
+            else failed += 1;
+          }
+        }
+      }
+
+      const finalSave = await updateEventPlan(editor.id, {
+        status: "draft",
+        setup: { ...editor.setup, staffingProposal: workingProposal },
+        version: editor.version || 1,
+      });
+      if (finalSave.ok) {
+        setPlans((current) => [finalSave.record, ...current.filter((plan) => plan.id !== finalSave.record.id)]);
+        setEditorFromRecord(finalSave.record);
+      } else {
+        await onRefreshEventOperations?.("smart_staffing_assignments_applied_without_links");
+        setPlanStatus({
+          type: "error",
+          message: `${created} assignments were created, but their Smart Plan links could not be saved. Command Structure remains the operational source. ${finalSave.message || ""}`.trim(),
+        });
+        return;
+      }
+      await onRefreshEventOperations?.("smart_staffing_assignments_applied");
+      const stats = staffingProposalStats(workingProposal, appliedAssignments);
+      setPlanStatus({
+        type: failed || conflicts ? "error" : "success",
+        message: `${created} created, ${reused} reused, ${skipped} skipped, ${conflicts} conflict${conflicts === 1 ? "" : "s"}, ${failed} failed. ${stats.open} planned slot${stats.open === 1 ? "" : "s"} remain open.`,
+      });
+      setConfirmStaffingOverlap(false);
+    } catch (error) {
+      setPlanStatus({ type: "error", message: error?.message || "Unexpected staffing assignment error." });
+    } finally {
+      setLoadingPlan(false);
+    }
   }
 
   async function saveDraft() {
@@ -6892,6 +7361,14 @@ function SmartEventPlanPanel({
     ),
   ];
   const planReadOnly = displayedPlan?.status === "applied";
+  const displayedStaffingProposal = displayedPlan
+    ? syncStaffingProposalAssignments(
+        displayedPlan.setup?.staffingProposal || derivedStaffingProposal(displayedPlan),
+        eventAssignments,
+      )
+    : null;
+  const staffingStats = staffingProposalStats(displayedStaffingProposal || {}, eventAssignments);
+  const staffingOverlaps = staffingOverlapWarnings(displayedStaffingProposal || {}, staffProfiles, eventAssignments);
   const recommendedPrepMinutes = smartPlanNeedsLongerPrep(displayedPlan);
   const planStatusClass =
     planStatus.type === "error"
@@ -7102,6 +7579,236 @@ function SmartEventPlanPanel({
           ))}
         </section>
 
+        <section ref={staffingSectionRef} className="smart-plan-review-section smart-staffing-section">
+          <div className="smart-plan-section-title">
+            <div>
+              <h3>Staffing &amp; Zones</h3>
+              <p className="muted">Recommended staffing is a planning draft. Real people are assigned only when you apply staffing assignments.</p>
+            </div>
+            <button
+              type="button"
+              className="ghost-button compact-button"
+              onClick={() => {
+                onCloseReview?.();
+                window.setTimeout(() => document.getElementById("event-command-structure")?.scrollIntoView?.({ behavior: "smooth" }), 50);
+              }}
+            >
+              Open Command Structure
+            </button>
+          </div>
+
+          <div className="smart-staffing-summary">
+            <div><small>Recommended</small><strong>{staffingStats.recommended}</strong></div>
+            <div><small>Assigned</small><strong>{staffingStats.assigned}</strong></div>
+            <div><small>Open positions</small><strong>{staffingStats.open}</strong></div>
+            <div><small>Confidence</small><strong>{confidenceLabel(displayedStaffingProposal?.confidence || 0)}</strong></div>
+          </div>
+          <p className="muted">
+            Active zones: {(displayedStaffingProposal?.activeZones || []).length
+              ? displayedStaffingProposal.activeZones.map(zoneDisplayLabel).join(" · ")
+              : "No specific zones detected"}
+          </p>
+          {displayedStaffingProposal?.guestCount ? (
+            <p className="status-message">Staffing based on known guest count: {displayedStaffingProposal.guestCount}.</p>
+          ) : (
+            <p className="critical-warning">Staffing based on incomplete information. Venue capacity is not confirmed attendance.</p>
+          )}
+          {(displayedStaffingProposal?.warnings || []).map((warning) => <p key={warning} className="critical-warning">{warning}</p>)}
+          {staffingOverlaps.map((warning) => <p key={warning} className="critical-warning">{warning}</p>)}
+
+          <div className="backup-actions smart-staffing-actions">
+            <button type="button" className="primary-button compact-button" disabled={planReadOnly} onClick={() => {
+              setEditor((current) => ({
+                ...current,
+                setup: {
+                  ...current.setup,
+                  staffingProposal: {
+                    ...(current.setup?.staffingProposal || derivedStaffingProposal(current)),
+                    requirements: (current.setup?.staffingProposal?.requirements || derivedStaffingProposal(current)?.requirements || []).map((item) => ({ ...item, included: true })),
+                  },
+                },
+              }));
+              setPlanStatus({ type: "pending", message: "Suggested staffing included. Save the draft or assign people when ready." });
+            }}>
+              Use suggested staffing
+            </button>
+            <button type="button" className="ghost-button compact-button" disabled={planReadOnly} onClick={resetStaffingRecommendation}>
+              Reset to recommendation
+            </button>
+            <button type="button" className="ghost-button compact-button" disabled={planReadOnly} onClick={addStaffingRequirement}>
+              Add role/zone
+            </button>
+          </div>
+
+          <div className="smart-staffing-list">
+            {(displayedStaffingProposal?.requirements || []).map((requirement) => {
+              const assigned = staffingRequirementAssignments(requirement, eventAssignments);
+              const open = staffingRequirementOpenCount(requirement, eventAssignments);
+              const expanded = expandedStaffing[requirement.requirementId] === true;
+              const selectedIds = requirement.assignedUserIds || [];
+              const filteredProfiles = staffProfiles.filter((profile) => staffProfileMatchesSearch(profile, staffSearch));
+              return (
+                <article key={requirement.requirementId} className={`smart-staffing-requirement ${requirement.included === false ? "is-excluded" : ""}`}>
+                  <div className="smart-staffing-row">
+                    <div>
+                      <strong>{requirement.roleLabel}</strong>
+                      <small>
+                        {requirement.zoneLabel || zoneDisplayLabel(requirement.zoneKey)} · {requirement.recommendedCount} recommended · {assigned.length} assigned · {open} open
+                      </small>
+                      <small>{formatOsloTimeRange(requirement.shiftStartsAt, requirement.shiftEndsAt)}</small>
+                      {assigned.length < Number(requirement.minimumCount || 0) && (
+                        <small className="critical-text">Below minimum staffing by {Number(requirement.minimumCount || 0) - assigned.length}.</small>
+                      )}
+                      {assigned.length > Number(requirement.recommendedCount || 0) && (
+                        <small className="critical-text">Assigned headcount is above the recommendation.</small>
+                      )}
+                    </div>
+                    <div className="smart-staffing-row-actions">
+                      {!planReadOnly && (
+                        <div className="smart-staffing-stepper" aria-label={`${requirement.roleLabel} recommended count`}>
+                          <button type="button" onClick={() => updateStaffingRequirement(requirement.requirementId, {
+                            recommendedCount: Math.max(0, Number(requirement.recommendedCount || 0) - 1),
+                          })}>−</button>
+                          <span>{requirement.recommendedCount}</span>
+                          <button type="button" onClick={() => updateStaffingRequirement(requirement.requirementId, {
+                            recommendedCount: Number(requirement.recommendedCount || 0) + 1,
+                          })}>+</button>
+                        </div>
+                      )}
+                      <button type="button" className="ghost-button compact-button" onClick={() => setExpandedStaffing((current) => ({
+                        ...current,
+                        [requirement.requirementId]: !current[requirement.requirementId],
+                      }))}>
+                        {expanded ? "Close" : planReadOnly ? "View" : "Assign staff / Edit"}
+                      </button>
+                    </div>
+                  </div>
+
+                  {expanded && (
+                    <div className="smart-staffing-editor">
+                      <label className="toggle-row">
+                        <input type="checkbox" checked={requirement.included !== false} disabled={planReadOnly} onChange={(event) => updateStaffingRequirement(requirement.requirementId, { included: event.target.checked })} />
+                        Included in staffing plan
+                      </label>
+                      <label>
+                        Role
+                        <select disabled={planReadOnly} value={requirement.roleKey} onChange={(event) => {
+                          const role = staffingRoleOptions.find((item) => item.key === event.target.value);
+                          updateStaffingRequirement(requirement.requirementId, {
+                            roleKey: role.key,
+                            roleLabel: role.label,
+                            zoneKey: role.zone,
+                            zoneLabel: zoneDisplayLabel(role.zone),
+                          });
+                        }}>
+                          {staffingRoleOptions.map((role) => <option key={role.key} value={role.key}>{role.label}</option>)}
+                        </select>
+                      </label>
+                      <label>
+                        Display label
+                        <input disabled={planReadOnly} value={requirement.roleLabel} onChange={(event) => updateStaffingRequirement(requirement.requirementId, { roleLabel: event.target.value })} />
+                      </label>
+                      <label>
+                        Zone
+                        <select disabled={planReadOnly} value={requirement.zoneKey} onChange={(event) => updateStaffingRequirement(requirement.requirementId, {
+                          zoneKey: event.target.value,
+                          zoneLabel: zoneDisplayLabel(event.target.value),
+                        })}>
+                          {eventZones.map((zone) => <option key={zone} value={zone}>{zoneDisplayLabel(zone)}</option>)}
+                        </select>
+                      </label>
+                      <label>
+                        Recommended count
+                        <input type="number" min="0" max="50" disabled={planReadOnly} value={requirement.recommendedCount} onChange={(event) => updateStaffingRequirement(requirement.requirementId, { recommendedCount: Math.max(0, Number(event.target.value) || 0) })} />
+                      </label>
+                      <label>
+                        Minimum count
+                        <input type="number" min="0" max="50" disabled={planReadOnly} value={requirement.minimumCount} onChange={(event) => updateStaffingRequirement(requirement.requirementId, { minimumCount: Math.max(0, Number(event.target.value) || 0) })} />
+                      </label>
+                      <label>
+                        Shift starts (Oslo)
+                        <input type="datetime-local" disabled={planReadOnly} value={toOsloDateTimeLocalValue(requirement.shiftStartsAt)} onChange={(event) => updateStaffingRequirement(requirement.requirementId, { shiftStartsAt: fromOsloDateTimeLocalValue(event.target.value) })} />
+                      </label>
+                      <label>
+                        Shift ends (Oslo)
+                        <input type="datetime-local" disabled={planReadOnly} value={toOsloDateTimeLocalValue(requirement.shiftEndsAt)} onChange={(event) => updateStaffingRequirement(requirement.requirementId, { shiftEndsAt: fromOsloDateTimeLocalValue(event.target.value) })} />
+                      </label>
+                      <label className="toggle-row">
+                        <input type="checkbox" checked={requirement.required === true} disabled={planReadOnly} onChange={(event) => updateStaffingRequirement(requirement.requirementId, { required: event.target.checked })} />
+                        Required role
+                      </label>
+                      <label className="smart-plan-wide-field">
+                        Reason / notes
+                        <textarea rows="2" disabled={planReadOnly} value={(requirement.rationale || []).join(" ")} onChange={(event) => updateStaffingRequirement(requirement.requirementId, { rationale: [event.target.value] })} />
+                      </label>
+                      {requirement.manuallyEdited && <p className="status-message smart-plan-wide-field">Manually edited</p>}
+
+                      <div className="smart-staffing-people smart-plan-wide-field">
+                        <div className="smart-plan-section-title">
+                          <div>
+                            <strong>Assign people</strong>
+                            <p className="muted">{selectedIds.length} selected for this plan · proposed shift {formatOsloTimeRange(requirement.shiftStartsAt, requirement.shiftEndsAt)}</p>
+                          </div>
+                        </div>
+                        {!planReadOnly && <input type="search" placeholder="Search staff by name" value={staffSearch} onChange={(event) => setStaffSearch(event.target.value)} />}
+                        {staffProfileStatus && <p className="muted">{staffProfileStatus}</p>}
+                        {!planReadOnly && (
+                          <div className="smart-staffing-profile-list">
+                            {filteredProfiles.map((profile) => {
+                              const profileAuthUserId = staffingProfileAuthUserId(profile);
+                              const selected = selectedIds.includes(profileAuthUserId);
+                              const exactExisting = eventAssignments.some((assignment) => staffingAssignmentMatches(assignment, requirement, profile));
+                              return (
+                                <button key={profile.profileId || profileAuthUserId} type="button" className={selected ? "is-selected" : ""} onClick={() => toggleProfileForRequirement(requirement, profile)}>
+                                  <strong>{staffingProfileDisplayName(profile)}</strong>
+                                  {profile.email && <span>{profile.email}</span>}
+                                  <small>{exactExisting ? "Already in Command Structure" : selected ? "Selected" : "Available"}</small>
+                                </button>
+                              );
+                            })}
+                          </div>
+                        )}
+                        {assigned.length > 0 && (
+                          <div className="smart-staffing-current">
+                            <strong>Current Event Command Structure</strong>
+                            {assigned.map((assignment) => (
+                              <div key={assignment.id}>
+                                <span>{assignment.assignedOperatorName || "Assigned profile"}</span>
+                                {!planReadOnly && (
+                                  <div>
+                                    <button type="button" className="text-button" onClick={() => updateStaffingRequirement(requirement.requirementId, {
+                                      assignedUserIds: selectedIds.filter((id) => id !== assignment.assignedAuthUserId),
+                                      linkedAssignmentIds: (requirement.linkedAssignmentIds || []).filter((id) => id !== assignment.id),
+                                    })}>Remove from plan only</button>
+                                    <button type="button" className="text-button critical-text" onClick={() => removeOperationalStaffingAssignment(requirement, assignment)}>Remove plan and event assignment</button>
+                                  </div>
+                                )}
+                              </div>
+                            ))}
+                          </div>
+                        )}
+                      </div>
+
+                      {!planReadOnly && (
+                        <button type="button" className="text-button critical-text smart-plan-wide-field" onClick={() => updateStaffingRequirement(requirement.requirementId, { included: false, assignedUserIds: [] })}>
+                          Remove requirement from plan
+                        </button>
+                      )}
+                    </div>
+                  )}
+                </article>
+              );
+            })}
+          </div>
+
+          {!planReadOnly && (
+            <button type="button" className="primary-button smart-staffing-apply" disabled={loadingPlan} onClick={applyStaffingAssignments}>
+              {confirmStaffingOverlap ? "Confirm staffing overlaps" : "Apply staffing assignments"}
+            </button>
+          )}
+          {planReadOnly && <p className="muted">Applied staffing is read-only here. Use Command Structure for explicit amendments.</p>}
+        </section>
+
         {relevantRigGuides.length > 0 && (
           <section className="smart-plan-review-section">
             <h3>Rig references</h3>
@@ -7299,6 +8006,17 @@ function SmartEventPlanPanel({
                 <strong>{compactPlan ? `${includedStats.included}/${includedStats.total}` : "-"}</strong>
               </div>
               <div>
+                <small>Staffing</small>
+                <strong>{compactPlan ? `${staffingStats.recommended} recommended` : "-"}</strong>
+                <span>{compactPlan ? `${staffingStats.assigned} assigned · ${staffingStats.open} open` : ""}</span>
+              </div>
+              <div>
+                <small>Zones</small>
+                <strong>{displayedStaffingProposal?.activeZones?.length
+                  ? displayedStaffingProposal.activeZones.map(zoneDisplayLabel).join(" · ")
+                  : "-"}</strong>
+              </div>
+              <div>
                 <small>Warnings</small>
                 <strong>{compactPlan ? smartPlanWarningCount(compactPlan) : "-"}</strong>
               </div>
@@ -7318,8 +8036,13 @@ function SmartEventPlanPanel({
                 Review plan
               </button>
             )}
+            {compactPlan && compactPlan.status !== "dismissed" && compactPlan.status !== "applied" && (
+              <button type="button" className="ghost-button compact-button" onClick={() => onOpenReview?.("staffing")}>
+                Quick add staff
+              </button>
+            )}
             {compactPlan && (
-              <button type="button" className="ghost-button compact-button" onClick={generateSuggestion} disabled={loadingPlan || loadingCalendarContext}>
+              <button type="button" className="ghost-button compact-button" onClick={() => setShowRegenerationOptions(true)} disabled={loadingPlan || loadingCalendarContext}>
                 {compactPlan.status === "dismissed" ? "Generate new plan" : "Regenerate"}
               </button>
             )}
@@ -7331,6 +8054,15 @@ function SmartEventPlanPanel({
           </div>
           {planStatus.message && (
             <p className={planStatusClass}>{planStatus.message}</p>
+          )}
+          {showRegenerationOptions && (
+            <div className="smart-plan-regeneration">
+              <strong>Regenerate staffing safely</strong>
+              <p className="muted">Choose how the new recommendation should handle staffing work already in this plan.</p>
+              <button type="button" className="primary-button compact-button" onClick={() => generateSuggestion("merge")}>Merge new recommendation</button>
+              <button type="button" className="ghost-button compact-button" onClick={() => generateSuggestion("replace_unedited")}>Replace unedited suggestions</button>
+              <button type="button" className="text-button" onClick={() => setShowRegenerationOptions(false)}>Cancel</button>
+            </div>
           )}
         </>
       )}
@@ -7350,6 +8082,7 @@ function EventOperationsCorePanel({
   onUpdateEvent,
   onAddStaff,
   onAssignRole,
+  onRemoveRole,
   onCreateTask,
   onUpdateTaskStatus,
   taskActionStatus,
@@ -7392,6 +8125,7 @@ function EventOperationsCorePanel({
   const [taskCreating, setTaskCreating] = useState(false);
   const [showLiveEventMode, setShowLiveEventMode] = useState(false);
   const [showSmartPlanReview, setShowSmartPlanReview] = useState(false);
+  const [smartPlanReviewFocus, setSmartPlanReviewFocus] = useState("");
   const taskFormRef = useRef(null);
   const taskTitleInputRef = useRef(null);
   const taskFormDisabled = !activeEventIdValue || taskCreating;
@@ -7659,6 +8393,25 @@ function EventOperationsCorePanel({
       });
       return;
     }
+    const occupiedSingleLead = role.singleLead
+      ? eventAssignments.find(
+          (assignment) => assignment.active && assignment.roleKey === role.key,
+        )
+      : null;
+    const replacingSingleLead = Boolean(
+      occupiedSingleLead &&
+      normalizedPersonName(occupiedSingleLead.assignedOperatorName) !== normalizedPersonName(assignmentForm.staffName),
+    );
+    if (role.singleLead && occupiedSingleLead && !replacingSingleLead) {
+      setAssignmentStatus({
+        type: "success",
+        message: `${assignmentForm.staffName.trim()} is already assigned as ${role.label}. No change was needed.`,
+      });
+      return;
+    }
+    if (replacingSingleLead && !window.confirm(
+      `${role.label} is currently assigned to ${occupiedSingleLead.assignedOperatorName || "another person"}. Replace that assignment with ${assignmentForm.staffName.trim()}?`,
+    )) return;
     setAssignmentStatus({ type: "pending", message: "Assigning role..." });
     try {
       const result = await onAssignRole({
@@ -7669,6 +8422,8 @@ function EventOperationsCorePanel({
         assignedOperatorName: assignmentForm.staffName.trim(),
         assignedByName: user.name,
         notes: assignmentForm.notes.trim(),
+        replaceSingleLead: replacingSingleLead,
+        expectedCurrentAssignmentId: replacingSingleLead ? occupiedSingleLead.id : "",
       });
       const record = result?.record || result;
       if (!record?.id) {
@@ -7735,8 +8490,11 @@ function EventOperationsCorePanel({
         eventAssignments={eventAssignments}
         eventTasks={eventBoardTasks}
         onCreateTask={onCreateTask}
+        onAssignRole={onAssignRole}
+        onRemoveRole={onRemoveRole}
         onRefreshEventOperations={onRefreshEventOperations}
         reviewMode
+        reviewFocus={smartPlanReviewFocus}
         onCloseReview={() => setShowSmartPlanReview(false)}
       />
     );
@@ -7823,8 +8581,13 @@ function EventOperationsCorePanel({
         eventAssignments={eventAssignments}
         eventTasks={eventBoardTasks}
         onCreateTask={onCreateTask}
+        onAssignRole={onAssignRole}
+        onRemoveRole={onRemoveRole}
         onRefreshEventOperations={onRefreshEventOperations}
-        onOpenReview={() => setShowSmartPlanReview(true)}
+        onOpenReview={(focus = "") => {
+          setSmartPlanReviewFocus(focus);
+          setShowSmartPlanReview(true);
+        }}
       />
 
       {activeEvent && (
@@ -7991,7 +8754,7 @@ function EventOperationsCorePanel({
             </select>
             <small>
               {eventRoleOption(assignmentForm.roleKey)?.singleLead
-                ? "Single-lead role: assigning a new person replaces the active lead for this event."
+                ? "Single-lead role: replacing the active lead requires confirmation."
                 : "Team role: multiple people can be assigned."}
             </small>
           </label>
@@ -8315,6 +9078,7 @@ function EventFloorDashboard({
   onUpdateEventOperation,
   onAddEventStaffPresence,
   onAssignEventRole,
+  onRemoveEventRole,
   onCreateEventOperationTask,
   onUpdateEventOperationTaskStatus,
   eventTaskActionStatus,
@@ -8470,6 +9234,7 @@ function EventFloorDashboard({
         onUpdateEvent={onUpdateEventOperation}
         onAddStaff={onAddEventStaffPresence}
         onAssignRole={onAssignEventRole}
+        onRemoveRole={onRemoveEventRole}
         onCreateTask={onCreateEventOperationTask}
         onUpdateTaskStatus={onUpdateEventOperationTaskStatus}
         taskActionStatus={eventTaskActionStatus}
@@ -19426,6 +20191,26 @@ function App() {
     };
   }
 
+  async function removeEventRoleAssignment(assignmentId) {
+    if (!(await requestWriteAccess()))
+      return { ok: false, message: "Location guard is blocking role assignment changes." };
+    const result = await deactivateEventRoleAssignment(assignmentId);
+    if (result.ok && result.record) {
+      setEventRoleAssignments((current) =>
+        current.map((assignment) =>
+          assignment.id === result.record.id ? { ...assignment, active: false } : assignment,
+        ),
+      );
+      refreshEventOperationsLive("event_role_deactivated");
+      return { ok: true, record: result.record, message: "Role assignment removed." };
+    }
+    return {
+      ok: false,
+      message: result.message || result.error?.message || "Role assignment could not be removed.",
+      error: result.error,
+    };
+  }
+
   async function saveEventOperationTask(payload) {
     if (
       !(await requestWriteAccess(
@@ -19795,6 +20580,7 @@ function App() {
             onUpdateEventOperation={saveEventOperationUpdate}
             onAddEventStaffPresence={saveManualEventStaff}
             onAssignEventRole={saveEventRoleAssignment}
+            onRemoveEventRole={removeEventRoleAssignment}
             onCreateEventOperationTask={saveEventOperationTask}
             onUpdateEventOperationTaskStatus={handleEventTaskStatusUpdate}
             eventTaskActionStatus={eventTaskActionStatus}
@@ -19854,6 +20640,7 @@ function App() {
             onUpdateEventOperation={saveEventOperationUpdate}
             onAddEventStaffPresence={saveManualEventStaff}
             onAssignEventRole={saveEventRoleAssignment}
+            onRemoveEventRole={removeEventRoleAssignment}
             onCreateEventOperationTask={saveEventOperationTask}
             onUpdateEventOperationTaskStatus={handleEventTaskStatusUpdate}
             eventTaskActionStatus={eventTaskActionStatus}

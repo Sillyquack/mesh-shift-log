@@ -2033,7 +2033,8 @@ textarea {
 
 .smart-plan-compact-grid small,
 .smart-plan-review-summary small,
-.smart-plan-review-summary span {
+.smart-plan-review-summary span,
+.smart-plan-compact-grid span {
   display: block;
   color: var(--muted);
   font-size: 0.74rem;
@@ -2279,6 +2280,207 @@ textarea {
   padding-top: 14px;
 }
 
+.smart-plan-regeneration {
+  display: grid;
+  gap: 9px;
+  border-left: 4px solid var(--important);
+  background: var(--surface-strong);
+  padding: 12px;
+}
+
+.smart-staffing-section {
+  scroll-margin-top: 90px;
+}
+
+.smart-staffing-summary {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: 1px;
+  overflow: hidden;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  background: var(--line);
+}
+
+.smart-staffing-summary > div {
+  min-width: 0;
+  background: var(--surface);
+  padding: 10px;
+}
+
+.smart-staffing-summary small,
+.smart-staffing-summary strong {
+  display: block;
+  overflow-wrap: anywhere;
+}
+
+.smart-staffing-summary small {
+  color: var(--muted);
+  font-size: 0.72rem;
+  font-weight: 800;
+}
+
+.smart-staffing-list {
+  display: grid;
+  gap: 8px;
+}
+
+.smart-staffing-requirement {
+  min-width: 0;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  background: var(--surface);
+  padding: 11px;
+}
+
+.smart-staffing-requirement.is-excluded {
+  opacity: 0.58;
+}
+
+.smart-staffing-row,
+.smart-staffing-row-actions,
+.smart-staffing-stepper,
+.smart-staffing-current > div {
+  display: flex;
+  align-items: center;
+  gap: 9px;
+}
+
+.smart-staffing-row {
+  justify-content: space-between;
+  flex-wrap: wrap;
+}
+
+.smart-staffing-row > div:first-child {
+  display: grid;
+  min-width: min(100%, 230px);
+  flex: 1 1 250px;
+  gap: 3px;
+}
+
+.smart-staffing-row small {
+  color: var(--muted);
+  font-size: 0.78rem;
+  font-weight: 750;
+  overflow-wrap: anywhere;
+}
+
+.smart-staffing-row-actions {
+  flex-wrap: wrap;
+}
+
+.smart-staffing-stepper {
+  min-height: 40px;
+  border: 1px solid var(--line);
+  border-radius: 7px;
+  overflow: hidden;
+}
+
+.smart-staffing-stepper button {
+  width: 40px;
+  min-height: 40px;
+  border: 0;
+  background: var(--surface-strong);
+  color: var(--text);
+  font-size: 1.15rem;
+  cursor: pointer;
+}
+
+.smart-staffing-stepper span {
+  min-width: 24px;
+  text-align: center;
+  font-weight: 900;
+}
+
+.smart-staffing-editor {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 10px;
+  margin-top: 12px;
+  border-top: 1px solid var(--line);
+  padding-top: 12px;
+}
+
+.smart-staffing-editor .toggle-row {
+  display: flex;
+  min-height: 42px;
+  flex-direction: row;
+  align-items: center;
+  gap: 9px;
+}
+
+.smart-staffing-editor .toggle-row input {
+  width: 20px;
+  min-height: 20px;
+  margin: 0;
+}
+
+.smart-staffing-people,
+.smart-staffing-current {
+  display: grid;
+  gap: 9px;
+}
+
+.smart-staffing-profile-list {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 7px;
+  max-height: 280px;
+  overflow: auto;
+}
+
+.smart-staffing-profile-list button {
+  display: grid;
+  min-width: 0;
+  min-height: 52px;
+  gap: 3px;
+  border: 1px solid var(--line);
+  border-radius: 7px;
+  background: var(--surface);
+  color: var(--text);
+  padding: 9px;
+  text-align: left;
+  cursor: pointer;
+}
+
+.smart-staffing-profile-list button.is-selected {
+  border-color: var(--brand);
+  background: color-mix(in srgb, var(--brand) 10%, var(--surface));
+}
+
+.smart-staffing-profile-list strong,
+.smart-staffing-profile-list span,
+.smart-staffing-profile-list small {
+  overflow-wrap: anywhere;
+}
+
+.smart-staffing-profile-list span,
+.smart-staffing-profile-list small {
+  color: var(--muted);
+  font-size: 0.76rem;
+}
+
+.smart-staffing-current > div {
+  justify-content: space-between;
+  flex-wrap: wrap;
+  border-top: 1px solid var(--line);
+  padding-top: 7px;
+}
+
+.smart-staffing-current > div > div {
+  display: flex;
+  gap: 10px;
+  flex-wrap: wrap;
+}
+
+.smart-staffing-apply {
+  width: 100%;
+}
+
+.critical-text {
+  color: var(--critical);
+}
+
 .date-chips button,
 .file-button {
   display: inline-grid;
@@ -2513,7 +2715,9 @@ textarea {
 
   .smart-plan-window-grid,
   .smart-plan-rig-list,
-  .smart-plan-item-editor {
+  .smart-plan-item-editor,
+  .smart-staffing-editor,
+  .smart-staffing-profile-list {
     grid-template-columns: 1fr;
   }
 
@@ -2523,6 +2727,19 @@ textarea {
 
   .smart-plan-wide-field {
     grid-column: auto;
+  }
+
+  .smart-staffing-summary {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+
+  .smart-staffing-row-actions,
+  .smart-staffing-row-actions > .compact-button {
+    width: 100%;
+  }
+
+  .smart-staffing-row-actions > .compact-button {
+    flex: 1;
   }
 
   .smart-plan-item-row {
