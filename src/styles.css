@@ -1984,6 +1984,503 @@ textarea {
   flex-wrap: wrap;
 }
 
+.smart-plan-compact {
+  border-color: color-mix(in srgb, var(--brand) 48%, var(--line));
+  background: color-mix(in srgb, var(--brand) 6%, var(--surface));
+}
+
+.smart-plan-compact-body,
+.smart-plan-review-view,
+.smart-plan-review-section,
+.smart-plan-item-list {
+  display: grid;
+  gap: 12px;
+}
+
+.smart-plan-compact-title {
+  display: grid;
+  gap: 3px;
+}
+
+.smart-plan-compact-title strong {
+  font-size: 1.05rem;
+}
+
+.smart-plan-compact-title span,
+.smart-plan-linked-resources {
+  color: var(--muted);
+  font-size: 0.82rem;
+  font-weight: 750;
+}
+
+.smart-plan-compact-grid,
+.smart-plan-review-summary {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 1px;
+  overflow: hidden;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  background: var(--line);
+}
+
+.smart-plan-compact-grid > div,
+.smart-plan-review-summary > div {
+  min-width: 0;
+  background: var(--surface);
+  padding: 10px;
+}
+
+.smart-plan-compact-grid small,
+.smart-plan-review-summary small,
+.smart-plan-review-summary span,
+.smart-plan-compact-grid span {
+  display: block;
+  color: var(--muted);
+  font-size: 0.74rem;
+  font-weight: 800;
+  overflow-wrap: anywhere;
+}
+
+.smart-plan-compact-grid strong,
+.smart-plan-review-summary strong {
+  display: block;
+  margin-top: 3px;
+  overflow-wrap: anywhere;
+}
+
+.smart-plan-compact-actions > *,
+.smart-plan-bottom-actions > * {
+  flex: 1 1 140px;
+}
+
+.event-operations-primary-actions {
+  margin: -6px 0 16px;
+}
+
+.event-board-create-details > summary {
+  cursor: pointer;
+  color: var(--text);
+  font-weight: 850;
+}
+
+.event-board-create-details[open] > summary {
+  margin-bottom: 14px;
+}
+
+.smart-plan-review-view {
+  padding-bottom: 24px;
+}
+
+.smart-plan-back {
+  width: max-content;
+  max-width: 100%;
+}
+
+.smart-plan-review-summary {
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+}
+
+.smart-plan-review-summary strong {
+  font-size: 0.94rem;
+}
+
+.smart-plan-sticky-actions {
+  position: sticky;
+  top: 72px;
+  z-index: 7;
+  display: flex;
+  gap: 8px;
+  flex-wrap: wrap;
+  margin-inline: -8px;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  background: color-mix(in srgb, var(--surface) 94%, transparent);
+  box-shadow: 0 8px 18px rgba(22, 32, 29, 0.12);
+  padding: 8px;
+  backdrop-filter: blur(12px);
+}
+
+.smart-plan-sticky-actions > * {
+  flex: 1 1 150px;
+}
+
+.smart-plan-title-field {
+  margin-top: 2px;
+}
+
+.smart-plan-review-section {
+  border-top: 1px solid var(--line);
+  padding-top: 14px;
+}
+
+.smart-plan-review-section h3,
+.smart-plan-phase h3 {
+  margin: 0;
+  font-size: 0.96rem;
+}
+
+.smart-plan-section-title,
+.smart-plan-phase-header {
+  display: flex;
+  min-width: 0;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 10px;
+  flex-wrap: wrap;
+}
+
+.smart-plan-section-title p {
+  margin: 4px 0 0;
+}
+
+.smart-plan-window-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 10px;
+}
+
+.smart-plan-window-grid label {
+  align-content: start;
+}
+
+.smart-plan-window-line {
+  margin: 0;
+  color: var(--text);
+  font-size: 0.88rem;
+  font-weight: 850;
+}
+
+.smart-plan-recommendation {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  flex-wrap: wrap;
+  border-left: 4px solid var(--important);
+  background: color-mix(in srgb, var(--important) 8%, var(--surface));
+  padding: 10px 12px;
+}
+
+.smart-plan-recommendation p {
+  flex: 1 1 280px;
+  margin: 0;
+  font-size: 0.86rem;
+  font-weight: 800;
+}
+
+.smart-plan-rig-list {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 8px;
+}
+
+.smart-plan-rig-list .log-row {
+  margin: 0;
+}
+
+.smart-plan-phase {
+  border-top: 1px solid var(--line);
+  padding-top: 12px;
+}
+
+.smart-plan-phase-toggle {
+  display: grid;
+  min-width: min(100%, 230px);
+  gap: 3px;
+  border: 0;
+  background: transparent;
+  color: var(--text);
+  padding: 0;
+  text-align: left;
+  cursor: pointer;
+}
+
+.smart-plan-phase-toggle span {
+  color: var(--muted);
+  font-size: 0.78rem;
+  font-weight: 800;
+}
+
+.smart-plan-phase-actions {
+  display: flex;
+  gap: 12px;
+  flex-wrap: wrap;
+}
+
+.smart-plan-item-list {
+  margin-top: 10px;
+  gap: 0;
+  border-top: 1px solid var(--line);
+}
+
+.smart-plan-item {
+  min-width: 0;
+  border-bottom: 1px solid var(--line);
+  padding: 10px 0;
+}
+
+.smart-plan-item.is-excluded {
+  opacity: 0.58;
+}
+
+.smart-plan-item-row {
+  display: grid;
+  grid-template-columns: 24px minmax(0, 1fr) auto;
+  align-items: center;
+  gap: 10px;
+  min-width: 0;
+}
+
+.smart-plan-item-check {
+  display: block;
+}
+
+.smart-plan-item-check input {
+  width: 20px;
+  min-height: 20px;
+  margin: 0;
+  accent-color: var(--brand);
+}
+
+.smart-plan-item-summary {
+  min-width: 0;
+}
+
+.smart-plan-item-summary strong,
+.smart-plan-item-summary small {
+  display: block;
+  overflow-wrap: anywhere;
+}
+
+.smart-plan-item-summary small {
+  margin-top: 4px;
+  color: var(--muted);
+  font-size: 0.78rem;
+  font-weight: 750;
+}
+
+.smart-plan-item-editor {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 10px;
+  margin: 10px 0 2px 34px;
+  border-left: 3px solid color-mix(in srgb, var(--brand) 35%, var(--line));
+  background: var(--surface-strong);
+  padding: 12px;
+}
+
+.smart-plan-wide-field {
+  grid-column: 1 / -1;
+}
+
+.smart-plan-bottom-actions {
+  margin-top: 8px;
+  border-top: 1px solid var(--line);
+  padding-top: 14px;
+}
+
+.smart-plan-regeneration {
+  display: grid;
+  gap: 9px;
+  border-left: 4px solid var(--important);
+  background: var(--surface-strong);
+  padding: 12px;
+}
+
+.smart-staffing-section {
+  scroll-margin-top: 90px;
+}
+
+.smart-staffing-summary {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: 1px;
+  overflow: hidden;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  background: var(--line);
+}
+
+.smart-staffing-summary > div {
+  min-width: 0;
+  background: var(--surface);
+  padding: 10px;
+}
+
+.smart-staffing-summary small,
+.smart-staffing-summary strong {
+  display: block;
+  overflow-wrap: anywhere;
+}
+
+.smart-staffing-summary small {
+  color: var(--muted);
+  font-size: 0.72rem;
+  font-weight: 800;
+}
+
+.smart-staffing-list {
+  display: grid;
+  gap: 8px;
+}
+
+.smart-staffing-requirement {
+  min-width: 0;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  background: var(--surface);
+  padding: 11px;
+}
+
+.smart-staffing-requirement.is-excluded {
+  opacity: 0.58;
+}
+
+.smart-staffing-row,
+.smart-staffing-row-actions,
+.smart-staffing-stepper,
+.smart-staffing-current > div {
+  display: flex;
+  align-items: center;
+  gap: 9px;
+}
+
+.smart-staffing-row {
+  justify-content: space-between;
+  flex-wrap: wrap;
+}
+
+.smart-staffing-row > div:first-child {
+  display: grid;
+  min-width: min(100%, 230px);
+  flex: 1 1 250px;
+  gap: 3px;
+}
+
+.smart-staffing-row small {
+  color: var(--muted);
+  font-size: 0.78rem;
+  font-weight: 750;
+  overflow-wrap: anywhere;
+}
+
+.smart-staffing-row-actions {
+  flex-wrap: wrap;
+}
+
+.smart-staffing-stepper {
+  min-height: 40px;
+  border: 1px solid var(--line);
+  border-radius: 7px;
+  overflow: hidden;
+}
+
+.smart-staffing-stepper button {
+  width: 40px;
+  min-height: 40px;
+  border: 0;
+  background: var(--surface-strong);
+  color: var(--text);
+  font-size: 1.15rem;
+  cursor: pointer;
+}
+
+.smart-staffing-stepper span {
+  min-width: 24px;
+  text-align: center;
+  font-weight: 900;
+}
+
+.smart-staffing-editor {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 10px;
+  margin-top: 12px;
+  border-top: 1px solid var(--line);
+  padding-top: 12px;
+}
+
+.smart-staffing-editor .toggle-row {
+  display: flex;
+  min-height: 42px;
+  flex-direction: row;
+  align-items: center;
+  gap: 9px;
+}
+
+.smart-staffing-editor .toggle-row input {
+  width: 20px;
+  min-height: 20px;
+  margin: 0;
+}
+
+.smart-staffing-people,
+.smart-staffing-current {
+  display: grid;
+  gap: 9px;
+}
+
+.smart-staffing-profile-list {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 7px;
+  max-height: 280px;
+  overflow: auto;
+}
+
+.smart-staffing-profile-list button {
+  display: grid;
+  min-width: 0;
+  min-height: 52px;
+  gap: 3px;
+  border: 1px solid var(--line);
+  border-radius: 7px;
+  background: var(--surface);
+  color: var(--text);
+  padding: 9px;
+  text-align: left;
+  cursor: pointer;
+}
+
+.smart-staffing-profile-list button.is-selected {
+  border-color: var(--brand);
+  background: color-mix(in srgb, var(--brand) 10%, var(--surface));
+}
+
+.smart-staffing-profile-list strong,
+.smart-staffing-profile-list span,
+.smart-staffing-profile-list small {
+  overflow-wrap: anywhere;
+}
+
+.smart-staffing-profile-list span,
+.smart-staffing-profile-list small {
+  color: var(--muted);
+  font-size: 0.76rem;
+}
+
+.smart-staffing-current > div {
+  justify-content: space-between;
+  flex-wrap: wrap;
+  border-top: 1px solid var(--line);
+  padding-top: 7px;
+}
+
+.smart-staffing-current > div > div {
+  display: flex;
+  gap: 10px;
+  flex-wrap: wrap;
+}
+
+.smart-staffing-apply {
+  width: 100%;
+}
+
+.critical-text {
+  color: var(--critical);
+}
+
 .date-chips button,
 .file-button {
   display: inline-grid;
@@ -2188,6 +2685,298 @@ textarea {
   }
 }
 
+/* Event Operations Cockpit */
+.cockpit-summary-card,
+.event-cockpit-view,
+.cockpit-section,
+.cockpit-grid > section,
+.cockpit-completion {
+  min-width: 0;
+}
+
+.cockpit-summary-card {
+  display: grid;
+  gap: 14px;
+}
+
+.cockpit-summary-grid,
+.cockpit-live-strip,
+.cockpit-metrics {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: 8px;
+}
+
+.cockpit-summary-grid > div,
+.cockpit-live-strip article,
+.cockpit-metrics span {
+  display: grid;
+  align-content: start;
+  gap: 4px;
+  min-height: 76px;
+  padding: 12px;
+  border: 1px solid var(--line);
+  border-radius: 6px;
+  background: var(--surface-strong);
+}
+
+.cockpit-summary-grid small,
+.cockpit-live-strip small,
+.cockpit-metrics span {
+  color: var(--muted);
+}
+
+.cockpit-summary-grid strong,
+.cockpit-live-strip strong {
+  overflow-wrap: anywhere;
+}
+
+.event-cockpit-view {
+  display: grid;
+  gap: 16px;
+}
+
+.cockpit-header {
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr) auto;
+  gap: 14px;
+  align-items: start;
+}
+
+.cockpit-header h2,
+.cockpit-section h3,
+.cockpit-section h4 {
+  margin: 0;
+}
+
+.cockpit-header span,
+.timeline-row span,
+.timeline-row small,
+.live-update-row span,
+.live-update-row small,
+.zone-readiness-card span,
+.zone-readiness-card small {
+  display: block;
+  color: var(--muted);
+}
+
+.cockpit-live-strip {
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+}
+
+.cockpit-live-strip article {
+  min-height: 94px;
+  border-top: 4px solid var(--brand);
+}
+
+.cockpit-live-strip article.is-risk {
+  border-top-color: var(--critical);
+  background: color-mix(in srgb, var(--critical) 8%, var(--surface));
+}
+
+.cockpit-tabs {
+  display: flex;
+  gap: 4px;
+  max-width: 100%;
+  padding: 4px;
+  overflow-x: auto;
+  border: 1px solid var(--line);
+  border-radius: 6px;
+  background: var(--surface-strong);
+  scrollbar-width: thin;
+}
+
+.cockpit-tabs button {
+  flex: 0 0 auto;
+  min-height: 40px;
+  padding: 8px 12px;
+  border: 0;
+  border-radius: 4px;
+  background: transparent;
+  color: var(--muted);
+  white-space: nowrap;
+}
+
+.cockpit-tabs button.is-active {
+  background: var(--surface);
+  color: var(--text);
+  box-shadow: 0 1px 4px rgba(22, 32, 29, 0.12);
+}
+
+.cockpit-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 12px;
+}
+
+.cockpit-grid > section,
+.cockpit-section,
+.cockpit-completion {
+  padding: 16px;
+  border: 1px solid var(--line);
+  border-radius: 6px;
+  background: var(--surface);
+}
+
+.cockpit-section {
+  display: grid;
+  gap: 12px;
+}
+
+.timeline-row,
+.live-update-row,
+.readiness-check,
+.zone-readiness-card {
+  display: grid;
+  gap: 12px;
+  padding: 12px 0;
+  border-bottom: 1px solid var(--line);
+}
+
+.timeline-row {
+  grid-template-columns: 62px minmax(0, 1fr);
+}
+
+.timeline-row time {
+  font-weight: 800;
+  color: var(--brand-strong);
+}
+
+.timeline-row.status-overdue,
+.live-update-row.priority-critical {
+  border-left: 4px solid var(--critical);
+  padding-left: 12px;
+}
+
+.readiness-check,
+.live-update-row {
+  grid-template-columns: minmax(0, 1fr) minmax(180px, 0.4fr);
+}
+
+.readiness-check.status-pass {
+  border-left: 4px solid var(--brand);
+  padding-left: 12px;
+}
+
+.readiness-check.status-warning {
+  border-left: 4px solid var(--important);
+  padding-left: 12px;
+}
+
+.readiness-check.status-blocker {
+  border-left: 4px solid var(--critical);
+  padding-left: 12px;
+}
+
+.cockpit-update-form,
+.cockpit-handover-form {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 12px;
+  padding: 14px;
+  border: 1px solid var(--line);
+  border-radius: 6px;
+  background: var(--surface-strong);
+}
+
+.cockpit-update-form label,
+.cockpit-handover-form label {
+  display: grid;
+  gap: 6px;
+  min-width: 0;
+}
+
+.cockpit-update-form textarea,
+.cockpit-handover-form textarea,
+.cockpit-update-form .backup-actions,
+.cockpit-handover-form .backup-actions {
+  grid-column: 1 / -1;
+}
+
+.cockpit-metrics {
+  grid-template-columns: repeat(5, minmax(0, 1fr));
+}
+
+.cockpit-metrics span {
+  min-height: 68px;
+}
+
+.cockpit-metrics strong {
+  color: var(--text);
+  font-size: 1.2rem;
+}
+
+.risk-group {
+  display: grid;
+  gap: 8px;
+}
+
+.cockpit-completion {
+  border-color: color-mix(in srgb, var(--important) 40%, var(--line));
+}
+
+@media (max-width: 720px) {
+  .cockpit-summary-grid,
+  .cockpit-metrics {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+
+  .cockpit-header {
+    grid-template-columns: 1fr;
+  }
+
+  .cockpit-header > button {
+    justify-self: stretch;
+  }
+
+  .cockpit-live-strip,
+  .cockpit-grid,
+  .cockpit-update-form,
+  .cockpit-handover-form,
+  .readiness-check,
+  .live-update-row {
+    grid-template-columns: 1fr;
+  }
+
+  .cockpit-update-form textarea,
+  .cockpit-handover-form textarea,
+  .cockpit-update-form .backup-actions,
+  .cockpit-handover-form .backup-actions {
+    grid-column: auto;
+  }
+
+  .event-cockpit-view {
+    padding-inline: 12px;
+  }
+}
+
+@media print {
+  .no-print,
+  .top-bar,
+  .page-status,
+  .event-task-sticky-alert {
+    display: none !important;
+  }
+
+  body,
+  .event-cockpit-view,
+  .cockpit-section {
+    background: #fff !important;
+    color: #111 !important;
+    box-shadow: none !important;
+  }
+
+  .event-cockpit-view > :not(.event-brief-print) {
+    display: none !important;
+  }
+
+  .event-brief-print {
+    display: block !important;
+    border: 0;
+    padding: 0;
+  }
+}
+
 @media (max-width: 390px) {
   .alert-header {
     grid-template-columns: 1fr;
@@ -2199,5 +2988,70 @@ textarea {
 
   .top-actions {
     max-width: 160px;
+  }
+}
+
+@media (max-width: 600px) {
+  .smart-plan-review-summary {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+
+  .smart-plan-sticky-actions {
+    top: 82px;
+  }
+
+  .smart-plan-section-title,
+  .smart-plan-phase-header {
+    display: grid;
+  }
+
+  .smart-plan-window-grid,
+  .smart-plan-rig-list,
+  .smart-plan-item-editor,
+  .smart-staffing-editor,
+  .smart-staffing-profile-list {
+    grid-template-columns: 1fr;
+  }
+
+  .smart-plan-item-editor {
+    margin-left: 0;
+  }
+
+  .smart-plan-wide-field {
+    grid-column: auto;
+  }
+
+  .smart-staffing-summary {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+
+  .smart-staffing-row-actions,
+  .smart-staffing-row-actions > .compact-button {
+    width: 100%;
+  }
+
+  .smart-staffing-row-actions > .compact-button {
+    flex: 1;
+  }
+
+  .smart-plan-item-row {
+    grid-template-columns: 24px minmax(0, 1fr);
+  }
+
+  .smart-plan-item-row > .compact-button {
+    grid-column: 2;
+    justify-self: start;
+  }
+
+  .smart-plan-compact-actions,
+  .smart-plan-sticky-actions,
+  .smart-plan-bottom-actions {
+    align-items: stretch;
+  }
+
+  .smart-plan-compact-actions > *,
+  .smart-plan-sticky-actions > *,
+  .smart-plan-bottom-actions > * {
+    flex: 1 1 135px;
   }
 }

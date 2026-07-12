@@ -15,6 +15,27 @@ import {
   staffCodes,
   } from "./data/routines.js";
 import { eventTaskTemplates } from "./data/eventTaskTemplates.js";
+import { eventRigGuides } from "./data/eventRigGuides.js";
+import {
+  deriveEventPlanOperationalWindow,
+  recalculateEventPlanTimes,
+  suggestEventPlan,
+} from "./data/eventPlanSuggestionRules.js";
+import {
+  analyzeStaffingAssignmentConflicts,
+  isAssignableStaffProfile,
+  mergeStaffingProposals,
+  normalizeStaffingProposalAssignedAuthUserIds,
+  staffProfileMatchesSearch,
+  staffingAssignmentAction,
+  staffingAssignmentMatchesProfile,
+  staffingProfileAuthUserId,
+  staffingProfileDisplayName,
+  staffingProposalStats,
+  staffingRoleOptions,
+  suggestEventStaffing,
+  syncStaffingProposalAssignments,
+} from "./data/eventStaffingSuggestionRules.js";
 import {
   isBackendAuthRequired,
   isSupabaseConfigured,
@@ -86,6 +107,8 @@ import {
   createEventOperation,
   createEventTask,
   createResponsibilityHandover,
+  deactivateEventRoleAssignment,
+  fetchAssignableEventStaff,
   fetchEventOperationsForDate,
   fetchEventRoleAssignments,
   fetchEventStaffPresence,
@@ -104,7 +127,25 @@ import {
   listImportedCalendarEvents,
   syncGoogleCalendar,
 } from "./lib/calendarImportClient.js";
+import {
+  createSuggestedEventPlan,
+  dismissEventPlan,
+  listEventPlans,
+  markEventPlanApplied,
+  supersedePreviousPlans,
+  updateEventPlan,
+} from "./lib/eventPlanClient.js";
 import { subscribeToEventOperationsRealtime } from "./lib/eventOperationsRealtime.js";
+import EventOperationsCockpit, {
+  EventCockpitSummaryCard,
+} from "./components/EventOperationsCockpit.jsx";
+import {
+  acknowledgeEventLiveUpdate,
+  cancelEventLiveUpdate,
+  createEventLiveUpdate,
+  listEventLiveUpdates,
+  resolveEventLiveUpdate,
+} from "./lib/eventLiveUpdatesClient.js";
 
 function buildReviewStatusForHistoryDate(historyDate, reviewMap = {}) {
   const review = reviewMap?.[historyDate];
@@ -176,6 +217,7 @@ const EVENT_STAFF_PRESENCE_KEY = "mesh-event-staff-presence-v1";
 const EVENT_ROLE_ASSIGNMENT_KEY = "mesh-event-role-assignments-v1";
 const EVENT_OPERATION_TASK_KEY = "mesh-event-operation-tasks-v1";
 const EVENT_HANDOVER_KEY = "mesh-event-responsibility-handovers-v1";
+const EVENT_LIVE_UPDATE_KEY = "mesh-event-live-updates-v1";
 const EVENT_SELECTED_BOARD_KEY = "mesh-event-selected-board-v1";
 const EVENT_TASK_ALERT_STATE_KEY = "mesh-event-task-alert-state-v1";
 const EVENT_TASK_ALERT_SETTINGS_KEY = "mesh-event-task-alert-settings-v1";
@@ -220,8 +262,8 @@ const eventRoleOptions = [
   { key: "cornerbar_staff", label: "Cornerbar Staff", zone: "cornerbar", reportsTo: "Cornerbar Manager", singleLead: false, group: "team" },
   { key: "atrium_staff", label: "Atrium Staff", zone: "atrium", reportsTo: "Atrium Manager", singleLead: false, group: "team" },
   { key: "workbar_staff", label: "Workbar Staff", zone: "workbar", reportsTo: "Workbar Manager", singleLead: false, group: "team" },
-  { key: "bar_staff", label: "Bar Staff", zone: "all", reportsTo: "Zone manager", singleLead: false, group: "team" },
-  { key: "support", label: "Support", zone: "all", reportsTo: "Event Floor Manager", singleLead: false, group: "team" },
+  { key: "bar_staff", label: "Bar Staff", zone: "bar", reportsTo: "Zone manager", singleLead: false, group: "team" },
+  { key: "support", label: "Support", zone: "support", reportsTo: "Event Floor Manager", singleLead: false, group: "team" },
   { key: "other", label: "Other", zone: "other", reportsTo: "Event Floor Manager", singleLead: false, group: "team" },
 ];
 const eventTaskStatuses = ["pending", "acknowledged", "done", "missed", "cancelled"];
@@ -258,6 +300,11 @@ const eventCommandZones = [
     managerRole: "headrunner",
     staffRoles: ["runner"],
   },
+  { key: "bar", label: "Bar", managerRole: "", staffRoles: ["bar_staff", "support", "other"] },
+  { key: "support", label: "Support", managerRole: "", staffRoles: ["support", "other"] },
+  { key: "backstage", label: "Backstage / Technical", managerRole: "", staffRoles: ["support", "other"] },
+  { key: "project_rooms", label: "Project Rooms", managerRole: "", staffRoles: ["support", "other"] },
+  { key: "other", label: "Other", managerRole: "", staffRoles: ["other", "support"] },
 ];
 const alertCategories = [
   "Stock empty",
@@ -779,6 +826,74 @@ function isValidDateTimeLocalValue(value) {
   return /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}$/.test(value) && !Number.isNaN(new Date(value).getTime());
 }
 
+function dateTimePartsInZone(date, timeZone = "Europe/Oslo") {
+  return Object.fromEntries(
+    new Intl.DateTimeFormat("en-CA", {
+      timeZone,
+      year: "numeric",
+      month: "2-digit",
+      day: "2-digit",
+      hour: "2-digit",
+      minute: "2-digit",
+      hourCycle: "h23",
+    })
+      .formatToParts(date)
+      .filter((part) => part.type !== "literal")
+      .map((part) => [part.type, part.value]),
+  );
+}
+
+function toOsloDateTimeLocalValue(dateOrIso) {
+  if (!dateOrIso) return "";
+  const date = dateOrIso instanceof Date ? dateOrIso : new Date(dateOrIso);
+  if (Number.isNaN(date.getTime())) return "";
+  const parts = dateTimePartsInZone(date);
+  return `${parts.year}-${parts.month}-${parts.day}T${parts.hour}:${parts.minute}`;
+}
+
+function fromOsloDateTimeLocalValue(value) {
+  const match = String(value || "").match(/^(\d{4})-(\d{2})-(\d{2})T(\d{2}):(\d{2})$/);
+  if (!match) return "";
+  const [, yearText, monthText, dayText, hourText, minuteText] = match;
+  const year = Number(yearText);
+  const month = Number(monthText);
+  const day = Number(dayText);
+  const hour = Number(hourText);
+  const minute = Number(minuteText);
+  const wallTime = Date.UTC(year, month - 1, day, hour, minute);
+  const calendarCheck = new Date(wallTime);
+  if (
+    calendarCheck.getUTCFullYear() !== year ||
+    calendarCheck.getUTCMonth() !== month - 1 ||
+    calendarCheck.getUTCDate() !== day ||
+    calendarCheck.getUTCHours() !== hour ||
+    calendarCheck.getUTCMinutes() !== minute
+  )
+    return "";
+
+  let candidateTime = wallTime;
+  for (let attempt = 0; attempt < 4; attempt += 1) {
+    const parts = dateTimePartsInZone(new Date(candidateTime));
+    const representedWallTime = Date.UTC(
+      Number(parts.year),
+      Number(parts.month) - 1,
+      Number(parts.day),
+      Number(parts.hour),
+      Number(parts.minute),
+    );
+    const difference = wallTime - representedWallTime;
+    if (difference === 0) break;
+    candidateTime += difference;
+  }
+
+  const candidate = new Date(candidateTime);
+  return toOsloDateTimeLocalValue(candidate) === value ? candidate.toISOString() : "";
+}
+
+function isValidOsloDateTimeLocalValue(value) {
+  return !value || Boolean(fromOsloDateTimeLocalValue(value));
+}
+
 function addMinutesToDateTimeLocal(value, minutes) {
   const date = value ? new Date(value) : new Date();
   if (Number.isNaN(date.getTime())) return "";
@@ -880,7 +995,11 @@ function eventTaskMatchesUser(task, assignments, user) {
   if (task.assignedRoleKey && task.assignedRoleKey !== "all_event_staff") {
     return activeAssignments.some((assignment) => {
       if (!assignment.active || assignment.roleKey !== task.assignedRoleKey) return false;
-      return assignmentMatchesUser(assignment, user);
+      const taskZone = eventZoneForTask(task);
+      const assignmentZone = eventRoleEffectiveZone(assignment.roleKey, assignment.zone);
+      const zoneMatches =
+        taskZone === "all" || assignmentZone === "all" || assignmentZone === taskZone;
+      return zoneMatches && assignmentMatchesUser(assignment, user);
     });
   }
   const audience = task.metadata?.audience || (task.assignedRoleKey === "all_event_staff" ? "all_event_staff" : "");
@@ -1043,15 +1162,16 @@ function dedupeEventStaffPresence(presence = []) {
 }
 
 function eventRoleEffectiveZone(roleKey, zone = "") {
-  const requestedZone = String(zone || "").trim();
+  const requestedZone = String(zone || "").trim().toLowerCase();
+  const validZone = eventZones.includes(requestedZone) ? requestedZone : "";
   if (roleKey === "runner" || roleKey === "headrunner") return "runners";
   if (roleKey === "cornerbar_staff" || roleKey === "cornerbar_manager") return "cornerbar";
   if (roleKey === "atrium_staff" || roleKey === "atrium_manager") return "atrium";
   if (roleKey === "workbar_staff" || roleKey === "workbar_manager") return "workbar";
-  if (roleKey === "bar_staff") return "all";
-  if (roleKey === "support") return "support";
-  if (roleKey === "other") return "other";
-  return requestedZone || eventRoleOption(roleKey)?.zone || "all";
+  if (roleKey === "bar_staff") return validZone || "bar";
+  if (roleKey === "support") return validZone || "support";
+  if (roleKey === "other") return validZone || "other";
+  return validZone || eventRoleOption(roleKey)?.zone || "all";
 }
 
 function zoneDisplayLabel(zone = "") {
@@ -1061,8 +1181,11 @@ function zoneDisplayLabel(zone = "") {
     atrium: "Atrium",
     workbar: "Workbar",
     runners: "Runners",
+    bar: "Bar",
     support: "Support",
     other: "Other",
+    backstage: "Backstage / Technical",
+    project_rooms: "Project Rooms",
   };
   return labelMap[zone] || zone || "All";
 }
@@ -1098,13 +1221,18 @@ function eventRoleImportance(roleKey = "") {
 
 function eventRolesForPerson(person, assignments = []) {
   const personName = normalizedPersonName(person?.operatorName);
-  const authUserId = person?.authUserId || person?.backendUserId || person?.id || "";
+  const authUserId = person?.authUserId || person?.backendUserId || "";
   return assignments
     .filter((assignment) => {
       if (!assignment.active) return false;
-      if (assignment.assignedOperatorName)
-        return personName && normalizedPersonName(assignment.assignedOperatorName) === personName;
-      return Boolean(authUserId && assignment.assignedAuthUserId === authUserId);
+      if (assignment.assignedAuthUserId && authUserId)
+        return assignment.assignedAuthUserId === authUserId;
+      if (assignment.assignedAuthUserId) return false;
+      return Boolean(
+        personName &&
+        assignment.assignedOperatorName &&
+        normalizedPersonName(assignment.assignedOperatorName) === personName,
+      );
     })
     .sort((a, b) => eventRoleImportance(a.roleKey) - eventRoleImportance(b.roleKey));
 }
@@ -1131,6 +1259,11 @@ function zoneTaskDefaults(zoneKey = "all") {
     atrium: "atrium_manager",
     workbar: "workbar_manager",
     runners: "headrunner",
+    bar: "bar_staff",
+    support: "support",
+    backstage: "support",
+    project_rooms: "support",
+    other: "other",
   };
   return {
     zone,
@@ -1156,21 +1289,26 @@ function userIdentityNames(user) {
 function assignmentMatchesUser(assignment, user) {
   const authUserId = user?.authUserId || user?.backendUserId || user?.id || "";
   const names = userIdentityNames(user);
-  if (assignment.assignedOperatorName)
-    return names.includes(normalizedPersonName(assignment.assignedOperatorName));
-  return Boolean(assignment.assignedAuthUserId && authUserId && assignment.assignedAuthUserId === authUserId);
+  if (assignment.assignedAuthUserId && authUserId)
+    return assignment.assignedAuthUserId === authUserId;
+  if (assignment.assignedAuthUserId) return false;
+  return Boolean(
+    assignment.assignedOperatorName &&
+    names.includes(normalizedPersonName(assignment.assignedOperatorName)),
+  );
 }
 
 function assignmentMatchesPerson(assignment, roleKey, operatorName, authUserId = "") {
   if (!assignment.active || assignment.roleKey !== roleKey) return false;
+  if (assignment.assignedAuthUserId && authUserId)
+    return assignment.assignedAuthUserId === authUserId;
+  if (assignment.assignedAuthUserId || authUserId) return false;
   const normalizedOperatorName = normalizedPersonName(operatorName);
-  if (normalizedOperatorName) {
-    return (
-      assignment.assignedOperatorName &&
-      normalizedPersonName(assignment.assignedOperatorName) === normalizedOperatorName
-    );
-  }
-  return Boolean(authUserId && assignment.assignedAuthUserId && assignment.assignedAuthUserId === authUserId);
+  return Boolean(
+    normalizedOperatorName &&
+    assignment.assignedOperatorName &&
+    normalizedPersonName(assignment.assignedOperatorName) === normalizedOperatorName
+  );
 }
 
 function commandRoleAssignments(assignments, roleKey, zone = "") {
@@ -1219,7 +1357,7 @@ function commandZoneSummary(zoneConfig, assignments, tasks) {
         return true;
       if (!zoneConfig.staffRoles.includes(assignment.roleKey)) return false;
       const assignmentZone = eventRoleEffectiveZone(assignment.roleKey, assignment.zone);
-      return zoneConfig.key === "all" || assignmentZone === zoneConfig.key || assignmentZone === "all";
+      return assignmentZone === zoneConfig.key || (zoneConfig.key !== "all" && assignmentZone === "all");
     },
   );
   const zoneTasks = tasks.filter((task) => {
@@ -3236,8 +3374,12 @@ function EventMode({
   user,
   currentOperator,
   eventOperations,
+  eventStaffPresence,
   eventRoleAssignments,
   eventTasks,
+  eventHandovers,
+  eventLiveUpdates,
+  eventRealtimeStatus,
   onUpdateTaskStatus,
   eventTaskAlertState,
   taskActionStatus,
@@ -3245,10 +3387,13 @@ function EventMode({
   notificationPermission,
   onEnableAlerts,
   onRefresh,
+  onCreateLiveUpdate,
+  onChangeLiveUpdateStatus,
   onChangeOperator,
   onOpenGuides,
   onOpenGuide,
 }) {
+  const [showRoleCockpit, setShowRoleCockpit] = useState(false);
   const activeEventId = preferredEventBoardId(
     eventOperations.filter((event) => ["draft", "active"].includes(event.status || "draft")),
   );
@@ -3265,6 +3410,32 @@ function EventMode({
   );
   const groupedTasks = groupAssignedEventTasks(myTasks);
 
+  if (showRoleCockpit && activeEvent) {
+    return (
+      <main className="page event-mode-page">
+        <EventOperationsCockpit
+          user={user}
+          eventOperation={activeEvent}
+          eventTasks={eventTasks.filter((task) => task.eventId === activeEvent.id)}
+          assignments={activeEventAssignments}
+          presence={eventStaffPresence}
+          handovers={eventHandovers.filter((handover) => handover.eventId === activeEvent.id)}
+          liveUpdates={eventLiveUpdates.filter((update) => update.eventId === activeEvent.id)}
+          managerView={false}
+          backendStatus={eventRealtimeStatus}
+          onClose={() => setShowRoleCockpit(false)}
+          onRefresh={onRefresh}
+          onTaskStatus={onUpdateTaskStatus}
+          onCreateLiveUpdate={onCreateLiveUpdate}
+          onAcknowledgeLiveUpdate={(id) => onChangeLiveUpdateStatus(id, "acknowledged")}
+          onResolveLiveUpdate={(id, note) => onChangeLiveUpdateStatus(id, "resolved", note)}
+          onOpenGuide={onOpenGuide}
+          onNavigate={() => setShowRoleCockpit(false)}
+        />
+      </main>
+    );
+  }
+
   return (
     <main className="page event-mode-page">
       <section className="intro compact event-mode-hero">
@@ -3277,6 +3448,11 @@ function EventMode({
         </p>
         <p className="status-message">Current operator: {operatorName}</p>
         <div className="backup-actions event-mode-actions">
+          {activeEvent && (
+            <button type="button" className="primary-button compact-button" onClick={() => setShowRoleCockpit(true)}>
+              Open My Event Cockpit
+            </button>
+          )}
           <button type="button" className="primary-button compact-button" onClick={onRefresh}>
             Refresh event tasks
           </button>
@@ -3830,8 +4006,10 @@ function StaffDashboard({
   responsibleAssignments,
   events,
   eventOperations,
+  eventStaffPresence,
   eventRoleAssignments,
   eventTasks,
+  eventLiveUpdates,
   cashSignoffs,
   assetChecks,
   alertBackendStatus,
@@ -3852,6 +4030,7 @@ function StaffDashboard({
   eventActorReadyForAlerts = false,
   onEnableEventTaskAlerts,
   onRefreshEventOperations,
+  onOpenEventCockpit,
   refreshAlerts,
   onAlert,
 }) {
@@ -4032,7 +4211,7 @@ function StaffDashboard({
 
       <section className="manager-list">
         <h2>Event operations overview</h2>
-        <p className="muted">Manual event data only. Calendar import will be added in a later phase.</p>
+        <p className="muted">Shared operational status from the selected event board.</p>
         {[["Today", todayEventOps], ["Tomorrow", tomorrowEventOps]].map(([label, eventList]) => (
           <div key={label} className="critical-group">
             <h3>{label}</h3>
@@ -4058,6 +4237,17 @@ function StaffDashboard({
           </div>
         ))}
       </section>
+
+      {todayRelevantEventOps[0] && (
+        <EventCockpitSummaryCard
+          eventOperation={todayRelevantEventOps[0]}
+          eventTasks={eventTasks.filter((task) => task.eventId === todayRelevantEventOps[0].id)}
+          assignments={eventRoleAssignments.filter((assignment) => assignment.eventId === todayRelevantEventOps[0].id && assignment.active)}
+          presence={eventStaffPresence}
+          liveUpdates={eventLiveUpdates.filter((update) => update.eventId === todayRelevantEventOps[0].id)}
+          onOpen={onOpenEventCockpit}
+        />
+      )}
 
       {(todayEventOps.length > 0 || tomorrowEventOps.length > 0) && (
         <EventCommandStructurePanel
@@ -4878,7 +5068,7 @@ function EventCommandStructurePanel({
   )[0];
 
   return (
-    <section className="manager-list command-structure-panel">
+    <section id="event-command-structure" className="manager-list command-structure-panel">
       <h2>{compact ? "Event command structure" : "Command Structure"}</h2>
       <p className="muted">
         Event Floor Manager coordinates zone managers and Headrunner. Team roles can have multiple people.
@@ -4969,9 +5159,9 @@ function MyZoneCommandPanel({
               (item) =>
                 item.eventId === assignment.eventId &&
                 commandZone.staffRoles.includes(item.roleKey) &&
-                (commandZone.key === "all" ||
-                  eventRoleEffectiveZone(item.roleKey, item.zone) === commandZone.key ||
-                  eventRoleEffectiveZone(item.roleKey, item.zone) === "all"),
+                (eventRoleEffectiveZone(item.roleKey, item.zone) === commandZone.key ||
+                  (commandZone.key !== "all" &&
+                    eventRoleEffectiveZone(item.roleKey, item.zone) === "all")),
             )
           : [];
         const progress = commandZone
@@ -5562,6 +5752,7 @@ function EventLiveModePanel({
   onUpdateTaskStatus,
   taskActionStatus,
   onOpenGuide,
+  onOpenCockpit,
   onClose,
 }) {
   const [zoneFilter, setZoneFilter] = useState("all");
@@ -5651,9 +5842,16 @@ function EventLiveModePanel({
             {activeEvent?.startsAt ? ` | ${formatDateTime(activeEvent.startsAt)}` : ""}
           </span>
         </div>
-        <button type="button" className="ghost-button compact-button" onClick={onClose}>
-          Back to Event Operations
-        </button>
+        <div className="backup-actions">
+          {onOpenCockpit && (
+            <button type="button" className="primary-button compact-button" onClick={onOpenCockpit}>
+              Open Event Cockpit
+            </button>
+          )}
+          <button type="button" className="ghost-button compact-button" onClick={onClose}>
+            Back to Event Operations
+          </button>
+        </div>
       </div>
       <GuideQuickLinks
         onOpenGuide={onOpenGuide}
@@ -6240,6 +6438,1715 @@ function EventCalendarImportPanel({
   );
 }
 
+function confidenceLabel(value = 0) {
+  if (value >= 0.8) return "High";
+  if (value >= 0.65) return "Medium";
+  return "Low";
+}
+
+function editablePlanItems(planItems = []) {
+  return planItems.map((item) => ({
+    ...item,
+    included: item.included !== false,
+    dueAt: toOsloDateTimeLocalValue(item.dueAt || ""),
+    remindAt: toOsloDateTimeLocalValue(item.remindAt || ""),
+  }));
+}
+
+function planItemsForStorage(planItems = []) {
+  return planItems.map((item) => ({
+    ...item,
+    dueAt: item.dueAt ? fromOsloDateTimeLocalValue(item.dueAt) : "",
+    remindAt: item.remindAt ? fromOsloDateTimeLocalValue(item.remindAt) : "",
+  }));
+}
+
+function smartPlanItemAudience(item = {}) {
+  return (
+    item.audience ||
+    item.metadata?.audience ||
+    (item.assignedRoleKey === "all_event_staff" ? "all_event_staff" : "")
+  );
+}
+
+function validateSmartPlanItems(planItems = []) {
+  for (const item of planItems) {
+    const itemLabel = item.title?.trim() || item.planItemId || "Plan item";
+    if (item.included !== false && !item.title?.trim())
+      return "Every included plan item needs a title.";
+    if (item.dueAt && !isValidOsloDateTimeLocalValue(item.dueAt))
+      return `${itemLabel} has an invalid due time. Choose a valid Oslo date and time.`;
+    if (item.remindAt && !isValidOsloDateTimeLocalValue(item.remindAt))
+      return `${itemLabel} has an invalid reminder time. Choose a valid Oslo date and time.`;
+  }
+  return "";
+}
+
+function isSmartPlanDuplicateResult(result) {
+  const errorCode = result?.error?.code || result?.code || "";
+  const errorText = [result?.message, result?.error?.message, result?.error?.details]
+    .filter(Boolean)
+    .join(" ")
+    .toLowerCase();
+  return errorCode === "23505" || errorText.includes("event_tasks_smart_plan_item_unique_idx");
+}
+
+function editableEventPlan(plan, eventOperation) {
+  if (!plan) return null;
+  return {
+    ...plan,
+    setup: deriveEventPlanOperationalWindow(eventOperation, plan.setup || {}),
+    planItems: editablePlanItems(plan.planItems || []),
+  };
+}
+
+function formatOsloClock(value) {
+  const localValue = toOsloDateTimeLocalValue(value);
+  return localValue ? localValue.slice(11, 16) : "--:--";
+}
+
+function formatOsloTimeRange(startsAt, endsAt) {
+  return `${formatOsloClock(startsAt)}-${formatOsloClock(endsAt)}`;
+}
+
+function smartPlanIncludedStats(plan) {
+  const items = plan?.planItems || [];
+  return {
+    included: items.filter((item) => item.included !== false).length,
+    total: items.length,
+  };
+}
+
+function smartPlanNeedsLongerPrep(plan) {
+  const current = Number(plan?.setup?.prepMinutesBefore || 60);
+  const recommended = Number(plan?.setup?.recommendedPrepMinutes || 60);
+  return recommended > current ? recommended : 0;
+}
+
+function smartPlanWarningCount(plan) {
+  return (plan?.warnings || plan?.setup?.warnings || []).length +
+    (plan?.setup?.staffingProposal?.warnings || []).length +
+    (smartPlanNeedsLongerPrep(plan) ? 1 : 0);
+}
+
+function staffingAssignmentMatches(assignment, requirement, profile) {
+  return staffingAssignmentMatchesProfile(assignment, requirement, profile);
+}
+
+function staffingRequirementAssignments(requirement, assignments = []) {
+  return assignments.filter(
+    (assignment) =>
+      assignment.active &&
+      assignment.roleKey === requirement.roleKey &&
+      eventRoleEffectiveZone(assignment.roleKey, assignment.zone) === requirement.zoneKey,
+  );
+}
+
+function staffingRequirementOpenCount(requirement, assignments = []) {
+  return Math.max(
+    0,
+    Number(requirement.recommendedCount || 0) - staffingRequirementAssignments(requirement, assignments).length,
+  );
+}
+
+function staffingOverlapWarnings(proposal = {}, profiles = [], assignments = []) {
+  return analyzeStaffingAssignmentConflicts(
+    proposal,
+    profiles,
+    assignments,
+    staffingRoleOptions.filter((role) => role.singleLead).map((role) => role.key),
+  ).overrideWarnings;
+}
+
+function smartPlanStatusLabel(status = "") {
+  if (!status) return "No plan generated";
+  return `${status.slice(0, 1).toUpperCase()}${status.slice(1)}`;
+}
+
+function SmartEventPlanPanel({
+  user,
+  activeEvent,
+  eventAssignments,
+  eventTasks,
+  onCreateTask,
+  onAssignRole,
+  onRemoveRole,
+  onRefreshEventOperations,
+  reviewMode = false,
+  reviewFocus = "",
+  onOpenReview,
+  onOpenCockpit,
+  onCloseReview,
+}) {
+  const [plans, setPlans] = useState([]);
+  const [planStatus, setPlanStatus] = useState({ type: "", message: "" });
+  const [loadingPlan, setLoadingPlan] = useState(false);
+  const [editor, setEditor] = useState(null);
+  const [expandedPlanItems, setExpandedPlanItems] = useState({});
+  const [expandedPhases, setExpandedPhases] = useState({ before: true, during: false, after: false });
+  const [customWindowMode, setCustomWindowMode] = useState({ prep: false, close: false });
+  const [linkedCalendarEvents, setLinkedCalendarEvents] = useState([]);
+  const [calendarSources, setCalendarSources] = useState([]);
+  const [loadingCalendarContext, setLoadingCalendarContext] = useState(false);
+  const [calendarContextLoaded, setCalendarContextLoaded] = useState(false);
+  const [staffProfiles, setStaffProfiles] = useState([]);
+  const [staffProfileStatus, setStaffProfileStatus] = useState("");
+  const [staffSearch, setStaffSearch] = useState("");
+  const [expandedStaffing, setExpandedStaffing] = useState({});
+  const [showRegenerationOptions, setShowRegenerationOptions] = useState(false);
+  const [confirmStaffingOverlap, setConfirmStaffingOverlap] = useState(false);
+  const staffingSectionRef = useRef(null);
+  const activePlan = plans[0] || null;
+  const linkedResources = linkedCalendarEvents.filter(
+    (calendarEvent) => calendarEvent.linkedEventOperationId === activeEvent?.id,
+  );
+  const linkedSourceIds = new Set(linkedResources.map((resource) => resource.sourceId).filter(Boolean));
+  const linkedCalendarSources = calendarSources.filter((source) => linkedSourceIds.has(source.id));
+  const relevantRigIds = new Set([
+    ...(editor?.rigRefs || activePlan?.rigRefs || []),
+    ...(editor?.planItems || activePlan?.planItems || []).map((item) => item.rigRef).filter(Boolean),
+  ]);
+  const relevantRigGuides = eventRigGuides.filter((guide) => relevantRigIds.has(guide.id));
+
+  function derivedStaffingProposal(plan, generatedAt = "") {
+    if (!plan || !activeEvent) return null;
+    const proposal = plan.setup?.staffingProposal || suggestEventStaffing({
+      eventOperation: activeEvent,
+      linkedCalendarEvents: linkedResources,
+      linkedCalendarSources,
+      eventPlan: plan,
+      roleAssignments: eventAssignments,
+      existingTasks: eventTasks,
+      generatedAt,
+    });
+    return syncStaffingProposalAssignments(proposal, eventAssignments);
+  }
+
+  function setEditorFromRecord(plan) {
+    const nextEditor = editableEventPlan(plan, activeEvent);
+    setEditor(nextEditor);
+    const standardValues = [30, 60, 90, 120];
+    setCustomWindowMode({
+      prep: nextEditor ? !standardValues.includes(Number(nextEditor.setup?.prepMinutesBefore)) : false,
+      close: nextEditor ? !standardValues.includes(Number(nextEditor.setup?.closeMinutesAfter)) : false,
+    });
+  }
+
+  async function loadPlans() {
+    if (!activeEvent?.id) {
+      setPlans([]);
+      setEditor(null);
+      return;
+    }
+    const result = await listEventPlans(activeEvent.id);
+    if (result.ok) {
+      setPlans(result.records || []);
+      const current = result.records?.[0] || null;
+      if (reviewMode && current) setEditorFromRecord(current);
+      else if (!reviewMode) setEditor(null);
+    } else {
+      setPlanStatus({ type: "error", message: result.message || "Could not load suggested plans." });
+    }
+  }
+
+  async function loadCalendarContext() {
+    if (!activeEvent?.id) {
+      setLinkedCalendarEvents([]);
+      setCalendarSources([]);
+      setLoadingCalendarContext(false);
+      setCalendarContextLoaded(false);
+      return;
+    }
+    setLoadingCalendarContext(true);
+    setCalendarContextLoaded(false);
+    const from = activeEvent.startsAt
+      ? addMinutesToDateTimeLocal(toDateTimeLocalValue(activeEvent.startsAt), -24 * 60)
+      : toDateTimeLocalValue(new Date());
+    const to = activeEvent.endsAt
+      ? addMinutesToDateTimeLocal(toDateTimeLocalValue(activeEvent.endsAt), 24 * 60)
+      : addMinutesToDateTimeLocal(from, 48 * 60);
+    try {
+      const [sourceResult, eventResult] = await Promise.all([
+        listCalendarSources(),
+        listImportedCalendarEvents({
+          from: fromDateTimeLocalValue(from),
+          to: fromDateTimeLocalValue(to),
+        }),
+      ]);
+      setCalendarSources(sourceResult.ok ? sourceResult.records || [] : []);
+      setLinkedCalendarEvents(
+        eventResult.ok
+          ? (eventResult.records || []).filter(
+              (calendarEvent) => calendarEvent.linkedEventOperationId === activeEvent.id,
+            )
+          : [],
+      );
+    } catch (error) {
+      setCalendarSources([]);
+      setLinkedCalendarEvents([]);
+      setPlanStatus({
+        type: "error",
+        message: error?.message || "Linked calendar context could not be loaded.",
+      });
+    } finally {
+      setLoadingCalendarContext(false);
+      setCalendarContextLoaded(true);
+    }
+  }
+
+  useEffect(() => {
+    setPlanStatus({ type: "", message: "" });
+    setEditor(null);
+    setExpandedPlanItems({});
+    setExpandedPhases({ before: true, during: false, after: false });
+    loadPlans();
+    loadCalendarContext();
+  }, [activeEvent?.id, reviewMode]);
+
+  useEffect(() => {
+    if (!reviewMode || !calendarContextLoaded || !activeEvent?.id || !editor || editor.setup?.staffingProposal) return;
+    setEditor((current) => current
+      ? {
+          ...current,
+          setup: {
+            ...current.setup,
+            staffingProposal: derivedStaffingProposal(current),
+          },
+        }
+      : current);
+  }, [reviewMode, calendarContextLoaded, activeEvent?.id, linkedCalendarEvents, calendarSources, editor?.id]);
+
+  useEffect(() => {
+    if (!reviewMode || !isEventOpsManager(user)) return;
+    let cancelled = false;
+    setStaffProfileStatus("Loading available staff...");
+    fetchAssignableEventStaff().then((result) => {
+      if (cancelled) return;
+      if (!result.ok) {
+        setStaffProfiles([]);
+        setStaffProfileStatus(result.message || "Could not load available staff.");
+        return;
+      }
+      const organizationId = user?.organizationId || user?.organization_id || "";
+      const profiles = (result.profiles || []).filter((profile) =>
+        isAssignableStaffProfile(profile, organizationId),
+      );
+      setStaffProfiles(profiles);
+      setEditor((current) => current?.setup?.staffingProposal
+        ? {
+            ...current,
+            setup: {
+              ...current.setup,
+              staffingProposal: normalizeStaffingProposalAssignedAuthUserIds(
+                current.setup.staffingProposal,
+                profiles,
+              ),
+            },
+          }
+        : current);
+      setStaffProfileStatus(profiles.length ? "" : "No assignable staff profiles were found.");
+    });
+    return () => { cancelled = true; };
+  }, [reviewMode, activeEvent?.id, user?.id, user?.organizationId, user?.organization_id]);
+
+  const staffProfileIdentitySignature = staffProfiles
+    .map((profile) => `${profile.profileId}:${profile.authUserId}`)
+    .join("|");
+  useEffect(() => {
+    if (!editor?.setup?.staffingProposal || !staffProfiles.length) return;
+    setEditor((current) => current
+      ? {
+          ...current,
+          setup: {
+            ...current.setup,
+            staffingProposal: normalizeStaffingProposalAssignedAuthUserIds(
+              current.setup.staffingProposal,
+              staffProfiles,
+            ),
+          },
+        }
+      : current);
+  }, [editor?.id, staffProfileIdentitySignature]);
+
+  useEffect(() => {
+    if (reviewMode && reviewFocus === "staffing") {
+      window.requestAnimationFrame(() => staffingSectionRef.current?.scrollIntoView?.({ behavior: "smooth", block: "start" }));
+    }
+  }, [reviewMode, reviewFocus, editor?.id]);
+
+  async function generateSuggestion(staffingMergeMode = "merge") {
+    if (!activeEvent?.id) {
+      setPlanStatus({ type: "error", message: "Select an event board before generating a plan." });
+      return;
+    }
+    setLoadingPlan(true);
+    setPlanStatus({ type: "pending", message: "Generating suggested event plan..." });
+    try {
+      const currentPlansResult = await listEventPlans(activeEvent.id);
+      if (!currentPlansResult.ok) {
+        setPlanStatus({
+          type: "error",
+          message: currentPlansResult.message || "Existing plan versions could not be checked.",
+        });
+        return;
+      }
+      const suggestion = suggestEventPlan({
+        eventOperation: activeEvent,
+        linkedCalendarEvents: linkedResources,
+        calendarSources: linkedCalendarSources,
+        roleAssignments: eventAssignments,
+        existingTasks: eventTasks,
+      });
+      const suggestedStaffing = suggestEventStaffing({
+        eventOperation: activeEvent,
+        linkedCalendarEvents: linkedResources,
+        linkedCalendarSources,
+        eventPlan: suggestion,
+        roleAssignments: eventAssignments,
+        existingTasks: eventTasks,
+        generatedAt: new Date().toISOString(),
+      });
+      const previousPlan = currentPlansResult.records?.[0] || null;
+      const staffingProposal = previousPlan?.setup?.staffingProposal
+        ? mergeStaffingProposals(previousPlan.setup.staffingProposal, suggestedStaffing, staffingMergeMode)
+        : suggestedStaffing;
+      const nextVersion =
+        Math.max(0, ...(currentPlansResult.records || []).map((plan) => Number(plan.version) || 0)) + 1;
+      const result = await createSuggestedEventPlan({
+        eventOperationId: activeEvent.id,
+        status: "suggested",
+        source: "automatic",
+        title: suggestion.title,
+        suggestedTemplateId: suggestion.suggestedTemplateId,
+        confidence: suggestion.confidence,
+        detectedSignals: suggestion.detectedSignals,
+        rationale: suggestion.rationale,
+        warnings: suggestion.warnings,
+        setup: { ...suggestion.setup, staffingProposal },
+        planItems: suggestion.planItems,
+        guideRefs: suggestion.guideRefs,
+        rigRefs: suggestion.rigRefs,
+        version: nextVersion,
+      });
+      if (!result.ok || !result.record?.id) {
+        setPlanStatus({ type: "error", message: result.message || "Suggested plan could not be saved." });
+        return;
+      }
+      const supersedeResult = await supersedePreviousPlans(activeEvent.id, result.record.id);
+      setPlans((current) => [
+        result.record,
+        ...current
+          .filter((plan) => plan.id !== result.record.id)
+          .map((plan) =>
+            supersedeResult.ok && ["suggested", "draft"].includes(plan.status)
+              ? { ...plan, status: "superseded" }
+              : plan,
+          ),
+      ]);
+      if (reviewMode) setEditorFromRecord(result.record);
+      setPlanStatus({
+        type: supersedeResult.ok ? "success" : "error",
+        message: supersedeResult.ok
+          ? `Suggested plan version ${result.record.version} generated. Review before applying.`
+          : `Suggested plan was saved, but older drafts could not be superseded: ${supersedeResult.message || "Unknown error."}`,
+      });
+      onRefreshEventOperations?.("smart_event_plan_generated");
+      setShowRegenerationOptions(false);
+    } catch (error) {
+      setPlanStatus({ type: "error", message: error?.message || "Unexpected error while generating suggestion." });
+    } finally {
+      setLoadingPlan(false);
+    }
+  }
+
+  function updatePlanItem(planItemId, patch) {
+    setEditor((current) => ({
+      ...current,
+      planItems: (current?.planItems || []).map((item) =>
+        item.planItemId === planItemId ? { ...item, ...patch } : item,
+      ),
+    }));
+  }
+
+  function updatePlanItemAudience(planItemId, audience) {
+    setEditor((current) => ({
+      ...current,
+      planItems: (current?.planItems || []).map((item) => {
+        if (item.planItemId !== planItemId) return item;
+        const metadata = { ...(item.metadata || {}) };
+        if (audience) metadata.audience = audience;
+        else delete metadata.audience;
+        return { ...item, audience, metadata };
+      }),
+    }));
+  }
+
+  function setPhaseIncluded(phase, included) {
+    setEditor((current) => ({
+      ...current,
+      planItems: (current?.planItems || []).map((item) =>
+        (item.phase || "before") === phase ? { ...item, included } : item,
+      ),
+    }));
+  }
+
+  function updateOperationalWindow(kind, value) {
+    const minutes = Math.max(0, Math.min(480, Math.round(Number(value) || 0)));
+    const field = kind === "prep" ? "prepMinutesBefore" : "closeMinutesAfter";
+    setEditor((current) => {
+      if (!current || current.status === "applied") return current;
+      return {
+        ...current,
+        setup: deriveEventPlanOperationalWindow(
+          activeEvent,
+          { ...(current.setup || {}), [field]: minutes },
+          { recalculateBounds: true },
+        ),
+      };
+    });
+    setPlanStatus({
+      type: "pending",
+      message: "Operational window updated. Task times are unchanged until you choose Recalculate suggested times.",
+    });
+  }
+
+  function selectWindowOption(kind, value) {
+    if (value === "custom") {
+      setCustomWindowMode((current) => ({ ...current, [kind]: true }));
+      return;
+    }
+    setCustomWindowMode((current) => ({ ...current, [kind]: false }));
+    updateOperationalWindow(kind, Number(value));
+  }
+
+  function recalculateSuggestedTimes() {
+    if (!editor || editor.status === "applied") return;
+    const recalculatedItems = recalculateEventPlanTimes({
+      planItems: planItemsForStorage(editor.planItems || []),
+      eventOperation: activeEvent,
+      setup: editor.setup,
+    });
+    setEditor((current) => ({
+      ...current,
+      planItems: editablePlanItems(recalculatedItems),
+    }));
+    setPlanStatus({
+      type: "success",
+      message: "Suggested times recalculated for the operational window. Review the changes, then save the draft.",
+    });
+  }
+
+  function updateStaffingRequirement(requirementId, patch) {
+    setEditor((current) => {
+      if (!current || current.status === "applied") return current;
+      const proposal = current.setup?.staffingProposal || derivedStaffingProposal(current);
+      return {
+        ...current,
+        setup: {
+          ...current.setup,
+          staffingProposal: {
+            ...proposal,
+            manuallyEdited: true,
+            requirements: (proposal?.requirements || []).map((item) =>
+              item.requirementId === requirementId
+                ? { ...item, ...patch, manuallyEdited: true }
+                : item,
+            ),
+          },
+        },
+      };
+    });
+    setConfirmStaffingOverlap(false);
+  }
+
+  function addStaffingRequirement() {
+    const proposal = editor?.setup?.staffingProposal || derivedStaffingProposal(editor);
+    const index = (proposal?.requirements || []).filter((item) => item.requirementId.startsWith("manual:")).length + 1;
+    const role = staffingRoleOptions.find((item) => item.key === "other");
+    const requirementId = `manual:${Date.now()}:${index}`;
+    setEditor((current) => ({
+      ...current,
+      setup: {
+        ...current.setup,
+        staffingProposal: {
+          ...proposal,
+          manuallyEdited: true,
+          requirements: [
+            ...(proposal?.requirements || []),
+            {
+              requirementId,
+              roleKey: role.key,
+              roleLabel: "Custom support role",
+              zoneKey: role.zone,
+              zoneLabel: zoneDisplayLabel(role.zone),
+              recommendedCount: 1,
+              minimumCount: 0,
+              preferredCount: 1,
+              required: false,
+              shiftStartsAt: displayedSetup.prepStartsAt || "",
+              shiftEndsAt: displayedSetup.closeEndsAt || "",
+              rationale: ["Added manually by Event Operations manager."],
+              confidence: 1,
+              sourceSignals: ["manual"],
+              linkedAssignmentIds: [],
+              assignedUserIds: [],
+              manuallyEdited: true,
+              included: true,
+            },
+          ],
+        },
+      },
+    }));
+    setExpandedStaffing((current) => ({ ...current, [requirementId]: true }));
+  }
+
+  function resetStaffingRecommendation() {
+    if (!editor || editor.status === "applied") return;
+    const suggested = suggestEventStaffing({
+      eventOperation: activeEvent,
+      linkedCalendarEvents: linkedResources,
+      linkedCalendarSources,
+      eventPlan: editor,
+      roleAssignments: eventAssignments,
+      existingTasks: eventTasks,
+      generatedAt: new Date().toISOString(),
+    });
+    setEditor((current) => ({
+      ...current,
+      setup: { ...current.setup, staffingProposal: suggested },
+    }));
+    setPlanStatus({ type: "pending", message: "Staffing recommendation reset. Save the draft to keep it." });
+  }
+
+  function toggleProfileForRequirement(requirement, profile) {
+    const selected = requirement.assignedUserIds || [];
+    const authUserId = staffingProfileAuthUserId(profile);
+    const displayName = staffingProfileDisplayName(profile);
+    const alreadySelected = selected.includes(authUserId);
+    const existing = eventAssignments.find((assignment) =>
+      staffingAssignmentMatches(assignment, requirement, profile),
+    );
+    if (!alreadySelected && existing) {
+      setPlanStatus({ type: "pending", message: `${displayName} is already assigned as ${requirement.roleLabel}. Existing assignment reused.` });
+    }
+    const singleLead = staffingRoleOptions.find((role) => role.key === requirement.roleKey)?.singleLead;
+    const selectedOtherAuthUserId = singleLead
+      ? selected.find((id) => id !== authUserId)
+      : "";
+    const occupiedLead = singleLead
+      ? eventAssignments.find(
+          (assignment) => assignment.active && assignment.roleKey === requirement.roleKey,
+        )
+      : null;
+    const replacingOccupiedLead = Boolean(
+      occupiedLead && !staffingAssignmentMatches(occupiedLead, requirement, profile),
+    );
+    if (!alreadySelected && (selectedOtherAuthUserId || replacingOccupiedLead)) {
+      const currentName = occupiedLead?.assignedOperatorName || "the currently selected person";
+      if (!window.confirm(
+        `${requirement.roleLabel} is a single-lead role. Replace ${currentName} with ${displayName}? The existing Event Command Structure assignment will only be deactivated when you apply staffing assignments.`,
+      )) return;
+    }
+    updateStaffingRequirement(requirement.requirementId, {
+      assignedUserIds: alreadySelected
+        ? selected.filter((id) => id !== authUserId)
+        : singleLead
+          ? [authUserId]
+          : [...new Set([...selected, authUserId])],
+      linkedAssignmentIds: existing
+        ? [...new Set([...(requirement.linkedAssignmentIds || []), existing.id])]
+        : (requirement.linkedAssignmentIds || []).filter((id) => id !== occupiedLead?.id),
+      replaceSingleLeadAssignment: !alreadySelected && replacingOccupiedLead,
+      replaceSingleLeadAssignmentId: !alreadySelected && replacingOccupiedLead
+        ? occupiedLead.id
+        : "",
+    });
+  }
+
+  async function removeOperationalStaffingAssignment(requirement, assignment) {
+    const name = assignment.assignedOperatorName || "this person";
+    if (!window.confirm(`Remove ${name} from the Smart Plan and Event Command Structure?`)) return;
+    setPlanStatus({ type: "pending", message: `Removing ${name}...` });
+    const result = await onRemoveRole?.(assignment.id);
+    if (!result?.ok) {
+      setPlanStatus({ type: "error", message: result?.message || "Role assignment could not be removed." });
+      return;
+    }
+    updateStaffingRequirement(requirement.requirementId, {
+      linkedAssignmentIds: (requirement.linkedAssignmentIds || []).filter((id) => id !== assignment.id),
+      assignedUserIds: (requirement.assignedUserIds || []).filter((id) => id !== assignment.assignedAuthUserId),
+    });
+    setPlanStatus({ type: "success", message: `${name} removed from the plan and Event Command Structure.` });
+    await onRefreshEventOperations?.("smart_staffing_assignment_removed");
+  }
+
+  async function applyStaffingAssignments() {
+    if (!editor?.id || editor.status === "applied") return;
+    const proposal = syncStaffingProposalAssignments(
+      editor.setup?.staffingProposal || derivedStaffingProposal(editor),
+      eventAssignments,
+    );
+    const overlapAnalysis = analyzeStaffingAssignmentConflicts(
+      proposal,
+      staffProfiles,
+      eventAssignments,
+      staffingRoleOptions.filter((role) => role.singleLead).map((role) => role.key),
+    );
+    const overlaps = overlapAnalysis.overrideWarnings;
+    if (overlaps.length && !confirmStaffingOverlap) {
+      setConfirmStaffingOverlap(true);
+      setPlanStatus({ type: "error", message: `${overlaps[0]} Review it, then choose Confirm staffing overlaps to continue.` });
+      return;
+    }
+    setLoadingPlan(true);
+    setPlanStatus({ type: "pending", message: "Saving staffing proposal before assignment..." });
+    let workingProposal = proposal;
+    let created = 0;
+    let reused = 0;
+    let skipped = 0;
+    let conflicts = 0;
+    let failed = 0;
+    const appliedAssignments = [...eventAssignments];
+    try {
+      const saved = await updateEventPlan(editor.id, {
+        status: "draft",
+        title: editor.title.trim(),
+        setup: { ...editor.setup, staffingProposal: workingProposal },
+        warnings: editor.warnings || [],
+        planItems: planItemsForStorage(editor.planItems),
+        guideRefs: editor.guideRefs,
+        rigRefs: editor.rigRefs,
+        version: editor.version || 1,
+      });
+      if (!saved.ok) {
+        setPlanStatus({ type: "error", message: saved.message || "Staffing proposal could not be saved." });
+        return;
+      }
+
+      for (const requirement of workingProposal.requirements.filter((item) => item.included !== false)) {
+        for (const userId of requirement.assignedUserIds || []) {
+          const profile = staffProfiles.find((item) => staffingProfileAuthUserId(item) === userId);
+          if (!profile) {
+            skipped += 1;
+            continue;
+          }
+          const role = eventRoleOption(requirement.roleKey);
+          if (!role || !eventZones.includes(requirement.zoneKey)) {
+            skipped += 1;
+            continue;
+          }
+          const effectiveRequirement = {
+            ...requirement,
+            zoneKey: eventRoleEffectiveZone(role.key, requirement.zoneKey),
+          };
+          const action = staffingAssignmentAction(
+            appliedAssignments,
+            effectiveRequirement,
+            profile,
+            role.singleLead,
+          );
+          if (action.action === "reuse") {
+            reused += 1;
+            requirement.linkedAssignmentIds = [...new Set([...(requirement.linkedAssignmentIds || []), action.assignment.id])];
+            continue;
+          }
+          if (
+            action.action === "conflict" &&
+            (
+              !requirement.replaceSingleLeadAssignment ||
+              requirement.replaceSingleLeadAssignmentId !== action.assignment.id
+            )
+          ) {
+            conflicts += 1;
+            continue;
+          }
+          const result = await onAssignRole?.({
+            eventId: activeEvent.id,
+            roleKey: requirement.roleKey,
+            roleLabel: requirement.roleLabel,
+            zone: effectiveRequirement.zoneKey,
+            assignedAuthUserId: staffingProfileAuthUserId(profile),
+            assignedOperatorName: staffingProfileDisplayName(profile),
+            assignedOperatorSource: "supabase_auth",
+            assignedByName: user.name,
+            notes: `Smart Plan staffing: ${requirement.requirementId}; ${formatOsloTimeRange(requirement.shiftStartsAt, requirement.shiftEndsAt)}`,
+            replaceSingleLead: action.action === "conflict" && requirement.replaceSingleLeadAssignment === true,
+            expectedCurrentAssignmentId: action.action === "conflict"
+              ? requirement.replaceSingleLeadAssignmentId
+              : "",
+          });
+          if (result?.ok && result.record?.id) {
+            created += 1;
+            appliedAssignments.push(result.record);
+            requirement.linkedAssignmentIds = [...new Set([...(requirement.linkedAssignmentIds || []), result.record.id])];
+          } else {
+            const message = String(result?.message || result?.error?.message || "").toLowerCase();
+            if (message.includes("single-lead") || message.includes("already assigned")) conflicts += 1;
+            else failed += 1;
+          }
+        }
+      }
+
+      const finalSave = await updateEventPlan(editor.id, {
+        status: "draft",
+        setup: { ...editor.setup, staffingProposal: workingProposal },
+        version: editor.version || 1,
+      });
+      if (finalSave.ok) {
+        setPlans((current) => [finalSave.record, ...current.filter((plan) => plan.id !== finalSave.record.id)]);
+        setEditorFromRecord(finalSave.record);
+      } else {
+        await onRefreshEventOperations?.("smart_staffing_assignments_applied_without_links");
+        setPlanStatus({
+          type: "error",
+          message: `${created} assignments were created, but their Smart Plan links could not be saved. Command Structure remains the operational source. ${finalSave.message || ""}`.trim(),
+        });
+        return;
+      }
+      await onRefreshEventOperations?.("smart_staffing_assignments_applied");
+      const stats = staffingProposalStats(workingProposal, appliedAssignments);
+      setPlanStatus({
+        type: failed || conflicts ? "error" : "success",
+        message: `${created} created, ${reused} reused, ${skipped} skipped, ${conflicts} conflict${conflicts === 1 ? "" : "s"}, ${failed} failed. ${stats.open} planned slot${stats.open === 1 ? "" : "s"} remain open.`,
+      });
+      setConfirmStaffingOverlap(false);
+    } catch (error) {
+      setPlanStatus({ type: "error", message: error?.message || "Unexpected staffing assignment error." });
+    } finally {
+      setLoadingPlan(false);
+    }
+  }
+
+  async function saveDraft() {
+    if (!editor?.id) return;
+    if (editor.status === "applied") {
+      setPlanStatus({ type: "error", message: "Applied plans are read-only. Regenerate to create a new editable version." });
+      return;
+    }
+    if (!editor.title?.trim()) {
+      setPlanStatus({ type: "error", message: "Plan title is required." });
+      return;
+    }
+    const validationMessage = validateSmartPlanItems(editor.planItems || []);
+    if (validationMessage) {
+      setPlanStatus({ type: "error", message: validationMessage });
+      return;
+    }
+    setPlanStatus({ type: "pending", message: "Saving draft..." });
+    const result = await updateEventPlan(editor.id, {
+      status: "draft",
+      title: editor.title.trim(),
+      setup: editor.setup,
+      warnings: editor.warnings || [],
+      planItems: planItemsForStorage(editor.planItems),
+      guideRefs: editor.guideRefs,
+      rigRefs: editor.rigRefs,
+      version: (editor.version || 1) + 1,
+    });
+    if (!result.ok) {
+      setPlanStatus({ type: "error", message: result.message || "Draft could not be saved." });
+      return;
+    }
+    setPlans((current) => [result.record, ...current.filter((plan) => plan.id !== result.record.id)]);
+    setEditorFromRecord(result.record);
+    setPlanStatus({ type: "success", message: "Draft saved." });
+    onRefreshEventOperations?.("smart_event_plan_draft_saved");
+  }
+
+  async function dismissPlan() {
+    const planId = editor?.id || activePlan?.id;
+    if (!planId) return;
+    setPlanStatus({ type: "pending", message: "Dismissing suggestion..." });
+    const result = await dismissEventPlan(planId);
+    if (!result.ok) {
+      setPlanStatus({ type: "error", message: result.message || "Suggestion could not be dismissed." });
+      return;
+    }
+    setPlans((current) => [result.record, ...current.filter((plan) => plan.id !== result.record.id)]);
+    setEditor(null);
+    setPlanStatus({ type: "success", message: "Suggestion dismissed." });
+    if (reviewMode) onCloseReview?.();
+    onRefreshEventOperations?.("smart_event_plan_dismissed");
+  }
+
+  async function applyPlan() {
+    if (!editor?.id || !activeEvent?.id) return;
+    if (editor.status === "applied") return;
+    const includedItems = (editor.planItems || []).filter((item) => item.included !== false);
+    if (!includedItems.length) {
+      setPlanStatus({ type: "error", message: "Choose at least one plan item before applying." });
+      return;
+    }
+    if (!editor.title?.trim()) {
+      setPlanStatus({ type: "error", message: "Plan title is required." });
+      return;
+    }
+    const validationMessage = validateSmartPlanItems(editor.planItems || []);
+    if (validationMessage) {
+      setPlanStatus({ type: "error", message: validationMessage });
+      return;
+    }
+    setLoadingPlan(true);
+    setPlanStatus({ type: "pending", message: "Saving the latest plan before applying..." });
+    try {
+      const storedPlanItems = planItemsForStorage(editor.planItems);
+      const saved = await updateEventPlan(editor.id, {
+        status: "draft",
+        title: editor.title.trim(),
+        setup: editor.setup,
+        warnings: editor.warnings || [],
+        planItems: storedPlanItems,
+        guideRefs: editor.guideRefs,
+        rigRefs: editor.rigRefs,
+        version: editor.version || 1,
+      });
+      if (!saved.ok || !saved.record?.id) {
+        setPlanStatus({
+          type: "error",
+          message: saved.message || "The edited plan could not be saved, so no tasks were created.",
+        });
+        return;
+      }
+
+      setPlans((current) => [saved.record, ...current.filter((plan) => plan.id !== saved.record.id)]);
+      setEditorFromRecord(saved.record);
+
+      const existingPlanItemIds = new Set(
+        eventTasks
+          .filter((task) => task.metadata?.eventPlanId === editor.id)
+          .map((task) => task.metadata?.planItemId)
+          .filter(Boolean),
+      );
+      let createdCount = 0;
+      let skippedCount = 0;
+      const failures = [];
+
+      for (let index = 0; index < includedItems.length; index += 1) {
+        const item = includedItems[index];
+        setPlanStatus({
+          type: "pending",
+          message: `Applying plan item ${index + 1} of ${includedItems.length}: ${item.title.trim()}`,
+        });
+        if (existingPlanItemIds.has(item.planItemId)) {
+          skippedCount += 1;
+          continue;
+        }
+
+        const dueAt = item.dueAt ? fromOsloDateTimeLocalValue(item.dueAt) : "";
+        const remindAt = item.remindAt ? fromOsloDateTimeLocalValue(item.remindAt) : "";
+        const audience = smartPlanItemAudience(item);
+        let result;
+        try {
+          result = await onCreateTask({
+            eventId: activeEvent.id,
+            title: item.title.trim(),
+            description: item.description?.trim() || "",
+            dueAt,
+            remindAt,
+            zone: item.zone || "all",
+            priority: item.priority || "normal",
+            assignedRoleKey: item.assignedRoleKey || "",
+            assignedOperatorName: "",
+            status: "pending",
+            createdByName: user.name,
+            metadata: {
+              ...(item.metadata || {}),
+              ...(audience ? { audience } : {}),
+              eventPlanId: editor.id,
+              eventPlanVersion: saved.record.version || editor.version || 1,
+              planItemId: item.planItemId,
+              suggestedTemplateId: saved.record.suggestedTemplateId || editor.suggestedTemplateId,
+              source: "smart_event_plan",
+              guideRef: item.guideRef || "",
+              rigRef: item.rigRef || "",
+              phase: item.phase || "",
+            },
+          });
+        } catch (error) {
+          failures.push({
+            planItemId: item.planItemId,
+            title: item.title,
+            message: error?.message || "Unexpected task creation error.",
+          });
+          continue;
+        }
+        const record = result?.record || result;
+        if (result?.ok || record?.id) {
+          createdCount += 1;
+          existingPlanItemIds.add(item.planItemId);
+        } else if (isSmartPlanDuplicateResult(result)) {
+          skippedCount += 1;
+          existingPlanItemIds.add(item.planItemId);
+        } else {
+          failures.push({
+            planItemId: item.planItemId,
+            title: item.title,
+            message: result?.message || result?.error?.message || "Unknown task creation error.",
+          });
+        }
+      }
+
+      await onRefreshEventOperations?.("smart_event_plan_apply_progress");
+      if (failures.length) {
+        const firstFailure = failures[0];
+        setPlanStatus({
+          type: "error",
+          message: `${createdCount} created, ${skippedCount} already existed, ${failures.length} failed. The plan remains a draft and can be retried. ${firstFailure.title}: ${firstFailure.message}`,
+        });
+        return;
+      }
+
+      const applied = await markEventPlanApplied(editor.id);
+      if (!applied.ok) {
+        setPlanStatus({
+          type: "error",
+          message: `${createdCount} created and ${skippedCount} already existed, but the plan could not be marked applied. Retry to finish safely. ${applied.message || ""}`.trim(),
+        });
+        return;
+      }
+      setPlans((current) => [applied.record, ...current.filter((plan) => plan.id !== applied.record.id)]);
+      setEditorFromRecord(applied.record);
+      setPlanStatus({
+        type: "success",
+        message: `Plan applied: ${createdCount} task${createdCount === 1 ? "" : "s"} created, ${skippedCount} already present.`,
+      });
+      await onRefreshEventOperations?.("smart_event_plan_applied");
+    } catch (error) {
+      setPlanStatus({ type: "error", message: error?.message || "Unexpected error while applying plan." });
+    } finally {
+      setLoadingPlan(false);
+    }
+  }
+
+  const compactPlan = editableEventPlan(activePlan, activeEvent);
+  const displayedPlan = reviewMode ? editor : compactPlan;
+  const displayedSetup = deriveEventPlanOperationalWindow(
+    activeEvent,
+    displayedPlan?.setup || {},
+  );
+  const includedStats = smartPlanIncludedStats(displayedPlan);
+  const linkedResourceNames = [
+    ...new Set(
+      linkedResources
+        .map((resource) => resource.sourceName || resource.location || resource.title)
+        .filter(Boolean),
+    ),
+  ];
+  const planReadOnly = displayedPlan?.status === "applied";
+  const displayedStaffingProposal = displayedPlan
+    ? syncStaffingProposalAssignments(
+        displayedPlan.setup?.staffingProposal || derivedStaffingProposal(displayedPlan),
+        eventAssignments,
+      )
+    : null;
+  const staffingStats = staffingProposalStats(displayedStaffingProposal || {}, eventAssignments);
+  const staffingOverlaps = staffingOverlapWarnings(displayedStaffingProposal || {}, staffProfiles, eventAssignments);
+  const recommendedPrepMinutes = smartPlanNeedsLongerPrep(displayedPlan);
+  const planStatusClass =
+    planStatus.type === "error"
+      ? "critical-warning"
+      : planStatus.type === "success"
+        ? "all-clear"
+        : "status-message";
+
+  if (reviewMode) {
+    if (!activeEvent || !editor) {
+      return (
+        <section className="manager-list smart-plan-review-view">
+          <button type="button" className="ghost-button compact-button smart-plan-back" onClick={onCloseReview}>
+            Back to Event Operations
+          </button>
+          <h2>Smart Plan review</h2>
+          <p className="muted">{activeEvent ? "Loading the selected plan..." : "Select an Event Board first."}</p>
+          {planStatus.message && <p className={planStatusClass}>{planStatus.message}</p>}
+        </section>
+      );
+    }
+
+    return (
+      <section className="manager-list smart-plan-review-view">
+        <button type="button" className="ghost-button compact-button smart-plan-back" onClick={onCloseReview}>
+          Back to Event Operations
+        </button>
+
+        <div className="section-heading static-heading">
+          <div>
+            <p className="eyebrow">Smart Plan review</p>
+            <h2>{activeEvent.title}</h2>
+          </div>
+          <span>{smartPlanStatusLabel(editor.status)}</span>
+        </div>
+
+        <div className="smart-plan-review-summary">
+          <div>
+            <small>Event</small>
+            <strong>{activeEvent.title}</strong>
+            <span>{activeEvent.venue || "No venue"}</span>
+          </div>
+          <div>
+            <small>Official event</small>
+            <strong>{formatOsloTimeRange(activeEvent.startsAt, activeEvent.endsAt)}</strong>
+            <span>Europe/Oslo</span>
+          </div>
+          <div>
+            <small>Operational window</small>
+            <strong>{formatOsloTimeRange(displayedSetup.prepStartsAt, displayedSetup.closeEndsAt)}</strong>
+            <span>
+              Prep {displayedSetup.prepMinutesBefore} min | Close {displayedSetup.closeMinutesAfter} min
+            </span>
+          </div>
+          <div>
+            <small>Plan</small>
+            <strong>{editor.title || "Untitled plan"}</strong>
+            <span>Version {editor.version} | {confidenceLabel(editor.confidence)} confidence</span>
+          </div>
+          <div>
+            <small>Included</small>
+            <strong>{includedStats.included} of {includedStats.total}</strong>
+            <span>tasks</span>
+          </div>
+          <div>
+            <small>Warnings</small>
+            <strong>{smartPlanWarningCount(editor)}</strong>
+            <span>{linkedResourceNames.length ? linkedResourceNames.join(", ") : "No linked resources"}</span>
+          </div>
+        </div>
+
+        <div className="smart-plan-sticky-actions" role="toolbar" aria-label="Smart Plan actions">
+          <button
+            type="button"
+            className="primary-button compact-button"
+            onClick={saveDraft}
+            disabled={loadingPlan || planReadOnly}
+          >
+            Save draft
+          </button>
+          <button
+            type="button"
+            className="primary-button compact-button"
+            onClick={applyPlan}
+            disabled={loadingPlan || planReadOnly}
+          >
+            Apply plan
+          </button>
+        </div>
+
+        {planStatus.message && <p className={planStatusClass}>{planStatus.message}</p>}
+        {planReadOnly && (
+          <p className="muted">Applied plans are read-only. Regenerate from Event Operations to create a new editable version.</p>
+        )}
+
+        <label className="smart-plan-title-field">
+          Plan title
+          <input
+            value={editor.title}
+            disabled={planReadOnly}
+            onChange={(event) => setEditor((current) => ({ ...current, title: event.target.value }))}
+          />
+        </label>
+
+        <section className="smart-plan-review-section">
+          <div className="smart-plan-section-title">
+            <div>
+              <h3>Operational window</h3>
+              <p className="muted">
+                Official event time stays unchanged. Recalculation only changes the suggested plan task times.
+              </p>
+            </div>
+            <button
+              type="button"
+              className="ghost-button compact-button"
+              onClick={recalculateSuggestedTimes}
+              disabled={planReadOnly}
+            >
+              Recalculate suggested times
+            </button>
+          </div>
+          <div className="smart-plan-window-grid">
+            <label>
+              Prep begins
+              <select
+                value={customWindowMode.prep ? "custom" : String(displayedSetup.prepMinutesBefore)}
+                disabled={planReadOnly}
+                onChange={(event) => selectWindowOption("prep", event.target.value)}
+              >
+                {[30, 60, 90, 120].map((minutes) => (
+                  <option key={minutes} value={minutes}>{minutes} min before</option>
+                ))}
+                <option value="custom">Custom</option>
+              </select>
+              {customWindowMode.prep && (
+                <input
+                  type="number"
+                  min="0"
+                  max="480"
+                  step="5"
+                  value={displayedSetup.prepMinutesBefore}
+                  disabled={planReadOnly}
+                  onChange={(event) => {
+                    if (event.target.value !== "") updateOperationalWindow("prep", event.target.value);
+                  }}
+                />
+              )}
+            </label>
+            <label>
+              Close ends
+              <select
+                value={customWindowMode.close ? "custom" : String(displayedSetup.closeMinutesAfter)}
+                disabled={planReadOnly}
+                onChange={(event) => selectWindowOption("close", event.target.value)}
+              >
+                {[30, 60, 90, 120].map((minutes) => (
+                  <option key={minutes} value={minutes}>{minutes} min after</option>
+                ))}
+                <option value="custom">Custom</option>
+              </select>
+              {customWindowMode.close && (
+                <input
+                  type="number"
+                  min="0"
+                  max="480"
+                  step="5"
+                  value={displayedSetup.closeMinutesAfter}
+                  disabled={planReadOnly}
+                  onChange={(event) => {
+                    if (event.target.value !== "") updateOperationalWindow("close", event.target.value);
+                  }}
+                />
+              )}
+            </label>
+          </div>
+          <p className="smart-plan-window-line">
+            Operational window: {formatOsloTimeRange(displayedSetup.prepStartsAt, displayedSetup.closeEndsAt)}
+            {" | "}Event service: {formatOsloTimeRange(activeEvent.startsAt, activeEvent.endsAt)}
+          </p>
+          {recommendedPrepMinutes > 0 && (
+            <div className="smart-plan-recommendation">
+              <p>
+                This setup may need {recommendedPrepMinutes} minutes rather than the current {displayedSetup.prepMinutesBefore}-minute prep window.
+                {editor.setup?.prepRecommendationReasons?.length
+                  ? ` Signals: ${editor.setup.prepRecommendationReasons.join(", ")}.`
+                  : ""}
+              </p>
+              <button
+                type="button"
+                className="ghost-button compact-button"
+                disabled={planReadOnly}
+                onClick={() => {
+                  setCustomWindowMode((current) => ({ ...current, prep: false }));
+                  updateOperationalWindow("prep", recommendedPrepMinutes);
+                }}
+              >
+                Extend prep to {recommendedPrepMinutes} minutes
+              </button>
+            </div>
+          )}
+        </section>
+
+        <section className="smart-plan-review-section">
+          <h3>Why this plan was suggested</h3>
+          {(editor.rationale || []).map((reason) => <p key={reason} className="muted">{reason}</p>)}
+          {(editor.warnings || editor.setup?.warnings || []).map((warning) => (
+            <p key={warning} className="critical-warning">{warning}</p>
+          ))}
+        </section>
+
+        <section ref={staffingSectionRef} className="smart-plan-review-section smart-staffing-section">
+          <div className="smart-plan-section-title">
+            <div>
+              <h3>Staffing &amp; Zones</h3>
+              <p className="muted">Recommended staffing is a planning draft. Real people are assigned only when you apply staffing assignments.</p>
+            </div>
+            <button
+              type="button"
+              className="ghost-button compact-button"
+              onClick={() => {
+                onCloseReview?.();
+                window.setTimeout(() => document.getElementById("event-command-structure")?.scrollIntoView?.({ behavior: "smooth" }), 50);
+              }}
+            >
+              Open Command Structure
+            </button>
+          </div>
+
+          <div className="smart-staffing-summary">
+            <div><small>Recommended</small><strong>{staffingStats.recommended}</strong></div>
+            <div><small>Assigned</small><strong>{staffingStats.assigned}</strong></div>
+            <div><small>Open positions</small><strong>{staffingStats.open}</strong></div>
+            <div><small>Confidence</small><strong>{confidenceLabel(displayedStaffingProposal?.confidence || 0)}</strong></div>
+          </div>
+          <p className="muted">
+            Active zones: {(displayedStaffingProposal?.activeZones || []).length
+              ? displayedStaffingProposal.activeZones.map(zoneDisplayLabel).join(" · ")
+              : "No specific zones detected"}
+          </p>
+          {displayedStaffingProposal?.guestCount ? (
+            <p className="status-message">Staffing based on known guest count: {displayedStaffingProposal.guestCount}.</p>
+          ) : (
+            <p className="critical-warning">Staffing based on incomplete information. Venue capacity is not confirmed attendance.</p>
+          )}
+          {(displayedStaffingProposal?.warnings || []).map((warning) => <p key={warning} className="critical-warning">{warning}</p>)}
+          {staffingOverlaps.map((warning) => <p key={warning} className="critical-warning">{warning}</p>)}
+
+          <div className="backup-actions smart-staffing-actions">
+            <button type="button" className="primary-button compact-button" disabled={planReadOnly} onClick={() => {
+              setEditor((current) => ({
+                ...current,
+                setup: {
+                  ...current.setup,
+                  staffingProposal: {
+                    ...(current.setup?.staffingProposal || derivedStaffingProposal(current)),
+                    requirements: (current.setup?.staffingProposal?.requirements || derivedStaffingProposal(current)?.requirements || []).map((item) => ({ ...item, included: true })),
+                  },
+                },
+              }));
+              setPlanStatus({ type: "pending", message: "Suggested staffing included. Save the draft or assign people when ready." });
+            }}>
+              Use suggested staffing
+            </button>
+            <button type="button" className="ghost-button compact-button" disabled={planReadOnly} onClick={resetStaffingRecommendation}>
+              Reset to recommendation
+            </button>
+            <button type="button" className="ghost-button compact-button" disabled={planReadOnly} onClick={addStaffingRequirement}>
+              Add role/zone
+            </button>
+          </div>
+
+          <div className="smart-staffing-list">
+            {(displayedStaffingProposal?.requirements || []).map((requirement) => {
+              const assigned = staffingRequirementAssignments(requirement, eventAssignments);
+              const open = staffingRequirementOpenCount(requirement, eventAssignments);
+              const expanded = expandedStaffing[requirement.requirementId] === true;
+              const selectedIds = requirement.assignedUserIds || [];
+              const filteredProfiles = staffProfiles.filter((profile) => staffProfileMatchesSearch(profile, staffSearch));
+              return (
+                <article key={requirement.requirementId} className={`smart-staffing-requirement ${requirement.included === false ? "is-excluded" : ""}`}>
+                  <div className="smart-staffing-row">
+                    <div>
+                      <strong>{requirement.roleLabel}</strong>
+                      <small>
+                        {requirement.zoneLabel || zoneDisplayLabel(requirement.zoneKey)} · {requirement.recommendedCount} recommended · {assigned.length} assigned · {open} open
+                      </small>
+                      <small>{formatOsloTimeRange(requirement.shiftStartsAt, requirement.shiftEndsAt)}</small>
+                      {assigned.length < Number(requirement.minimumCount || 0) && (
+                        <small className="critical-text">Below minimum staffing by {Number(requirement.minimumCount || 0) - assigned.length}.</small>
+                      )}
+                      {assigned.length > Number(requirement.recommendedCount || 0) && (
+                        <small className="critical-text">Assigned headcount is above the recommendation.</small>
+                      )}
+                    </div>
+                    <div className="smart-staffing-row-actions">
+                      {!planReadOnly && (
+                        <div className="smart-staffing-stepper" aria-label={`${requirement.roleLabel} recommended count`}>
+                          <button type="button" onClick={() => updateStaffingRequirement(requirement.requirementId, {
+                            recommendedCount: Math.max(0, Number(requirement.recommendedCount || 0) - 1),
+                          })}>−</button>
+                          <span>{requirement.recommendedCount}</span>
+                          <button type="button" onClick={() => updateStaffingRequirement(requirement.requirementId, {
+                            recommendedCount: Number(requirement.recommendedCount || 0) + 1,
+                          })}>+</button>
+                        </div>
+                      )}
+                      <button type="button" className="ghost-button compact-button" onClick={() => setExpandedStaffing((current) => ({
+                        ...current,
+                        [requirement.requirementId]: !current[requirement.requirementId],
+                      }))}>
+                        {expanded ? "Close" : planReadOnly ? "View" : "Assign staff / Edit"}
+                      </button>
+                    </div>
+                  </div>
+
+                  {expanded && (
+                    <div className="smart-staffing-editor">
+                      <label className="toggle-row">
+                        <input type="checkbox" checked={requirement.included !== false} disabled={planReadOnly} onChange={(event) => updateStaffingRequirement(requirement.requirementId, { included: event.target.checked })} />
+                        Included in staffing plan
+                      </label>
+                      <label>
+                        Role
+                        <select disabled={planReadOnly} value={requirement.roleKey} onChange={(event) => {
+                          const role = staffingRoleOptions.find((item) => item.key === event.target.value);
+                          updateStaffingRequirement(requirement.requirementId, {
+                            roleKey: role.key,
+                            roleLabel: role.label,
+                            zoneKey: role.zone,
+                            zoneLabel: zoneDisplayLabel(role.zone),
+                          });
+                        }}>
+                          {staffingRoleOptions.map((role) => <option key={role.key} value={role.key}>{role.label}</option>)}
+                        </select>
+                      </label>
+                      <label>
+                        Display label
+                        <input disabled={planReadOnly} value={requirement.roleLabel} onChange={(event) => updateStaffingRequirement(requirement.requirementId, { roleLabel: event.target.value })} />
+                      </label>
+                      <label>
+                        Zone
+                        <select disabled={planReadOnly} value={requirement.zoneKey} onChange={(event) => updateStaffingRequirement(requirement.requirementId, {
+                          zoneKey: event.target.value,
+                          zoneLabel: zoneDisplayLabel(event.target.value),
+                        })}>
+                          {eventZones.map((zone) => <option key={zone} value={zone}>{zoneDisplayLabel(zone)}</option>)}
+                        </select>
+                      </label>
+                      <label>
+                        Recommended count
+                        <input type="number" min="0" max="50" disabled={planReadOnly} value={requirement.recommendedCount} onChange={(event) => updateStaffingRequirement(requirement.requirementId, { recommendedCount: Math.max(0, Number(event.target.value) || 0) })} />
+                      </label>
+                      <label>
+                        Minimum count
+                        <input type="number" min="0" max="50" disabled={planReadOnly} value={requirement.minimumCount} onChange={(event) => updateStaffingRequirement(requirement.requirementId, { minimumCount: Math.max(0, Number(event.target.value) || 0) })} />
+                      </label>
+                      <label>
+                        Shift starts (Oslo)
+                        <input type="datetime-local" disabled={planReadOnly} value={toOsloDateTimeLocalValue(requirement.shiftStartsAt)} onChange={(event) => updateStaffingRequirement(requirement.requirementId, { shiftStartsAt: fromOsloDateTimeLocalValue(event.target.value) })} />
+                      </label>
+                      <label>
+                        Shift ends (Oslo)
+                        <input type="datetime-local" disabled={planReadOnly} value={toOsloDateTimeLocalValue(requirement.shiftEndsAt)} onChange={(event) => updateStaffingRequirement(requirement.requirementId, { shiftEndsAt: fromOsloDateTimeLocalValue(event.target.value) })} />
+                      </label>
+                      <label className="toggle-row">
+                        <input type="checkbox" checked={requirement.required === true} disabled={planReadOnly} onChange={(event) => updateStaffingRequirement(requirement.requirementId, { required: event.target.checked })} />
+                        Required role
+                      </label>
+                      <label className="smart-plan-wide-field">
+                        Reason / notes
+                        <textarea rows="2" disabled={planReadOnly} value={(requirement.rationale || []).join(" ")} onChange={(event) => updateStaffingRequirement(requirement.requirementId, { rationale: [event.target.value] })} />
+                      </label>
+                      {requirement.manuallyEdited && <p className="status-message smart-plan-wide-field">Manually edited</p>}
+
+                      <div className="smart-staffing-people smart-plan-wide-field">
+                        <div className="smart-plan-section-title">
+                          <div>
+                            <strong>Assign people</strong>
+                            <p className="muted">{selectedIds.length} selected for this plan · proposed shift {formatOsloTimeRange(requirement.shiftStartsAt, requirement.shiftEndsAt)}</p>
+                          </div>
+                        </div>
+                        {!planReadOnly && <input type="search" placeholder="Search staff by name" value={staffSearch} onChange={(event) => setStaffSearch(event.target.value)} />}
+                        {staffProfileStatus && <p className="muted">{staffProfileStatus}</p>}
+                        {!planReadOnly && (
+                          <div className="smart-staffing-profile-list">
+                            {filteredProfiles.map((profile) => {
+                              const profileAuthUserId = staffingProfileAuthUserId(profile);
+                              const selected = selectedIds.includes(profileAuthUserId);
+                              const exactExisting = eventAssignments.some((assignment) => staffingAssignmentMatches(assignment, requirement, profile));
+                              return (
+                                <button key={profile.profileId || profileAuthUserId} type="button" className={selected ? "is-selected" : ""} onClick={() => toggleProfileForRequirement(requirement, profile)}>
+                                  <strong>{staffingProfileDisplayName(profile)}</strong>
+                                  {profile.email && <span>{profile.email}</span>}
+                                  <small>{exactExisting ? "Already in Command Structure" : selected ? "Selected" : "Available"}</small>
+                                </button>
+                              );
+                            })}
+                          </div>
+                        )}
+                        {assigned.length > 0 && (
+                          <div className="smart-staffing-current">
+                            <strong>Current Event Command Structure</strong>
+                            {assigned.map((assignment) => (
+                              <div key={assignment.id}>
+                                <span>{assignment.assignedOperatorName || "Assigned profile"}</span>
+                                {!planReadOnly && (
+                                  <div>
+                                    <button type="button" className="text-button" onClick={() => updateStaffingRequirement(requirement.requirementId, {
+                                      assignedUserIds: selectedIds.filter((id) => id !== assignment.assignedAuthUserId),
+                                      linkedAssignmentIds: (requirement.linkedAssignmentIds || []).filter((id) => id !== assignment.id),
+                                    })}>Remove from plan only</button>
+                                    <button type="button" className="text-button critical-text" onClick={() => removeOperationalStaffingAssignment(requirement, assignment)}>Remove plan and event assignment</button>
+                                  </div>
+                                )}
+                              </div>
+                            ))}
+                          </div>
+                        )}
+                      </div>
+
+                      {!planReadOnly && (
+                        <button type="button" className="text-button critical-text smart-plan-wide-field" onClick={() => updateStaffingRequirement(requirement.requirementId, { included: false, assignedUserIds: [] })}>
+                          Remove requirement from plan
+                        </button>
+                      )}
+                    </div>
+                  )}
+                </article>
+              );
+            })}
+          </div>
+
+          {!planReadOnly && (
+            <button type="button" className="primary-button smart-staffing-apply" disabled={loadingPlan} onClick={applyStaffingAssignments}>
+              {confirmStaffingOverlap ? "Confirm staffing overlaps" : "Apply staffing assignments"}
+            </button>
+          )}
+          {planReadOnly && <p className="muted">Applied staffing is read-only here. Use Command Structure for explicit amendments.</p>}
+        </section>
+
+        {relevantRigGuides.length > 0 && (
+          <section className="smart-plan-review-section">
+            <h3>Rig references</h3>
+            <div className="smart-plan-rig-list">
+              {relevantRigGuides.map((guide) => (
+                <article key={guide.id} className="log-row">
+                  <strong>{guide.title}</strong>
+                  <small>{guide.notes || "Rig image not added yet."}</small>
+                  {guide.checklist?.length > 0 && <small>{guide.checklist.join(" | ")}</small>}
+                </article>
+              ))}
+            </div>
+          </section>
+        )}
+
+        {["before", "during", "after"].map((phase) => {
+          const phaseItems = (editor.planItems || []).filter(
+            (item) => (item.phase || "before") === phase,
+          );
+          const included = phaseItems.filter((item) => item.included !== false).length;
+          const phaseIsExpanded = expandedPhases[phase] === true;
+          return (
+            <section key={phase} className="smart-plan-phase">
+              <div className="smart-plan-phase-header">
+                <button
+                  type="button"
+                  className="smart-plan-phase-toggle"
+                  onClick={() => setExpandedPhases((current) => ({ ...current, [phase]: !current[phase] }))}
+                >
+                  <strong>{phase.toUpperCase()}</strong>
+                  <span>{included}/{phaseItems.length} included | {phaseIsExpanded ? "Hide" : "Show"}</span>
+                </button>
+                {!planReadOnly && phaseItems.length > 0 && (
+                  <div className="smart-plan-phase-actions">
+                    <button type="button" className="text-button" onClick={() => setPhaseIncluded(phase, true)}>Include all</button>
+                    <button type="button" className="text-button" onClick={() => setPhaseIncluded(phase, false)}>Exclude all</button>
+                  </div>
+                )}
+              </div>
+              {phaseIsExpanded && (
+                <div className="smart-plan-item-list">
+                  {phaseItems.length === 0 && <p className="muted">No tasks in this phase.</p>}
+                  {phaseItems.map((item) => {
+                    const itemExpanded = expandedPlanItems[item.planItemId] === true;
+                    const audience = smartPlanItemAudience(item);
+                    return (
+                      <article key={item.planItemId} className={`smart-plan-item ${item.included === false ? "is-excluded" : ""}`}>
+                        <div className="smart-plan-item-row">
+                          <label className="smart-plan-item-check">
+                            <input
+                              type="checkbox"
+                              checked={item.included !== false}
+                              disabled={planReadOnly}
+                              aria-label={`Include ${item.title || "plan item"}`}
+                              onChange={(event) => updatePlanItem(item.planItemId, { included: event.target.checked })}
+                            />
+                          </label>
+                          <div className="smart-plan-item-summary">
+                            <strong>{item.title || "Untitled task"}</strong>
+                            <small>
+                              {item.dueAt ? item.dueAt.slice(11, 16) : "No due time"} |{" "}
+                              {eventRoleLabel(item.assignedRoleKey) || "No role"} |{" "}
+                              {zoneDisplayLabel(item.zone || "all")} | {item.priority || "normal"}
+                            </small>
+                          </div>
+                          <button
+                            type="button"
+                            className="ghost-button compact-button"
+                            onClick={() => setExpandedPlanItems((current) => ({
+                              ...current,
+                              [item.planItemId]: !current[item.planItemId],
+                            }))}
+                          >
+                            {itemExpanded ? "Close" : planReadOnly ? "View" : "Edit"}
+                          </button>
+                        </div>
+                        {itemExpanded && (
+                          <div className="smart-plan-item-editor">
+                            <label>
+                              Title
+                              <input disabled={planReadOnly} value={item.title} onChange={(event) => updatePlanItem(item.planItemId, { title: event.target.value })} />
+                            </label>
+                            <label className="smart-plan-wide-field">
+                              Description
+                              <textarea disabled={planReadOnly} rows="3" value={item.description || ""} onChange={(event) => updatePlanItem(item.planItemId, { description: event.target.value })} />
+                            </label>
+                            <label>
+                              Due time (Oslo)
+                              <input disabled={planReadOnly} type="datetime-local" value={item.dueAt || ""} onChange={(event) => updatePlanItem(item.planItemId, { dueAt: event.target.value })} />
+                            </label>
+                            <label>
+                              Reminder time (Oslo)
+                              <input disabled={planReadOnly} type="datetime-local" value={item.remindAt || ""} onChange={(event) => updatePlanItem(item.planItemId, { remindAt: event.target.value })} />
+                            </label>
+                            <label>
+                              Phase
+                              <select disabled={planReadOnly} value={item.phase || "before"} onChange={(event) => updatePlanItem(item.planItemId, { phase: event.target.value })}>
+                                {["before", "during", "after"].map((value) => <option key={value} value={value}>{value}</option>)}
+                              </select>
+                            </label>
+                            <label>
+                              Zone
+                              <select disabled={planReadOnly} value={item.zone || "all"} onChange={(event) => updatePlanItem(item.planItemId, { zone: event.target.value })}>
+                                {eventZones.map((zone) => <option key={zone} value={zone}>{zone}</option>)}
+                              </select>
+                            </label>
+                            <label>
+                              Role
+                              <select disabled={planReadOnly} value={item.assignedRoleKey || ""} onChange={(event) => updatePlanItem(item.planItemId, { assignedRoleKey: event.target.value })}>
+                                <option value="">No role</option>
+                                {eventRoleOptions.map((role) => <option key={role.key} value={role.key}>{role.label}</option>)}
+                              </select>
+                            </label>
+                            <label>
+                              Audience
+                              <select disabled={planReadOnly} value={audience} onChange={(event) => updatePlanItemAudience(item.planItemId, event.target.value)}>
+                                <option value="">Assignment/role only</option>
+                                <option value="all_event_staff">All event staff</option>
+                                {audience && audience !== "all_event_staff" && <option value={audience}>{audience}</option>}
+                              </select>
+                            </label>
+                            <label>
+                              Priority
+                              <select disabled={planReadOnly} value={item.priority || "normal"} onChange={(event) => updatePlanItem(item.planItemId, { priority: event.target.value })}>
+                                {["low", "normal", "important", "critical"].map((priority) => <option key={priority} value={priority}>{priority}</option>)}
+                              </select>
+                            </label>
+                            <label>
+                              Guide reference
+                              <input value={item.guideRef || "None"} readOnly />
+                            </label>
+                            <label>
+                              Rig reference
+                              <input value={item.rigRef || "None"} readOnly />
+                            </label>
+                          </div>
+                        )}
+                      </article>
+                    );
+                  })}
+                </div>
+              )}
+            </section>
+          );
+        })}
+
+        <div className="backup-actions smart-plan-bottom-actions">
+          <button type="button" className="primary-button compact-button" onClick={saveDraft} disabled={loadingPlan || planReadOnly}>
+            Save draft
+          </button>
+          <button type="button" className="primary-button compact-button" onClick={applyPlan} disabled={loadingPlan || planReadOnly}>
+            Apply plan
+          </button>
+          <button type="button" className="ghost-button compact-button" onClick={onCloseReview}>
+            Back to Event Operations
+          </button>
+        </div>
+      </section>
+    );
+  }
+
+  return (
+    <section className="manager-list smart-plan-compact">
+      <div className="section-heading static-heading">
+        <div>
+          <p className="eyebrow">Smart Plan</p>
+          <h2>Suggested Event Plan</h2>
+        </div>
+        <span>{smartPlanStatusLabel(activePlan?.status)}</span>
+      </div>
+      {!activeEvent ? (
+        <p className="muted">Select or create an event board before generating a suggested plan.</p>
+      ) : (
+        <>
+          <div className="smart-plan-compact-body">
+            <div className="smart-plan-compact-title">
+              <strong>{compactPlan?.title || "No plan generated"}</strong>
+              <span>
+                {compactPlan
+                  ? `Version ${compactPlan.version} | ${confidenceLabel(compactPlan.confidence)} confidence`
+                  : "Generate a deterministic starting plan, then review before applying."}
+              </span>
+            </div>
+            <div className="smart-plan-compact-grid">
+              <div>
+                <small>Event time</small>
+                <strong>{formatOsloTimeRange(activeEvent.startsAt, activeEvent.endsAt)}</strong>
+              </div>
+              <div>
+                <small>Operational window</small>
+                <strong>{formatOsloTimeRange(displayedSetup.prepStartsAt, displayedSetup.closeEndsAt)}</strong>
+              </div>
+              <div>
+                <small>Included tasks</small>
+                <strong>{compactPlan ? `${includedStats.included}/${includedStats.total}` : "-"}</strong>
+              </div>
+              <div>
+                <small>Staffing</small>
+                <strong>{compactPlan ? `${staffingStats.recommended} recommended` : "-"}</strong>
+                <span>{compactPlan ? `${staffingStats.assigned} assigned · ${staffingStats.open} open` : ""}</span>
+              </div>
+              <div>
+                <small>Zones</small>
+                <strong>{displayedStaffingProposal?.activeZones?.length
+                  ? displayedStaffingProposal.activeZones.map(zoneDisplayLabel).join(" · ")
+                  : "-"}</strong>
+              </div>
+              <div>
+                <small>Warnings</small>
+                <strong>{compactPlan ? smartPlanWarningCount(compactPlan) : "-"}</strong>
+              </div>
+            </div>
+            <p className="muted smart-plan-linked-resources">
+              Linked resources: {linkedResourceNames.length ? linkedResourceNames.join(", ") : "none"}
+            </p>
+          </div>
+          <div className="backup-actions smart-plan-compact-actions">
+            {activeEvent && onOpenCockpit && (
+              <button type="button" className="primary-button compact-button" onClick={onOpenCockpit}>
+                Open Event Cockpit
+              </button>
+            )}
+            {!compactPlan && (
+              <button type="button" className="primary-button compact-button" onClick={generateSuggestion} disabled={loadingPlan || loadingCalendarContext}>
+                Generate plan
+              </button>
+            )}
+            {compactPlan && compactPlan.status !== "dismissed" && (
+              <button type="button" className="primary-button compact-button" onClick={onOpenReview}>
+                Review plan
+              </button>
+            )}
+            {compactPlan && compactPlan.status !== "dismissed" && compactPlan.status !== "applied" && (
+              <button type="button" className="ghost-button compact-button" onClick={() => onOpenReview?.("staffing")}>
+                Quick add staff
+              </button>
+            )}
+            {compactPlan && (
+              <button type="button" className="ghost-button compact-button" onClick={() => setShowRegenerationOptions(true)} disabled={loadingPlan || loadingCalendarContext}>
+                {compactPlan.status === "dismissed" ? "Generate new plan" : "Regenerate"}
+              </button>
+            )}
+            {compactPlan && ["suggested", "draft"].includes(compactPlan.status) && (
+              <button type="button" className="ghost-button compact-button" onClick={dismissPlan} disabled={loadingPlan}>
+                Dismiss
+              </button>
+            )}
+          </div>
+          {planStatus.message && (
+            <p className={planStatusClass}>{planStatus.message}</p>
+          )}
+          {showRegenerationOptions && (
+            <div className="smart-plan-regeneration">
+              <strong>Regenerate staffing safely</strong>
+              <p className="muted">Choose how the new recommendation should handle staffing work already in this plan.</p>
+              <button type="button" className="primary-button compact-button" onClick={() => generateSuggestion("merge")}>Merge new recommendation</button>
+              <button type="button" className="ghost-button compact-button" onClick={() => generateSuggestion("replace_unedited")}>Replace unedited suggestions</button>
+              <button type="button" className="text-button" onClick={() => setShowRegenerationOptions(false)}>Cancel</button>
+            </div>
+          )}
+        </>
+      )}
+    </section>
+  );
+}
+
 function EventOperationsCorePanel({
   user,
   date,
@@ -6248,14 +8155,19 @@ function EventOperationsCorePanel({
   eventRoleAssignments,
   eventTasks,
   eventHandovers,
+  eventLiveUpdates,
+  eventRealtimeStatus,
   onCreateEvent,
   onUpdateEvent,
   onAddStaff,
   onAssignRole,
+  onRemoveRole,
   onCreateTask,
   onUpdateTaskStatus,
   taskActionStatus,
   onCreateHandover,
+  onCreateLiveUpdate,
+  onChangeLiveUpdateStatus,
   onOpenGuide,
   onRefreshEventOperations,
 }) {
@@ -6278,6 +8190,9 @@ function EventOperationsCorePanel({
   const eventHandoversForEvent = eventHandovers.filter(
     (handover) => handover.eventId === activeEventIdValue,
   );
+  const eventLiveUpdatesForEvent = eventLiveUpdates.filter(
+    (update) => update.eventId === activeEventIdValue,
+  );
   const [eventForm, setEventForm] = useState(() => defaultEventOperationForm());
   const [eventBoardCreating, setEventBoardCreating] = useState(false);
   const [manualStaffName, setManualStaffName] = useState("");
@@ -6293,6 +8208,9 @@ function EventOperationsCorePanel({
   const [taskStatus, setTaskStatus] = useState({ type: "", message: "" });
   const [taskCreating, setTaskCreating] = useState(false);
   const [showLiveEventMode, setShowLiveEventMode] = useState(false);
+  const [showCockpit, setShowCockpit] = useState(false);
+  const [showSmartPlanReview, setShowSmartPlanReview] = useState(false);
+  const [smartPlanReviewFocus, setSmartPlanReviewFocus] = useState("");
   const taskFormRef = useRef(null);
   const taskTitleInputRef = useRef(null);
   const taskFormDisabled = !activeEventIdValue || taskCreating;
@@ -6324,6 +8242,7 @@ function EventOperationsCorePanel({
 
   function selectEventBoard(eventId) {
     setActiveEventId(eventId);
+    setShowSmartPlanReview(false);
     saveStorage(EVENT_SELECTED_BOARD_KEY, {
       date,
       eventId,
@@ -6559,6 +8478,25 @@ function EventOperationsCorePanel({
       });
       return;
     }
+    const occupiedSingleLead = role.singleLead
+      ? eventAssignments.find(
+          (assignment) => assignment.active && assignment.roleKey === role.key,
+        )
+      : null;
+    const replacingSingleLead = Boolean(
+      occupiedSingleLead &&
+      normalizedPersonName(occupiedSingleLead.assignedOperatorName) !== normalizedPersonName(assignmentForm.staffName),
+    );
+    if (role.singleLead && occupiedSingleLead && !replacingSingleLead) {
+      setAssignmentStatus({
+        type: "success",
+        message: `${assignmentForm.staffName.trim()} is already assigned as ${role.label}. No change was needed.`,
+      });
+      return;
+    }
+    if (replacingSingleLead && !window.confirm(
+      `${role.label} is currently assigned to ${occupiedSingleLead.assignedOperatorName || "another person"}. Replace that assignment with ${assignmentForm.staffName.trim()}?`,
+    )) return;
     setAssignmentStatus({ type: "pending", message: "Assigning role..." });
     try {
       const result = await onAssignRole({
@@ -6569,6 +8507,8 @@ function EventOperationsCorePanel({
         assignedOperatorName: assignmentForm.staffName.trim(),
         assignedByName: user.name,
         notes: assignmentForm.notes.trim(),
+        replaceSingleLead: replacingSingleLead,
+        expectedCurrentAssignmentId: replacingSingleLead ? occupiedSingleLead.id : "",
       });
       const record = result?.record || result;
       if (!record?.id) {
@@ -6627,6 +8567,67 @@ function EventOperationsCorePanel({
     }
   }
 
+  if (showSmartPlanReview) {
+    return (
+      <SmartEventPlanPanel
+        user={user}
+        activeEvent={activeEvent}
+        eventAssignments={eventAssignments}
+        eventTasks={eventBoardTasks}
+        onCreateTask={onCreateTask}
+        onAssignRole={onAssignRole}
+        onRemoveRole={onRemoveRole}
+        onRefreshEventOperations={onRefreshEventOperations}
+        reviewMode
+        reviewFocus={smartPlanReviewFocus}
+        onCloseReview={() => setShowSmartPlanReview(false)}
+      />
+    );
+  }
+
+  if (showCockpit) {
+    return (
+      <EventOperationsCockpit
+        user={user}
+        eventOperation={activeEvent}
+        eventTasks={eventBoardTasks}
+        assignments={eventAssignments}
+        presence={visibleEventStaffPresence}
+        handovers={eventHandoversForEvent}
+        liveUpdates={eventLiveUpdatesForEvent}
+        managerView
+        backendStatus={eventRealtimeStatus}
+        refreshToken={[
+          activeEvent?.updatedAt || "",
+          ...eventBoardTasks.map((item) => item.updatedAt || item.status || ""),
+          ...eventAssignments.map((item) => item.updatedAt || item.id),
+          ...visibleEventStaffPresence.map((item) => item.lastSeenAt || item.updatedAt || item.id),
+          ...eventHandoversForEvent.map((item) => item.createdAt || item.id),
+          ...eventLiveUpdatesForEvent.map((item) => item.updatedAt || item.id),
+        ].join("|")}
+        onClose={() => setShowCockpit(false)}
+        onRefresh={onRefreshEventOperations}
+        onTaskStatus={onUpdateTaskStatus}
+        onCreateLiveUpdate={onCreateLiveUpdate}
+        onAcknowledgeLiveUpdate={(id) => onChangeLiveUpdateStatus(id, "acknowledged")}
+        onResolveLiveUpdate={(id, note) => onChangeLiveUpdateStatus(id, "resolved", note)}
+        onCancelLiveUpdate={(id, note) => onChangeLiveUpdateStatus(id, "cancelled", note)}
+        onUpdateEvent={onUpdateEvent}
+        onCreateHandover={onCreateHandover}
+        onOpenGuide={onOpenGuide}
+        onNavigate={(target) => {
+          if (target === "plan" || target === "smart-plan" || target === "staffing") {
+            setSmartPlanReviewFocus(target === "staffing" ? "staffing" : "");
+            setShowCockpit(false);
+            setShowSmartPlanReview(true);
+          } else if (["tasks", "command-structure", "event-board", "linked-resources", "presence", "guides"].includes(target)) {
+            setShowCockpit(false);
+          }
+        }}
+      />
+    );
+  }
+
   if (showLiveEventMode) {
     return (
       <EventLiveModePanel
@@ -6639,6 +8640,10 @@ function EventOperationsCorePanel({
         onUpdateTaskStatus={onUpdateTaskStatus}
         taskActionStatus={taskActionStatus}
         onOpenGuide={onOpenGuide}
+        onOpenCockpit={() => {
+          setShowLiveEventMode(false);
+          setShowCockpit(true);
+        }}
         onClose={() => setShowLiveEventMode(false)}
       />
     );
@@ -6658,31 +8663,6 @@ function EventOperationsCorePanel({
             { id: "event-operations-troubleshooting", label: "Troubleshooting" },
           ]}
         />
-        <form className="editor-form compact-editor" onSubmit={submitEvent}>
-          <label>
-            Title
-            <input value={eventForm.title} onChange={(event) => setEventForm((current) => ({ ...current, title: event.target.value }))} />
-          </label>
-          <label>
-            Venue
-            <input value={eventForm.venue} onChange={(event) => setEventForm((current) => ({ ...current, venue: event.target.value }))} />
-          </label>
-          <label>
-            Start
-            <input type="datetime-local" value={eventForm.startsAt} onChange={(event) => setEventForm((current) => ({ ...current, startsAt: event.target.value }))} />
-          </label>
-          <label>
-            End
-            <input type="datetime-local" value={eventForm.endsAt} onChange={(event) => setEventForm((current) => ({ ...current, endsAt: event.target.value }))} />
-          </label>
-          <label>
-            Notes
-            <textarea rows="2" value={eventForm.notes} onChange={(event) => setEventForm((current) => ({ ...current, notes: event.target.value }))} />
-          </label>
-          <button type="submit" className="primary-button compact-button" disabled={eventBoardCreating}>
-            {eventBoardCreating ? "Creating event board..." : "Create manual event"}
-          </button>
-        </form>
         {eventBoardStatus.message && (
           <p className={eventBoardStatus.type === "error" ? "critical-warning" : eventBoardStatus.type === "success" ? "all-clear" : "status-message"}>
             {eventBoardStatus.message}
@@ -6723,16 +8703,84 @@ function EventOperationsCorePanel({
                 ))}
               </select>
             </label>
-            <button
-              type="button"
-              className="primary-button compact-button"
-              onClick={() => setShowLiveEventMode(true)}
-            >
-              Open Live Event Mode
-            </button>
           </article>
         )}
       </section>
+
+      {activeEvent && (
+        <EventCockpitSummaryCard
+          eventOperation={activeEvent}
+          eventTasks={eventBoardTasks}
+          assignments={eventAssignments}
+          presence={visibleEventStaffPresence}
+          liveUpdates={eventLiveUpdatesForEvent}
+          onOpen={() => setShowCockpit(true)}
+        />
+      )}
+
+      <SmartEventPlanPanel
+        user={user}
+        activeEvent={activeEvent}
+        eventAssignments={eventAssignments}
+        eventTasks={eventBoardTasks}
+        onCreateTask={onCreateTask}
+        onAssignRole={onAssignRole}
+        onRemoveRole={onRemoveRole}
+        onRefreshEventOperations={onRefreshEventOperations}
+        onOpenReview={(focus = "") => {
+          setSmartPlanReviewFocus(focus);
+          setShowSmartPlanReview(true);
+        }}
+        onOpenCockpit={() => setShowCockpit(true)}
+      />
+
+      {activeEvent && (
+        <div className="backup-actions event-operations-primary-actions">
+          <button
+            type="button"
+            className="primary-button compact-button"
+            onClick={() => setShowCockpit(true)}
+          >
+            Open Event Cockpit
+          </button>
+          <button
+            type="button"
+            className="primary-button compact-button"
+            onClick={() => setShowLiveEventMode(true)}
+          >
+            Open Live Event Mode
+          </button>
+        </div>
+      )}
+
+      <details className="manager-list event-board-create-details">
+        <summary>Create manual event board</summary>
+        <form className="editor-form compact-editor" onSubmit={submitEvent}>
+          <label>
+            Title
+            <input value={eventForm.title} onChange={(event) => setEventForm((current) => ({ ...current, title: event.target.value }))} />
+          </label>
+          <label>
+            Venue
+            <input value={eventForm.venue} onChange={(event) => setEventForm((current) => ({ ...current, venue: event.target.value }))} />
+          </label>
+          <label>
+            Start
+            <input type="datetime-local" value={eventForm.startsAt} onChange={(event) => setEventForm((current) => ({ ...current, startsAt: event.target.value }))} />
+          </label>
+          <label>
+            End
+            <input type="datetime-local" value={eventForm.endsAt} onChange={(event) => setEventForm((current) => ({ ...current, endsAt: event.target.value }))} />
+          </label>
+          <label>
+            Notes
+            <textarea rows="2" value={eventForm.notes} onChange={(event) => setEventForm((current) => ({ ...current, notes: event.target.value }))} />
+          </label>
+          <button type="submit" className="primary-button compact-button" disabled={eventBoardCreating}>
+            {eventBoardCreating ? "Creating event board..." : "Create manual event"}
+          </button>
+        </form>
+      </details>
 
       <EventCalendarImportPanel
         eventOperations={eventOperations}
@@ -6857,7 +8905,7 @@ function EventOperationsCorePanel({
             </select>
             <small>
               {eventRoleOption(assignmentForm.roleKey)?.singleLead
-                ? "Single-lead role: assigning a new person replaces the active lead for this event."
+                ? "Single-lead role: replacing the active lead requires confirmation."
                 : "Team role: multiple people can be assigned."}
             </small>
           </label>
@@ -7175,16 +9223,21 @@ function EventFloorDashboard({
   eventRoleAssignments,
   eventOperationTasks,
   eventHandovers,
+  eventLiveUpdates,
+  eventRealtimeStatus,
   staffUsers,
   requestWriteAccess,
   onCreateEventOperation,
   onUpdateEventOperation,
   onAddEventStaffPresence,
   onAssignEventRole,
+  onRemoveEventRole,
   onCreateEventOperationTask,
   onUpdateEventOperationTaskStatus,
   eventTaskActionStatus,
   onCreateEventHandover,
+  onCreateEventLiveUpdate,
+  onChangeEventLiveUpdateStatus,
   onSyncFinancialSignoff,
   onRefreshFinancialSignoffs,
   onEnsureShiftSession,
@@ -7332,14 +9385,19 @@ function EventFloorDashboard({
         eventRoleAssignments={eventRoleAssignments}
         eventTasks={eventOperationTasks}
         eventHandovers={eventHandovers}
+        eventLiveUpdates={eventLiveUpdates}
+        eventRealtimeStatus={eventRealtimeStatus}
         onCreateEvent={onCreateEventOperation}
         onUpdateEvent={onUpdateEventOperation}
         onAddStaff={onAddEventStaffPresence}
         onAssignRole={onAssignEventRole}
+        onRemoveRole={onRemoveEventRole}
         onCreateTask={onCreateEventOperationTask}
         onUpdateTaskStatus={onUpdateEventOperationTaskStatus}
         taskActionStatus={eventTaskActionStatus}
         onCreateHandover={onCreateEventHandover}
+        onCreateLiveUpdate={onCreateEventLiveUpdate}
+        onChangeLiveUpdateStatus={onChangeEventLiveUpdateStatus}
         onOpenGuide={onOpenGuide}
         onRefreshEventOperations={onRefreshEventOperations}
       />
@@ -14895,6 +16953,9 @@ function App() {
   const [eventHandovers, setEventHandovers] = useState(() =>
     normalizeRecords(readStorage(EVENT_HANDOVER_KEY, [])),
   );
+  const [eventLiveUpdates, setEventLiveUpdates] = useState(() =>
+    normalizeRecords(readStorage(EVENT_LIVE_UPDATE_KEY, [])),
+  );
   const [eventTaskAlertState, setEventTaskAlertState] = useState(() =>
     readStorage(EVENT_TASK_ALERT_STATE_KEY, {}),
   );
@@ -15148,6 +17209,7 @@ function App() {
   useEffect(() => saveStorage(EVENT_ROLE_ASSIGNMENT_KEY, eventRoleAssignments), [eventRoleAssignments]);
   useEffect(() => saveStorage(EVENT_OPERATION_TASK_KEY, eventOperationTasks), [eventOperationTasks]);
   useEffect(() => saveStorage(EVENT_HANDOVER_KEY, eventHandovers), [eventHandovers]);
+  useEffect(() => saveStorage(EVENT_LIVE_UPDATE_KEY, eventLiveUpdates), [eventLiveUpdates]);
   useEffect(() => saveStorage(EVENT_TASK_ALERT_STATE_KEY, eventTaskAlertState), [eventTaskAlertState]);
   useEffect(
     () => saveStorage(EVENT_TASK_ALERT_SETTINGS_KEY, eventTaskAlertSettings),
@@ -18107,15 +20169,30 @@ function App() {
     const handoverResults = await Promise.all(
       eventIds.map((eventId) => fetchResponsibilityHandovers(eventId)),
     );
+    const liveUpdateResults = await Promise.all(
+      eventIds.map((eventId) => listEventLiveUpdates(
+        eventId,
+        currentOperator?.name || effectiveUser.operatorName || effectiveUser.name || "",
+      )),
+    );
     const assignments = assignmentResults.flatMap((result) => result.records || []);
     const tasks = taskResults.flatMap((result) => result.records || []);
     const handovers = handoverResults.flatMap((result) => result.records || []);
+    const liveUpdates = liveUpdateResults.flatMap((result) => result.records || []);
     if (assignments.length)
       setEventRoleAssignments((current) => mergeById(current, assignments));
     if (tasks.length)
       setEventOperationTasks((current) => mergeById(current, tasks));
     if (handovers.length)
       setEventHandovers((current) => mergeById(current, handovers));
+    const refreshedLiveUpdateEventIds = new Set(
+      liveUpdateResults.flatMap((result, index) => result.ok ? [eventIds[index]] : []),
+    );
+    if (refreshedLiveUpdateEventIds.size)
+      setEventLiveUpdates((current) => mergeById(
+        current.filter((item) => !refreshedLiveUpdateEventIds.has(item.eventId)),
+        liveUpdates,
+      ));
   }
 
   async function refreshEventOperationsLive(reason = "event_task_poll") {
@@ -18288,6 +20365,26 @@ function App() {
     return {
       ok: false,
       message: result.message || result.error?.message || "Role assignment could not be saved in Supabase.",
+      error: result.error,
+    };
+  }
+
+  async function removeEventRoleAssignment(assignmentId) {
+    if (!(await requestWriteAccess()))
+      return { ok: false, message: "Location guard is blocking role assignment changes." };
+    const result = await deactivateEventRoleAssignment(assignmentId);
+    if (result.ok && result.record) {
+      setEventRoleAssignments((current) =>
+        current.map((assignment) =>
+          assignment.id === result.record.id ? { ...assignment, active: false } : assignment,
+        ),
+      );
+      refreshEventOperationsLive("event_role_deactivated");
+      return { ok: true, record: result.record, message: "Role assignment removed." };
+    }
+    return {
+      ok: false,
+      message: result.message || result.error?.message || "Role assignment could not be removed.",
       error: result.error,
     };
   }
@@ -18486,6 +20583,47 @@ function App() {
     };
   }
 
+  async function saveEventLiveUpdate(payload) {
+    if (!(await requestWriteAccess()))
+      return { ok: false, message: "Location guard is blocking live operational updates." };
+    const result = await createEventLiveUpdate({
+      ...payload,
+      createdByName: payload.createdByName || effectiveUser.operatorName || effectiveUser.name,
+    });
+    if (result.ok && result.record) {
+      upsertEventList(setEventLiveUpdates, result.record);
+      refreshEventOperationsLive("event_live_update_created");
+      return result;
+    }
+    return {
+      ok: false,
+      message: result.message || result.error?.message || "Live update could not be saved in Supabase.",
+      error: result.error,
+    };
+  }
+
+  async function changeEventLiveUpdateStatus(updateId, status, resolutionNote = "") {
+    if (!(await requestWriteAccess()))
+      return { ok: false, message: "Location guard is blocking live operational updates." };
+    const action =
+      status === "resolved"
+        ? resolveEventLiveUpdate(updateId, resolutionNote)
+        : status === "cancelled"
+          ? cancelEventLiveUpdate(updateId, resolutionNote)
+          : acknowledgeEventLiveUpdate(updateId);
+    const result = await action;
+    if (result.ok && result.record) {
+      upsertEventList(setEventLiveUpdates, result.record);
+      refreshEventOperationsLive(`event_live_update_${status}`);
+      return result;
+    }
+    return {
+      ok: false,
+      message: result.message || result.error?.message || "Live update status could not be saved.",
+      error: result.error,
+    };
+  }
+
   const activeShiftScope = normalizeShiftScope(
     currentShiftScope,
     effectiveUser,
@@ -18655,16 +20793,21 @@ function App() {
             eventRoleAssignments={eventRoleAssignments}
             eventOperationTasks={eventOperationTasks}
             eventHandovers={eventHandovers}
+            eventLiveUpdates={eventLiveUpdates}
+            eventRealtimeStatus={eventRealtimeStatus}
             staffUsers={staffUsers}
             requestWriteAccess={requestWriteAccess}
             onCreateEventOperation={saveEventOperation}
             onUpdateEventOperation={saveEventOperationUpdate}
             onAddEventStaffPresence={saveManualEventStaff}
             onAssignEventRole={saveEventRoleAssignment}
+            onRemoveEventRole={removeEventRoleAssignment}
             onCreateEventOperationTask={saveEventOperationTask}
             onUpdateEventOperationTaskStatus={handleEventTaskStatusUpdate}
             eventTaskActionStatus={eventTaskActionStatus}
             onCreateEventHandover={saveEventHandover}
+            onCreateEventLiveUpdate={saveEventLiveUpdate}
+            onChangeEventLiveUpdateStatus={changeEventLiveUpdateStatus}
             onSyncFinancialSignoff={syncFinancialSignoff}
             onRefreshFinancialSignoffs={refreshFinancialSignoffsFromBackend}
             onEnsureShiftSession={ensureShiftSession}
@@ -18714,16 +20857,21 @@ function App() {
             eventRoleAssignments={eventRoleAssignments}
             eventOperationTasks={eventOperationTasks}
             eventHandovers={eventHandovers}
+            eventLiveUpdates={eventLiveUpdates}
+            eventRealtimeStatus={eventRealtimeStatus}
             staffUsers={staffUsers}
             requestWriteAccess={requestWriteAccess}
             onCreateEventOperation={saveEventOperation}
             onUpdateEventOperation={saveEventOperationUpdate}
             onAddEventStaffPresence={saveManualEventStaff}
             onAssignEventRole={saveEventRoleAssignment}
+            onRemoveEventRole={removeEventRoleAssignment}
             onCreateEventOperationTask={saveEventOperationTask}
             onUpdateEventOperationTaskStatus={handleEventTaskStatusUpdate}
             eventTaskActionStatus={eventTaskActionStatus}
             onCreateEventHandover={saveEventHandover}
+            onCreateEventLiveUpdate={saveEventLiveUpdate}
+            onChangeEventLiveUpdateStatus={changeEventLiveUpdateStatus}
             onSyncFinancialSignoff={syncFinancialSignoff}
             onRefreshFinancialSignoffs={refreshFinancialSignoffsFromBackend}
             onEnsureShiftSession={ensureShiftSession}
@@ -18841,8 +20989,10 @@ function App() {
             responsibleAssignments={responsibleAssignments}
             events={events}
             eventOperations={eventOperations}
+            eventStaffPresence={eventStaffPresence}
             eventRoleAssignments={eventRoleAssignments}
             eventTasks={eventOperationTasks}
+            eventLiveUpdates={eventLiveUpdates}
             cashSignoffs={cashSignoffs}
             assetChecks={assetChecks}
             alertBackendStatus={alertBackendStatus}
@@ -18863,6 +21013,14 @@ function App() {
             eventActorReadyForAlerts={eventActorReadyForAlerts}
             onEnableEventTaskAlerts={enableEventTaskAlerts}
             onRefreshEventOperations={refreshEventOperationsLive}
+            onOpenEventCockpit={() => {
+              if (isManager(effectiveUser) || canUseEventFloorDashboard(effectiveUser)) {
+                setSelectedShift(null);
+                setShowEventFloorManager(true);
+              } else {
+                setSelectedShift("event");
+              }
+            }}
             refreshAlerts={loadSupabaseAlerts}
             onAlert={() => setShowGlobalAlert(true)}
           />
@@ -18873,6 +21031,10 @@ function App() {
             eventOperations={eventOperations}
             eventRoleAssignments={eventRoleAssignments}
             eventTasks={eventOperationTasks}
+            eventStaffPresence={eventStaffPresence}
+            eventHandovers={eventHandovers}
+            eventLiveUpdates={eventLiveUpdates}
+            eventRealtimeStatus={eventRealtimeStatus}
             onUpdateTaskStatus={handleEventTaskStatusUpdate}
             eventTaskAlertState={eventTaskAlertState}
             taskActionStatus={eventTaskActionStatus}
@@ -18880,6 +21042,8 @@ function App() {
             notificationPermission={eventTaskAlertSettings.notificationPermission}
             onEnableAlerts={enableEventTaskAlerts}
             onRefresh={refreshEventOperationsLive}
+            onCreateLiveUpdate={saveEventLiveUpdate}
+            onChangeLiveUpdateStatus={changeEventLiveUpdateStatus}
             onChangeOperator={() => {
               setSelectedShift(null);
               setCurrentShiftScope(null);

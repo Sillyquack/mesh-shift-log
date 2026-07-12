@@ -257,10 +257,42 @@ export async function fetchEventRoleAssignments(eventId) {
   return result(true, { mode: 'authenticated', records: (data || []).map(normalizeAssignment).filter(Boolean), rows: data || [] });
 }
 
+export async function fetchAssignableEventStaff() {
+  const ctx = await context();
+  if (!ctx.ok) return { ...ctx, profiles: [] };
+  const { data, error } = await supabaseAuthClient.rpc('list_assignable_event_staff');
+  if (error) {
+    return result(false, {
+      mode: 'sync_error',
+      message: error.message || 'Assignable event staff could not be loaded.',
+      error,
+      profiles: [],
+    });
+  }
+  const profiles = (data || []).map((row) => ({
+    profileId: row.profile_id || '',
+    authUserId: row.auth_user_id || '',
+    displayName: row.display_name || '',
+    email: row.email || '',
+    role: row.profile_role || '',
+    organizationId: row.organization_id || '',
+    active: true,
+    isSharedDevice: false,
+  }));
+  return result(true, {
+    mode: 'authenticated',
+    profiles,
+    message: `Loaded ${profiles.length} assignable event staff profile${profiles.length === 1 ? '' : 's'}.`,
+  });
+}
+
 export async function upsertEventRoleAssignment(payload) {
   const ctx = await context();
   if (!ctx.ok) return ctx;
-  const { data, error } = await supabaseAuthClient.rpc('create_event_role_assignment', {
+  const rpcName = payload.replaceSingleLead
+    ? 'replace_event_role_assignment'
+    : 'create_event_role_assignment';
+  const rpcPayload = {
     input_event_id: payload.eventId,
     input_role_key: payload.roleKey,
     input_role_label: payload.roleLabel,
@@ -270,6 +302,22 @@ export async function upsertEventRoleAssignment(payload) {
     input_assigned_operator_source: payload.assignedOperatorSource || '',
     input_assigned_by_name: payload.assignedByName || '',
     input_notes: payload.notes || '',
+  };
+  if (payload.replaceSingleLead) {
+    rpcPayload.input_expected_current_assignment_id = payload.expectedCurrentAssignmentId || null;
+  }
+  const { data, error } = await supabaseAuthClient.rpc(rpcName, rpcPayload);
+  if (error) return result(false, { mode: 'sync_error', message: error.message, error });
+  const row = Array.isArray(data) ? data[0] : data;
+  return result(true, { mode: 'authenticated', record: normalizeAssignment(row), row });
+}
+
+export async function deactivateEventRoleAssignment(assignmentId) {
+  const ctx = await context();
+  if (!ctx.ok) return ctx;
+  if (!assignmentId) return result(false, { message: 'Role assignment is required.' });
+  const { data, error } = await supabaseAuthClient.rpc('deactivate_event_role_assignment', {
+    input_assignment_id: assignmentId,
   });
   if (error) return result(false, { mode: 'sync_error', message: error.message, error });
   const row = Array.isArray(data) ? data[0] : data;
