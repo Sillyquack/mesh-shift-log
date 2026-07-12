@@ -2685,6 +2685,298 @@ textarea {
   }
 }
 
+/* Event Operations Cockpit */
+.cockpit-summary-card,
+.event-cockpit-view,
+.cockpit-section,
+.cockpit-grid > section,
+.cockpit-completion {
+  min-width: 0;
+}
+
+.cockpit-summary-card {
+  display: grid;
+  gap: 14px;
+}
+
+.cockpit-summary-grid,
+.cockpit-live-strip,
+.cockpit-metrics {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: 8px;
+}
+
+.cockpit-summary-grid > div,
+.cockpit-live-strip article,
+.cockpit-metrics span {
+  display: grid;
+  align-content: start;
+  gap: 4px;
+  min-height: 76px;
+  padding: 12px;
+  border: 1px solid var(--line);
+  border-radius: 6px;
+  background: var(--surface-strong);
+}
+
+.cockpit-summary-grid small,
+.cockpit-live-strip small,
+.cockpit-metrics span {
+  color: var(--muted);
+}
+
+.cockpit-summary-grid strong,
+.cockpit-live-strip strong {
+  overflow-wrap: anywhere;
+}
+
+.event-cockpit-view {
+  display: grid;
+  gap: 16px;
+}
+
+.cockpit-header {
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr) auto;
+  gap: 14px;
+  align-items: start;
+}
+
+.cockpit-header h2,
+.cockpit-section h3,
+.cockpit-section h4 {
+  margin: 0;
+}
+
+.cockpit-header span,
+.timeline-row span,
+.timeline-row small,
+.live-update-row span,
+.live-update-row small,
+.zone-readiness-card span,
+.zone-readiness-card small {
+  display: block;
+  color: var(--muted);
+}
+
+.cockpit-live-strip {
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+}
+
+.cockpit-live-strip article {
+  min-height: 94px;
+  border-top: 4px solid var(--brand);
+}
+
+.cockpit-live-strip article.is-risk {
+  border-top-color: var(--critical);
+  background: color-mix(in srgb, var(--critical) 8%, var(--surface));
+}
+
+.cockpit-tabs {
+  display: flex;
+  gap: 4px;
+  max-width: 100%;
+  padding: 4px;
+  overflow-x: auto;
+  border: 1px solid var(--line);
+  border-radius: 6px;
+  background: var(--surface-strong);
+  scrollbar-width: thin;
+}
+
+.cockpit-tabs button {
+  flex: 0 0 auto;
+  min-height: 40px;
+  padding: 8px 12px;
+  border: 0;
+  border-radius: 4px;
+  background: transparent;
+  color: var(--muted);
+  white-space: nowrap;
+}
+
+.cockpit-tabs button.is-active {
+  background: var(--surface);
+  color: var(--text);
+  box-shadow: 0 1px 4px rgba(22, 32, 29, 0.12);
+}
+
+.cockpit-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 12px;
+}
+
+.cockpit-grid > section,
+.cockpit-section,
+.cockpit-completion {
+  padding: 16px;
+  border: 1px solid var(--line);
+  border-radius: 6px;
+  background: var(--surface);
+}
+
+.cockpit-section {
+  display: grid;
+  gap: 12px;
+}
+
+.timeline-row,
+.live-update-row,
+.readiness-check,
+.zone-readiness-card {
+  display: grid;
+  gap: 12px;
+  padding: 12px 0;
+  border-bottom: 1px solid var(--line);
+}
+
+.timeline-row {
+  grid-template-columns: 62px minmax(0, 1fr);
+}
+
+.timeline-row time {
+  font-weight: 800;
+  color: var(--brand-strong);
+}
+
+.timeline-row.status-overdue,
+.live-update-row.priority-critical {
+  border-left: 4px solid var(--critical);
+  padding-left: 12px;
+}
+
+.readiness-check,
+.live-update-row {
+  grid-template-columns: minmax(0, 1fr) minmax(180px, 0.4fr);
+}
+
+.readiness-check.status-pass {
+  border-left: 4px solid var(--brand);
+  padding-left: 12px;
+}
+
+.readiness-check.status-warning {
+  border-left: 4px solid var(--important);
+  padding-left: 12px;
+}
+
+.readiness-check.status-blocker {
+  border-left: 4px solid var(--critical);
+  padding-left: 12px;
+}
+
+.cockpit-update-form,
+.cockpit-handover-form {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 12px;
+  padding: 14px;
+  border: 1px solid var(--line);
+  border-radius: 6px;
+  background: var(--surface-strong);
+}
+
+.cockpit-update-form label,
+.cockpit-handover-form label {
+  display: grid;
+  gap: 6px;
+  min-width: 0;
+}
+
+.cockpit-update-form textarea,
+.cockpit-handover-form textarea,
+.cockpit-update-form .backup-actions,
+.cockpit-handover-form .backup-actions {
+  grid-column: 1 / -1;
+}
+
+.cockpit-metrics {
+  grid-template-columns: repeat(5, minmax(0, 1fr));
+}
+
+.cockpit-metrics span {
+  min-height: 68px;
+}
+
+.cockpit-metrics strong {
+  color: var(--text);
+  font-size: 1.2rem;
+}
+
+.risk-group {
+  display: grid;
+  gap: 8px;
+}
+
+.cockpit-completion {
+  border-color: color-mix(in srgb, var(--important) 40%, var(--line));
+}
+
+@media (max-width: 720px) {
+  .cockpit-summary-grid,
+  .cockpit-metrics {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+
+  .cockpit-header {
+    grid-template-columns: 1fr;
+  }
+
+  .cockpit-header > button {
+    justify-self: stretch;
+  }
+
+  .cockpit-live-strip,
+  .cockpit-grid,
+  .cockpit-update-form,
+  .cockpit-handover-form,
+  .readiness-check,
+  .live-update-row {
+    grid-template-columns: 1fr;
+  }
+
+  .cockpit-update-form textarea,
+  .cockpit-handover-form textarea,
+  .cockpit-update-form .backup-actions,
+  .cockpit-handover-form .backup-actions {
+    grid-column: auto;
+  }
+
+  .event-cockpit-view {
+    padding-inline: 12px;
+  }
+}
+
+@media print {
+  .no-print,
+  .top-bar,
+  .page-status,
+  .event-task-sticky-alert {
+    display: none !important;
+  }
+
+  body,
+  .event-cockpit-view,
+  .cockpit-section {
+    background: #fff !important;
+    color: #111 !important;
+    box-shadow: none !important;
+  }
+
+  .event-cockpit-view > :not(.event-brief-print) {
+    display: none !important;
+  }
+
+  .event-brief-print {
+    display: block !important;
+    border: 0;
+    padding: 0;
+  }
+}
+
 @media (max-width: 390px) {
   .alert-header {
     grid-template-columns: 1fr;

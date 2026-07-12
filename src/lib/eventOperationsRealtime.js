@@ -8,6 +8,7 @@ const REALTIME_TABLES = [
   'event_responsibility_handovers',
   'event_operation_calendar_links',
   'event_run_sheet_plans',
+  'event_live_updates',
 ];
 
 export function subscribeToEventOperationsRealtime({
@@ -43,7 +44,7 @@ export function subscribeToEventOperationsRealtime({
       'postgres_changes',
       { event: '*', schema: 'public', table, filter },
       (payload) => {
-        if (eventId && ['event_tasks', 'event_staff_presence', 'event_role_assignments', 'event_responsibility_handovers'].includes(table)) {
+        if (eventId && ['event_tasks', 'event_staff_presence', 'event_role_assignments', 'event_responsibility_handovers', 'event_live_updates'].includes(table)) {
           const payloadEventId = payload.new?.event_id || payload.old?.event_id || '';
           if (payloadEventId && payloadEventId !== eventId) return;
         }

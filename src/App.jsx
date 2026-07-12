@@ -136,6 +136,16 @@ import {
   updateEventPlan,
 } from "./lib/eventPlanClient.js";
 import { subscribeToEventOperationsRealtime } from "./lib/eventOperationsRealtime.js";
+import EventOperationsCockpit, {
+  EventCockpitSummaryCard,
+} from "./components/EventOperationsCockpit.jsx";
+import {
+  acknowledgeEventLiveUpdate,
+  cancelEventLiveUpdate,
+  createEventLiveUpdate,
+  listEventLiveUpdates,
+  resolveEventLiveUpdate,
+} from "./lib/eventLiveUpdatesClient.js";
 
 function buildReviewStatusForHistoryDate(historyDate, reviewMap = {}) {
   const review = reviewMap?.[historyDate];
@@ -207,6 +217,7 @@ const EVENT_STAFF_PRESENCE_KEY = "mesh-event-staff-presence-v1";
 const EVENT_ROLE_ASSIGNMENT_KEY = "mesh-event-role-assignments-v1";
 const EVENT_OPERATION_TASK_KEY = "mesh-event-operation-tasks-v1";
 const EVENT_HANDOVER_KEY = "mesh-event-responsibility-handovers-v1";
+const EVENT_LIVE_UPDATE_KEY = "mesh-event-live-updates-v1";
 const EVENT_SELECTED_BOARD_KEY = "mesh-event-selected-board-v1";
 const EVENT_TASK_ALERT_STATE_KEY = "mesh-event-task-alert-state-v1";
 const EVENT_TASK_ALERT_SETTINGS_KEY = "mesh-event-task-alert-settings-v1";
@@ -3363,8 +3374,12 @@ function EventMode({
   user,
   currentOperator,
   eventOperations,
+  eventStaffPresence,
   eventRoleAssignments,
   eventTasks,
+  eventHandovers,
+  eventLiveUpdates,
+  eventRealtimeStatus,
   onUpdateTaskStatus,
   eventTaskAlertState,
   taskActionStatus,
@@ -3372,10 +3387,13 @@ function EventMode({
   notificationPermission,
   onEnableAlerts,
   onRefresh,
+  onCreateLiveUpdate,
+  onChangeLiveUpdateStatus,
   onChangeOperator,
   onOpenGuides,
   onOpenGuide,
 }) {
+  const [showRoleCockpit, setShowRoleCockpit] = useState(false);
   const activeEventId = preferredEventBoardId(
     eventOperations.filter((event) => ["draft", "active"].includes(event.status || "draft")),
   );
@@ -3392,6 +3410,32 @@ function EventMode({
   );
   const groupedTasks = groupAssignedEventTasks(myTasks);
 
+  if (showRoleCockpit && activeEvent) {
+    return (
+      <main className="page event-mode-page">
+        <EventOperationsCockpit
+          user={user}
+          eventOperation={activeEvent}
+          eventTasks={eventTasks.filter((task) => task.eventId === activeEvent.id)}
+          assignments={activeEventAssignments}
+          presence={eventStaffPresence}
+          handovers={eventHandovers.filter((handover) => handover.eventId === activeEvent.id)}
+          liveUpdates={eventLiveUpdates.filter((update) => update.eventId === activeEvent.id)}
+          managerView={false}
+          backendStatus={eventRealtimeStatus}
+          onClose={() => setShowRoleCockpit(false)}
+          onRefresh={onRefresh}
+          onTaskStatus={onUpdateTaskStatus}
+          onCreateLiveUpdate={onCreateLiveUpdate}
+          onAcknowledgeLiveUpdate={(id) => onChangeLiveUpdateStatus(id, "acknowledged")}
+          onResolveLiveUpdate={(id, note) => onChangeLiveUpdateStatus(id, "resolved", note)}
+          onOpenGuide={onOpenGuide}
+          onNavigate={() => setShowRoleCockpit(false)}
+        />
+      </main>
+    );
+  }
+
   return (
     <main className="page event-mode-page">
       <section className="intro compact event-mode-hero">
@@ -3404,6 +3448,11 @@ function EventMode({
         </p>
         <p className="status-message">Current operator: {operatorName}</p>
         <div className="backup-actions event-mode-actions">
+          {activeEvent && (
+            <button type="button" className="primary-button compact-button" onClick={() => setShowRoleCockpit(true)}>
+              Open My Event Cockpit
+            </button>
+          )}
           <button type="button" className="primary-button compact-button" onClick={onRefresh}>
             Refresh event tasks
           </button>
@@ -3957,8 +4006,10 @@ function StaffDashboard({
   responsibleAssignments,
   events,
   eventOperations,
+  eventStaffPresence,
   eventRoleAssignments,
   eventTasks,
+  eventLiveUpdates,
   cashSignoffs,
   assetChecks,
   alertBackendStatus,
@@ -3979,6 +4030,7 @@ function StaffDashboard({
   eventActorReadyForAlerts = false,
   onEnableEventTaskAlerts,
   onRefreshEventOperations,
+  onOpenEventCockpit,
   refreshAlerts,
   onAlert,
 }) {
@@ -4159,7 +4211,7 @@ function StaffDashboard({
 
       <section className="manager-list">
         <h2>Event operations overview</h2>
-        <p className="muted">Manual event data only. Calendar import will be added in a later phase.</p>
+        <p className="muted">Shared operational status from the selected event board.</p>
         {[["Today", todayEventOps], ["Tomorrow", tomorrowEventOps]].map(([label, eventList]) => (
           <div key={label} className="critical-group">
             <h3>{label}</h3>
@@ -4185,6 +4237,17 @@ function StaffDashboard({
           </div>
         ))}
       </section>
+
+      {todayRelevantEventOps[0] && (
+        <EventCockpitSummaryCard
+          eventOperation={todayRelevantEventOps[0]}
+          eventTasks={eventTasks.filter((task) => task.eventId === todayRelevantEventOps[0].id)}
+          assignments={eventRoleAssignments.filter((assignment) => assignment.eventId === todayRelevantEventOps[0].id && assignment.active)}
+          presence={eventStaffPresence}
+          liveUpdates={eventLiveUpdates.filter((update) => update.eventId === todayRelevantEventOps[0].id)}
+          onOpen={onOpenEventCockpit}
+        />
+      )}
 
       {(todayEventOps.length > 0 || tomorrowEventOps.length > 0) && (
         <EventCommandStructurePanel
@@ -5689,6 +5752,7 @@ function EventLiveModePanel({
   onUpdateTaskStatus,
   taskActionStatus,
   onOpenGuide,
+  onOpenCockpit,
   onClose,
 }) {
   const [zoneFilter, setZoneFilter] = useState("all");
@@ -5778,9 +5842,16 @@ function EventLiveModePanel({
             {activeEvent?.startsAt ? ` | ${formatDateTime(activeEvent.startsAt)}` : ""}
           </span>
         </div>
-        <button type="button" className="ghost-button compact-button" onClick={onClose}>
-          Back to Event Operations
-        </button>
+        <div className="backup-actions">
+          {onOpenCockpit && (
+            <button type="button" className="primary-button compact-button" onClick={onOpenCockpit}>
+              Open Event Cockpit
+            </button>
+          )}
+          <button type="button" className="ghost-button compact-button" onClick={onClose}>
+            Back to Event Operations
+          </button>
+        </div>
       </div>
       <GuideQuickLinks
         onOpenGuide={onOpenGuide}
@@ -6504,6 +6575,7 @@ function SmartEventPlanPanel({
   reviewMode = false,
   reviewFocus = "",
   onOpenReview,
+  onOpenCockpit,
   onCloseReview,
 }) {
   const [plans, setPlans] = useState([]);
@@ -8026,6 +8098,11 @@ function SmartEventPlanPanel({
             </p>
           </div>
           <div className="backup-actions smart-plan-compact-actions">
+            {activeEvent && onOpenCockpit && (
+              <button type="button" className="primary-button compact-button" onClick={onOpenCockpit}>
+                Open Event Cockpit
+              </button>
+            )}
             {!compactPlan && (
               <button type="button" className="primary-button compact-button" onClick={generateSuggestion} disabled={loadingPlan || loadingCalendarContext}>
                 Generate plan
@@ -8078,6 +8155,8 @@ function EventOperationsCorePanel({
   eventRoleAssignments,
   eventTasks,
   eventHandovers,
+  eventLiveUpdates,
+  eventRealtimeStatus,
   onCreateEvent,
   onUpdateEvent,
   onAddStaff,
@@ -8087,6 +8166,8 @@ function EventOperationsCorePanel({
   onUpdateTaskStatus,
   taskActionStatus,
   onCreateHandover,
+  onCreateLiveUpdate,
+  onChangeLiveUpdateStatus,
   onOpenGuide,
   onRefreshEventOperations,
 }) {
@@ -8109,6 +8190,9 @@ function EventOperationsCorePanel({
   const eventHandoversForEvent = eventHandovers.filter(
     (handover) => handover.eventId === activeEventIdValue,
   );
+  const eventLiveUpdatesForEvent = eventLiveUpdates.filter(
+    (update) => update.eventId === activeEventIdValue,
+  );
   const [eventForm, setEventForm] = useState(() => defaultEventOperationForm());
   const [eventBoardCreating, setEventBoardCreating] = useState(false);
   const [manualStaffName, setManualStaffName] = useState("");
@@ -8124,6 +8208,7 @@ function EventOperationsCorePanel({
   const [taskStatus, setTaskStatus] = useState({ type: "", message: "" });
   const [taskCreating, setTaskCreating] = useState(false);
   const [showLiveEventMode, setShowLiveEventMode] = useState(false);
+  const [showCockpit, setShowCockpit] = useState(false);
   const [showSmartPlanReview, setShowSmartPlanReview] = useState(false);
   const [smartPlanReviewFocus, setSmartPlanReviewFocus] = useState("");
   const taskFormRef = useRef(null);
@@ -8500,6 +8585,49 @@ function EventOperationsCorePanel({
     );
   }
 
+  if (showCockpit) {
+    return (
+      <EventOperationsCockpit
+        user={user}
+        eventOperation={activeEvent}
+        eventTasks={eventBoardTasks}
+        assignments={eventAssignments}
+        presence={visibleEventStaffPresence}
+        handovers={eventHandoversForEvent}
+        liveUpdates={eventLiveUpdatesForEvent}
+        managerView
+        backendStatus={eventRealtimeStatus}
+        refreshToken={[
+          activeEvent?.updatedAt || "",
+          ...eventBoardTasks.map((item) => item.updatedAt || item.status || ""),
+          ...eventAssignments.map((item) => item.updatedAt || item.id),
+          ...visibleEventStaffPresence.map((item) => item.lastSeenAt || item.updatedAt || item.id),
+          ...eventHandoversForEvent.map((item) => item.createdAt || item.id),
+          ...eventLiveUpdatesForEvent.map((item) => item.updatedAt || item.id),
+        ].join("|")}
+        onClose={() => setShowCockpit(false)}
+        onRefresh={onRefreshEventOperations}
+        onTaskStatus={onUpdateTaskStatus}
+        onCreateLiveUpdate={onCreateLiveUpdate}
+        onAcknowledgeLiveUpdate={(id) => onChangeLiveUpdateStatus(id, "acknowledged")}
+        onResolveLiveUpdate={(id, note) => onChangeLiveUpdateStatus(id, "resolved", note)}
+        onCancelLiveUpdate={(id, note) => onChangeLiveUpdateStatus(id, "cancelled", note)}
+        onUpdateEvent={onUpdateEvent}
+        onCreateHandover={onCreateHandover}
+        onOpenGuide={onOpenGuide}
+        onNavigate={(target) => {
+          if (target === "plan" || target === "smart-plan" || target === "staffing") {
+            setSmartPlanReviewFocus(target === "staffing" ? "staffing" : "");
+            setShowCockpit(false);
+            setShowSmartPlanReview(true);
+          } else if (["tasks", "command-structure", "event-board", "linked-resources", "presence", "guides"].includes(target)) {
+            setShowCockpit(false);
+          }
+        }}
+      />
+    );
+  }
+
   if (showLiveEventMode) {
     return (
       <EventLiveModePanel
@@ -8512,6 +8640,10 @@ function EventOperationsCorePanel({
         onUpdateTaskStatus={onUpdateTaskStatus}
         taskActionStatus={taskActionStatus}
         onOpenGuide={onOpenGuide}
+        onOpenCockpit={() => {
+          setShowLiveEventMode(false);
+          setShowCockpit(true);
+        }}
         onClose={() => setShowLiveEventMode(false)}
       />
     );
@@ -8575,6 +8707,17 @@ function EventOperationsCorePanel({
         )}
       </section>
 
+      {activeEvent && (
+        <EventCockpitSummaryCard
+          eventOperation={activeEvent}
+          eventTasks={eventBoardTasks}
+          assignments={eventAssignments}
+          presence={visibleEventStaffPresence}
+          liveUpdates={eventLiveUpdatesForEvent}
+          onOpen={() => setShowCockpit(true)}
+        />
+      )}
+
       <SmartEventPlanPanel
         user={user}
         activeEvent={activeEvent}
@@ -8588,10 +8731,18 @@ function EventOperationsCorePanel({
           setSmartPlanReviewFocus(focus);
           setShowSmartPlanReview(true);
         }}
+        onOpenCockpit={() => setShowCockpit(true)}
       />
 
       {activeEvent && (
         <div className="backup-actions event-operations-primary-actions">
+          <button
+            type="button"
+            className="primary-button compact-button"
+            onClick={() => setShowCockpit(true)}
+          >
+            Open Event Cockpit
+          </button>
           <button
             type="button"
             className="primary-button compact-button"
@@ -9072,6 +9223,8 @@ function EventFloorDashboard({
   eventRoleAssignments,
   eventOperationTasks,
   eventHandovers,
+  eventLiveUpdates,
+  eventRealtimeStatus,
   staffUsers,
   requestWriteAccess,
   onCreateEventOperation,
@@ -9083,6 +9236,8 @@ function EventFloorDashboard({
   onUpdateEventOperationTaskStatus,
   eventTaskActionStatus,
   onCreateEventHandover,
+  onCreateEventLiveUpdate,
+  onChangeEventLiveUpdateStatus,
   onSyncFinancialSignoff,
   onRefreshFinancialSignoffs,
   onEnsureShiftSession,
@@ -9230,6 +9385,8 @@ function EventFloorDashboard({
         eventRoleAssignments={eventRoleAssignments}
         eventTasks={eventOperationTasks}
         eventHandovers={eventHandovers}
+        eventLiveUpdates={eventLiveUpdates}
+        eventRealtimeStatus={eventRealtimeStatus}
         onCreateEvent={onCreateEventOperation}
         onUpdateEvent={onUpdateEventOperation}
         onAddStaff={onAddEventStaffPresence}
@@ -9239,6 +9396,8 @@ function EventFloorDashboard({
         onUpdateTaskStatus={onUpdateEventOperationTaskStatus}
         taskActionStatus={eventTaskActionStatus}
         onCreateHandover={onCreateEventHandover}
+        onCreateLiveUpdate={onCreateEventLiveUpdate}
+        onChangeLiveUpdateStatus={onChangeEventLiveUpdateStatus}
         onOpenGuide={onOpenGuide}
         onRefreshEventOperations={onRefreshEventOperations}
       />
@@ -16794,6 +16953,9 @@ function App() {
   const [eventHandovers, setEventHandovers] = useState(() =>
     normalizeRecords(readStorage(EVENT_HANDOVER_KEY, [])),
   );
+  const [eventLiveUpdates, setEventLiveUpdates] = useState(() =>
+    normalizeRecords(readStorage(EVENT_LIVE_UPDATE_KEY, [])),
+  );
   const [eventTaskAlertState, setEventTaskAlertState] = useState(() =>
     readStorage(EVENT_TASK_ALERT_STATE_KEY, {}),
   );
@@ -17047,6 +17209,7 @@ function App() {
   useEffect(() => saveStorage(EVENT_ROLE_ASSIGNMENT_KEY, eventRoleAssignments), [eventRoleAssignments]);
   useEffect(() => saveStorage(EVENT_OPERATION_TASK_KEY, eventOperationTasks), [eventOperationTasks]);
   useEffect(() => saveStorage(EVENT_HANDOVER_KEY, eventHandovers), [eventHandovers]);
+  useEffect(() => saveStorage(EVENT_LIVE_UPDATE_KEY, eventLiveUpdates), [eventLiveUpdates]);
   useEffect(() => saveStorage(EVENT_TASK_ALERT_STATE_KEY, eventTaskAlertState), [eventTaskAlertState]);
   useEffect(
     () => saveStorage(EVENT_TASK_ALERT_SETTINGS_KEY, eventTaskAlertSettings),
@@ -20006,15 +20169,30 @@ function App() {
     const handoverResults = await Promise.all(
       eventIds.map((eventId) => fetchResponsibilityHandovers(eventId)),
     );
+    const liveUpdateResults = await Promise.all(
+      eventIds.map((eventId) => listEventLiveUpdates(
+        eventId,
+        currentOperator?.name || effectiveUser.operatorName || effectiveUser.name || "",
+      )),
+    );
     const assignments = assignmentResults.flatMap((result) => result.records || []);
     const tasks = taskResults.flatMap((result) => result.records || []);
     const handovers = handoverResults.flatMap((result) => result.records || []);
+    const liveUpdates = liveUpdateResults.flatMap((result) => result.records || []);
     if (assignments.length)
       setEventRoleAssignments((current) => mergeById(current, assignments));
     if (tasks.length)
       setEventOperationTasks((current) => mergeById(current, tasks));
     if (handovers.length)
       setEventHandovers((current) => mergeById(current, handovers));
+    const refreshedLiveUpdateEventIds = new Set(
+      liveUpdateResults.flatMap((result, index) => result.ok ? [eventIds[index]] : []),
+    );
+    if (refreshedLiveUpdateEventIds.size)
+      setEventLiveUpdates((current) => mergeById(
+        current.filter((item) => !refreshedLiveUpdateEventIds.has(item.eventId)),
+        liveUpdates,
+      ));
   }
 
   async function refreshEventOperationsLive(reason = "event_task_poll") {
@@ -20405,6 +20583,47 @@ function App() {
     };
   }
 
+  async function saveEventLiveUpdate(payload) {
+    if (!(await requestWriteAccess()))
+      return { ok: false, message: "Location guard is blocking live operational updates." };
+    const result = await createEventLiveUpdate({
+      ...payload,
+      createdByName: payload.createdByName || effectiveUser.operatorName || effectiveUser.name,
+    });
+    if (result.ok && result.record) {
+      upsertEventList(setEventLiveUpdates, result.record);
+      refreshEventOperationsLive("event_live_update_created");
+      return result;
+    }
+    return {
+      ok: false,
+      message: result.message || result.error?.message || "Live update could not be saved in Supabase.",
+      error: result.error,
+    };
+  }
+
+  async function changeEventLiveUpdateStatus(updateId, status, resolutionNote = "") {
+    if (!(await requestWriteAccess()))
+      return { ok: false, message: "Location guard is blocking live operational updates." };
+    const action =
+      status === "resolved"
+        ? resolveEventLiveUpdate(updateId, resolutionNote)
+        : status === "cancelled"
+          ? cancelEventLiveUpdate(updateId, resolutionNote)
+          : acknowledgeEventLiveUpdate(updateId);
+    const result = await action;
+    if (result.ok && result.record) {
+      upsertEventList(setEventLiveUpdates, result.record);
+      refreshEventOperationsLive(`event_live_update_${status}`);
+      return result;
+    }
+    return {
+      ok: false,
+      message: result.message || result.error?.message || "Live update status could not be saved.",
+      error: result.error,
+    };
+  }
+
   const activeShiftScope = normalizeShiftScope(
     currentShiftScope,
     effectiveUser,
@@ -20574,6 +20793,8 @@ function App() {
             eventRoleAssignments={eventRoleAssignments}
             eventOperationTasks={eventOperationTasks}
             eventHandovers={eventHandovers}
+            eventLiveUpdates={eventLiveUpdates}
+            eventRealtimeStatus={eventRealtimeStatus}
             staffUsers={staffUsers}
             requestWriteAccess={requestWriteAccess}
             onCreateEventOperation={saveEventOperation}
@@ -20585,6 +20806,8 @@ function App() {
             onUpdateEventOperationTaskStatus={handleEventTaskStatusUpdate}
             eventTaskActionStatus={eventTaskActionStatus}
             onCreateEventHandover={saveEventHandover}
+            onCreateEventLiveUpdate={saveEventLiveUpdate}
+            onChangeEventLiveUpdateStatus={changeEventLiveUpdateStatus}
             onSyncFinancialSignoff={syncFinancialSignoff}
             onRefreshFinancialSignoffs={refreshFinancialSignoffsFromBackend}
             onEnsureShiftSession={ensureShiftSession}
@@ -20634,6 +20857,8 @@ function App() {
             eventRoleAssignments={eventRoleAssignments}
             eventOperationTasks={eventOperationTasks}
             eventHandovers={eventHandovers}
+            eventLiveUpdates={eventLiveUpdates}
+            eventRealtimeStatus={eventRealtimeStatus}
             staffUsers={staffUsers}
             requestWriteAccess={requestWriteAccess}
             onCreateEventOperation={saveEventOperation}
@@ -20645,6 +20870,8 @@ function App() {
             onUpdateEventOperationTaskStatus={handleEventTaskStatusUpdate}
             eventTaskActionStatus={eventTaskActionStatus}
             onCreateEventHandover={saveEventHandover}
+            onCreateEventLiveUpdate={saveEventLiveUpdate}
+            onChangeEventLiveUpdateStatus={changeEventLiveUpdateStatus}
             onSyncFinancialSignoff={syncFinancialSignoff}
             onRefreshFinancialSignoffs={refreshFinancialSignoffsFromBackend}
             onEnsureShiftSession={ensureShiftSession}
@@ -20762,8 +20989,10 @@ function App() {
             responsibleAssignments={responsibleAssignments}
             events={events}
             eventOperations={eventOperations}
+            eventStaffPresence={eventStaffPresence}
             eventRoleAssignments={eventRoleAssignments}
             eventTasks={eventOperationTasks}
+            eventLiveUpdates={eventLiveUpdates}
             cashSignoffs={cashSignoffs}
             assetChecks={assetChecks}
             alertBackendStatus={alertBackendStatus}
@@ -20784,6 +21013,14 @@ function App() {
             eventActorReadyForAlerts={eventActorReadyForAlerts}
             onEnableEventTaskAlerts={enableEventTaskAlerts}
             onRefreshEventOperations={refreshEventOperationsLive}
+            onOpenEventCockpit={() => {
+              if (isManager(effectiveUser) || canUseEventFloorDashboard(effectiveUser)) {
+                setSelectedShift(null);
+                setShowEventFloorManager(true);
+              } else {
+                setSelectedShift("event");
+              }
+            }}
             refreshAlerts={loadSupabaseAlerts}
             onAlert={() => setShowGlobalAlert(true)}
           />
@@ -20794,6 +21031,10 @@ function App() {
             eventOperations={eventOperations}
             eventRoleAssignments={eventRoleAssignments}
             eventTasks={eventOperationTasks}
+            eventStaffPresence={eventStaffPresence}
+            eventHandovers={eventHandovers}
+            eventLiveUpdates={eventLiveUpdates}
+            eventRealtimeStatus={eventRealtimeStatus}
             onUpdateTaskStatus={handleEventTaskStatusUpdate}
             eventTaskAlertState={eventTaskAlertState}
             taskActionStatus={eventTaskActionStatus}
@@ -20801,6 +21042,8 @@ function App() {
             notificationPermission={eventTaskAlertSettings.notificationPermission}
             onEnableAlerts={enableEventTaskAlerts}
             onRefresh={refreshEventOperationsLive}
+            onCreateLiveUpdate={saveEventLiveUpdate}
+            onChangeLiveUpdateStatus={changeEventLiveUpdateStatus}
             onChangeOperator={() => {
               setSelectedShift(null);
               setCurrentShiftScope(null);
