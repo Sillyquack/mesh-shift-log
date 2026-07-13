@@ -1,5 +1,7 @@
 import {
   Component,
+  lazy,
+  Suspense,
   useEffect,
   useMemo,
   useRef,
@@ -136,9 +138,6 @@ import {
   updateEventPlan,
 } from "./lib/eventPlanClient.js";
 import { subscribeToEventOperationsRealtime } from "./lib/eventOperationsRealtime.js";
-import EventOperationsCockpit, {
-  EventCockpitSummaryCard,
-} from "./components/EventOperationsCockpit.jsx";
 import {
   acknowledgeEventLiveUpdate,
   cancelEventLiveUpdate,
@@ -146,6 +145,21 @@ import {
   listEventLiveUpdates,
   resolveEventLiveUpdate,
 } from "./lib/eventLiveUpdatesClient.js";
+
+const EventOperationsCockpit = lazy(() => import("./components/EventOperationsCockpit.jsx"));
+const EventCockpitSummaryCard = lazy(() =>
+  import("./components/EventOperationsCockpit.jsx").then((module) => ({
+    default: module.EventCockpitSummaryCard,
+  })),
+);
+
+function FocusedViewLoading({ label = "Loading event view..." }) {
+  return (
+    <section className="manager-list" role="status" aria-live="polite" aria-busy="true">
+      <p className="muted">{label}</p>
+    </section>
+  );
+}
 
 function buildReviewStatusForHistoryDate(historyDate, reviewMap = {}) {
   const review = reviewMap?.[historyDate];
@@ -3413,25 +3427,27 @@ function EventMode({
   if (showRoleCockpit && activeEvent) {
     return (
       <main className="page event-mode-page">
-        <EventOperationsCockpit
-          user={user}
-          eventOperation={activeEvent}
-          eventTasks={eventTasks.filter((task) => task.eventId === activeEvent.id)}
-          assignments={activeEventAssignments}
-          presence={eventStaffPresence}
-          handovers={eventHandovers.filter((handover) => handover.eventId === activeEvent.id)}
-          liveUpdates={eventLiveUpdates.filter((update) => update.eventId === activeEvent.id)}
-          managerView={false}
-          backendStatus={eventRealtimeStatus}
-          onClose={() => setShowRoleCockpit(false)}
-          onRefresh={onRefresh}
-          onTaskStatus={onUpdateTaskStatus}
-          onCreateLiveUpdate={onCreateLiveUpdate}
-          onAcknowledgeLiveUpdate={(id) => onChangeLiveUpdateStatus(id, "acknowledged")}
-          onResolveLiveUpdate={(id, note) => onChangeLiveUpdateStatus(id, "resolved", note)}
-          onOpenGuide={onOpenGuide}
-          onNavigate={() => setShowRoleCockpit(false)}
-        />
+        <Suspense fallback={<FocusedViewLoading label="Loading My Event Cockpit..." />}>
+          <EventOperationsCockpit
+            user={user}
+            eventOperation={activeEvent}
+            eventTasks={eventTasks.filter((task) => task.eventId === activeEvent.id)}
+            assignments={activeEventAssignments}
+            presence={eventStaffPresence}
+            handovers={eventHandovers.filter((handover) => handover.eventId === activeEvent.id)}
+            liveUpdates={eventLiveUpdates.filter((update) => update.eventId === activeEvent.id)}
+            managerView={false}
+            backendStatus={eventRealtimeStatus}
+            onClose={() => setShowRoleCockpit(false)}
+            onRefresh={onRefresh}
+            onTaskStatus={onUpdateTaskStatus}
+            onCreateLiveUpdate={onCreateLiveUpdate}
+            onAcknowledgeLiveUpdate={(id) => onChangeLiveUpdateStatus(id, "acknowledged")}
+            onResolveLiveUpdate={(id, note) => onChangeLiveUpdateStatus(id, "resolved", note)}
+            onOpenGuide={onOpenGuide}
+            onNavigate={() => setShowRoleCockpit(false)}
+          />
+        </Suspense>
       </main>
     );
   }
@@ -4239,14 +4255,16 @@ function StaffDashboard({
       </section>
 
       {todayRelevantEventOps[0] && (
-        <EventCockpitSummaryCard
-          eventOperation={todayRelevantEventOps[0]}
-          eventTasks={eventTasks.filter((task) => task.eventId === todayRelevantEventOps[0].id)}
-          assignments={eventRoleAssignments.filter((assignment) => assignment.eventId === todayRelevantEventOps[0].id && assignment.active)}
-          presence={eventStaffPresence}
-          liveUpdates={eventLiveUpdates.filter((update) => update.eventId === todayRelevantEventOps[0].id)}
-          onOpen={onOpenEventCockpit}
-        />
+        <Suspense fallback={<FocusedViewLoading label="Loading Event Cockpit summary..." />}>
+          <EventCockpitSummaryCard
+            eventOperation={todayRelevantEventOps[0]}
+            eventTasks={eventTasks.filter((task) => task.eventId === todayRelevantEventOps[0].id)}
+            assignments={eventRoleAssignments.filter((assignment) => assignment.eventId === todayRelevantEventOps[0].id && assignment.active)}
+            presence={eventStaffPresence}
+            liveUpdates={eventLiveUpdates.filter((update) => update.eventId === todayRelevantEventOps[0].id)}
+            onOpen={onOpenEventCockpit}
+          />
+        </Suspense>
       )}
 
       {(todayEventOps.length > 0 || tomorrowEventOps.length > 0) && (
@@ -8587,44 +8605,46 @@ function EventOperationsCorePanel({
 
   if (showCockpit) {
     return (
-      <EventOperationsCockpit
-        user={user}
-        eventOperation={activeEvent}
-        eventTasks={eventBoardTasks}
-        assignments={eventAssignments}
-        presence={visibleEventStaffPresence}
-        handovers={eventHandoversForEvent}
-        liveUpdates={eventLiveUpdatesForEvent}
-        managerView
-        backendStatus={eventRealtimeStatus}
-        refreshToken={[
-          activeEvent?.updatedAt || "",
-          ...eventBoardTasks.map((item) => item.updatedAt || item.status || ""),
-          ...eventAssignments.map((item) => item.updatedAt || item.id),
-          ...visibleEventStaffPresence.map((item) => item.lastSeenAt || item.updatedAt || item.id),
-          ...eventHandoversForEvent.map((item) => item.createdAt || item.id),
-          ...eventLiveUpdatesForEvent.map((item) => item.updatedAt || item.id),
-        ].join("|")}
-        onClose={() => setShowCockpit(false)}
-        onRefresh={onRefreshEventOperations}
-        onTaskStatus={onUpdateTaskStatus}
-        onCreateLiveUpdate={onCreateLiveUpdate}
-        onAcknowledgeLiveUpdate={(id) => onChangeLiveUpdateStatus(id, "acknowledged")}
-        onResolveLiveUpdate={(id, note) => onChangeLiveUpdateStatus(id, "resolved", note)}
-        onCancelLiveUpdate={(id, note) => onChangeLiveUpdateStatus(id, "cancelled", note)}
-        onUpdateEvent={onUpdateEvent}
-        onCreateHandover={onCreateHandover}
-        onOpenGuide={onOpenGuide}
-        onNavigate={(target) => {
-          if (target === "plan" || target === "smart-plan" || target === "staffing") {
-            setSmartPlanReviewFocus(target === "staffing" ? "staffing" : "");
-            setShowCockpit(false);
-            setShowSmartPlanReview(true);
-          } else if (["tasks", "command-structure", "event-board", "linked-resources", "presence", "guides"].includes(target)) {
-            setShowCockpit(false);
-          }
-        }}
-      />
+      <Suspense fallback={<FocusedViewLoading label="Loading Event Cockpit..." />}>
+        <EventOperationsCockpit
+          user={user}
+          eventOperation={activeEvent}
+          eventTasks={eventBoardTasks}
+          assignments={eventAssignments}
+          presence={visibleEventStaffPresence}
+          handovers={eventHandoversForEvent}
+          liveUpdates={eventLiveUpdatesForEvent}
+          managerView
+          backendStatus={eventRealtimeStatus}
+          refreshToken={[
+            activeEvent?.updatedAt || "",
+            ...eventBoardTasks.map((item) => item.updatedAt || item.status || ""),
+            ...eventAssignments.map((item) => item.updatedAt || item.id),
+            ...visibleEventStaffPresence.map((item) => item.lastSeenAt || item.updatedAt || item.id),
+            ...eventHandoversForEvent.map((item) => item.createdAt || item.id),
+            ...eventLiveUpdatesForEvent.map((item) => item.updatedAt || item.id),
+          ].join("|")}
+          onClose={() => setShowCockpit(false)}
+          onRefresh={onRefreshEventOperations}
+          onTaskStatus={onUpdateTaskStatus}
+          onCreateLiveUpdate={onCreateLiveUpdate}
+          onAcknowledgeLiveUpdate={(id) => onChangeLiveUpdateStatus(id, "acknowledged")}
+          onResolveLiveUpdate={(id, note) => onChangeLiveUpdateStatus(id, "resolved", note)}
+          onCancelLiveUpdate={(id, note) => onChangeLiveUpdateStatus(id, "cancelled", note)}
+          onUpdateEvent={onUpdateEvent}
+          onCreateHandover={onCreateHandover}
+          onOpenGuide={onOpenGuide}
+          onNavigate={(target) => {
+            if (target === "plan" || target === "smart-plan" || target === "staffing") {
+              setSmartPlanReviewFocus(target === "staffing" ? "staffing" : "");
+              setShowCockpit(false);
+              setShowSmartPlanReview(true);
+            } else if (["tasks", "command-structure", "event-board", "linked-resources", "presence", "guides"].includes(target)) {
+              setShowCockpit(false);
+            }
+          }}
+        />
+      </Suspense>
     );
   }
 
@@ -8708,14 +8728,16 @@ function EventOperationsCorePanel({
       </section>
 
       {activeEvent && (
-        <EventCockpitSummaryCard
-          eventOperation={activeEvent}
-          eventTasks={eventBoardTasks}
-          assignments={eventAssignments}
-          presence={visibleEventStaffPresence}
-          liveUpdates={eventLiveUpdatesForEvent}
-          onOpen={() => setShowCockpit(true)}
-        />
+        <Suspense fallback={<FocusedViewLoading label="Loading Event Cockpit summary..." />}>
+          <EventCockpitSummaryCard
+            eventOperation={activeEvent}
+            eventTasks={eventBoardTasks}
+            assignments={eventAssignments}
+            presence={visibleEventStaffPresence}
+            liveUpdates={eventLiveUpdatesForEvent}
+            onOpen={() => setShowCockpit(true)}
+          />
+        </Suspense>
       )}
 
       <SmartEventPlanPanel

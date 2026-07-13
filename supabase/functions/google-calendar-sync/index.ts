@@ -1,4 +1,4 @@
-import { createClient } from 'https://esm.sh/@supabase/supabase-js@2';
+import { createClient } from '@supabase/supabase-js';
 
 const corsHeaders = {
   'Access-Control-Allow-Origin': '*',
@@ -19,6 +19,25 @@ type CalendarSource = {
   name: string;
   calendar_id: string | null;
   active: boolean;
+};
+
+type GoogleCalendarDateTime = {
+  date?: string;
+  dateTime?: string;
+};
+
+type GoogleCalendarEvent = {
+  id?: string;
+  iCalUID?: string;
+  summary?: string;
+  description?: string;
+  location?: string;
+  status?: string;
+  htmlLink?: string;
+  updated?: string;
+  start?: GoogleCalendarDateTime;
+  end?: GoogleCalendarDateTime;
+  [key: string]: unknown;
 };
 
 type IcsContentLine = {
@@ -179,16 +198,6 @@ function normalizeCalendarAlias(value = '') {
 
 function icsEventHasRecurrence(event: ParsedIcsEvent) {
   return Boolean(event.RRULE || event.RDATE || event.EXDATE);
-}
-
-function eventOverlapsRange(row: Record<string, unknown>, timeMin?: string, timeMax?: string) {
-  const startsAt = row.starts_at ? new Date(String(row.starts_at)).getTime() : null;
-  const endsAt = row.ends_at ? new Date(String(row.ends_at)).getTime() : startsAt;
-  const min = timeMin ? new Date(timeMin).getTime() : null;
-  const max = timeMax ? new Date(timeMax).getTime() : null;
-  if (max && startsAt && startsAt > max) return false;
-  if (min && endsAt && endsAt < min) return false;
-  return true;
 }
 
 function analyzeIcsRows(parsedEvents: ParsedIcsEvent[], rows: Array<Record<string, unknown>>, timeMin?: string, timeMax?: string) {
@@ -395,9 +404,12 @@ async function getGoogleAccessToken() {
   return { ok: true, accessToken: body.access_token as string };
 }
 
-function normalizeGoogleEvent(event: Record<string, any>, source: CalendarSource) {
-  const start = event.start || {};
-  const end = event.end || {};
+function normalizeGoogleEvent(
+  event: GoogleCalendarEvent,
+  source: CalendarSource
+) {
+  const start: GoogleCalendarDateTime = event.start ?? {};
+  const end: GoogleCalendarDateTime = event.end ?? {};
   const allDay = Boolean(start.date && !start.dateTime);
   return {
     organization_id: source.organization_id,
@@ -638,7 +650,9 @@ Deno.serve(async (request) => {
   const items = Array.isArray(googleBody.items) ? googleBody.items : [];
   const rows = items
     .filter((event: Record<string, unknown>) => event.id)
-    .map((event: Record<string, any>) => normalizeGoogleEvent(event, calendarSource));
+    .map((event: GoogleCalendarEvent) =>
+      normalizeGoogleEvent(event, calendarSource)
+    );
 
   let syncedCount = 0;
   if (rows.length) {
