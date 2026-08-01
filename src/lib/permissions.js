@@ -49,3 +49,15 @@ export function canGenerateEventCode(user) {
 export function canCreateAlerts(user) {
   return Boolean(user);
 }
+
+export function canUseInventory(user) {
+  return Boolean(user);
+}
+
+export function canCoordinateInventory(user) {
+  return !isSharedDeviceUser(user) && (isManager(user) || roleOf(user) === 'event_floor_manager');
+}
+
+export function canManageInventory(user) {
+  return isManager(user);
+}

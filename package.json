@@ -6,6 +6,7 @@
   "scripts": {
     "dev": "vite",
     "build": "vite build",
+    "verify:phase9a": "node scripts/verify-phase9a.mjs",
     "preview": "vite preview",
     "deploy": "npm run build && gh-pages -d dist"
   },

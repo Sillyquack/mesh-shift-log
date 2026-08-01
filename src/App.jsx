@@ -53,6 +53,7 @@ import {
   } from "./lib/supabaseAuthClient.js";
 import {
   canAccessManagerDashboard,
+  canUseInventory,
   canAcknowledgeAlerts,
   canResolveAlerts,
   canRetryEmailNotification,
@@ -147,6 +148,7 @@ import {
 } from "./lib/eventLiveUpdatesClient.js";
 
 const EventOperationsCockpit = lazy(() => import("./components/EventOperationsCockpit.jsx"));
+const InventoryWorkspace = lazy(() => import("./components/InventoryWorkspace.jsx"));
 const EventCockpitSummaryCard = lazy(() =>
   import("./components/EventOperationsCockpit.jsx").then((module) => ({
     default: module.EventCockpitSummaryCard,
@@ -3018,10 +3020,13 @@ function TopBar({
   onLogout,
   isOnline,
   siteAccessStatus,
+  onOpenInventory,
 }) {
   const shiftLabel =
     selectedShift === "manager"
       ? "Manager dashboard"
+      : selectedShift === "inventory"
+        ? "Inventory"
       : shiftOptions.find((shift) => shift.id === selectedShift)?.label ||
         "Select shift";
   return (
@@ -3069,6 +3074,16 @@ function TopBar({
         <span className={`shift-pill site-${siteAccessStatus}`}>
           {siteStatuses[siteAccessStatus] || "Location unknown"}
         </span>
+        {onOpenInventory && (
+          <button
+            type="button"
+            className="ghost-button"
+            disabled={isSharedDeviceUser(user) && !currentOperator?.name}
+            onClick={onOpenInventory}
+          >
+            Stocktaking
+          </button>
+        )}
         {selectedShift && <span className="shift-pill">{shiftLabel}</span>}
         {selectedShift && (
           <button type="button" className="ghost-button" onClick={onBack}>
@@ -12263,6 +12278,7 @@ function ManagerDashboard({
   checkLocation,
   requestWriteAccess,
   onOpenEventFloorDashboard,
+  onOpenInventory,
   onResetPilotNotice,
   user,
 }) {
@@ -13928,6 +13944,22 @@ function ManagerDashboard({
       {message && <p className="status-message">{message}</p>}
 
       <EventCodeGeneratorPanel user={user} />
+
+      <section className="manager-list inventory-dashboard-card">
+        <p className="eyebrow">Inventory &amp; Stocktaking</p>
+        <h2>Products, standards and stock counts</h2>
+        <p className="muted">
+          Start or continue a count, review shortages, manage par levels, and
+          open approved stock history.
+        </p>
+        <button
+          type="button"
+          className="primary-button manager-full-button"
+          onClick={onOpenInventory}
+        >
+          Open stocktaking
+        </button>
+      </section>
 
       {canGenerateEventCode(user) && (
         <section className="manager-list">
@@ -16900,6 +16932,7 @@ function App() {
   const [selectedShift, setSelectedShift] = useState(null);
   const [showManager, setShowManager] = useState(false);
   const [showEventFloorManager, setShowEventFloorManager] = useState(false);
+  const [showInventory, setShowInventory] = useState(false);
   const [currentRoleMode, setCurrentRoleMode] = useState(() =>
     normalizeRoleMode(readStorage(ROLE_MODE_KEY, null), readStorage(SESSION_KEY, null)),
   );
@@ -20698,6 +20731,52 @@ function App() {
     (!effectiveActor.isSharedDevice || Boolean(sharedDeviceEventOperatorName)) &&
     (isManager(effectiveUser) || canUseEventFloorDashboard(effectiveUser) || eventAccessIsValid);
 
+  async function openInventoryWorkspace() {
+    if (!canUseInventory(effectiveUser)) return;
+    if (isSharedDeviceUser(effectiveUser)) {
+      if (!currentOperator?.name) return;
+      const inventoryShift = activeShiftScope?.primaryShiftId || activeShift || "daytime";
+      await ensureShiftSession(getOsloDateKey(), inventoryShift === "overview" ? "daytime" : inventoryShift);
+    }
+    setShowInventory(true);
+  }
+
+  if (showInventory) {
+    return (
+      <>
+        <TopBar
+          user={user}
+          selectedShift="inventory"
+          currentRoleMode={activeRoleMode}
+          currentShiftScope={activeShiftScope}
+          currentOperator={currentOperator}
+          onChangeOperator={() => {
+            setShowInventory(false);
+            setSelectedShift(null);
+            setCurrentShiftScope(null);
+            saveCurrentOperator(null);
+          }}
+          onChangeRole={activeRoleMode ? clearRoleMode : null}
+          isOnline={isOnline}
+          siteAccessStatus={siteAccessStatus}
+          onBack={() => setShowInventory(false)}
+          onLogout={() => {
+            setShowInventory(false);
+            logout();
+          }}
+        />
+        <Suspense fallback={<FocusedViewLoading label="Loading inventory and stocktaking..." />}>
+          <InventoryWorkspace
+            user={effectiveUser}
+            currentOperator={currentOperator}
+            requestWriteAccess={requestWriteAccess}
+            onClose={() => setShowInventory(false)}
+          />
+        </Suspense>
+      </>
+    );
+  }
+
   return (
     <>
       <TopBar
@@ -20723,6 +20802,7 @@ function App() {
         onChangeRole={activeRoleMode ? clearRoleMode : null}
         isOnline={isOnline}
         siteAccessStatus={siteAccessStatus}
+        onOpenInventory={canUseInventory(effectiveUser) ? openInventoryWorkspace : null}
         onBack={() => {
           clearShiftScopeAndSelection();
           setShowManager(false);
@@ -21178,6 +21258,7 @@ function App() {
             setShowManager(false);
             setShowEventFloorManager(true);
           }}
+          onOpenInventory={openInventoryWorkspace}
           onResetPilotNotice={() => {
             localStorage.removeItem(PILOT_NOTICE_KEY);
             setPilotAccepted(false);
