@@ -298,7 +298,6 @@ export function createInventoryCountSession(payload) {
     input_count_type: payload.countType,
     input_count_date: payload.countDate,
     input_location_ids: payload.locationIds,
-    input_actor_name: payload.actorName || null,
     input_note: payload.note || null,
   });
 }
@@ -308,7 +307,6 @@ export function setInventoryCountLineQuantity(payload) {
     input_line_id: payload.lineId,
     input_counted_quantity: payload.countedQuantity,
     input_note: payload.note || null,
-    input_actor_name: payload.actorName || null,
     input_expected_updated_at: payload.expectedUpdatedAt || null,
   }, normalizeLine);
 }
@@ -319,7 +317,6 @@ export function setInventoryCountLineCaseQuantity(payload) {
     input_full_cases: payload.fullCases,
     input_loose_quantity: payload.looseQuantity,
     input_note: payload.note || null,
-    input_actor_name: payload.actorName || null,
     input_expected_updated_at: payload.expectedUpdatedAt || null,
   }, normalizeLine);
 }
@@ -335,7 +332,6 @@ export function markInventoryCountLineUsePar(payload) {
   return callRpc('mark_inventory_count_line_use_par', {
     input_line_id: payload.lineId,
     input_note: payload.note || null,
-    input_actor_name: payload.actorName || null,
     input_expected_updated_at: payload.expectedUpdatedAt || null,
   }, normalizeLine);
 }
@@ -343,7 +339,6 @@ export function markInventoryCountLineUsePar(payload) {
 export function clearInventoryCountLine(payload) {
   return callRpc('clear_inventory_count_line', {
     input_line_id: payload.lineId,
-    input_actor_name: payload.actorName || null,
     input_expected_updated_at: payload.expectedUpdatedAt || null,
   }, normalizeLine);
 }
@@ -352,7 +347,6 @@ export function skipInventoryCountLine(payload) {
   return callRpc('skip_inventory_count_line', {
     input_line_id: payload.lineId,
     input_note: payload.note,
-    input_actor_name: payload.actorName || null,
     input_expected_updated_at: payload.expectedUpdatedAt || null,
   }, normalizeLine);
 }
@@ -362,7 +356,6 @@ export function markInventoryLocationUsePar(payload) {
     input_session_id: payload.sessionId,
     input_location_id: payload.locationId,
     input_replace_existing: payload.replaceExisting || false,
-    input_actor_name: payload.actorName || null,
   });
 }
 
@@ -370,7 +363,6 @@ export function completeInventoryCountLocation(payload) {
   return callRpc('complete_inventory_count_location', {
     input_session_id: payload.sessionId,
     input_location_id: payload.locationId,
-    input_actor_name: payload.actorName || null,
   });
 }
 
@@ -379,7 +371,6 @@ export function completeInventoryCountSession(payload) {
     input_session_id: payload.sessionId,
     input_completion_note: payload.note || null,
     input_allow_exceptions: payload.allowExceptions || false,
-    input_actor_name: payload.actorName || null,
   }, normalizeSession);
 }
 

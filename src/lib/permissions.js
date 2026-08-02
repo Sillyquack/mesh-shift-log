@@ -2,6 +2,14 @@ function roleOf(user) {
   return String(user?.role || '').toLowerCase();
 }
 
+function organizationOf(user) {
+  return String(user?.organizationId || user?.organization_id || '');
+}
+
+function profileOrganizationOf(user) {
+  return String(user?.profile?.organization_id || '');
+}
+
 export function isSharedDeviceUser(user) {
   return Boolean(
     user?.isSharedDevice ||
@@ -51,13 +59,33 @@ export function canCreateAlerts(user) {
 }
 
 export function canUseInventory(user) {
-  return Boolean(user);
+  const authUserId = String(user?.authUserId || '');
+  const profileId = String(user?.profile?.id || '');
+  const organizationId = organizationOf(user);
+  const profileOrganizationId = profileOrganizationOf(user);
+  return Boolean(
+    user &&
+      user.loginSource === 'supabase_auth' &&
+      user.authSessionVerified === true &&
+      authUserId &&
+      profileId &&
+      authUserId === profileId &&
+      roleOf(user) === 'manager' &&
+      roleOf(user.profile) === 'manager' &&
+      user.active === true &&
+      user.profileActive === true &&
+      user.profile?.active === true &&
+      !isSharedDeviceUser(user) &&
+      organizationId &&
+      profileOrganizationId &&
+      organizationId === profileOrganizationId,
+  );
 }
 
 export function canCoordinateInventory(user) {
-  return !isSharedDeviceUser(user) && (isManager(user) || roleOf(user) === 'event_floor_manager');
+  return canUseInventory(user);
 }
 
 export function canManageInventory(user) {
-  return isManager(user);
+  return canUseInventory(user);
 }

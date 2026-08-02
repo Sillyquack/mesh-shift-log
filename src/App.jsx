@@ -1730,6 +1730,7 @@ function appUserFromProfile(profile, authUser) {
     organization_id: profile.organization_id || "",
     profileActive: profile.active !== false,
     loginSource: "supabase_auth",
+    authSessionVerified: Boolean(authUser?.id && profile.id === authUser.id),
     email: authUser?.email || "",
   };
 }
@@ -3026,7 +3027,7 @@ function TopBar({
     selectedShift === "manager"
       ? "Manager dashboard"
       : selectedShift === "inventory"
-        ? "Inventory"
+        ? "Stock Count"
       : shiftOptions.find((shift) => shift.id === selectedShift)?.label ||
         "Select shift";
   return (
@@ -3081,7 +3082,7 @@ function TopBar({
             disabled={isSharedDeviceUser(user) && !currentOperator?.name}
             onClick={onOpenInventory}
           >
-            Stocktaking
+            Stock Count
           </button>
         )}
         {selectedShift && <span className="shift-pill">{shiftLabel}</span>}
@@ -10410,9 +10411,12 @@ function Checklist({
   );
 }
 
-function ManagerDashboardJumpIndex() {
+function ManagerDashboardJumpIndex({ includeStockCount = false }) {
   const jumpItems = [
     { label: "Top", needles: ["dashboard"] },
+    ...(includeStockCount
+      ? [{ label: "Stock Count", needles: ["stock count"] }]
+      : []),
     { label: "Backend", needles: ["backend status"] },
     { label: "Checklist", needles: ["checklist backend"] },
     { label: "Auth", needles: ["auth status"] },
@@ -13911,7 +13915,7 @@ function ManagerDashboard({
         <p className="eyebrow">Manager</p>
         <h1>Dashboard</h1>
       </section>
-      <ManagerDashboardJumpIndex />
+      <ManagerDashboardJumpIndex includeStockCount={Boolean(onOpenInventory)} />
       <ManagerDashboardSectionCollapseControls />
       <ManagerDashboardActionCenter
         user={user}
@@ -13945,21 +13949,23 @@ function ManagerDashboard({
 
       <EventCodeGeneratorPanel user={user} />
 
-      <section className="manager-list inventory-dashboard-card">
-        <p className="eyebrow">Inventory &amp; Stocktaking</p>
-        <h2>Products, standards and stock counts</h2>
-        <p className="muted">
-          Start or continue a count, review shortages, manage par levels, and
-          open approved stock history.
-        </p>
-        <button
-          type="button"
-          className="primary-button manager-full-button"
-          onClick={onOpenInventory}
-        >
-          Open stocktaking
-        </button>
-      </section>
+      {onOpenInventory && (
+        <section className="manager-list inventory-dashboard-card">
+          <p className="eyebrow">Inventory</p>
+          <h2>Stock Count</h2>
+          <p className="muted">
+            Start or continue a count, review shortages, manage par levels, and
+            open approved stock history.
+          </p>
+          <button
+            type="button"
+            className="primary-button manager-full-button"
+            onClick={onOpenInventory}
+          >
+            Open Stock Count
+          </button>
+        </section>
+      )}
 
       {canGenerateEventCode(user) && (
         <section className="manager-list">
@@ -16928,7 +16934,12 @@ class AppErrorBoundary extends Component {
 }
 
 function App() {
-  const [user, setUser] = useState(() => readStorage(SESSION_KEY, null));
+  const [user, setUser] = useState(() => {
+    const storedUser = readStorage(SESSION_KEY, null);
+    return storedUser?.loginSource === "supabase_auth"
+      ? { ...storedUser, authSessionVerified: false }
+      : storedUser;
+  });
   const [selectedShift, setSelectedShift] = useState(null);
   const [showManager, setShowManager] = useState(false);
   const [showEventFloorManager, setShowEventFloorManager] = useState(false);
@@ -17216,9 +17227,13 @@ function App() {
     profileRole: user?.role || "",
     organizationId: user?.organizationId || user?.organization_id || "",
     profileActive: user?.profileActive ?? user?.active ?? true,
-    authSessionPresent: user?.loginSource === "supabase_auth",
+    authSessionPresent: user?.authSessionVerified === true,
     profileFetchStatus:
-      user?.loginSource === "supabase_auth" ? "profile_loaded" : "not_loaded",
+      user?.authSessionVerified === true
+        ? "profile_loaded"
+        : user?.loginSource === "supabase_auth"
+          ? "auth_session_unverified"
+          : "not_loaded",
     profileFetchErrorCode: "",
     profileFetchErrorMessage: "",
     profileFetchError: "",
@@ -17447,11 +17462,11 @@ function App() {
         nextUser?.organizationId || nextUser?.organization_id || "",
       profileActive: nextUser?.profileActive ?? nextUser?.active ?? true,
       authSessionPresent: Boolean(
-        details.authSessionPresent ?? nextUser?.loginSource === "supabase_auth",
+        details.authSessionPresent ?? nextUser?.authSessionVerified === true,
       ),
       profileFetchStatus:
         details.profileFetchStatus ||
-        (nextUser?.loginSource === "supabase_auth"
+        (nextUser?.authSessionVerified === true
           ? "profile_loaded"
           : "not_loaded"),
       profileFetchErrorCode: details.profileFetchErrorCode || "",
@@ -19684,7 +19699,17 @@ function App() {
         return;
       }
       const session = await getCurrentSession();
-      if (!session?.user || cancelled) return;
+      if (!session?.user || cancelled) {
+        if (!cancelled && user?.loginSource === "supabase_auth") {
+          localStorage.removeItem(SESSION_KEY);
+          setUser(null);
+          updateAuthStatusFromUser(null, "Email login is required for Stock Count.", {
+            authSessionPresent: false,
+            profileFetchStatus: "auth_session_missing",
+          });
+        }
+        return;
+      }
       const result = await applySupabaseSession(session);
       if (!result.ok && !cancelled && !user?.loginSource) {
         setUser(null);
@@ -20731,13 +20756,8 @@ function App() {
     (!effectiveActor.isSharedDevice || Boolean(sharedDeviceEventOperatorName)) &&
     (isManager(effectiveUser) || canUseEventFloorDashboard(effectiveUser) || eventAccessIsValid);
 
-  async function openInventoryWorkspace() {
+  function openInventoryWorkspace() {
     if (!canUseInventory(effectiveUser)) return;
-    if (isSharedDeviceUser(effectiveUser)) {
-      if (!currentOperator?.name) return;
-      const inventoryShift = activeShiftScope?.primaryShiftId || activeShift || "daytime";
-      await ensureShiftSession(getOsloDateKey(), inventoryShift === "overview" ? "daytime" : inventoryShift);
-    }
     setShowInventory(true);
   }
 
@@ -20765,10 +20785,9 @@ function App() {
             logout();
           }}
         />
-        <Suspense fallback={<FocusedViewLoading label="Loading inventory and stocktaking..." />}>
+        <Suspense fallback={<FocusedViewLoading label="Loading Stock Count..." />}>
           <InventoryWorkspace
             user={effectiveUser}
-            currentOperator={currentOperator}
             requestWriteAccess={requestWriteAccess}
             onClose={() => setShowInventory(false)}
           />
@@ -21258,7 +21277,7 @@ function App() {
             setShowManager(false);
             setShowEventFloorManager(true);
           }}
-          onOpenInventory={openInventoryWorkspace}
+          onOpenInventory={canUseInventory(effectiveUser) ? openInventoryWorkspace : null}
           onResetPilotNotice={() => {
             localStorage.removeItem(PILOT_NOTICE_KEY);
             setPilotAccepted(false);

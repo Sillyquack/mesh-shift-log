@@ -1,14 +1,18 @@
 import { readFileSync } from 'node:fs';
 import { runInventoryVerification } from '../src/data/inventoryVerification.js';
+import { runInventoryPermissionVerification } from '../src/data/inventoryPermissionVerification.js';
 
 const sql = readFileSync(new URL('../supabase/phase9a_inventory_stocktaking.sql', import.meta.url), 'utf8');
 const phase9a4Sql = readFileSync(new URL('../supabase/phase9a4_inventory_location_template.sql', import.meta.url), 'utf8');
 const phase9bSql = readFileSync(new URL('../supabase/phase9b_stock_policies.sql', import.meta.url), 'utf8');
+const phase9cSql = readFileSync(new URL('../supabase/phase9c_inventory_security_hardening.sql', import.meta.url), 'utf8');
 const client = readFileSync(new URL('../src/lib/inventoryClient.js', import.meta.url), 'utf8');
 const realtime = readFileSync(new URL('../src/lib/inventoryRealtime.js', import.meta.url), 'utf8');
 const calculations = readFileSync(new URL('../src/data/inventoryCalculations.js', import.meta.url), 'utf8');
 const workspace = readFileSync(new URL('../src/components/InventoryWorkspace.jsx', import.meta.url), 'utf8');
 const app = readFileSync(new URL('../src/App.jsx', import.meta.url), 'utf8');
+const permissions = readFileSync(new URL('../src/lib/permissions.js', import.meta.url), 'utf8');
+const securityDocumentation = readFileSync(new URL('../docs/stock-count-security.md', import.meta.url), 'utf8');
 
 function functionBody(name) {
   const start = sql.indexOf(`create or replace function public.${name}(`);
@@ -29,6 +33,13 @@ function phase9bFunctionBody(name) {
   if (start < 0) return '';
   const end = phase9bSql.indexOf('\n$$;', start);
   return end < 0 ? '' : phase9bSql.slice(start, end + 4);
+}
+
+function phase9cFunctionBody(name) {
+  const start = phase9cSql.indexOf(`create or replace function public.${name}(`);
+  if (start < 0) return '';
+  const end = phase9cSql.indexOf('\n$$;', start);
+  return end < 0 ? '' : phase9cSql.slice(start, end + 4);
 }
 
 function check(name, condition) {
@@ -76,6 +87,7 @@ const productNormalizer = normalizerSource('normalizeProduct', 'normalizeLocatio
 const locationNormalizer = normalizerSource('normalizeLocation', 'normalizeStandard');
 const standardNormalizer = normalizerSource('normalizeStandard', 'normalizeSession');
 const pure = runInventoryVerification();
+const permissionVerification = runInventoryPermissionVerification();
 const auditFields = [
   'previousStatus', 'previousCompletedAt', 'previousCompletedByAuthUserId',
   'previousCompletedByName', 'previousCompletionNote', 'previousApprovedAt',
@@ -133,9 +145,62 @@ const phase9bLineGrant = phase9bSql.slice(
 );
 const standardColumns = client.match(/const STANDARD_COLUMNS = '([^']+)'/)?.[1] || '';
 const lineColumns = client.match(/const LINE_COLUMNS = '([^']+)'/)?.[1] || '';
+const phase9cManagerPermission = phase9cFunctionBody('current_user_can_manage_inventory_config');
+const phase9cCoordinatorPermission = phase9cFunctionBody('current_user_can_coordinate_inventory');
+const phase9cActorResolver = phase9cFunctionBody('inventory_resolve_actor');
+const phase9cSessionVisibility = phase9cFunctionBody('inventory_session_is_visible');
+const phase9cInventoryPolicies = phase9cSql.slice(
+  phase9cSql.indexOf('-- Inventory remains column-selectable'),
+  phase9cSql.indexOf('-- Defense in depth:'),
+);
+const effectiveInventoryMutationBodies = [
+  functionBody('upsert_inventory_product'),
+  functionBody('upsert_inventory_location'),
+  functionBody('upsert_inventory_location_product'),
+  phase9bCopyStandards,
+  phase9bTemplate,
+  phase9bBulkStandards,
+  phase9bCreateSession,
+  phase9bManualCount,
+  phase9bCaseCount,
+  phase9bFunctionBody('mark_inventory_count_line_use_par'),
+  phase9bFunctionBody('clear_inventory_count_line'),
+  phase9bFunctionBody('skip_inventory_count_line'),
+  phase9bFunctionBody('mark_inventory_location_use_par'),
+  phase9bConfirmUnchanged,
+  functionBody('complete_inventory_count_location'),
+  functionBody('complete_inventory_count_session'),
+  functionBody('approve_inventory_count_session'),
+  functionBody('reopen_inventory_count_session'),
+  functionBody('cancel_inventory_count_session'),
+  importCatalog,
+];
+const inventoryMutationSignatures = [
+  'upsert_inventory_product(uuid, text, text, text, text, text, text, numeric, text, text, boolean, integer, jsonb, text[])',
+  'upsert_inventory_location(uuid, text, text, text, uuid, text, text, boolean, integer, jsonb, text[])',
+  'upsert_inventory_location_product(uuid, uuid, uuid, numeric, numeric, numeric, integer, boolean, text, jsonb, text[])',
+  'copy_inventory_location_standards(uuid, uuid, boolean)',
+  'setup_mesh_youngstorget_inventory_locations()',
+  'bulk_upsert_inventory_location_standards(uuid, jsonb)',
+  'create_inventory_count_session(text, text, date, uuid[], text, text)',
+  'set_inventory_count_line_quantity(uuid, numeric, text, text, timestamptz)',
+  'set_inventory_count_line_case_quantity(uuid, integer, numeric, text, text, timestamptz)',
+  'mark_inventory_count_line_use_par(uuid, text, text, timestamptz)',
+  'clear_inventory_count_line(uuid, text, timestamptz)',
+  'skip_inventory_count_line(uuid, text, text, timestamptz)',
+  'mark_inventory_location_use_par(uuid, uuid, boolean, text)',
+  'confirm_inventory_count_line_unchanged(uuid, timestamptz)',
+  'complete_inventory_count_location(uuid, uuid, text)',
+  'complete_inventory_count_session(uuid, text, boolean, text)',
+  'approve_inventory_count_session(uuid, text)',
+  'reopen_inventory_count_session(uuid, text)',
+  'cancel_inventory_count_session(uuid, text)',
+  'import_inventory_catalog(jsonb, boolean)',
+];
 
 const checks = [
   ...pure.checks,
+  ...permissionVerification.checks,
   check('1: reopen snapshot contains every completion and approval audit field', auditFields.every((field) => reopen.includes(`'${field}'`))),
   check('2: repeated reopen appends to the existing audit array', /coalesce\(v_session\.metadata->'reopenHistory',[\s\S]*?\|\| jsonb_build_array/i.test(reopen)),
   check('3: reopened active session clears stale completion state', /metadata = \(coalesce\(session\.metadata,[\s\S]*?- 'locationCompletions' - 'completionExceptions'/i.test(reopen)),
@@ -225,7 +290,7 @@ const checks = [
   check('9B-31: event reserve UI supports full cases and loose units', /Full cases/i.test(workspace) && /Loose units/i.test(workspace) && /Calculated total/i.test(workspace)),
   check('9B-32: dormant UI states Shopbox is not integrated and confirmation is attestation', /Shopbox movement validation is not connected/i.test(workspace) && /manager attestation/i.test(workspace)),
   check('9B-33: protected event reserve is separate from daily restocking', /\['exact_par', 'operating_reserve'\]\.includes/i.test(calculations) && /Not for daily restocking/i.test(workspace) && purePassed('9B-33:')),
-  check('9B-34: normal staff and shared-device actor flow retain physical counting', /inventory_resolve_actor\(input_actor_name\)/i.test(phase9bManualCount) && !/current_user_can_manage_inventory_config/i.test(phase9bManualCount)),
+  check('9B-34: Phase 9C supersedes the former staff actor flow with manager-only resolution', /inventory_resolve_actor\(input_actor_name\)/i.test(phase9bManualCount) && /profile\.role = 'manager'/i.test(phase9cActorResolver) && /coalesce\(profile\.is_shared_device, false\) = false/i.test(phase9cActorResolver)),
   check('9B-35: policy configuration remains manager-only and rejects shared devices', /current_user_can_manage_inventory_config\(\)/i.test(phase9bBulkStandards) && /current_user_is_shared_device\(\)/i.test(phase9bBulkStandards)),
   check('9B-36: new RPC records and setup results are sanitized', !/'[a-z_]*auth_user_id'/i.test(phase9bSafeLine) && !/organization_id|auth_user_id/i.test(phase9bTemplateReturn) && !/organization_id|auth_user_id/i.test(phase9bBulkStandards.slice(phase9bBulkStandards.lastIndexOf('return jsonb_build_object(')))),
   check('9B-37: inventory client retains explicit column reads', !/select\(['"]\*['"]\)/i.test(client) && /stock_policy,target_mode,reserve_multiplier,case_size,target_cases,target_loose_quantity,physical_recount_interval_days/i.test(client)),
@@ -256,6 +321,27 @@ const checks = [
   check('9B.1-R1: current true physical methods suppress recount-due state', /currentPhysicalCount = \['manual', 'imported', 'adjusted'\]\.includes\(countMethod\)/i.test(calculations) && /!currentPhysicalCount \? isPhysicalRecountDue\(line\) : false/i.test(calculations)),
   check('9B.1-R2: dormant UI reports a current physical count instead of recount-required', /Physical count recorded for this session/i.test(workspace) && /Current physical count:/i.test(workspace)),
   check('9B.1-R3: overview due count uses the corrected physical-recount state', /dormantPhysicalRecountDue: calculated\.filter\(\(line\) => line\.stockPolicy === 'verify_unchanged' && line\.physicalRecountDue\)\.length/i.test(calculations) && purePassed('9B.1-R6:')),
+  check('SEC-S1: frontend uses one verified Supabase manager predicate for all inventory permissions', /user\.loginSource === 'supabase_auth'/i.test(permissions) && /user\.authSessionVerified === true/i.test(permissions) && /authUserId === profileId/i.test(permissions) && /roleOf\(user\.profile\) === 'manager'/i.test(permissions) && /user\.profile\?\.active === true/i.test(permissions) && /return canUseInventory\(user\)/i.test(permissions)),
+  check('SEC-S2: unauthorized routes render an explicit Stock Count access-denied state before workspace hooks', /if \(!canUseInventory\(props\.user\)\)[\s\S]*?Manager access required[\s\S]*?Staff-code, event-floor and shared-device sessions cannot access/i.test(workspace)),
+  check('SEC-S3: both App launch points are gated and the Manager Dashboard card is conditional', (app.match(/onOpenInventory=\{canUseInventory\(effectiveUser\) \? openInventoryWorkspace : null\}/g) || []).length === 2 && /\{onOpenInventory && \([\s\S]*?<h2>Stock Count<\/h2>/i.test(app)),
+  check('SEC-S4: user-facing inventory launch and workspace labels use Stock Count', /selectedShift === "inventory"[\s\S]*?"Stock Count"/i.test(app) && /Open Stock Count/i.test(app) && /<h1>Stock Count<\/h1>/i.test(workspace)),
+  check('SEC-S5: cached Supabase users are unverified until a live session and profile reload succeeds', /storedUser\?\.loginSource === "supabase_auth"[\s\S]*?authSessionVerified: false/i.test(app) && /authSessionVerified: Boolean\(authUser\?\.id && profile\.id === authUser\.id\)/i.test(app) && /auth_session_missing/i.test(app)),
+  check('SEC-S6: frontend inventory RPC payloads no longer send a free-text operator identity', !/input_actor_name|actorName/i.test(client) && !/actorName|currentOperator/i.test(workspace)),
+  check('SEC-D1: manager authority requires auth uid, active manager, non-shared profile and non-null organization', /profile\.id = \(select auth\.uid\(\)\)/i.test(phase9cManagerPermission) && /profile\.active = true/i.test(phase9cManagerPermission) && /profile\.role = 'manager'/i.test(phase9cManagerPermission) && /profile\.organization_id is not null/i.test(phase9cManagerPermission) && /coalesce\(profile\.is_shared_device, false\) = false/i.test(phase9cManagerPermission)),
+  check('SEC-D2: event-floor coordination is removed by aliasing coordination to manager authorization', /select public\.current_user_can_manage_inventory_config\(\)/i.test(phase9cCoordinatorPermission) && !/event_floor_manager/i.test(phase9cCoordinatorPermission)),
+  check('SEC-D3: actor resolution ignores free text and uses only the authenticated manager profile', !phase9cActorResolver.slice(phase9cActorResolver.indexOf('as $$')).includes('input_actor_name') && !/shift_sessions|operator_name|user_metadata|auth\.jwt/i.test(phase9cActorResolver) && /v_profile\.display_name/i.test(phase9cActorResolver)),
+  check('SEC-D4: session visibility is active-manager and strict same-organization only', /profile\.role = 'manager'/i.test(phase9cSessionVisibility) && /session\.organization_id = profile\.organization_id/i.test(phase9cSessionVisibility) && !/organization_id is null|current_user_organization_id\(\) is null/i.test(phase9cSessionVisibility)),
+  check('SEC-D5: broad profile update policy and authenticated table update privilege are removed', /revoke insert, update, delete, truncate, references, trigger[\s\S]*?on table public\.user_profiles from authenticated/i.test(phase9cSql) && /drop policy if exists "pilot managers can update profiles"/i.test(phase9cSql) && !/create policy "pilot managers can update profiles"/i.test(phase9cSql)),
+  check('SEC-D6: every known profile authority column has direct UPDATE revoked', ['id', 'organization_id', 'display_name', 'role', 'active', 'staff_code_alias', 'is_shared_device', 'shared_device_label', 'created_at', 'updated_at'].every((field) => phase9cSql.slice(phase9cSql.indexOf('revoke update ('), phase9cSql.indexOf(') on table public.user_profiles')).includes(field))),
+  check('SEC-D7: manager profile diagnostics are read-only and same-organization scoped', /create policy "pilot managers can read profiles"[\s\S]*?current_user_can_manage_inventory_config\(\)[\s\S]*?organization_id = \(select public\.current_user_organization_id\(\)\)/i.test(phase9cSql) && /View-only profile check/i.test(app)),
+  check('SEC-D8: all five inventory read policies require manager and exact organization equality', (phase9cInventoryPolicies.match(/create policy inventory_[a-z_]+_read/g) || []).length === 5 && (phase9cInventoryPolicies.match(/current_user_can_manage_inventory_config\(\)/g) || []).length === 5 && (phase9cInventoryPolicies.match(/organization_id = \(select public\.current_user_organization_id\(\)\)/g) || []).length === 5),
+  check('SEC-D9: inventory read policies have null-denying organization logic', !/organization_id is null|current_user_organization_id\(\) is null|\bis null\s+or\b/i.test(phase9cInventoryPolicies)),
+  check('SEC-D10: every effective inventory mutation reaches the strict manager helper or actor resolver', effectiveInventoryMutationBodies.every((body) => body && /current_user_can_manage_inventory_config\(\)|inventory_resolve_actor\(/i.test(body))),
+  check('SEC-D11: every mutation RPC revokes PUBLIC and anon before granting authenticated execution', inventoryMutationSignatures.every((signature) => phase9cSql.includes(`revoke all on function public.${signature} from public, anon, authenticated;`) && phase9cSql.includes(`grant execute on function public.${signature} to authenticated;`))),
+  check('SEC-D12: internal line-record and actor helpers are not directly executable by authenticated', /revoke all on function public\.inventory_count_line_client_record\(uuid\) from public, anon, authenticated/i.test(phase9cSql) && !/grant execute on function public\.inventory_count_line_client_record/i.test(phase9cSql) && !/grant execute on function public\.inventory_resolve_actor/i.test(phase9cSql)),
+  check('SEC-D13: Phase 9C security-definer helpers use safe search paths and schema-qualified relations', (phase9cSql.match(/security definer\nset search_path = pg_catalog/g) || []).length === 4 && !/from\s+user_profiles|from\s+inventory_count_sessions/i.test(phase9cSql)),
+  check('SEC-D14: Phase 9C contains no metadata-based authorization or service-role frontend credential', !/user_metadata|raw_user_meta_data|service_role_key|VITE_[A-Z_]*SERVICE/i.test(phase9cSql + client + workspace)),
+  check('SEC-D15: focused security documentation states the enforced boundary and static-only limitation', /manager-only/i.test(securityDocumentation) && /Supabase Auth/i.test(securityDocumentation) && /staff-code/i.test(securityDocumentation) && /shared-device/i.test(securityDocumentation) && /not executed/i.test(securityDocumentation)),
 ];
 
 for (const result of checks) {
