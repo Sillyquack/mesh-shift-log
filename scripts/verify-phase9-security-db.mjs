@@ -21,6 +21,7 @@ const ASSERTION_PATH = resolve(ROOT, 'supabase/tests/phase9/security-assertions.
 const PRE_PHASE9D_FIXTURE_PATH = resolve(ROOT, 'supabase/tests/phase9/pre-phase9d-compatibility.sql');
 const INTEGRITY_ASSERTION_PATH = resolve(ROOT, 'supabase/tests/phase9/session-integrity-assertions.sql');
 const IDENTITY_ASSERTION_PATH = resolve(ROOT, 'supabase/tests/phase9/product-identity-assertions.sql');
+const STRUCTURED_ASSERTION_PATH = resolve(ROOT, 'supabase/tests/phase9/structured-quantity-assertions.sql');
 const EXPECTED_ASSERTION_PASSES = 70;
 let containerStarted = false;
 
@@ -164,7 +165,7 @@ function verifyUnsafeOrderIsRejected(canonicalPaths) {
       'supabase/phase9a_inventory_stocktaking.sql',
     ]);
   } catch {
-    console.log('PASS migration runner rejects reapplying an older Phase 9 file after Phase 9E');
+    console.log('PASS migration runner rejects reapplying an older Phase 9 file after Phase 9F');
     return;
   }
   throw new Error('Unsafe post-Phase 9D migration reapplication was not rejected.');
@@ -234,10 +235,10 @@ async function main() {
   const paths = entries.map((entry) => entry.path);
   verifyUnsafeOrderIsRejected(paths);
   if (paths.at(-1) !== PHASE9_TERMINAL_MIGRATION) {
-    throw new Error('Phase 9E is not terminal.');
+    throw new Error('Phase 9F is not terminal.');
   }
   entries.forEach((entry) => resolveMigrationPath(entry.path));
-  if (![FIXTURE_PATH, ASSERTION_PATH, PRE_PHASE9D_FIXTURE_PATH, INTEGRITY_ASSERTION_PATH, IDENTITY_ASSERTION_PATH].every(existsSync)) {
+  if (![FIXTURE_PATH, ASSERTION_PATH, PRE_PHASE9D_FIXTURE_PATH, INTEGRITY_ASSERTION_PATH, IDENTITY_ASSERTION_PATH, STRUCTURED_ASSERTION_PATH].every(existsSync)) {
     throw new Error('Phase 9 executable security SQL is missing.');
   }
 
@@ -341,6 +342,17 @@ async function main() {
   }
   integrityPassLines.forEach((line) => console.log(line));
   console.log(`Executable PostgreSQL session-integrity assertions: ${integrityPassLines.length}/${integrityPassLines.length} passed.`);
+
+  const structuredAssertions = psql(readFileSync(STRUCTURED_ASSERTION_PATH, 'utf8'));
+  const structuredPassLines = `${structuredAssertions.stdout}\n${structuredAssertions.stderr}`
+    .split('\n')
+    .filter((line) => line.includes('PASS '))
+    .map((line) => line.replace(/^.*PASS /, 'PASS '));
+  if (structuredPassLines.length !== 23) {
+    throw new Error(`Expected 23 executable structured-quantity assertion passes, received ${structuredPassLines.length}.`);
+  }
+  structuredPassLines.forEach((line) => console.log(line));
+  console.log(`Executable PostgreSQL structured-quantity assertions: ${structuredPassLines.length}/${structuredPassLines.length} passed.`);
   reportDatabaseState();
 }
 

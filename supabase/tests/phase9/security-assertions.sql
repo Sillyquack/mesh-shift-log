@@ -407,7 +407,7 @@ create table phase9_test.expected_authenticated_functions (signature text primar
 insert into phase9_test.expected_authenticated_functions (signature) values
   ('public.current_user_can_manage_inventory_config()'),
   ('public.get_inventory_count_session_record(uuid)'),
-  ('public.upsert_inventory_product(uuid,text,text,text,text,text,text,numeric,text,text,boolean,integer,jsonb,text[])'),
+  ('public.upsert_inventory_product(uuid,text,text,text,text,text,text,numeric,text,text,boolean,integer,jsonb,text,numeric,text[])'),
   ('public.upsert_inventory_location(uuid,text,text,text,uuid,text,text,boolean,integer,jsonb,text[])'),
   ('public.upsert_inventory_location_product(uuid,uuid,uuid,numeric,numeric,numeric,integer,boolean,text,jsonb,text[])'),
   ('public.copy_inventory_location_standards(uuid,uuid,boolean)'),
@@ -417,6 +417,7 @@ insert into phase9_test.expected_authenticated_functions (signature) values
   ('public.create_inventory_correction_session(uuid,text,uuid)'),
   ('public.set_inventory_count_line_quantity(uuid,numeric,text,text,timestamp with time zone)'),
   ('public.set_inventory_count_line_case_quantity(uuid,integer,numeric,text,text,timestamp with time zone)'),
+  ('public.set_inventory_count_line_structured_quantity(uuid,numeric,numeric,numeric,numeric,text,text,timestamp with time zone)'),
   ('public.mark_inventory_count_line_use_par(uuid,text,text,timestamp with time zone)'),
   ('public.clear_inventory_count_line(uuid,text,timestamp with time zone)'),
   ('public.skip_inventory_count_line(uuid,text,text,timestamp with time zone)'),

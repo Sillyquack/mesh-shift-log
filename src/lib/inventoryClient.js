@@ -1,11 +1,16 @@
 import { getCurrentSession, supabaseAuthClient } from './supabaseAuthClient.js';
 import { isSupabaseConfigured } from './supabaseClient.js';
+import { normalizeInventoryDecimal } from '../data/inventoryStructuredQuantities.js';
 
-const PRODUCT_COLUMNS = 'id,name,short_name,sku,barcode,category,unit_label,default_pack_size,supplier_name,notes,active,sort_order';
+const PRODUCT_COLUMNS = 'id,name,short_name,sku,barcode,category,unit_label,default_pack_size,count_mode,container_capacity_liters,supplier_name,notes,active,sort_order';
 const LOCATION_COLUMNS = 'id,name,code,location_type,parent_location_id,zone,description,active,sort_order';
 const STANDARD_COLUMNS = 'id,location_id,product_id,par_quantity,minimum_quantity,default_restock_quantity,count_order,active,notes,stock_policy,target_mode,reserve_multiplier,case_size,target_cases,target_loose_quantity,physical_recount_interval_days';
 const SESSION_COLUMNS = 'id,title,count_type,status,count_date,started_at,completed_at,approved_at,started_by_name,completed_by_name,approved_by_name,completion_note,approval_note,session_kind,original_session_id,correction_reason,correction_created_by_name,correction_created_at,finalized_with_exceptions,exception_reason,exception_skipped_count,exception_uncounted_count,exception_needs_review_count,exception_incomplete_location_count,exception_location_ids,finalized_by_name,finalized_at,updated_at';
-const LINE_COLUMNS = 'id,location_id,product_id,product_name_snapshot,location_name_snapshot,unit_label_snapshot,category_snapshot,location_sort_order_snapshot,count_order_snapshot,product_sort_order_snapshot,par_quantity_snapshot,minimum_quantity_snapshot,stock_policy_snapshot,target_mode_snapshot,effective_target_quantity_snapshot,service_target_basis_snapshot,reserve_multiplier_snapshot,case_size_snapshot,target_cases_snapshot,target_loose_quantity_snapshot,physical_recount_interval_days_snapshot,previous_physical_count_quantity_snapshot,previous_physical_counted_at_snapshot,count_full_cases,count_loose_quantity,counted_quantity,count_method,count_status,variance_quantity,restock_quantity,note,counted_at,counted_by_name,updated_at';
+const LINE_COLUMNS = 'id,location_id,product_id,product_name_snapshot,location_name_snapshot,unit_label_snapshot,category_snapshot,location_sort_order_snapshot,count_order_snapshot,product_sort_order_snapshot,par_quantity_snapshot,minimum_quantity_snapshot,stock_policy_snapshot,target_mode_snapshot,effective_target_quantity_snapshot,service_target_basis_snapshot,reserve_multiplier_snapshot,case_size_snapshot,target_cases_snapshot,target_loose_quantity_snapshot,physical_recount_interval_days_snapshot,previous_physical_count_quantity_snapshot,previous_physical_counted_at_snapshot,count_mode_snapshot,container_capacity_liters_snapshot,counted_whole_units,counted_open_volume_liters,counted_full_kegs,counted_partial_keg_fraction,count_full_cases,count_loose_quantity,counted_quantity,count_method,count_status,variance_quantity,restock_quantity,note,counted_at,counted_by_name,updated_at';
+
+function exactDecimal(value) {
+  return value === null || value === undefined || value === '' ? null : normalizeInventoryDecimal(value);
+}
 
 function output(ok, fields = {}) {
   return { ok, ...fields };
@@ -60,6 +65,8 @@ function normalizeProduct(row) {
     category: row.category || '',
     unitLabel: row.unit_label || '',
     defaultPackSize: row.default_pack_size,
+    countMode: row.count_mode || 'unit',
+    containerCapacityLiters: exactDecimal(row.container_capacity_liters),
     supplierName: row.supplier_name || '',
     notes: row.notes || '',
     active: row.active !== false,
@@ -149,10 +156,12 @@ function normalizeLine(row) {
     countOrderSnapshot: Number(row.count_order_snapshot ?? 0),
     productSortOrderSnapshot: Number(row.product_sort_order_snapshot ?? 0),
     parQuantity: Number(row.par_quantity_snapshot ?? 0),
+    parQuantityExact: exactDecimal(row.par_quantity_snapshot ?? 0),
     minimumQuantity: row.minimum_quantity_snapshot === null ? null : Number(row.minimum_quantity_snapshot),
     stockPolicy: row.stock_policy_snapshot || 'exact_par',
     targetMode: row.target_mode_snapshot || '',
     effectiveTargetQuantity: row.effective_target_quantity_snapshot == null ? null : Number(row.effective_target_quantity_snapshot),
+    effectiveTargetQuantityExact: exactDecimal(row.effective_target_quantity_snapshot),
     serviceTargetBasis: row.service_target_basis_snapshot == null ? null : Number(row.service_target_basis_snapshot),
     reserveMultiplier: row.reserve_multiplier_snapshot == null ? null : Number(row.reserve_multiplier_snapshot),
     caseSize: row.case_size_snapshot == null ? null : Number(row.case_size_snapshot),
@@ -161,13 +170,26 @@ function normalizeLine(row) {
     physicalRecountIntervalDays: row.physical_recount_interval_days_snapshot == null ? null : Number(row.physical_recount_interval_days_snapshot),
     previousPhysicalCountQuantity: row.previous_physical_count_quantity_snapshot == null ? null : Number(row.previous_physical_count_quantity_snapshot),
     previousPhysicalCountedAt: row.previous_physical_counted_at_snapshot || '',
+    countMode: row.count_mode_snapshot || 'unit',
+    containerCapacityLiters: exactDecimal(row.container_capacity_liters_snapshot),
+    countedWholeUnits: row.counted_whole_units == null ? null : Number(row.counted_whole_units),
+    countedWholeUnitsExact: exactDecimal(row.counted_whole_units),
+    countedOpenVolumeLiters: row.counted_open_volume_liters == null ? null : Number(row.counted_open_volume_liters),
+    countedOpenVolumeLitersExact: exactDecimal(row.counted_open_volume_liters),
+    countedFullKegs: row.counted_full_kegs == null ? null : Number(row.counted_full_kegs),
+    countedFullKegsExact: exactDecimal(row.counted_full_kegs),
+    countedPartialKegFraction: row.counted_partial_keg_fraction == null ? null : Number(row.counted_partial_keg_fraction),
+    countedPartialKegFractionExact: exactDecimal(row.counted_partial_keg_fraction),
     countFullCases: row.count_full_cases == null ? null : Number(row.count_full_cases),
     countLooseQuantity: row.count_loose_quantity == null ? null : Number(row.count_loose_quantity),
     countedQuantity: row.counted_quantity === null ? null : Number(row.counted_quantity),
+    countedQuantityExact: exactDecimal(row.counted_quantity),
     countMethod: row.count_method || 'uncounted',
     countStatus: row.count_status || 'not_counted',
     varianceQuantity: row.variance_quantity === null ? null : Number(row.variance_quantity),
+    varianceQuantityExact: exactDecimal(row.variance_quantity),
     restockQuantity: row.restock_quantity === null ? null : Number(row.restock_quantity),
+    restockQuantityExact: exactDecimal(row.restock_quantity),
     note: row.note || '',
     countedAt: row.counted_at || '',
     countedByName: row.counted_by_name || '',
@@ -229,6 +251,7 @@ export function saveInventoryProduct(payload) {
   const fieldMap = {
     name: 'name', shortName: 'short_name', sku: 'sku', barcode: 'barcode',
     category: 'category', unitLabel: 'unit_label', defaultPackSize: 'default_pack_size',
+    countMode: 'count_mode', containerCapacityLiters: 'container_capacity_liters',
     supplierName: 'supplier_name', notes: 'notes', active: 'active',
     sortOrder: 'sort_order', metadata: 'metadata',
   };
@@ -241,6 +264,8 @@ export function saveInventoryProduct(payload) {
     input_category: hasOwn(payload, 'category') ? payload.category : undefined,
     input_unit_label: hasOwn(payload, 'unitLabel') ? payload.unitLabel : undefined,
     input_default_pack_size: hasOwn(payload, 'defaultPackSize') ? (payload.defaultPackSize === '' ? null : payload.defaultPackSize) : undefined,
+    input_count_mode: hasOwn(payload, 'countMode') ? payload.countMode : undefined,
+    input_container_capacity_liters: hasOwn(payload, 'containerCapacityLiters') ? (payload.containerCapacityLiters === '' ? null : payload.containerCapacityLiters) : undefined,
     input_supplier_name: hasOwn(payload, 'supplierName') ? payload.supplierName : undefined,
     input_notes: hasOwn(payload, 'notes') ? payload.notes : undefined,
     input_active: hasOwn(payload, 'active') ? payload.active : undefined,
@@ -344,6 +369,18 @@ export function setInventoryCountLineCaseQuantity(payload) {
     input_line_id: payload.lineId,
     input_full_cases: payload.fullCases,
     input_loose_quantity: payload.looseQuantity,
+    input_note: payload.note || null,
+    input_expected_updated_at: payload.expectedUpdatedAt || null,
+  }, normalizeLine);
+}
+
+export function setInventoryCountLineStructuredQuantity(payload) {
+  return callRpc('set_inventory_count_line_structured_quantity', {
+    input_line_id: payload.lineId,
+    input_whole_units: payload.wholeUnits,
+    input_open_volume_liters: payload.openVolumeLiters,
+    input_full_kegs: payload.fullKegs,
+    input_partial_keg_fraction: payload.partialKegFraction,
     input_note: payload.note || null,
     input_expected_updated_at: payload.expectedUpdatedAt || null,
   }, normalizeLine);

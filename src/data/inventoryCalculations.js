@@ -1,7 +1,31 @@
+import {
+  addInventoryDecimals,
+  compareInventoryDecimals,
+  normalizeInventoryDecimal,
+  subtractInventoryDecimals,
+} from './inventoryStructuredQuantities.js';
+
 function numberOrNull(value) {
   if (value === null || value === undefined || value === '') return null;
   const parsed = Number(value);
   return Number.isFinite(parsed) ? parsed : null;
+}
+
+function exactOrNull(value) {
+  if (value === null || value === undefined || value === '') return null;
+  try {
+    return normalizeInventoryDecimal(value);
+  } catch {
+    return null;
+  }
+}
+
+function numberFromExact(value) {
+  return value === null ? null : Number(value);
+}
+
+function countModeIdentity(item = {}) {
+  return item.countMode || item.count_mode_snapshot || 'unit';
 }
 
 function integerOrZero(value) {
@@ -58,18 +82,25 @@ export function compareInventoryApprovedLines(latestLines = [], previousLines = 
   return latestLines.map((line) => {
     const key = identityPairKey(line);
     const previous = previousByIdentity.get(key);
-    const latestQuantity = numberOrNull(line.countedQuantity ?? line.counted_quantity);
-    const previousQuantity = numberOrNull(previous?.countedQuantity ?? previous?.counted_quantity);
-    if (latestQuantity === null || previousQuantity === null) return null;
+    const latestQuantityExact = exactOrNull(line.countedQuantityExact ?? line.countedQuantity ?? line.counted_quantity);
+    const previousQuantityExact = exactOrNull(previous?.countedQuantityExact ?? previous?.countedQuantity ?? previous?.counted_quantity);
+    if (latestQuantityExact === null || previousQuantityExact === null) return null;
+    const changeExact = subtractInventoryDecimals(latestQuantityExact, previousQuantityExact);
     return {
       productId: productIdentity(line),
       locationId: locationIdentity(line),
       productName: displayProductName(line),
       locationName: line.locationName || line.location_name_snapshot || 'Location',
       unitLabel: displayUnitLabel(line),
-      latest: latestQuantity,
-      previous: previousQuantity,
-      change: latestQuantity - previousQuantity,
+      countMode: countModeIdentity(line),
+      latest: numberFromExact(latestQuantityExact),
+      previous: numberFromExact(previousQuantityExact),
+      change: numberFromExact(changeExact),
+      latestExact: latestQuantityExact,
+      previousExact: previousQuantityExact,
+      changeExact,
+      latestComponents: line,
+      previousComponents: previous,
     };
   }).filter(Boolean).sort((a, b) => Math.abs(b.change) - Math.abs(a.change)).slice(0, limit);
 }
@@ -132,37 +163,51 @@ export function isPhysicalRecountDue(line = {}, now = new Date()) {
 }
 
 export function calculateInventoryLine(line = {}) {
-  const countedQuantity = numberOrNull(line.countedQuantity ?? line.counted_quantity);
-  const parQuantity = numberOrNull(line.parQuantity ?? line.par_quantity_snapshot) ?? 0;
+  const countedQuantityExact = exactOrNull(line.countedQuantityExact ?? line.countedQuantity ?? line.counted_quantity);
+  const parQuantityExact = exactOrNull(line.parQuantityExact ?? line.parQuantity ?? line.par_quantity_snapshot) ?? '0';
+  const countedQuantity = numberFromExact(countedQuantityExact);
+  const parQuantity = numberFromExact(parQuantityExact);
   const minimumQuantity = numberOrNull(line.minimumQuantity ?? line.minimum_quantity_snapshot);
   const stockPolicy = line.stockPolicy || line.stock_policy_snapshot || 'exact_par';
-  const effectiveTarget = stockPolicy === 'verify_unchanged'
+  const effectiveTargetExact = stockPolicy === 'verify_unchanged'
     ? null
-    : numberOrNull(line.effectiveTargetQuantity ?? line.effective_target_quantity_snapshot) ?? parQuantity;
+    : exactOrNull(line.effectiveTargetQuantityExact ?? line.effectiveTargetQuantity ?? line.effective_target_quantity_snapshot) ?? parQuantityExact;
+  const effectiveTarget = numberFromExact(effectiveTargetExact);
   const countStatus = line.countStatus || line.count_status || 'not_counted';
   const countMethod = line.countMethod || line.count_method || 'uncounted';
   const skipped = countStatus === 'skipped';
   const uncounted = countedQuantity === null && !skipped;
   const pristineForUnchanged = countMethod === 'uncounted' && countStatus === 'not_counted' && countedQuantity === null;
   const currentPhysicalCount = ['manual', 'imported', 'adjusted'].includes(countMethod) && countedQuantity !== null;
-  const varianceQuantity = countedQuantity === null || effectiveTarget === null ? null : countedQuantity - effectiveTarget;
-  const restockQuantity = countedQuantity === null || effectiveTarget === null ? null : Math.max(effectiveTarget - countedQuantity, 0);
+  const varianceQuantityExact = countedQuantityExact === null || effectiveTargetExact === null
+    ? null : subtractInventoryDecimals(countedQuantityExact, effectiveTargetExact);
+  const restockDifferenceExact = countedQuantityExact === null || effectiveTargetExact === null
+    ? null : subtractInventoryDecimals(effectiveTargetExact, countedQuantityExact);
+  const restockQuantityExact = restockDifferenceExact === null
+    ? null : compareInventoryDecimals(restockDifferenceExact, '0') > 0 ? restockDifferenceExact : '0';
+  const varianceQuantity = numberFromExact(varianceQuantityExact);
+  const restockQuantity = numberFromExact(restockQuantityExact);
   const readinessPercent = countedQuantity === null || effectiveTarget === null
     ? null
     : effectiveTarget === 0 ? 100 : Math.min(100, Math.round((countedQuantity / effectiveTarget) * 100));
   return {
     countedQuantity,
+    countedQuantityExact,
     parQuantity,
+    parQuantityExact,
     minimumQuantity,
     stockPolicy,
     effectiveTarget,
+    effectiveTargetExact,
     countMethod,
     countStatus,
     skipped,
     uncounted,
     counted: countedQuantity !== null,
     varianceQuantity,
+    varianceQuantityExact,
     restockQuantity,
+    restockQuantityExact,
     shortage: restockQuantity !== null && restockQuantity > 0,
     belowMinimum: countedQuantity !== null && minimumQuantity !== null && countedQuantity < minimumQuantity,
     overPar: varianceQuantity !== null && varianceQuantity > 0,
@@ -251,16 +296,23 @@ export function buildInventoryRestockList(lines = []) {
       productId,
       productName: displayProductName(line),
       unitLabel: displayUnitLabel(line),
+      countMode: countModeIdentity(line),
       category: line.category || line.category_snapshot || 'Other',
       totalMissing: 0,
+      totalMissingExact: '0',
       locations: [],
     };
-    current.totalMissing += line.calculation.restockQuantity;
+    if (current.countMode !== countModeIdentity(line)) {
+      throw new Error(`Restock aggregation found incompatible count-mode snapshots for product ${productId}.`);
+    }
+    current.totalMissingExact = addInventoryDecimals(current.totalMissingExact, line.calculation.restockQuantityExact);
+    current.totalMissing = Number(current.totalMissingExact);
     current.locations.push({
       lineId,
       locationId,
       locationName: line.locationName || line.location_name_snapshot || 'Location',
       missingQuantity: line.calculation.restockQuantity,
+      missingQuantityExact: line.calculation.restockQuantityExact,
     });
     products.set(key, current);
   });

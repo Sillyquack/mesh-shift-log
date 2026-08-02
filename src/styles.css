@@ -3321,6 +3321,14 @@ textarea {
   font-size: 1.2rem;
 }
 
+.inventory-keg-fractions {
+  align-items: center;
+}
+
+.inventory-keg-fractions > button {
+  min-width: 48px;
+}
+
 .inventory-standards-save {
   position: sticky;
   bottom: 8px;
@@ -3442,6 +3450,11 @@ textarea {
 
   .inventory-config-list article > div:last-child > * {
     flex: 1;
+  }
+
+  .inventory-keg-fractions,
+  .inventory-keg-fractions > button {
+    width: auto;
   }
 }
 

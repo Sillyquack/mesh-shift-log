@@ -40,8 +40,13 @@
     {
       "id": "phase9e-product-identity-csv",
       "path": "supabase/phase9e_inventory_product_identity_csv.sql",
+      "repeatable": false
+    },
+    {
+      "id": "phase9f-structured-quantities",
+      "path": "supabase/phase9f_inventory_structured_quantities.sql",
       "repeatable": true
     }
   ],
-  "terminalMigration": "supabase/phase9e_inventory_product_identity_csv.sql"
+  "terminalMigration": "supabase/phase9f_inventory_structured_quantities.sql"
 }

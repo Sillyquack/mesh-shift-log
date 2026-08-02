@@ -166,6 +166,15 @@ function formatNumber(value) {
   return expanded.replace('.', INVENTORY_CSV_CONTRACT.decimalSeparator);
 }
 
+const INVENTORY_CSV_NUMERIC = Symbol('inventoryCsvNumeric');
+
+export function inventoryCsvNumeric(value) {
+  if (value === null || value === undefined || value === '') return null;
+  const text = String(value);
+  if (!/^-?\d+(?:\.\d+)?$/u.test(text)) throw new Error('Trusted CSV numeric values must be plain decimal strings.');
+  return Object.freeze({ [INVENTORY_CSV_NUMERIC]: text });
+}
+
 export function isDangerousCsvText(value) {
   const text = String(value ?? '');
   return /^[\u0000-\u0008\u000b\u000c\u000e-\u0020]*[\t\r\n=+\-@]/u.test(text);
@@ -178,6 +187,7 @@ export function neutralizeCsvText(value) {
 
 function serializeCell(value) {
   if (value === null || value === undefined) return '';
+  if (value?.[INVENTORY_CSV_NUMERIC]) return value[INVENTORY_CSV_NUMERIC].replace('.', INVENTORY_CSV_CONTRACT.decimalSeparator);
   if (typeof value === 'number') return formatNumber(value);
   if (typeof value === 'bigint') return String(value);
   const original = String(value);

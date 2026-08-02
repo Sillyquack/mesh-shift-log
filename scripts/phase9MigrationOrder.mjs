@@ -14,10 +14,11 @@ export const EXPECTED_PHASE9_MIGRATION_ORDER = [
   'supabase/phase9c_inventory_security_hardening.sql',
   'supabase/phase9d_inventory_session_integrity.sql',
   'supabase/phase9e_inventory_product_identity_csv.sql',
+  'supabase/phase9f_inventory_structured_quantities.sql',
 ];
 
 export const PHASE9_TERMINAL_MIGRATION =
-  'supabase/phase9e_inventory_product_identity_csv.sql';
+  'supabase/phase9f_inventory_structured_quantities.sql';
 
 export const PHASE9_SESSION_INTEGRITY_MIGRATION =
   'supabase/phase9d_inventory_session_integrity.sql';
@@ -37,7 +38,7 @@ export function validatePhase9MigrationOrder(paths) {
     }
   }
   if (paths.at(-1) !== PHASE9_TERMINAL_MIGRATION) {
-    throw new Error('Phase 9E product identity and CSV correctness must be the terminal migration.');
+    throw new Error('Phase 9F structured quantities must be the terminal migration.');
   }
   return paths;
 }
