@@ -8,21 +8,34 @@ import {
 
 const workspace = readFileSync(new URL('../src/components/InventoryWorkspace.jsx', import.meta.url), 'utf8');
 const styles = readFileSync(new URL('../src/styles.css', import.meta.url), 'utf8');
+const selectionSource = readFileSync(new URL('../src/data/inventorySessionLocations.js', import.meta.url), 'utf8');
 const migration = readFileSync(new URL('../supabase/phase9h_inventory_session_location_scope.sql', import.meta.url), 'utf8');
 const assignments = readFileSync(new URL('../supabase/phase9gb_inventory_counter_assignments.sql', import.meta.url), 'utf8');
 
-const lineCounts = [8, 8, 10, 6, 8, 13];
-const fridgeIds = lineCounts.map((_, index) => `fridge-${index + 1}`);
+const currentOrganizationId = 'fixture-organization-a';
+const foreignOrganizationId = 'fixture-organization-b';
+const currentRefrigerators = [
+  { id: 'fixture-workbar-bar-left', name: 'Workbar Bar Left Fridge', parentLocationId: 'workbar', sortOrder: 11, defaultCount: 6 },
+  { id: 'fixture-workbar-bar-right', name: 'Workbar Bar Right Fridge', parentLocationId: 'workbar', sortOrder: 12, defaultCount: 8 },
+  { id: 'fixture-workbar-non-alco', name: 'Workbar Non-Alco Fridge', parentLocationId: 'workbar', sortOrder: 13, defaultCount: 15 },
+  { id: 'fixture-cornerbar-left', name: 'Cornerbar Left Fridge', parentLocationId: 'cornerbar', sortOrder: 21, defaultCount: 4 },
+  { id: 'fixture-cornerbar-middle', name: 'Cornerbar Middle Fridge', parentLocationId: 'cornerbar', sortOrder: 22, defaultCount: 3 },
+  { id: 'fixture-cornerbar-right', name: 'Cornerbar Right Fridge', parentLocationId: 'cornerbar', sortOrder: 23, defaultCount: 17 },
+];
+const fridgeIds = currentRefrigerators.map((fixture) => fixture.id);
+const workbarNonAlcoId = currentRefrigerators.find((fixture) => fixture.name === 'Workbar Non-Alco Fridge').id;
+const workbarBarLeftId = currentRefrigerators.find((fixture) => fixture.name === 'Workbar Bar Left Fridge').id;
 const locations = [
-  { id: 'cornerbar', name: 'Cornerbar', locationType: 'bar', active: true, sortOrder: 10 },
-  { id: 'workbar', name: 'Workbar', locationType: 'bar', active: true, sortOrder: 20 },
-  ...fridgeIds.map((id, index) => ({
-    id,
-    name: `Operational refrigerator ${index + 1}`,
+  { id: 'cornerbar', organizationId: currentOrganizationId, name: 'Cornerbar', locationType: 'bar', active: true, sortOrder: 10 },
+  { id: 'workbar', organizationId: currentOrganizationId, name: 'Workbar', locationType: 'bar', active: true, sortOrder: 20 },
+  ...currentRefrigerators.map((fixture) => ({
+    id: fixture.id,
+    organizationId: currentOrganizationId,
+    name: fixture.name,
     locationType: 'fridge',
-    parentLocationId: index < 3 ? 'cornerbar' : 'workbar',
+    parentLocationId: fixture.parentLocationId,
     active: true,
-    sortOrder: index + 1,
+    sortOrder: fixture.sortOrder,
   })),
   { id: 'storage', name: 'Main beverage stock', locationType: 'storage', active: true, sortOrder: 30 },
   { id: 'archived-fridge', name: 'Archived fridge', locationType: 'fridge', active: false, sortOrder: 31 },
@@ -39,17 +52,22 @@ const refrigeratorTemplates = [
   'inactive-default-fridge',
   'inactive-product-fridge',
 ].map((locationId) => ({ locationId }));
-const products = Array.from({ length: 54 }, (_, index) => ({
-  id: `product-${index + 1}`,
-  active: index !== 53,
-}));
+const products = [
+  ...Array.from({ length: 54 }, (_, index) => ({
+    id: `product-${index + 1}`,
+    organizationId: currentOrganizationId,
+    active: index !== 53,
+  })),
+  { id: 'foreign-organization-product', organizationId: foreignOrganizationId, active: true },
+];
 const standards = [];
 let productIndex = 0;
-for (const [locationIndex, count] of lineCounts.entries()) {
-  for (let index = 0; index < count; index += 1) {
+for (const fixture of currentRefrigerators) {
+  for (let index = 0; index < fixture.defaultCount; index += 1) {
     standards.push({
       id: `default-${productIndex + 1}`,
-      locationId: fridgeIds[locationIndex],
+      organizationId: currentOrganizationId,
+      locationId: fixture.id,
       productId: products[productIndex].id,
       active: true,
     });
@@ -62,6 +80,8 @@ standards.push(
   { id: 'archived-fridge-default', locationId: 'archived-fridge', productId: 'product-1', active: true },
   { id: 'inactive-default', locationId: 'inactive-default-fridge', productId: 'product-1', active: false },
   { id: 'inactive-product-default', locationId: 'inactive-product-fridge', productId: 'product-54', active: true },
+  { id: 'inactive-selected-default', organizationId: currentOrganizationId, locationId: workbarNonAlcoId, productId: 'product-1', active: false },
+  { id: 'foreign-organization-default', organizationId: foreignOrganizationId, locationId: 'foreign-organization-fridge', productId: 'foreign-organization-product', active: true },
 );
 
 const eligibilityInput = { locations, standards, products, refrigeratorTemplates };
@@ -77,6 +97,18 @@ test('eligibility derives the current six operational refrigerators and 53 activ
   assert.deepEqual(eligible.map((location) => location.id), fridgeIds);
   assert.equal(selection.locationCount, 6);
   assert.equal(selection.defaultLineCount, 53);
+});
+
+test('Workbar Non-Alco represents exactly 15 active defaults', () => {
+  const eligible = eligibleInventorySessionLocations(eligibilityInput);
+  const selection = inventorySessionSelection({
+    eligibleLocations: eligible,
+    selectedLocationIds: [workbarNonAlcoId],
+    standards,
+    products,
+  });
+  assert.equal(selection.locationCount, 1);
+  assert.equal(selection.defaultLineCount, 15);
 });
 
 test('parents, storage, empty, archived, inactive-default, and inactive-product locations are excluded', () => {
@@ -97,28 +129,71 @@ test('eligibility automatically admits a new refrigerator with a template and ac
   assert.equal(eligible.length, 7);
 });
 
-test('deselecting a refrigerator updates both selected locations and represented active defaults', () => {
+test('deselecting Workbar Non-Alco produces the production-proven 5/38 scope', () => {
   const eligible = eligibleInventorySessionLocations(eligibilityInput);
   const selection = inventorySessionSelection({
     eligibleLocations: eligible,
-    selectedLocationIds: fridgeIds.slice(0, -1),
+    selectedLocationIds: fridgeIds.filter((locationId) => locationId !== workbarNonAlcoId),
     standards,
     products,
   });
   assert.equal(selection.locationCount, 5);
-  assert.equal(selection.defaultLineCount, 40);
+  assert.equal(selection.defaultLineCount, 38);
+});
+
+test("deselecting another refrigerator subtracts that refrigerator's actual default count", () => {
+  const eligible = eligibleInventorySessionLocations(eligibilityInput);
+  const selection = inventorySessionSelection({
+    eligibleLocations: eligible,
+    selectedLocationIds: fridgeIds.filter((locationId) => locationId !== workbarBarLeftId),
+    standards,
+    products,
+  });
+  assert.equal(selection.locationCount, 5);
+  assert.equal(selection.defaultLineCount, 47);
+});
+
+test('represented defaults are derived from selected active data rather than a hard-coded total', () => {
+  const eligible = eligibleInventorySessionLocations(eligibilityInput);
+  const dynamicProduct = { id: 'dynamic-product', active: true };
+  const selection = inventorySessionSelection({
+    eligibleLocations: eligible,
+    selectedLocationIds: fridgeIds,
+    standards: [...standards, {
+      id: 'dynamic-default',
+      locationId: workbarBarLeftId,
+      productId: dynamicProduct.id,
+      active: true,
+    }],
+    products: [...products, dynamicProduct],
+  });
+  assert.equal(selection.defaultLineCount, 54);
+});
+
+test('inactive and foreign-organization defaults do not inflate the selected scope', () => {
+  const eligible = eligibleInventorySessionLocations(eligibilityInput);
+  const selection = inventorySessionSelection({
+    eligibleLocations: eligible,
+    selectedLocationIds: fridgeIds,
+    standards,
+    products,
+  });
+  assert.equal(selection.defaultLineCount, 53);
+  assert.notEqual(foreignOrganizationId, currentOrganizationId);
+  assert.equal(selection.representedDefaults.some((standard) => standard.id === 'inactive-selected-default'), false);
+  assert.equal(selection.representedDefaults.some((standard) => standard.id === 'foreign-organization-default'), false);
 });
 
 test('selection sanitizes duplicates and ineligible or foreign-looking identifiers', () => {
   const eligible = eligibleInventorySessionLocations(eligibilityInput);
   const selection = inventorySessionSelection({
     eligibleLocations: eligible,
-    selectedLocationIds: ['fridge-1', 'storage', 'fridge-1', 'foreign-location'],
+    selectedLocationIds: [workbarBarLeftId, 'storage', workbarBarLeftId, 'foreign-location'],
     standards,
     products,
   });
-  assert.deepEqual(selection.locationIds, ['fridge-1']);
-  assert.equal(selection.defaultLineCount, 8);
+  assert.deepEqual(selection.locationIds, [workbarBarLeftId]);
+  assert.equal(selection.defaultLineCount, 6);
 });
 
 test('session creator renders only derived eligibility and a live selected/default summary', () => {
@@ -130,6 +205,13 @@ test('session creator renders only derived eligibility and a live selected/defau
   assert.match(workspace, /onCreate\(\{ \.\.\.draft, locationIds: selection\.locationIds \}\)/);
   assert.doesNotMatch(workspace, /locationIds:\s*locations\.filter\(\(item\) => item\.active\)/);
   assert.doesNotMatch(workspace, />\s*(?:6|53)\s+(?:eligible|active default)/i);
+});
+
+test('the corrected fixture does not hard-code production totals into runtime or database behavior', () => {
+  assert.match(selectionSource, /representedDefaults = standards\.filter/);
+  assert.match(selectionSource, /selectedIdSet\.has\(standard\.locationId\)/);
+  assert.doesNotMatch(selectionSource, /defaultLineCount:\s*(?:38|53)|locationCount:\s*6/);
+  assert.match(migration, /location\.organization_id = v_actor\.organization_id/);
 });
 
 test('mobile selector controls retain tap size, checkbox geometry, wrapping, focus, and bounded scrolling', () => {
