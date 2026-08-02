@@ -50,8 +50,13 @@
     {
       "id": "phase9g-operational-scope",
       "path": "supabase/phase9g_inventory_operational_scope.sql",
+      "repeatable": false
+    },
+    {
+      "id": "phase9gb-counter-assignments",
+      "path": "supabase/phase9gb_inventory_counter_assignments.sql",
       "repeatable": true
     }
   ],
-  "terminalMigration": "supabase/phase9g_inventory_operational_scope.sql"
+  "terminalMigration": "supabase/phase9gb_inventory_counter_assignments.sql"
 }

@@ -69,7 +69,8 @@ import {
   verifyInventoryRefrigeratorTemplate,
 } from '../lib/inventoryClient.js';
 import { subscribeToInventoryRealtime } from '../lib/inventoryRealtime.js';
-import { canCoordinateInventory, canManageInventory, canUseInventory } from '../lib/permissions.js';
+import { canCoordinateInventory, canManageInventory, canUseInventory, isInventoryCounter } from '../lib/permissions.js';
+import { CounterAssignmentManager, CounterInventoryWorkspace } from './InventoryCounterWorkflows.jsx';
 
 const EMPTY_PRODUCT = { name: '', shortName: '', sku: '', barcode: '', category: 'Other', unitLabel: 'piece', countMode: 'unit', containerCapacityLiters: '', supplierName: '', notes: '', active: true, sortOrder: 0, millumItemRef: '', ownershipStatus: 'unverified', reserveTargetOverride: null };
 const EMPTY_LOCATION = { name: '', code: '', locationType: 'storage', parentLocationId: '', zone: '', description: '', active: true, sortOrder: 0 };
@@ -713,7 +714,7 @@ function AuthorizedInventoryWorkspace({ user, requestWriteAccess, onClose }) {
   const coordinator = canCoordinateInventory(user);
   const organizationId = user?.organizationId || user?.organization_id || '';
   const [tab, setTab] = useState('overview');
-  const [data, setData] = useState({ products: [], locations: [], standards: [], sessions: [], refrigeratorTemplates: [], unresolvedMappings: [], reserves: [] });
+  const [data, setData] = useState({ products: [], locations: [], standards: [], sessions: [], refrigeratorTemplates: [], unresolvedMappings: [], reserves: [], counterProfiles: [], counterMemberships: [], assignments: [] });
   const [selectedSessionId, setSelectedSessionId] = useState('');
   const [sessionDetail, setSessionDetail] = useState({ record: null, lines: [] });
   const [loading, setLoading] = useState(true);
@@ -780,23 +781,26 @@ function AuthorizedInventoryWorkspace({ user, requestWriteAccess, onClose }) {
   return (
     <main className="page inventory-workspace">
       <header className="inventory-topbar"><button type="button" className="secondary-button" onClick={onClose}>Back</button><div><p className="eyebrow">Mesh Youngstorget</p><h1>Stock Count</h1></div><Status tone={realtimeStatus.state === 'connected' ? 'good' : ''}>{realtimeStatus.state === 'connected' ? 'Live' : 'Polling backup'}</Status></header>
-      <nav className="inventory-main-tabs" aria-label="Inventory views"><button type="button" className={tab === 'overview' ? 'active' : ''} onClick={() => setTab('overview')}>Overview</button><button type="button" className={tab === 'count' ? 'active' : ''} onClick={() => setTab('count')}>Count</button><button type="button" className={tab === 'restock' ? 'active' : ''} onClick={() => setTab('restock')}>Restock</button>{coordinator && <button type="button" className={tab === 'history' ? 'active' : ''} onClick={() => setTab('history')}>History</button>}{manager && <button type="button" className={tab === 'manage' ? 'active' : ''} onClick={() => setTab('manage')}>Manage</button>}</nav>
+      <nav className="inventory-main-tabs" aria-label="Inventory views"><button type="button" className={tab === 'overview' ? 'active' : ''} onClick={() => setTab('overview')}>Overview</button><button type="button" className={tab === 'count' ? 'active' : ''} onClick={() => setTab('count')}>Count</button>{manager && <button type="button" className={tab === 'assignments' ? 'active' : ''} onClick={() => setTab('assignments')}>Assignments</button>}<button type="button" className={tab === 'restock' ? 'active' : ''} onClick={() => setTab('restock')}>Restock</button>{coordinator && <button type="button" className={tab === 'history' ? 'active' : ''} onClick={() => setTab('history')}>History</button>}{manager && <button type="button" className={tab === 'manage' ? 'active' : ''} onClick={() => setTab('manage')}>Manage</button>}</nav>
       <Message status={status} />
       {status?.ok === false && <button type="button" className="secondary-button inventory-retry-button" onClick={() => refresh()}>Retry inventory refresh</button>}
-      {showCreator ? <SessionCreator products={data.products} locations={data.locations} standards={data.standards} onCancel={() => setShowCreator(false)} onCreate={create} busy={creating} /> : tab === 'overview' ? <InventoryOverview sessions={data.sessions} activeSession={activeSession} lines={activeSession?.id === selectedSession?.id ? selectedLines : []} locations={data.locations} onOpenSession={openSession} onStart={() => setShowCreator(true)} canCoordinate={coordinator} /> : tab === 'count' ? selectedSession ? <CountSession session={selectedSession} sessions={data.sessions} lines={selectedLines} locations={data.locations} canManage={manager} canCoordinate={coordinator} requestWriteAccess={requestWriteAccess} onRefresh={async () => { await refreshSession(); await refresh(); }} onOpenSession={openSession} onBack={() => setTab('overview')} setStatus={setStatus} remoteNotice={remoteNotice} clearRemoteNotice={() => setRemoteNotice(false)} /> : <section className="inventory-panel inventory-empty"><h2>No active stock count</h2>{coordinator && <button type="button" className="primary-button" onClick={() => setShowCreator(true)}>Start stock count</button>}</section> : tab === 'restock' ? <RestockView session={selectedSession} lines={selectedLines} /> : tab === 'history' ? <InventoryHistory sessions={data.sessions} locations={data.locations} onOpenSession={openSession} /> : <CatalogManager products={data.products} locations={data.locations} standards={data.standards} refrigeratorTemplates={data.refrigeratorTemplates} unresolvedMappings={data.unresolvedMappings} reserves={data.reserves} requestWriteAccess={requestWriteAccess} refresh={refresh} setStatus={setStatus} />}
+      {showCreator ? <SessionCreator products={data.products} locations={data.locations} standards={data.standards} onCancel={() => setShowCreator(false)} onCreate={create} busy={creating} /> : tab === 'overview' ? <InventoryOverview sessions={data.sessions} activeSession={activeSession} lines={activeSession?.id === selectedSession?.id ? selectedLines : []} locations={data.locations} onOpenSession={openSession} onStart={() => setShowCreator(true)} canCoordinate={coordinator} /> : tab === 'count' ? selectedSession ? <CountSession session={selectedSession} sessions={data.sessions} lines={selectedLines} locations={data.locations} canManage={manager} canCoordinate={coordinator} requestWriteAccess={requestWriteAccess} onRefresh={async () => { await refreshSession(); await refresh(); }} onOpenSession={openSession} onBack={() => setTab('overview')} setStatus={setStatus} remoteNotice={remoteNotice} clearRemoteNotice={() => setRemoteNotice(false)} /> : <section className="inventory-panel inventory-empty"><h2>No active stock count</h2>{coordinator && <button type="button" className="primary-button" onClick={() => setShowCreator(true)}>Start stock count</button>}</section> : tab === 'assignments' ? <CounterAssignmentManager data={data} activeSession={activeSession} lines={activeSession?.id === selectedSession?.id ? selectedLines : []} requestWriteAccess={requestWriteAccess} refresh={async () => { await refreshSession(); await refresh(); }} setStatus={setStatus} /> : tab === 'restock' ? <RestockView session={selectedSession} lines={selectedLines} /> : tab === 'history' ? <InventoryHistory sessions={data.sessions} locations={data.locations} onOpenSession={openSession} /> : <CatalogManager products={data.products} locations={data.locations} standards={data.standards} refrigeratorTemplates={data.refrigeratorTemplates} unresolvedMappings={data.unresolvedMappings} reserves={data.reserves} requestWriteAccess={requestWriteAccess} refresh={refresh} setStatus={setStatus} />}
       {data.refreshedAt && <p className="inventory-last-refresh">Last successful refresh: {formatDateTime(data.refreshedAt)}</p>}
     </main>
   );
 }
 
 export default function InventoryWorkspace(props) {
+  if (isInventoryCounter(props.user)) {
+    return <CounterInventoryWorkspace requestWriteAccess={props.requestWriteAccess} onClose={props.onClose} />;
+  }
   if (!canUseInventory(props.user)) {
     return (
       <main className="page inventory-workspace">
         <section className="inventory-panel inventory-empty" role="alert">
           <p className="eyebrow">Stock Count</p>
-          <h1>Manager access required</h1>
-          <p className="muted">Stock Count requires an active manager profile signed in with Supabase Email Auth. Staff-code, event-floor and shared-device sessions cannot access this workspace.</p>
+          <h1>Stock Count access required</h1>
+          <p className="muted">Stock Count requires an active manager or counter profile signed in with Supabase Email Auth. Staff-code, event-floor and shared-device sessions cannot access this workspace.</p>
           <button type="button" className="primary-button" onClick={props.onClose}>Back</button>
         </section>
       </main>

@@ -59,6 +59,10 @@ export function canCreateAlerts(user) {
 }
 
 export function canUseInventory(user) {
+  return canManageInventory(user) || isInventoryCounter(user);
+}
+
+function hasVerifiedInventoryIdentity(user, expectedRole) {
   const authUserId = String(user?.authUserId || '');
   const profileId = String(user?.profile?.id || '');
   const organizationId = organizationOf(user);
@@ -70,8 +74,8 @@ export function canUseInventory(user) {
       authUserId &&
       profileId &&
       authUserId === profileId &&
-      roleOf(user) === 'manager' &&
-      roleOf(user.profile) === 'manager' &&
+      roleOf(user) === expectedRole &&
+      roleOf(user.profile) === expectedRole &&
       user.active === true &&
       user.profileActive === true &&
       user.profile?.active === true &&
@@ -82,10 +86,14 @@ export function canUseInventory(user) {
   );
 }
 
+export function isInventoryCounter(user) {
+  return hasVerifiedInventoryIdentity(user, 'counter');
+}
+
 export function canCoordinateInventory(user) {
-  return canUseInventory(user);
+  return canManageInventory(user);
 }
 
 export function canManageInventory(user) {
-  return canUseInventory(user);
+  return hasVerifiedInventoryIdentity(user, 'manager');
 }

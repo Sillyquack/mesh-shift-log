@@ -10,6 +10,9 @@ const CATALOGUE_GROUP_COLUMNS = 'id,product_id,millum_group,group_sort_order,ite
 const REFRIGERATOR_TEMPLATE_COLUMNS = 'id,location_id,template_status,verified_at,verified_by_name,updated_at';
 const UNRESOLVED_MAPPING_COLUMNS = 'id,location_id,requested_name,requested_default_quantity,requested_count_order,candidate_millum_item_refs,reason,resolution_status,resolved_product_id';
 const RESERVE_COLUMNS = 'product_id,refrigerator_default_quantity,reserve_target_override,reserve_target_quantity,combined_desired_quantity';
+const COUNTER_PROFILE_COLUMNS = 'id,display_name,role,active,is_shared_device';
+const COUNTER_MEMBERSHIP_COLUMNS = 'id,counter_auth_user_id,active,authorized_at,authorized_by_name,revoked_at,revoked_by_name,updated_at';
+const COUNT_ASSIGNMENT_COLUMNS = 'id,session_id,location_id,counter_membership_id,state,revision,assigned_at,assigned_by_name,submitted_at,submitted_by_name,returned_at,returned_by_name,return_message,accepted_at,accepted_by_name,updated_at';
 const SESSION_COLUMNS = 'id,title,count_type,status,count_date,started_at,completed_at,approved_at,started_by_name,completed_by_name,approved_by_name,completion_note,approval_note,session_kind,original_session_id,correction_reason,correction_created_by_name,correction_created_at,finalized_with_exceptions,exception_reason,exception_skipped_count,exception_uncounted_count,exception_needs_review_count,exception_incomplete_location_count,exception_location_ids,finalized_by_name,finalized_at,updated_at';
 const LINE_COLUMNS = 'id,location_id,product_id,product_name_snapshot,location_name_snapshot,unit_label_snapshot,category_snapshot,location_sort_order_snapshot,count_order_snapshot,product_sort_order_snapshot,par_quantity_snapshot,minimum_quantity_snapshot,stock_policy_snapshot,target_mode_snapshot,effective_target_quantity_snapshot,service_target_basis_snapshot,reserve_multiplier_snapshot,case_size_snapshot,target_cases_snapshot,target_loose_quantity_snapshot,physical_recount_interval_days_snapshot,previous_physical_count_quantity_snapshot,previous_physical_counted_at_snapshot,count_mode_snapshot,container_capacity_liters_snapshot,counted_whole_units,counted_open_volume_liters,counted_full_kegs,counted_partial_keg_fraction,count_full_cases,count_loose_quantity,counted_quantity,count_method,count_status,variance_quantity,restock_quantity,note,counted_at,counted_by_name,updated_at';
 
@@ -36,7 +39,7 @@ function failure(error, fallback = 'Inventory request failed.') {
   const rawMessage = error?.message || '';
   const message = /already has an active Stock Count|inventory_count_sessions_one_active_per_org/i.test(rawMessage)
     ? 'An active Stock Count already exists. Complete and approve or cancel it before starting another.'
-    : /changed on another device|current (line|session) version is required/i.test(rawMessage)
+    : /changed on another device|current (line|session|assignment|Stock Count) version is required|current assignment revision is required/i.test(rawMessage)
       ? 'This Stock Count changed on another device. Refresh before trying again; your unsaved value is still here.'
       : /duplicate key|unique constraint/i.test(rawMessage)
         ? 'A product or location already uses that SKU, barcode, code, or relationship.'
@@ -207,6 +210,93 @@ function normalizeLine(row) {
   };
 }
 
+function normalizeCounterMembership(row) {
+  return row && {
+    id: row.id,
+    counterAuthUserId: row.counter_auth_user_id,
+    active: row.active === true,
+    authorizedAt: row.authorized_at || '',
+    authorizedByName: row.authorized_by_name || '',
+    revokedAt: row.revoked_at || '',
+    revokedByName: row.revoked_by_name || '',
+    updatedAt: row.updated_at || '',
+  };
+}
+
+function normalizeCountAssignment(row) {
+  return row && {
+    id: row.id,
+    sessionId: row.session_id,
+    locationId: row.location_id,
+    counterMembershipId: row.counter_membership_id,
+    state: row.state || 'assigned',
+    revision: Number(row.revision || 0),
+    assignedAt: row.assigned_at || '',
+    assignedByName: row.assigned_by_name || '',
+    submittedAt: row.submitted_at || '',
+    submittedByName: row.submitted_by_name || '',
+    returnedAt: row.returned_at || '',
+    returnedByName: row.returned_by_name || '',
+    returnMessage: row.return_message || '',
+    acceptedAt: row.accepted_at || '',
+    acceptedByName: row.accepted_by_name || '',
+    updatedAt: row.updated_at || '',
+  };
+}
+
+function normalizeCounterLine(row) {
+  return row && {
+    id: row.id,
+    locationId: row.location_id,
+    productId: row.product_id,
+    productName: row.product_name_snapshot || '',
+    practicalName: row.practical_name || '',
+    millumItemRef: row.millum_item_ref || '',
+    unitLabel: row.unit_label_snapshot || '',
+    category: row.category_snapshot || '',
+    countOrderSnapshot: Number(row.count_order_snapshot || 0),
+    productSortOrderSnapshot: Number(row.product_sort_order_snapshot || 0),
+    countMode: row.count_mode_snapshot || 'unit',
+    containerCapacityLiters: exactDecimal(row.container_capacity_liters_snapshot),
+    countedWholeUnits: row.counted_whole_units == null ? null : Number(row.counted_whole_units),
+    countedWholeUnitsExact: exactDecimal(row.counted_whole_units),
+    countedOpenVolumeLiters: row.counted_open_volume_liters == null ? null : Number(row.counted_open_volume_liters),
+    countedOpenVolumeLitersExact: exactDecimal(row.counted_open_volume_liters),
+    countedFullKegs: row.counted_full_kegs == null ? null : Number(row.counted_full_kegs),
+    countedFullKegsExact: exactDecimal(row.counted_full_kegs),
+    countedPartialKegFraction: row.counted_partial_keg_fraction == null ? null : Number(row.counted_partial_keg_fraction),
+    countedPartialKegFractionExact: exactDecimal(row.counted_partial_keg_fraction),
+    countedQuantity: row.counted_quantity == null ? null : Number(row.counted_quantity),
+    countedQuantityExact: exactDecimal(row.counted_quantity),
+    countMethod: row.count_method || 'uncounted',
+    countStatus: row.count_status || 'not_counted',
+    note: row.note || '',
+    countedAt: row.counted_at || '',
+    countedByName: row.counted_by_name || '',
+    updatedAt: row.updated_at || '',
+  };
+}
+
+function normalizeCounterAssignment(row) {
+  const base = normalizeCountAssignment({
+    ...row,
+    session_id: row.session?.id,
+    location_id: row.location?.id,
+  });
+  return base && {
+    ...base,
+    session: {
+      id: row.session?.id || '',
+      title: row.session?.title || '',
+      countDate: row.session?.count_date || '',
+      status: row.session?.status || '',
+      updatedAt: row.session?.updated_at || '',
+    },
+    location: { id: row.location?.id || '', name: row.location?.name || '' },
+    lines: (row.lines || []).map(normalizeCounterLine),
+  };
+}
+
 async function callRpc(name, payload, normalizeRecord) {
   const ctx = await context();
   if (!ctx.ok) return ctx;
@@ -230,17 +320,21 @@ export async function loadInventoryWorkspace({ includeArchived = false } = {}) {
   const templateQuery = supabaseAuthClient.from('inventory_refrigerator_templates').select(REFRIGERATOR_TEMPLATE_COLUMNS).order('updated_at');
   const unresolvedQuery = supabaseAuthClient.from('inventory_catalogue_unresolved_mappings').select(UNRESOLVED_MAPPING_COLUMNS).eq('resolution_status', 'unresolved').order('requested_count_order');
   const reserveQuery = supabaseAuthClient.from('inventory_refrigerator_reserve_targets').select(RESERVE_COLUMNS);
+  const counterProfileQuery = supabaseAuthClient.from('user_profiles').select(COUNTER_PROFILE_COLUMNS).eq('role', 'counter').order('display_name');
+  const counterMembershipQuery = supabaseAuthClient.from('inventory_counter_memberships').select(COUNTER_MEMBERSHIP_COLUMNS).order('authorized_at');
+  const assignmentQuery = supabaseAuthClient.from('inventory_count_assignments').select(COUNT_ASSIGNMENT_COLUMNS).order('assigned_at');
   if (!includeArchived) {
     productQuery.eq('active', true);
     locationQuery.eq('active', true);
     standardQuery.eq('active', true);
   }
-  const [products, locations, standards, sessions, aliases, groups, templates, unresolved, reserves] = await Promise.all([
+  const [products, locations, standards, sessions, aliases, groups, templates, unresolved, reserves, counterProfiles, counterMemberships, assignments] = await Promise.all([
     productQuery, locationQuery, standardQuery, sessionQuery, aliasQuery, groupQuery,
-    templateQuery, unresolvedQuery, reserveQuery,
+    templateQuery, unresolvedQuery, reserveQuery, counterProfileQuery, counterMembershipQuery, assignmentQuery,
   ]);
   const error = products.error || locations.error || standards.error || sessions.error
-    || aliases.error || groups.error || templates.error || unresolved.error || reserves.error;
+    || aliases.error || groups.error || templates.error || unresolved.error || reserves.error
+    || counterProfiles.error || counterMemberships.error || assignments.error;
   if (error) return { ...failure(error), products: [], locations: [], standards: [], sessions: [] };
   const aliasesByProduct = new Map();
   for (const row of aliases.data || []) aliasesByProduct.set(row.product_id, [...(aliasesByProduct.get(row.product_id) || []), row.alias]);
@@ -289,7 +383,28 @@ export async function loadInventoryWorkspace({ includeArchived = false } = {}) {
       reserveTargetQuantity: Number(row.reserve_target_quantity || 0),
       combinedDesiredQuantity: Number(row.combined_desired_quantity || 0),
     })),
+    counterProfiles: (counterProfiles.data || []).map((row) => ({
+      id: row.id,
+      displayName: row.display_name || '',
+      role: row.role || '',
+      active: row.active === true,
+      isSharedDevice: row.is_shared_device === true,
+    })),
+    counterMemberships: (counterMemberships.data || []).map(normalizeCounterMembership),
+    assignments: (assignments.data || []).map(normalizeCountAssignment),
     refreshedAt: new Date().toISOString(),
+  });
+}
+
+export async function loadInventoryCounterWorkspace() {
+  const ctx = await context();
+  if (!ctx.ok) return { ...ctx, assignments: [] };
+  const { data, error } = await supabaseAuthClient.rpc('get_inventory_counter_workspace');
+  if (error) return { ...failure(error), assignments: [] };
+  return output(true, {
+    mode: 'authenticated',
+    assignments: (data?.assignments || []).map(normalizeCounterAssignment),
+    refreshedAt: data?.refreshed_at || new Date().toISOString(),
   });
 }
 
@@ -524,4 +639,86 @@ export function importInventoryCatalog(payload) {
   return callRpc('import_inventory_catalog', { input_rows: payload.rows, input_overwrite_standards: payload.overwriteStandards || false });
 }
 
-export const inventoryNormalizers = { normalizeProduct, normalizeLocation, normalizeStandard, normalizeSession, normalizeLine };
+export function setInventoryCounterMembership(payload) {
+  return callRpc('set_inventory_counter_membership', {
+    input_counter_auth_user_id: payload.counterAuthUserId,
+    input_active: payload.active,
+  });
+}
+
+export function createInventoryCountAssignment(payload) {
+  return callRpc('create_inventory_count_assignment', {
+    input_session_id: payload.sessionId,
+    input_location_id: payload.locationId,
+    input_counter_membership_id: payload.counterMembershipId,
+    input_expected_session_updated_at: payload.expectedSessionUpdatedAt,
+  });
+}
+
+export function setInventoryCounterLineQuantity(payload) {
+  return callRpc('inventory_counter_set_count_line_quantity', {
+    input_assignment_id: payload.assignmentId,
+    input_line_id: payload.lineId,
+    input_counted_quantity: payload.countedQuantity,
+    input_note: payload.note || null,
+    input_expected_assignment_revision: payload.expectedAssignmentRevision,
+    input_expected_line_updated_at: payload.expectedLineUpdatedAt,
+  });
+}
+
+export function setInventoryCounterLineStructuredQuantity(payload) {
+  return callRpc('inventory_counter_set_count_line_structured_quantity', {
+    input_assignment_id: payload.assignmentId,
+    input_line_id: payload.lineId,
+    input_whole_units: payload.wholeUnits,
+    input_open_volume_liters: payload.openVolumeLiters,
+    input_full_kegs: payload.fullKegs,
+    input_partial_keg_fraction: payload.partialKegFraction,
+    input_note: payload.note || null,
+    input_expected_assignment_revision: payload.expectedAssignmentRevision,
+    input_expected_line_updated_at: payload.expectedLineUpdatedAt,
+  });
+}
+
+export function applyInventoryCounterRefrigeratorDefault(payload) {
+  return callRpc('inventory_counter_apply_refrigerator_default', {
+    input_assignment_id: payload.assignmentId,
+    input_physical_confirmation: payload.physicalConfirmation === true,
+    input_expected_assignment_revision: payload.expectedAssignmentRevision,
+  });
+}
+
+export function submitInventoryCountAssignment(payload) {
+  return callRpc('submit_inventory_count_assignment', {
+    input_assignment_id: payload.assignmentId,
+    input_expected_assignment_revision: payload.expectedAssignmentRevision,
+    input_expected_session_updated_at: payload.expectedSessionUpdatedAt,
+  });
+}
+
+export function returnInventoryCountAssignment(payload) {
+  return callRpc('return_inventory_count_assignment', {
+    input_assignment_id: payload.assignmentId,
+    input_return_message: payload.returnMessage,
+    input_expected_assignment_revision: payload.expectedAssignmentRevision,
+  });
+}
+
+export function acceptInventoryCountAssignment(payload) {
+  return callRpc('accept_inventory_count_assignment', {
+    input_assignment_id: payload.assignmentId,
+    input_expected_assignment_revision: payload.expectedAssignmentRevision,
+  });
+}
+
+export const inventoryNormalizers = {
+  normalizeProduct,
+  normalizeLocation,
+  normalizeStandard,
+  normalizeSession,
+  normalizeLine,
+  normalizeCounterLine,
+  normalizeCounterAssignment,
+  normalizeCounterMembership,
+  normalizeCountAssignment,
+};

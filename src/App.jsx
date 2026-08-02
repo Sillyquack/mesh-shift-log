@@ -60,6 +60,7 @@ import {
   canGenerateEventCode,
   canUseEventFloorDashboard,
   canViewAuthProfiles,
+  isInventoryCounter,
   isManager,
   isSharedDeviceUser,
   } from "./lib/permissions.js";
@@ -3086,7 +3087,7 @@ function TopBar({
           </button>
         )}
         {selectedShift && <span className="shift-pill">{shiftLabel}</span>}
-        {selectedShift && (
+        {selectedShift && onBack && (
           <button type="button" className="ghost-button" onClick={onBack}>
             Change shift
           </button>
@@ -20761,7 +20762,9 @@ function App() {
     setShowInventory(true);
   }
 
-  if (showInventory) {
+  const inventoryCounterUser = isInventoryCounter(effectiveUser);
+
+  if (showInventory || inventoryCounterUser) {
     return (
       <>
         <TopBar
@@ -20779,7 +20782,7 @@ function App() {
           onChangeRole={activeRoleMode ? clearRoleMode : null}
           isOnline={isOnline}
           siteAccessStatus={siteAccessStatus}
-          onBack={() => setShowInventory(false)}
+          onBack={inventoryCounterUser ? null : () => setShowInventory(false)}
           onLogout={() => {
             setShowInventory(false);
             logout();
@@ -20789,7 +20792,7 @@ function App() {
           <InventoryWorkspace
             user={effectiveUser}
             requestWriteAccess={requestWriteAccess}
-            onClose={() => setShowInventory(false)}
+            onClose={inventoryCounterUser ? logout : () => setShowInventory(false)}
           />
         </Suspense>
       </>

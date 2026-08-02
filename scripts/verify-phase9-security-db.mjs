@@ -23,7 +23,10 @@ const INTEGRITY_ASSERTION_PATH = resolve(ROOT, 'supabase/tests/phase9/session-in
 const IDENTITY_ASSERTION_PATH = resolve(ROOT, 'supabase/tests/phase9/product-identity-assertions.sql');
 const STRUCTURED_ASSERTION_PATH = resolve(ROOT, 'supabase/tests/phase9/structured-quantity-assertions.sql');
 const OPERATIONAL_ASSERTION_PATH = resolve(ROOT, 'supabase/tests/phase9/operational-scope-assertions.sql');
+const COUNTER_FIXTURE_PATH = resolve(ROOT, 'supabase/tests/phase9/counter-fixtures.sql');
+const COUNTER_ASSERTION_PATH = resolve(ROOT, 'supabase/tests/phase9/counter-workflow-assertions.sql');
 const EXPECTED_ASSERTION_PASSES = 70;
+const EXPECTED_COUNTER_ASSERTION_PASSES = 47;
 let containerStarted = false;
 
 if (process.argv.length > 2) {
@@ -135,6 +138,59 @@ async function verifyConcurrentCreation() {
   console.log('PASS concurrent different-key session creation accepts exactly one active session');
 }
 
+async function verifyConcurrentCounterSubmission() {
+  const counterId = '7b600000-0000-4000-8000-000000000002';
+  const assignmentState = psql(String.raw`
+    select assignment.id, assignment.revision
+    from public.inventory_count_assignments assignment
+    join public.inventory_counter_memberships membership on membership.id = assignment.counter_membership_id
+    where membership.counter_auth_user_id = '${counterId}';
+  `, { tuplesOnly: true }).stdout.trim().split('|');
+  const [assignmentId, initialRevision] = assignmentState;
+  if (!assignmentId || initialRevision !== '1') throw new Error('Counter concurrency fixture assignment was not initialized at revision 1.');
+
+  const missingConfirmation = psql(authenticatedSql(counterId, String.raw`
+    select public.inventory_counter_apply_refrigerator_default('${assignmentId}', false, ${initialRevision});
+  `), { allowFailure: true });
+  if (missingConfirmation.status === 0 || !/physically checked/i.test(`${missingConfirmation.stdout}\n${missingConfirmation.stderr}`)) {
+    throw new Error('Counter default application did not require physical confirmation.');
+  }
+  console.log('PASS counter refrigerator default rejects missing physical confirmation');
+
+  psql(authenticatedSql(counterId, String.raw`
+    select public.inventory_counter_apply_refrigerator_default('${assignmentId}', true, ${initialRevision});
+  `));
+  const submittedVersion = psql(String.raw`
+    select assignment.revision, session.updated_at
+    from public.inventory_count_assignments assignment
+    join public.inventory_count_sessions session on session.id = assignment.session_id
+    where assignment.id = '${assignmentId}';
+  `, { tuplesOnly: true }).stdout.trim().split('|');
+  const [revision, sessionUpdatedAt] = submittedVersion;
+  if (revision !== '2' || !sessionUpdatedAt) throw new Error('Counter default application did not advance the assignment revision.');
+  const submitStatement = authenticatedSql(counterId, String.raw`
+    select public.submit_inventory_count_assignment(
+      '${assignmentId}', ${revision}, '${sessionUpdatedAt}'::timestamptz
+    );
+  `);
+  const results = await Promise.all([
+    concurrentPsql(submitStatement),
+    concurrentPsql(submitStatement),
+  ]);
+  const succeeded = results.filter((result) => result.status === 0);
+  const failed = results.filter((result) => result.status !== 0);
+  if (succeeded.length !== 1 || failed.length !== 1
+      || !/changed on another device|read-only while it is submitted/i.test(failed[0].stderr)) {
+    throw new Error(`Concurrent counter submission did not accept exactly one request:\n${JSON.stringify(results)}`);
+  }
+  const finalState = psql(String.raw`
+    select state || '|' || revision
+    from public.inventory_count_assignments where id = '${assignmentId}';
+  `, { tuplesOnly: true }).stdout.trim();
+  if (finalState !== 'submitted|3') throw new Error(`Concurrent counter submission left unexpected state: ${finalState}`);
+  console.log('PASS concurrent counter submissions accept once and reject the stale request');
+}
+
 function cleanup() {
   if (!containerStarted) return;
   docker(['rm', '--force', CONTAINER], { allowFailure: true, timeout: 30000 });
@@ -185,7 +241,7 @@ function reportDatabaseState() {
     from pg_catalog.pg_class relation
     join pg_catalog.pg_namespace namespace on namespace.oid = relation.relnamespace
     where namespace.nspname = 'public'
-      and relation.relname in ('inventory_products','inventory_locations','inventory_location_products','inventory_count_sessions','inventory_count_lines')
+      and relation.relname in ('inventory_products','inventory_locations','inventory_location_products','inventory_count_sessions','inventory_count_lines','inventory_counter_memberships','inventory_count_assignments')
     order by relation.relname;
 
     select 'FUNCTION|' || function.oid::regprocedure::text || '|owner=' || pg_catalog.pg_get_userbyid(function.proowner) || '|security_definer=' || function.prosecdef
@@ -239,7 +295,7 @@ async function main() {
     throw new Error('Phase 9G is not terminal.');
   }
   entries.forEach((entry) => resolveMigrationPath(entry.path));
-  if (![FIXTURE_PATH, ASSERTION_PATH, PRE_PHASE9D_FIXTURE_PATH, INTEGRITY_ASSERTION_PATH, IDENTITY_ASSERTION_PATH, STRUCTURED_ASSERTION_PATH, OPERATIONAL_ASSERTION_PATH].every(existsSync)) {
+  if (![FIXTURE_PATH, ASSERTION_PATH, PRE_PHASE9D_FIXTURE_PATH, INTEGRITY_ASSERTION_PATH, IDENTITY_ASSERTION_PATH, STRUCTURED_ASSERTION_PATH, OPERATIONAL_ASSERTION_PATH, COUNTER_FIXTURE_PATH, COUNTER_ASSERTION_PATH].every(existsSync)) {
     throw new Error('Phase 9 executable security SQL is missing.');
   }
 
@@ -307,7 +363,10 @@ async function main() {
 
   psql(readFileSync(FIXTURE_PATH, 'utf8'), { singleTransaction: true });
   console.log('PASS disposable organizations, Auth users, profiles, and inventory fixtures');
+  psql(readFileSync(COUNTER_FIXTURE_PATH, 'utf8'), { singleTransaction: true });
+  console.log('PASS isolated Phase 9G-B counter memberships and assignment fixtures');
   await verifyConcurrentCreation();
+  await verifyConcurrentCounterSubmission();
 
   const assertions = psql(readFileSync(ASSERTION_PATH, 'utf8'));
   const passLines = `${assertions.stdout}\n${assertions.stderr}`
@@ -365,6 +424,17 @@ async function main() {
   }
   operationalPassLines.forEach((line) => console.log(line));
   console.log(`Executable PostgreSQL operational-scope assertions: ${operationalPassLines.length}/${operationalPassLines.length} passed.`);
+
+  const counterAssertions = psql(readFileSync(COUNTER_ASSERTION_PATH, 'utf8'));
+  const counterPassLines = `${counterAssertions.stdout}\n${counterAssertions.stderr}`
+    .split('\n')
+    .filter((line) => line.includes('PASS '))
+    .map((line) => line.replace(/^.*PASS /, 'PASS '));
+  if (counterPassLines.length !== EXPECTED_COUNTER_ASSERTION_PASSES) {
+    throw new Error(`Expected ${EXPECTED_COUNTER_ASSERTION_PASSES} executable counter-workflow assertion passes, received ${counterPassLines.length}.`);
+  }
+  counterPassLines.forEach((line) => console.log(line));
+  console.log(`Executable PostgreSQL counter-workflow assertions: ${counterPassLines.length}/${counterPassLines.length} passed.`);
   reportDatabaseState();
 }
 

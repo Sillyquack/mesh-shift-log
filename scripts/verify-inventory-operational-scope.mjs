@@ -148,13 +148,14 @@ test('Phase 9G never rewrites completed or approved session history', () => {
   assert.doesNotMatch(migration, /drop trigger if exists inventory_count_lines_integrity/i);
 });
 
-test('Phase 9G is the sole repeatable terminal migration after Phase 9F', () => {
+test('Phase 9G-B is the sole repeatable terminal migration after Phase 9G-A', () => {
   const manifest = readPhase9MigrationManifest();
   const entries = validatedPhase9MigrationEntries(manifest);
-  assert.equal(PHASE9_TERMINAL_MIGRATION, 'supabase/phase9g_inventory_operational_scope.sql');
+  assert.equal(PHASE9_TERMINAL_MIGRATION, 'supabase/phase9gb_inventory_counter_assignments.sql');
   assert.equal(entries.at(-1).path, PHASE9_TERMINAL_MIGRATION);
   assert.deepEqual(entries.filter((entry) => entry.repeatable).map((entry) => entry.path), [PHASE9_TERMINAL_MIGRATION]);
-  assert.ok(entries.findIndex((entry) => entry.path.includes('phase9f_')) < entries.findIndex((entry) => entry.path.includes('phase9g_')));
+  assert.ok(entries.findIndex((entry) => entry.path.includes('phase9f_')) < entries.findIndex((entry) => entry.path.includes('phase9g_inventory_')));
+  assert.ok(entries.findIndex((entry) => entry.path.includes('phase9g_inventory_')) < entries.findIndex((entry) => entry.path.includes('phase9gb_')));
 });
 
 test('client loads category, alias, unresolved, template, and reserve records without text-derived identities', () => {

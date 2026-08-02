@@ -406,7 +406,10 @@ select phase9_test.assert_true(
 create table phase9_test.expected_authenticated_functions (signature text primary key);
 insert into phase9_test.expected_authenticated_functions (signature) values
   ('public.current_user_can_manage_inventory_config()'),
+  ('public.current_user_can_count_inventory()'),
+  ('public.inventory_counter_session_is_active(uuid,uuid)'),
   ('public.get_inventory_count_session_record(uuid)'),
+  ('public.get_inventory_counter_workspace()'),
   ('public.upsert_inventory_product(uuid,text,text,text,text,text,text,numeric,text,text,boolean,integer,jsonb,text,numeric,text[])'),
   ('public.upsert_inventory_location(uuid,text,text,text,uuid,text,text,boolean,integer,jsonb,text[])'),
   ('public.upsert_inventory_location_product(uuid,uuid,uuid,numeric,numeric,numeric,integer,boolean,text,jsonb,text[])'),
@@ -429,7 +432,15 @@ insert into phase9_test.expected_authenticated_functions (signature) values
   ('public.complete_inventory_count_session(uuid,text,boolean,text)'),
   ('public.approve_inventory_count_session(uuid,text)'),
   ('public.cancel_inventory_count_session(uuid,text)'),
-  ('public.import_inventory_catalog(jsonb,boolean)');
+  ('public.import_inventory_catalog(jsonb,boolean)'),
+  ('public.set_inventory_counter_membership(uuid,boolean)'),
+  ('public.create_inventory_count_assignment(uuid,uuid,uuid,timestamp with time zone)'),
+  ('public.inventory_counter_set_count_line_quantity(uuid,uuid,numeric,text,bigint,timestamp with time zone)'),
+  ('public.inventory_counter_set_count_line_structured_quantity(uuid,uuid,numeric,numeric,numeric,numeric,text,bigint,timestamp with time zone)'),
+  ('public.inventory_counter_apply_refrigerator_default(uuid,boolean,bigint)'),
+  ('public.submit_inventory_count_assignment(uuid,bigint,timestamp with time zone)'),
+  ('public.return_inventory_count_assignment(uuid,text,bigint)'),
+  ('public.accept_inventory_count_assignment(uuid,bigint)');
 
 select phase9_test.assert_true(
   (select bool_and(to_regprocedure(signature) is not null)

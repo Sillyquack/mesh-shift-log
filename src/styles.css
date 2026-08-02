@@ -2685,6 +2685,52 @@ textarea {
   }
 }
 
+.counter-workspace {
+  max-width: 760px;
+}
+
+.counter-line-card {
+  scroll-margin-top: 16px;
+}
+
+.counter-default-panel,
+.counter-submit-panel {
+  border-color: color-mix(in srgb, var(--important) 38%, var(--line));
+}
+
+.counter-progress-actions {
+  align-items: center;
+  justify-content: space-between;
+  position: sticky;
+  top: 8px;
+  z-index: 4;
+  padding: 8px;
+  border: 1px solid var(--line);
+  border-radius: 12px;
+  background: color-mix(in srgb, var(--surface) 94%, transparent);
+  backdrop-filter: blur(8px);
+}
+
+@media (max-width: 600px) {
+  .counter-workspace {
+    padding-inline: 10px;
+  }
+
+  .counter-workspace .inventory-topbar,
+  .counter-workspace .inventory-session-header {
+    grid-template-columns: 1fr;
+  }
+
+  .counter-workspace .inventory-case-count,
+  .counter-workspace .inventory-summary-grid {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+
+  .counter-workspace .inventory-case-count > div {
+    grid-column: 1 / -1;
+  }
+}
+
 /* Inventory is a focused, lazy-loaded operational workspace. */
 .inventory-workspace {
   width: min(1180px, 100%);

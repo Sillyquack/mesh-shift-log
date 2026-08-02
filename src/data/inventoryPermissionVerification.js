@@ -2,6 +2,7 @@ import {
   canCoordinateInventory,
   canManageInventory,
   canUseInventory,
+  isInventoryCounter,
 } from '../lib/permissions.js';
 
 function assertion(name, passed) {
@@ -45,6 +46,7 @@ function roleFixture(role) {
 
 export function runInventoryPermissionVerification() {
   const manager = authenticatedInventoryManager();
+  const counter = roleFixture('counter');
   const staffCodeManager = {
     id: 'staff-code-manager',
     loginSource: 'staff_code',
@@ -74,6 +76,8 @@ export function runInventoryPermissionVerification() {
     assertion('SEC-P12: local manager role cannot override a non-manager profile', !canUseInventory(authenticatedInventoryManager({ profile: { role: 'staff' } }))),
     assertion('SEC-P13: verified active Supabase manager can use Stock Count', canUseInventory(manager)),
     assertion('SEC-P14: coordinate and manage permissions use the same strict manager rule', canCoordinateInventory(manager) && canManageInventory(manager) && !canCoordinateInventory(roleFixture('event_floor_manager')) && !canManageInventory(roleFixture('staff'))),
+    assertion('SEC-P15: verified counter reaches only the counter Stock Count surface', canUseInventory(counter) && isInventoryCounter(counter) && !canCoordinateInventory(counter) && !canManageInventory(counter)),
+    assertion('SEC-P16: cached or mismatched counter identity cannot reach Stock Count', !canUseInventory(authenticatedInventoryManager({ role: 'counter', isManager: false, authSessionVerified: false, profile: { role: 'counter' } })) && !isInventoryCounter(authenticatedInventoryManager({ role: 'counter', isManager: false, profile: { role: 'staff' } }))),
   ];
 
   return { passed: checks.every((check) => check.passed), checks };
