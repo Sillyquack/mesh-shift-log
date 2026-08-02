@@ -1,0 +1,37 @@
+{
+  "manifestVersion": 1,
+  "scope": "Phase 9 inventory local verification",
+  "orderedMigrations": [
+    {
+      "id": "baseline",
+      "path": "supabase/schema.sql",
+      "repeatable": false
+    },
+    {
+      "id": "phase7a-shared-device-prerequisite",
+      "path": "supabase/phase7a_workbar_device_auth.sql",
+      "repeatable": false
+    },
+    {
+      "id": "phase9a-inventory-foundation",
+      "path": "supabase/phase9a_inventory_stocktaking.sql",
+      "repeatable": false
+    },
+    {
+      "id": "phase9a4-location-template",
+      "path": "supabase/phase9a4_inventory_location_template.sql",
+      "repeatable": false
+    },
+    {
+      "id": "phase9b-stock-policies",
+      "path": "supabase/phase9b_stock_policies.sql",
+      "repeatable": false
+    },
+    {
+      "id": "phase9c-security-hardening",
+      "path": "supabase/phase9c_inventory_security_hardening.sql",
+      "repeatable": true
+    }
+  ],
+  "terminalSecurityMigration": "supabase/phase9c_inventory_security_hardening.sql"
+}

@@ -1,7 +1,15 @@
 import { readFileSync } from 'node:fs';
 import { runInventoryVerification } from '../src/data/inventoryVerification.js';
 import { runInventoryPermissionVerification } from '../src/data/inventoryPermissionVerification.js';
+import {
+  EXPECTED_PHASE9_MIGRATION_ORDER,
+  PHASE9_TERMINAL_SECURITY_MIGRATION,
+  validatedPhase9MigrationEntries,
+  validatePhase9MigrationOrder,
+} from './phase9MigrationOrder.mjs';
 
+const schemaSql = readFileSync(new URL('../supabase/schema.sql', import.meta.url), 'utf8');
+const phase7aSql = readFileSync(new URL('../supabase/phase7a_workbar_device_auth.sql', import.meta.url), 'utf8');
 const sql = readFileSync(new URL('../supabase/phase9a_inventory_stocktaking.sql', import.meta.url), 'utf8');
 const phase9a4Sql = readFileSync(new URL('../supabase/phase9a4_inventory_location_template.sql', import.meta.url), 'utf8');
 const phase9bSql = readFileSync(new URL('../supabase/phase9b_stock_policies.sql', import.meta.url), 'utf8');
@@ -13,6 +21,17 @@ const workspace = readFileSync(new URL('../src/components/InventoryWorkspace.jsx
 const app = readFileSync(new URL('../src/App.jsx', import.meta.url), 'utf8');
 const permissions = readFileSync(new URL('../src/lib/permissions.js', import.meta.url), 'utf8');
 const securityDocumentation = readFileSync(new URL('../docs/stock-count-security.md', import.meta.url), 'utf8');
+const databaseRunner = readFileSync(new URL('./verify-phase9-security-db.mjs', import.meta.url), 'utf8');
+const databaseFixtures = readFileSync(new URL('../supabase/tests/phase9/security-fixtures.sql', import.meta.url), 'utf8');
+const databaseAssertions = readFileSync(new URL('../supabase/tests/phase9/security-assertions.sql', import.meta.url), 'utf8');
+const migrationEntries = validatedPhase9MigrationEntries();
+const migrationPaths = migrationEntries.map((entry) => entry.path);
+let unsafeMigrationOrderRejected = false;
+try {
+  validatePhase9MigrationOrder([...migrationPaths, 'supabase/phase9a_inventory_stocktaking.sql']);
+} catch {
+  unsafeMigrationOrderRejected = true;
+}
 
 function functionBody(name) {
   const start = sql.indexOf(`create or replace function public.${name}(`);
@@ -341,7 +360,15 @@ const checks = [
   check('SEC-D12: internal line-record and actor helpers are not directly executable by authenticated', /revoke all on function public\.inventory_count_line_client_record\(uuid\) from public, anon, authenticated/i.test(phase9cSql) && !/grant execute on function public\.inventory_count_line_client_record/i.test(phase9cSql) && !/grant execute on function public\.inventory_resolve_actor/i.test(phase9cSql)),
   check('SEC-D13: Phase 9C security-definer helpers use safe search paths and schema-qualified relations', (phase9cSql.match(/security definer\nset search_path = pg_catalog/g) || []).length === 4 && !/from\s+user_profiles|from\s+inventory_count_sessions/i.test(phase9cSql)),
   check('SEC-D14: Phase 9C contains no metadata-based authorization or service-role frontend credential', !/user_metadata|raw_user_meta_data|service_role_key|VITE_[A-Z_]*SERVICE/i.test(phase9cSql + client + workspace)),
-  check('SEC-D15: focused security documentation states the enforced boundary and static-only limitation', /manager-only/i.test(securityDocumentation) && /Supabase Auth/i.test(securityDocumentation) && /staff-code/i.test(securityDocumentation) && /shared-device/i.test(securityDocumentation) && /not executed/i.test(securityDocumentation)),
+  check('SEC-D15: focused security documentation states the enforced boundary and executable test layers', /manager-only/i.test(securityDocumentation) && /Supabase Auth/i.test(securityDocumentation) && /staff-code/i.test(securityDocumentation) && /shared-device/i.test(securityDocumentation) && /executable PostgreSQL/i.test(securityDocumentation)),
+  check('MIG-1: canonical migration manifest matches the exact Phase 9 prerequisite order', JSON.stringify(migrationPaths) === JSON.stringify(EXPECTED_PHASE9_MIGRATION_ORDER)),
+  check('MIG-2: Phase 7A shared-device prerequisite is ordered before Phase 9A', migrationPaths.indexOf('supabase/phase7a_workbar_device_auth.sql') < migrationPaths.indexOf('supabase/phase9a_inventory_stocktaking.sql') && /add column if not exists is_shared_device/i.test(phase7aSql) && /current_user_is_shared_device/i.test(sql)),
+  check('MIG-3: Phase 9C is terminal and unsafe older-phase reapplication is rejected', migrationPaths.at(-1) === PHASE9_TERMINAL_SECURITY_MIGRATION && unsafeMigrationOrderRejected),
+  check('MIG-4: baseline manager-review DO block has valid double-dollar delimiters', !/\bdo\s+\$(?!\$)\s/i.test(schemaSql) && /do \$\$[\s\S]*?manager_daily_reviews_local_id_key[\s\S]*?end\s*\n\$\$;/i.test(schemaSql)),
+  check('MIG-5: database runner is pinned, network-isolated, pull-disabled and accepts no connection arguments', /public\.ecr\.aws\/supabase\/postgres:17\.6\.1\.141/i.test(databaseRunner) && /'--network', 'none'/i.test(databaseRunner) && /'--pull', 'never'/i.test(databaseRunner) && /process\.argv\.length > 2/i.test(databaseRunner) && !/DATABASE_URL|SUPABASE_DB_URL|postgres(?:ql)?:\/\//i.test(databaseRunner)),
+  check('MIG-6: disposable fixtures cover two organizations and every required profile type', ['Organization A Manager', 'Organization B Manager', 'Organization A Staff', 'Organization A Shift Lead', 'Organization A Event Floor Manager', 'Organization A Time2Staff', 'Organization A Shared Manager', 'Organization A Inactive Manager', 'Null Organization Manager'].every((fixture) => databaseFixtures.includes(fixture))),
+  check('MIG-7: executable assertions cover RLS, profile authority, every mutation RPC, tenant IDs and effective EXECUTE grants', /DB-RLS-1/i.test(databaseAssertions) && /DB-PROFILE-6/i.test(databaseAssertions) && (databaseAssertions.match(/\('(?:upsert product|upsert location|upsert standard|copy standards|setup template|bulk standards|create session|set line quantity|set line cases|mark line use par|clear line|skip line|mark location use par|confirm unchanged|complete location|complete session|approve session|reopen session|cancel session|import catalog)'/g) || []).length === 20 && /DB-TENANT-6/i.test(databaseAssertions) && /DB-EXEC-9/i.test(databaseAssertions)),
+  check('MIG-8: documentation distinguishes static, in-memory, executable database and outstanding browser coverage', /static source checks/i.test(securityDocumentation) && /in-memory JavaScript/i.test(securityDocumentation) && /executable PostgreSQL/i.test(securityDocumentation) && /browser/i.test(securityDocumentation)),
 ];
 
 for (const result of checks) {

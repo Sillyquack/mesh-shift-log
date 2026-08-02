@@ -842,7 +842,7 @@ create table if not exists public.manager_daily_reviews (
 create index if not exists manager_daily_reviews_org_date_idx
   on public.manager_daily_reviews (organization_id, review_date desc);
 
-do $
+do $$
 begin
   if not exists (
     select 1
@@ -852,7 +852,8 @@ begin
     alter table public.manager_daily_reviews
     add constraint manager_daily_reviews_local_id_key unique (local_id);
   end if;
-end $;
+end
+$$;
 
 drop trigger if exists manager_daily_reviews_set_updated_at on public.manager_daily_reviews;
 
@@ -915,4 +916,3 @@ with check (
     or organization_id = public.current_user_organization_id()
   )
 );
-
