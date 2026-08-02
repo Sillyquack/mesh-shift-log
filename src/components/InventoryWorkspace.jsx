@@ -312,6 +312,9 @@ function CountSession({ session, sessions, lines, locations, canManage, canCoord
   const [notes, setNotes] = useState({});
   const [busyId, setBusyId] = useState('');
   const [bulkReview, setBulkReview] = useState(null);
+  const bulkTriggerRef = useRef(null);
+  const bulkDialogRef = useRef(null);
+  const bulkCancelRef = useRef(null);
   const [completionNote, setCompletionNote] = useState('');
   const [allowExceptions, setAllowExceptions] = useState(false);
   const [exceptionReason, setExceptionReason] = useState('');
@@ -332,6 +335,7 @@ function CountSession({ session, sessions, lines, locations, canManage, canCoord
   const originalSession = session.originalSessionId ? sessions.find((item) => item.id === session.originalSessionId) : null;
   const correctionSessions = sessions.filter((item) => item.originalSessionId === session.id);
   const isDirty = Object.keys(drafts).some((id) => drafts[id] !== String(lines.find((line) => line.id === id)?.countedQuantityExact ?? '')) || Object.keys(caseDrafts).length > 0 || Object.keys(structuredDrafts).length > 0 || Object.keys(notes).some((id) => notes[id] !== (lines.find((line) => line.id === id)?.note || ''));
+  const bulkDialogOpen = Boolean(bulkReview);
 
   useEffect(() => {
     setDrafts({});
@@ -350,6 +354,16 @@ function CountSession({ session, sessions, lines, locations, canManage, canCoord
       ? current
       : (lines[0]?.locationId || ''));
   }, [session.id, lines]);
+  useEffect(() => {
+    if (!bulkDialogOpen) return undefined;
+    const previousBodyOverflow = document.body.style.overflow;
+    document.body.style.overflow = 'hidden';
+    const focusFrame = window.requestAnimationFrame(() => bulkCancelRef.current?.focus());
+    return () => {
+      window.cancelAnimationFrame(focusFrame);
+      document.body.style.overflow = previousBodyOverflow;
+    };
+  }, [bulkDialogOpen]);
 
   const runWrite = async (id, operation) => {
     if (!(await requestWriteAccess())) return;
@@ -376,6 +390,36 @@ function CountSession({ session, sessions, lines, locations, canManage, canCoord
     if (kind === 'clear') return runWrite(line.id, () => clearInventoryCountLine(common));
     return runWrite(line.id, () => skipInventoryCountLine({ ...common, note: notes[line.id] ?? line.note }));
   };
+  const dismissBulkReview = () => {
+    setBulkReview(null);
+    window.requestAnimationFrame(() => bulkTriggerRef.current?.focus());
+  };
+  const handleBulkDialogKeyDown = (event) => {
+    if (event.key === 'Escape') {
+      event.preventDefault();
+      dismissBulkReview();
+      return;
+    }
+    if (event.key !== 'Tab') return;
+    const focusable = [...(bulkDialogRef.current?.querySelectorAll('button:not(:disabled), input:not(:disabled)') || [])]
+      .filter((element) => element.getClientRects().length > 0);
+    if (!focusable.length) return;
+    const first = focusable[0];
+    const last = focusable[focusable.length - 1];
+    if (event.shiftKey && document.activeElement === first) {
+      event.preventDefault();
+      last.focus();
+    } else if (!event.shiftKey && document.activeElement === last) {
+      event.preventDefault();
+      first.focus();
+    }
+  };
+  const confirmBulkReview = () => {
+    if (!bulkReview?.acknowledged) return;
+    const replace = bulkReview.replace;
+    setBulkReview(null);
+    runWrite('bulk', () => markInventoryLocationUsePar({ sessionId: session.id, locationId, replaceExisting: replace, expectedSessionUpdatedAt: session.updatedAt }));
+  };
   const exportSession = () => downloadCsv(`mesh-stock-count-${session.countDate}.csv`, makeCsv(['Date', 'Session', 'Status', 'Location', 'Product', 'Product ID', 'Count mode', 'Base unit', 'Container capacity L', 'Whole / sealed', 'Open liters', 'Full kegs', 'Partial keg fraction', 'Stock policy', 'Target', 'Counted', 'Gap', 'Count method', 'Components', 'Note', 'Counted by', 'Counted at'], orderedLines.map((line) => { const calculated = calculateInventoryLine(line); const numeric = (value) => inventoryCsvNumeric(value); return [session.countDate, session.title, session.status, line.locationName, line.productName, line.productId, line.countMode, line.unitLabel, numeric(line.containerCapacityLiters), numeric(line.countedWholeUnitsExact), numeric(line.countedOpenVolumeLitersExact), numeric(line.countedFullKegsExact), numeric(line.countedPartialKegFractionExact), line.stockPolicy, numeric(calculated.effectiveTargetExact), numeric(line.countedQuantityExact), numeric(calculated.restockQuantityExact), line.countMethod, inventoryStructuredComponentLabel(line), line.note, line.countedByName, line.countedAt]; })));
   return (
     <div className="inventory-stack">
@@ -389,20 +433,35 @@ function CountSession({ session, sessions, lines, locations, canManage, canCoord
       <nav className="inventory-location-tabs" aria-label="Count locations">{locationIds.map((id) => { const location = locations.find((item) => item.id === id); const summary = summarizeInventoryLocation(lines.filter((line) => line.locationId === id), completionMap[id]); return <button type="button" key={id} className={id === locationId ? 'active' : ''} onClick={() => setLocationId(id)}><span>{location ? contextualLocationName(location, locations) : lines.find((line) => line.locationId === id)?.locationName}</span><small>{summary.counted}/{summary.total} · {inventoryStatusLabel(summary.status)}</small></button>; })}</nav>
       <section className="inventory-location-header">
         <div><h2>{currentLocationLabel}</h2><p>{locationSummary.counted} of {locationSummary.total} recorded · {locationSummary.shortages} policy gaps</p></div>
-        <div className="inventory-location-controls"><button type="button" className="secondary-button" disabled={readOnly || !exactUncounted} onClick={() => setBulkReview({ replace: false })}>Mark exact-par lines fully stocked</button><button type="button" className="primary-button" disabled={readOnly || locationSummary.uncounted > 0 || locationSummary.needsReview > 0} onClick={() => runWrite(`complete-${locationId}`, () => completeInventoryCountLocation({ sessionId: session.id, locationId }))}>{completionMap[locationId] ? 'Location complete' : 'Complete location'}</button></div>
+        <div className="inventory-location-controls"><button ref={bulkTriggerRef} type="button" className="secondary-button" disabled={readOnly || !exactUncounted} onClick={() => setBulkReview({ replace: false, acknowledged: false })}>Mark exact-par lines fully stocked</button><button type="button" className="primary-button" disabled={readOnly || locationSummary.uncounted > 0 || locationSummary.needsReview > 0} onClick={() => runWrite(`complete-${locationId}`, () => completeInventoryCountLocation({ sessionId: session.id, locationId }))}>{completionMap[locationId] ? 'Location complete' : 'Complete location'}</button></div>
       </section>
       <div className="inventory-line-list">{locationLines.map((line) => <CountLineCard key={line.id} line={line} identityReference={inventoryProductIdentityReference(line, locationLines)} draftValue={drafts[line.id] ?? (line.countedQuantityExact ?? '')} setDraftValue={(value) => setDrafts((current) => ({ ...current, [line.id]: value }))} caseDraft={caseDrafts[line.id] || { fullCases: line.countFullCases ?? '', looseQuantity: line.countLooseQuantity ?? 0 }} setCaseDraft={(value) => setCaseDrafts((current) => ({ ...current, [line.id]: value }))} structuredDraft={structuredDrafts[line.id] || { wholeUnits: line.countedWholeUnitsExact ?? '', openVolumeLiters: line.countedOpenVolumeLitersExact ?? '', fullKegs: line.countedFullKegsExact ?? '', partialKegFraction: line.countedPartialKegFractionExact ?? '' }} setStructuredDraft={(value) => setStructuredDrafts((current) => ({ ...current, [line.id]: value }))} note={notes[line.id] ?? line.note} setNote={(value) => setNotes((current) => ({ ...current, [line.id]: value }))} action={(kind) => lineAction(line, kind)} busy={busyId === line.id} readOnly={readOnly} canManage={canManage} />)}</div>
       <section className="inventory-panel inventory-session-actions">
         <h2>Session actions</h2>
         <div className="inventory-summary-grid"><div><strong>{sessionSummary.completedLocations}/{sessionSummary.locations}</strong><span>locations complete</span></div><div><strong>{sessionSummary.uncounted}</strong><span>uncounted</span></div><div><strong>{sessionSummary.skipped}</strong><span>skipped</span></div><div><strong>{sessionSummary.needsReview}</strong><span>needs review</span></div></div>
         <label>Review note<textarea rows="2" value={completionNote} disabled={session.status === 'approved' || session.status === 'cancelled'} onChange={(event) => setCompletionNote(event.target.value)} /></label>
-        {canCoordinate && !readOnly && <div className="inventory-reopen"><label className="inventory-danger-option"><input type="checkbox" checked={allowExceptions} onChange={(event) => setAllowExceptions(event.target.checked)} />Finalize with documented exceptions</label>{allowExceptions && <label>Required exception reason<textarea rows="2" value={exceptionReason} onChange={(event) => setExceptionReason(event.target.value)} /></label>}</div>}
+        {canCoordinate && !readOnly && <div className="inventory-reopen"><label className="inventory-danger-option"><input type="checkbox" checked={allowExceptions} onChange={(event) => setAllowExceptions(event.target.checked)} /><span>Finalize with documented exceptions</span></label>{allowExceptions && <label>Required exception reason<textarea rows="2" value={exceptionReason} onChange={(event) => setExceptionReason(event.target.value)} /></label>}</div>}
         {exceptionSummary.hasExceptions && <div className="inventory-warning"><strong>Finalized with exceptions</strong><p>{exceptionSummary.reason}</p><p>{exceptionSummary.counts.skipped} skipped · {exceptionSummary.counts.uncounted} uncounted · {exceptionSummary.counts.needsReview} needs review · {exceptionSummary.counts.incompleteLocations} incomplete locations</p><p>Finalized by {session.finalizedByName || session.completedByName}{session.finalizedAt ? ` · ${formatDateTime(session.finalizedAt)}` : ''}</p></div>}
         <div className="inventory-action-row"><button type="button" className="secondary-button" onClick={exportSession}>Export session CSV</button>{canCoordinate && !readOnly && <button type="button" className="primary-button" disabled={allowExceptions && !exceptionReason.trim()} onClick={() => runWrite('complete-session', () => completeInventoryCountSession({ sessionId: session.id, note: completionNote, allowExceptions, exceptionReason }))}>Complete session</button>}{canManage && session.status === 'completed' && <button type="button" className="primary-button" onClick={() => runWrite('approve', () => approveInventoryCountSession({ sessionId: session.id, note: completionNote }))}>Approve stock count</button>}</div>
         {canManage && session.status === 'approved' && <div className="inventory-reopen"><label>Reason for correction<input value={actionReason} onChange={(event) => setActionReason(event.target.value)} /></label><button type="button" className="secondary-button" disabled={!actionReason.trim()} onClick={async () => { const result = await runWrite('correction', () => createInventoryCorrectionSession({ originalSessionId: session.id, reason: actionReason, idempotencyKey: correctionIdempotencyKey })); const correctionId = result?.data?.session?.id; if (result?.ok && correctionId) onOpenSession(correctionId); }}>Create correction count</button><p className="muted">The approved count remains permanently locked. Corrections are recorded in a new linked session.</p></div>}
         {canManage && !['approved', 'cancelled'].includes(session.status) && <div className="inventory-reopen"><label>Cancellation reason<input value={actionReason} onChange={(event) => setActionReason(event.target.value)} /></label><button type="button" className="text-button danger-text" disabled={!actionReason.trim()} onClick={() => runWrite('cancel', () => cancelInventoryCountSession({ sessionId: session.id, reason: actionReason }))}>Cancel session</button></div>}
       </section>
-      {bulkReview && <div className="modal-backdrop" role="dialog" aria-modal="true" aria-labelledby="inventory-bulk-title"><section className="pilot-modal inventory-modal"><h2 id="inventory-bulk-title">{currentLocationLabel}</h2>{bulkReview.replace ? <><p>All non-skipped exact-par lines that differ from the fully stocked target will be replaced.</p><p>Manual, imported and adjusted exact-par counts may be replaced.</p><p>Protected event reserve, operating reserve, dormant stock and skipped lines remain unchanged.</p><p><strong>This is a manager-only action.</strong></p></> : <><p>{exactUncounted} uncounted exact-par lines will be marked fully stocked.</p><p>This is an explicit stocking attestation, not a physical count.</p><p>Other policies and existing counts remain unchanged.</p></>}{canManage && <label className="inventory-danger-option"><input type="checkbox" checked={bulkReview.replace} onChange={(event) => setBulkReview({ replace: event.target.checked })} />Replace existing exact-par counts (manager only)</label>}<div className="inventory-action-row"><button type="button" className="secondary-button" onClick={() => setBulkReview(null)}>Cancel</button><button type="button" className="primary-button" onClick={() => { const replace = bulkReview.replace; setBulkReview(null); runWrite('bulk', () => markInventoryLocationUsePar({ sessionId: session.id, locationId, replaceExisting: replace, expectedSessionUpdatedAt: session.updatedAt })); }}>{bulkReview.replace ? 'Replace with fully stocked' : 'Mark fully stocked'}</button></div></section></div>}
+      {bulkReview && (
+        <div className="modal-backdrop" onClick={(event) => { if (event.target === event.currentTarget) dismissBulkReview(); }}>
+          <section ref={bulkDialogRef} className="pilot-modal inventory-modal" role="dialog" aria-modal="true" aria-labelledby="inventory-bulk-title" aria-describedby="inventory-bulk-description" onKeyDown={handleBulkDialogKeyDown}>
+            <h2 id="inventory-bulk-title">{currentLocationLabel}</h2>
+            <div id="inventory-bulk-description" className="inventory-modal-copy">
+              {bulkReview.replace ? <><p>All non-skipped exact-par lines that differ from the fully stocked target will be replaced.</p><p>Manual, imported and adjusted exact-par counts may be replaced.</p><p>Protected event reserve, operating reserve, dormant stock and skipped lines remain unchanged.</p><p><strong>This is a manager-only action.</strong></p></> : <><p>{exactUncounted} uncounted exact-par lines will be marked fully stocked.</p><p>This is an explicit stocking attestation, not a physical count.</p><p>Other policies and existing counts remain unchanged.</p></>}
+            </div>
+            <label className="inventory-danger-option" htmlFor="inventory-bulk-acknowledgement">
+              <input id="inventory-bulk-acknowledgement" type="checkbox" checked={bulkReview.acknowledged} onChange={(event) => setBulkReview((current) => ({ ...current, acknowledged: event.target.checked }))} />
+              <span>I confirm the eligible exact-par lines in this refrigerator are fully stocked</span>
+            </label>
+            {canManage && <label className="inventory-danger-option" htmlFor="inventory-bulk-replace"><input id="inventory-bulk-replace" type="checkbox" checked={bulkReview.replace} onChange={(event) => setBulkReview((current) => ({ ...current, replace: event.target.checked }))} /><span>Replace existing exact-par counts (manager only)</span></label>}
+            <div className="inventory-action-row"><button ref={bulkCancelRef} type="button" className="secondary-button" onClick={dismissBulkReview}>Cancel</button><button type="button" className="primary-button" disabled={!bulkReview.acknowledged || busyId === 'bulk'} onClick={confirmBulkReview}>{bulkReview.replace ? 'Replace with fully stocked' : 'Mark fully stocked'}</button></div>
+          </section>
+        </div>
+      )}
     </div>
   );
 }
