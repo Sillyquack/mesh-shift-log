@@ -2,6 +2,7 @@ import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
 import test from 'node:test';
 import {
+  PHASE9_PRODUCT_MAPPING_MIGRATION,
   PHASE9_TERMINAL_MIGRATION,
   readPhase9MigrationManifest,
   validatedPhase9MigrationEntries,
@@ -171,11 +172,13 @@ test('Phase 9G-D changes no RLS, grant, alias, session, or count-line definition
   assert.doesNotMatch(migration, /(?:update|delete\s+from)\s+public\.inventory_count_(?:sessions|lines)/i);
 });
 
-test('Phase 9G-D is the sole repeatable terminal migration and runs in the full suite', () => {
+test('Phase 9G-D remains the product-mapping layer immediately before repeatable Phase 9H', () => {
   const manifest = readPhase9MigrationManifest();
   const entries = validatedPhase9MigrationEntries(manifest);
-  assert.equal(PHASE9_TERMINAL_MIGRATION, 'supabase/phase9gd_inventory_product_mappings.sql');
-  assert.equal(entries.at(-2).path, 'supabase/phase9gc_inventory_counter_mobile.sql');
+  assert.equal(PHASE9_PRODUCT_MAPPING_MIGRATION, 'supabase/phase9gd_inventory_product_mappings.sql');
+  assert.equal(PHASE9_TERMINAL_MIGRATION, 'supabase/phase9h_inventory_session_location_scope.sql');
+  assert.equal(entries.at(-2).path, PHASE9_PRODUCT_MAPPING_MIGRATION);
+  assert.equal(entries.at(-3).path, 'supabase/phase9gc_inventory_counter_mobile.sql');
   assert.deepEqual(entries.filter((entry) => entry.repeatable).map((entry) => entry.path), [PHASE9_TERMINAL_MIGRATION]);
   assert.equal(packageJson.scripts['verify:inventory-product-mappings'], 'node scripts/verify-inventory-product-mappings.mjs');
   assert.match(aggregate, /verify:inventory-product-mappings/);

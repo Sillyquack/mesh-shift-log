@@ -43,6 +43,10 @@ import {
   INVENTORY_REFRIGERATOR_DEFINITIONS,
 } from '../data/inventoryOperationalScope.js';
 import {
+  eligibleInventorySessionLocations,
+  inventorySessionSelection,
+} from '../data/inventorySessionLocations.js';
+import {
   approveInventoryCountSession,
   cancelInventoryCountSession,
   clearInventoryCountLine,
@@ -98,26 +102,6 @@ function formatDateTime(value) {
 
 function quantity(value) {
   return formatInventoryDecimal(value);
-}
-
-function effectiveInventoryLocationIds(locations = [], selectedIds = []) {
-  const activeLocations = locations.filter((location) => location.active !== false);
-  const locationsById = new Map(activeLocations.map((location) => [location.id, location]));
-  const childIdsByParent = new Map();
-  activeLocations.forEach((location) => {
-    if (!location.parentLocationId) return;
-    const childIds = childIdsByParent.get(location.parentLocationId) || [];
-    childIds.push(location.id);
-    childIdsByParent.set(location.parentLocationId, childIds);
-  });
-  const effectiveIds = new Set();
-  const includeLocation = (locationId) => {
-    if (!locationsById.has(locationId) || effectiveIds.has(locationId)) return;
-    effectiveIds.add(locationId);
-    (childIdsByParent.get(locationId) || []).forEach(includeLocation);
-  };
-  selectedIds.forEach(includeLocation);
-  return [...effectiveIds];
 }
 
 function contextualLocationName(location, locations = []) {
@@ -210,12 +194,37 @@ function InventoryOverview({ sessions, activeSession, lines, locations, onOpenSe
   );
 }
 
-function SessionCreator({ products, locations, standards, onCancel, onCreate, busy }) {
-  const [draft, setDraft] = useState(() => ({ title: `Daily stock count - ${osloDate()}`, countType: 'daily', countDate: osloDate(), locationIds: locations.filter((item) => item.active).map((item) => item.id), note: '', idempotencyKey: ensureInventoryIdempotencyKey('') }));
-  const effectiveLocationIds = useMemo(() => effectiveInventoryLocationIds(locations, draft.locationIds), [locations, draft.locationIds]);
-  const selectedStandards = standards.filter((standard) => standard.active && effectiveLocationIds.includes(standard.locationId) && products.some((product) => product.id === standard.productId && product.active));
-  const inactiveProductStandards = standards.filter((standard) => standard.active && effectiveLocationIds.includes(standard.locationId) && !products.some((product) => product.id === standard.productId && product.active));
-  const emptyLocations = locations.filter((location) => location.active !== false && effectiveLocationIds.includes(location.id) && !standards.some((standard) => standard.active && standard.locationId === location.id));
+function SessionCreator({ products, locations, standards, refrigeratorTemplates, onCancel, onCreate, busy }) {
+  const eligibleLocations = useMemo(() => eligibleInventorySessionLocations({
+    locations,
+    standards,
+    products,
+    refrigeratorTemplates,
+  }), [locations, standards, products, refrigeratorTemplates]);
+  const [draft, setDraft] = useState(() => ({
+    title: `Daily stock count - ${osloDate()}`,
+    countType: 'daily',
+    countDate: osloDate(),
+    locationIds: eligibleInventorySessionLocations({ locations, standards, products, refrigeratorTemplates }).map((item) => item.id),
+    note: '',
+    idempotencyKey: ensureInventoryIdempotencyKey(''),
+  }));
+  const selection = useMemo(() => inventorySessionSelection({
+    eligibleLocations,
+    selectedLocationIds: draft.locationIds,
+    standards,
+    products,
+  }), [eligibleLocations, draft.locationIds, standards, products]);
+  const eligibleLocationIds = useMemo(() => new Set(eligibleLocations.map((location) => location.id)), [eligibleLocations]);
+  const locationGroups = useMemo(() => groupedInventoryLocations(locations)
+    .map((group) => ({ ...group, locations: group.locations.filter((location) => eligibleLocationIds.has(location.id)) }))
+    .filter((group) => group.locations.length > 0), [locations, eligibleLocationIds]);
+  const toggleLocation = (locationId, checked) => setDraft((current) => ({
+    ...current,
+    locationIds: checked
+      ? [...new Set([...current.locationIds, locationId])]
+      : current.locationIds.filter((id) => id !== locationId),
+  }));
   return (
     <section className="inventory-panel">
       <div className="inventory-panel-heading"><div><p className="eyebrow">New session</p><h2>Start stock count</h2></div><button type="button" className="secondary-button" onClick={onCancel}>Cancel</button></div>
@@ -226,19 +235,25 @@ function SessionCreator({ products, locations, standards, onCancel, onCreate, bu
         <label className="inventory-wide">Optional note<textarea rows="2" value={draft.note} onChange={(event) => setDraft({ ...draft, note: event.target.value })} /></label>
       </div>
       <fieldset className="inventory-location-picker">
-        <legend>Locations</legend>
-        {groupedInventoryLocations(locations.filter((item) => item.active)).map((group) => (
+        <legend>Refrigerators with active defaults</legend>
+        {locationGroups.map((group) => (
           <div className="inventory-location-choice-group" key={group.key}>
             <strong>{group.label}</strong>
-            {group.locations.map((location) => <label key={location.id}><input type="checkbox" checked={draft.locationIds.includes(location.id)} onChange={(event) => setDraft({ ...draft, locationIds: event.target.checked ? [...draft.locationIds, location.id] : draft.locationIds.filter((id) => id !== location.id) })} />{contextualLocationName(location, locations)}{!location.parentLocationId && group.key !== 'storage' ? ' (includes active child locations)' : ''}</label>)}
+            {group.locations.map((location) => {
+              const checked = selection.locationIds.includes(location.id);
+              return (
+                <label className={`inventory-location-option ${checked ? 'selected' : ''}`} key={location.id}>
+                  <input type="checkbox" checked={checked} onChange={(event) => toggleLocation(location.id, event.target.checked)} />
+                  <span>{contextualLocationName(location, locations)}</span>
+                </label>
+              );
+            })}
           </div>
         ))}
       </fieldset>
-      <div className="inventory-preview"><strong>{effectiveLocationIds.length} locations included</strong><span>{selectedStandards.length} configured product lines</span><span>{selectedStandards.filter((item) => calculateStandardPolicyTarget(item, { standards, locations, products }).effectiveTarget > 0).length} configured targets above zero</span></div>
-      {emptyLocations.length > 0 && <p className="inventory-warning">No active products: {emptyLocations.map((item) => contextualLocationName(item, locations)).join(', ')}</p>}
-      {inactiveProductStandards.length > 0 && <p className="inventory-warning">{inactiveProductStandards.length} archived product configuration(s) will not be included.</p>}
-      {selectedStandards.some((item) => item.stockPolicy !== 'verify_unchanged' && calculateStandardPolicyTarget(item, { standards, locations, products }).effectiveTarget === 0) && <p className="inventory-warning">Some selected products have a target of zero. Review those standards if that is not intentional.</p>}
-      <button type="button" className="primary-button inventory-full-button" disabled={busy || !draft.title.trim() || !selectedStandards.length} onClick={() => onCreate(draft)}>{busy ? 'Starting count...' : 'Confirm and start count'}</button>
+      <div className="inventory-preview" role="status" aria-live="polite"><strong>{selection.locationCount} eligible location{selection.locationCount === 1 ? '' : 's'} selected</strong><span>{selection.defaultLineCount} active default line{selection.defaultLineCount === 1 ? '' : 's'} represented</span><span>{selection.representedDefaults.filter((item) => calculateStandardPolicyTarget(item, { standards, locations, products }).effectiveTarget > 0).length} configured targets above zero</span></div>
+      {selection.representedDefaults.some((item) => item.stockPolicy !== 'verify_unchanged' && calculateStandardPolicyTarget(item, { standards, locations, products }).effectiveTarget === 0) && <p className="inventory-warning">Some selected products have a target of zero. Review those standards if that is not intentional.</p>}
+      <button type="button" className="primary-button inventory-full-button" disabled={busy || !draft.title.trim() || !selection.locationCount || !selection.defaultLineCount} onClick={() => onCreate({ ...draft, locationIds: selection.locationIds })}>{busy ? 'Starting count...' : 'Confirm and start count'}</button>
     </section>
   );
 }
@@ -784,7 +799,7 @@ function AuthorizedInventoryWorkspace({ user, requestWriteAccess, onClose }) {
       <nav className="inventory-main-tabs" aria-label="Inventory views"><button type="button" className={tab === 'overview' ? 'active' : ''} onClick={() => setTab('overview')}>Overview</button><button type="button" className={tab === 'count' ? 'active' : ''} onClick={() => setTab('count')}>Count</button>{manager && <button type="button" className={tab === 'assignments' ? 'active' : ''} onClick={() => setTab('assignments')}>Assignments</button>}<button type="button" className={tab === 'restock' ? 'active' : ''} onClick={() => setTab('restock')}>Restock</button>{coordinator && <button type="button" className={tab === 'history' ? 'active' : ''} onClick={() => setTab('history')}>History</button>}{manager && <button type="button" className={tab === 'manage' ? 'active' : ''} onClick={() => setTab('manage')}>Manage</button>}</nav>
       <Message status={status} />
       {status?.ok === false && <button type="button" className="secondary-button inventory-retry-button" onClick={() => refresh()}>Retry inventory refresh</button>}
-      {showCreator ? <SessionCreator products={data.products} locations={data.locations} standards={data.standards} onCancel={() => setShowCreator(false)} onCreate={create} busy={creating} /> : tab === 'overview' ? <InventoryOverview sessions={data.sessions} activeSession={activeSession} lines={activeSession?.id === selectedSession?.id ? selectedLines : []} locations={data.locations} onOpenSession={openSession} onStart={() => setShowCreator(true)} canCoordinate={coordinator} /> : tab === 'count' ? selectedSession ? <CountSession session={selectedSession} sessions={data.sessions} lines={selectedLines} locations={data.locations} canManage={manager} canCoordinate={coordinator} requestWriteAccess={requestWriteAccess} onRefresh={async () => { await refreshSession(); await refresh(); }} onOpenSession={openSession} onBack={() => setTab('overview')} setStatus={setStatus} remoteNotice={remoteNotice} clearRemoteNotice={() => setRemoteNotice(false)} /> : <section className="inventory-panel inventory-empty"><h2>No active stock count</h2>{coordinator && <button type="button" className="primary-button" onClick={() => setShowCreator(true)}>Start stock count</button>}</section> : tab === 'assignments' ? <CounterAssignmentManager data={data} activeSession={activeSession} lines={activeSession?.id === selectedSession?.id ? selectedLines : []} requestWriteAccess={requestWriteAccess} refresh={async () => { await refreshSession(); await refresh(); }} setStatus={setStatus} /> : tab === 'restock' ? <RestockView session={selectedSession} lines={selectedLines} /> : tab === 'history' ? <InventoryHistory sessions={data.sessions} locations={data.locations} onOpenSession={openSession} /> : <CatalogManager products={data.products} locations={data.locations} standards={data.standards} refrigeratorTemplates={data.refrigeratorTemplates} unresolvedMappings={data.unresolvedMappings} reserves={data.reserves} requestWriteAccess={requestWriteAccess} refresh={refresh} setStatus={setStatus} />}
+      {showCreator ? <SessionCreator products={data.products} locations={data.locations} standards={data.standards} refrigeratorTemplates={data.refrigeratorTemplates} onCancel={() => setShowCreator(false)} onCreate={create} busy={creating} /> : tab === 'overview' ? <InventoryOverview sessions={data.sessions} activeSession={activeSession} lines={activeSession?.id === selectedSession?.id ? selectedLines : []} locations={data.locations} onOpenSession={openSession} onStart={() => setShowCreator(true)} canCoordinate={coordinator} /> : tab === 'count' ? selectedSession ? <CountSession session={selectedSession} sessions={data.sessions} lines={selectedLines} locations={data.locations} canManage={manager} canCoordinate={coordinator} requestWriteAccess={requestWriteAccess} onRefresh={async () => { await refreshSession(); await refresh(); }} onOpenSession={openSession} onBack={() => setTab('overview')} setStatus={setStatus} remoteNotice={remoteNotice} clearRemoteNotice={() => setRemoteNotice(false)} /> : <section className="inventory-panel inventory-empty"><h2>No active stock count</h2>{coordinator && <button type="button" className="primary-button" onClick={() => setShowCreator(true)}>Start stock count</button>}</section> : tab === 'assignments' ? <CounterAssignmentManager data={data} activeSession={activeSession} lines={activeSession?.id === selectedSession?.id ? selectedLines : []} requestWriteAccess={requestWriteAccess} refresh={async () => { await refreshSession(); await refresh(); }} setStatus={setStatus} /> : tab === 'restock' ? <RestockView session={selectedSession} lines={selectedLines} /> : tab === 'history' ? <InventoryHistory sessions={data.sessions} locations={data.locations} onOpenSession={openSession} /> : <CatalogManager products={data.products} locations={data.locations} standards={data.standards} refrigeratorTemplates={data.refrigeratorTemplates} unresolvedMappings={data.unresolvedMappings} reserves={data.reserves} requestWriteAccess={requestWriteAccess} refresh={refresh} setStatus={setStatus} />}
       {data.refreshedAt && <p className="inventory-last-refresh">Last successful refresh: {formatDateTime(data.refreshedAt)}</p>}
     </main>
   );

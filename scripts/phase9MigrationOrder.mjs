@@ -20,9 +20,13 @@ export const EXPECTED_PHASE9_MIGRATION_ORDER = [
   'supabase/phase9gb2_inventory_counter_replacement.sql',
   'supabase/phase9gc_inventory_counter_mobile.sql',
   'supabase/phase9gd_inventory_product_mappings.sql',
+  'supabase/phase9h_inventory_session_location_scope.sql',
 ];
 
 export const PHASE9_TERMINAL_MIGRATION =
+  'supabase/phase9h_inventory_session_location_scope.sql';
+
+export const PHASE9_PRODUCT_MAPPING_MIGRATION =
   'supabase/phase9gd_inventory_product_mappings.sql';
 
 export const PHASE9_SESSION_INTEGRITY_MIGRATION =
@@ -43,7 +47,7 @@ export function validatePhase9MigrationOrder(paths) {
     }
   }
   if (paths.at(-1) !== PHASE9_TERMINAL_MIGRATION) {
-    throw new Error('Phase 9G-D product mappings must be the terminal migration.');
+    throw new Error('Phase 9H session location scope must be the terminal migration.');
   }
   return paths;
 }

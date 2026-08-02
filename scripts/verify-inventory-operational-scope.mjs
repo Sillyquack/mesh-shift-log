@@ -148,15 +148,15 @@ test('Phase 9G never rewrites completed or approved session history', () => {
   assert.doesNotMatch(migration, /drop trigger if exists inventory_count_lines_integrity/i);
 });
 
-test('Phase 9G-D is the sole repeatable terminal migration after retained Phase 9G-C', () => {
+test('Phase 9G-D remains immediately before the repeatable Phase 9H terminal migration', () => {
   const manifest = readPhase9MigrationManifest();
   const entries = validatedPhase9MigrationEntries(manifest);
-  assert.equal(PHASE9_TERMINAL_MIGRATION, 'supabase/phase9gd_inventory_product_mappings.sql');
+  assert.equal(PHASE9_TERMINAL_MIGRATION, 'supabase/phase9h_inventory_session_location_scope.sql');
   assert.equal(entries.at(-1).path, PHASE9_TERMINAL_MIGRATION);
   assert.deepEqual(entries.filter((entry) => entry.repeatable).map((entry) => entry.path), [PHASE9_TERMINAL_MIGRATION]);
   assert.ok(entries.findIndex((entry) => entry.path.includes('phase9f_')) < entries.findIndex((entry) => entry.path.includes('phase9g_inventory_')));
-  assert.equal(entries.at(-2).path, 'supabase/phase9gc_inventory_counter_mobile.sql');
-  assert.equal(entries.at(-3).path, 'supabase/phase9gb2_inventory_counter_replacement.sql');
+  assert.equal(entries.at(-2).path, 'supabase/phase9gd_inventory_product_mappings.sql');
+  assert.equal(entries.at(-3).path, 'supabase/phase9gc_inventory_counter_mobile.sql');
 });
 
 test('client loads category, alias, unresolved, template, and reserve records without text-derived identities', () => {

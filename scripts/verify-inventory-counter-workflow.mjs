@@ -14,12 +14,12 @@ const app = readFileSync(new URL('../src/App.jsx', import.meta.url), 'utf8');
 const runner = readFileSync(new URL('./verify-phase9-security-db.mjs', import.meta.url), 'utf8');
 const assertions = readFileSync(new URL('../supabase/tests/phase9/counter-workflow-assertions.sql', import.meta.url), 'utf8');
 
-test('Phase 9G-C remains directly before the sole repeatable Phase 9G-D terminal migration', () => {
+test('Phase 9G-C and Phase 9G-D remain before the repeatable Phase 9H terminal migration', () => {
   const entries = validatedPhase9MigrationEntries();
-  assert.equal(PHASE9_TERMINAL_MIGRATION, 'supabase/phase9gd_inventory_product_mappings.sql');
+  assert.equal(PHASE9_TERMINAL_MIGRATION, 'supabase/phase9h_inventory_session_location_scope.sql');
   assert.deepEqual(entries.filter((entry) => entry.repeatable).map((entry) => entry.path), [PHASE9_TERMINAL_MIGRATION]);
-  assert.equal(entries.at(-2).path, 'supabase/phase9gc_inventory_counter_mobile.sql');
-  assert.equal(entries.at(-3).path, 'supabase/phase9gb2_inventory_counter_replacement.sql');
+  assert.equal(entries.at(-2).path, 'supabase/phase9gd_inventory_product_mappings.sql');
+  assert.equal(entries.at(-3).path, 'supabase/phase9gc_inventory_counter_mobile.sql');
 });
 
 test('counter role requires verified Supabase identity and never inherits manager permissions', () => {

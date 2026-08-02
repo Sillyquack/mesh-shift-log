@@ -45,8 +45,8 @@ insert into public.inventory_locations (
   created_by_auth_user_id, updated_by_auth_user_id
 ) values
   ('a2000000-0000-4000-8000-000000000001', 'aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaa1', 'Organization A Location', 'PHASE9_LOC_A', 'storage', true, 1, '10000000-0000-4000-8000-000000000001', '10000000-0000-4000-8000-000000000001'),
-  ('b2000000-0000-4000-8000-000000000001', 'bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbb1', 'Organization B Location', 'PHASE9_LOC_B', 'storage', true, 1, '20000000-0000-4000-8000-000000000001', '20000000-0000-4000-8000-000000000001'),
-  ('c2000000-0000-4000-8000-000000000001', 'cccccccc-cccc-4ccc-8ccc-ccccccccccc1', 'Organization C Location', 'PHASE9_LOC_C', 'storage', true, 1, '30000000-0000-4000-8000-000000000001', '30000000-0000-4000-8000-000000000001');
+  ('b2000000-0000-4000-8000-000000000001', 'bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbb1', 'Organization B Fridge', 'CORNERBAR_MIDDLE_FRIDGE', 'fridge', true, 1, '20000000-0000-4000-8000-000000000001', '20000000-0000-4000-8000-000000000001'),
+  ('c2000000-0000-4000-8000-000000000001', 'cccccccc-cccc-4ccc-8ccc-ccccccccccc1', 'Organization C Fridge', 'CORNERBAR_LEFT_FRIDGE', 'fridge', true, 1, '30000000-0000-4000-8000-000000000001', '30000000-0000-4000-8000-000000000001');
 
 insert into public.inventory_location_products (
   id, organization_id, location_id, product_id, par_quantity, count_order,

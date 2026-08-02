@@ -70,8 +70,13 @@
     {
       "id": "phase9gd-product-mappings",
       "path": "supabase/phase9gd_inventory_product_mappings.sql",
+      "repeatable": false
+    },
+    {
+      "id": "phase9h-session-location-scope",
+      "path": "supabase/phase9h_inventory_session_location_scope.sql",
       "repeatable": true
     }
   ],
-  "terminalMigration": "supabase/phase9gd_inventory_product_mappings.sql"
+  "terminalMigration": "supabase/phase9h_inventory_session_location_scope.sql"
 }

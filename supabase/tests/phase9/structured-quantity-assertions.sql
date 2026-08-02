@@ -40,7 +40,7 @@ insert into public.inventory_products (
 insert into public.inventory_locations (
   id, organization_id, name, code, location_type, active, sort_order,
   created_by_auth_user_id, updated_by_auth_user_id
-) values ('9f200000-0000-4000-8000-000000000001', '9f9f9f9f-9f9f-4f9f-8f9f-9f9f9f9f9f01', 'Structured location', '9F-LOC', 'storage', true, 1, '9f000000-0000-4000-8000-000000000001', '9f000000-0000-4000-8000-000000000001');
+) values ('9f200000-0000-4000-8000-000000000001', '9f9f9f9f-9f9f-4f9f-8f9f-9f9f9f9f9f01', 'Structured fridge', 'CORNERBAR_LEFT_FRIDGE', 'fridge', true, 1, '9f000000-0000-4000-8000-000000000001', '9f000000-0000-4000-8000-000000000001');
 insert into public.inventory_location_products (
   id, organization_id, location_id, product_id, par_quantity, count_order,
   active, stock_policy, created_by_auth_user_id, updated_by_auth_user_id

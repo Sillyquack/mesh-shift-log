@@ -3176,6 +3176,11 @@ textarea {
   display: grid;
   grid-template-columns: repeat(2, minmax(0, 1fr));
   gap: 8px;
+  max-height: min(52vh, 520px);
+  min-width: 0;
+  overflow-x: hidden;
+  overflow-y: auto;
+  overscroll-behavior: contain;
   border: 1px solid var(--line);
   border-radius: 6px;
   padding: 12px;
@@ -3186,6 +3191,51 @@ textarea {
   display: flex;
   align-items: center;
   gap: 8px;
+}
+
+.inventory-location-option {
+  width: 100%;
+  min-width: 0;
+  min-height: 48px;
+  padding: 9px 10px;
+  border: 1px solid var(--line);
+  border-radius: 6px;
+  background: var(--surface);
+  color: var(--text);
+  cursor: pointer;
+}
+
+.inventory-location-option.selected {
+  border-color: color-mix(in srgb, var(--brand) 55%, var(--line));
+  background: color-mix(in srgb, var(--brand) 10%, var(--surface));
+}
+
+.inventory-location-option:focus-within {
+  outline: 3px solid color-mix(in srgb, var(--brand) 65%, transparent);
+  outline-offset: 2px;
+}
+
+.inventory-location-option:has(input:disabled) {
+  cursor: not-allowed;
+  opacity: 0.58;
+}
+
+.inventory-location-option input[type='checkbox'] {
+  appearance: auto;
+  width: 22px;
+  min-width: 22px;
+  height: 22px;
+  min-height: 22px;
+  flex: 0 0 22px;
+  margin: 0;
+  padding: 0;
+  accent-color: var(--brand);
+}
+
+.inventory-location-option > span {
+  min-width: 0;
+  overflow-wrap: break-word;
+  word-break: normal;
 }
 
 .inventory-preview {

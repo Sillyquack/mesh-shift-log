@@ -54,10 +54,11 @@ test('counter-only role routing remains automatic while managers retain the mana
   assert.match(workspace, /return <AuthorizedInventoryWorkspace \{\.\.\.props\} \/>/);
 });
 
-test('Phase 9G-C remains directly before the sole repeatable Phase 9G-D terminal migration', () => {
+test('Phase 9G-C and Phase 9G-D remain before the repeatable Phase 9H terminal migration', () => {
   const entries = validatedPhase9MigrationEntries();
-  assert.equal(PHASE9_TERMINAL_MIGRATION, 'supabase/phase9gd_inventory_product_mappings.sql');
-  assert.equal(entries.at(-2).path, 'supabase/phase9gc_inventory_counter_mobile.sql');
+  assert.equal(PHASE9_TERMINAL_MIGRATION, 'supabase/phase9h_inventory_session_location_scope.sql');
+  assert.equal(entries.at(-2).path, 'supabase/phase9gd_inventory_product_mappings.sql');
+  assert.equal(entries.at(-3).path, 'supabase/phase9gc_inventory_counter_mobile.sql');
   assert.deepEqual(entries.filter((entry) => entry.repeatable).map((entry) => entry.path), [PHASE9_TERMINAL_MIGRATION]);
 });
 

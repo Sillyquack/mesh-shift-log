@@ -4,6 +4,7 @@ import { dirname, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { spawn, spawnSync } from 'node:child_process';
 import {
+  PHASE9_PRODUCT_MAPPING_MIGRATION,
   PHASE9_SESSION_INTEGRITY_MIGRATION,
   PHASE9_TERMINAL_MIGRATION,
   validatedPhase9MigrationEntries,
@@ -29,11 +30,13 @@ const COUNTER_ASSERTION_PATH = resolve(ROOT, 'supabase/tests/phase9/counter-work
 const REPLACEMENT_FIXTURE_PATH = resolve(ROOT, 'supabase/tests/phase9/counter-replacement-fixtures.sql');
 const REPLACEMENT_ASSERTION_PATH = resolve(ROOT, 'supabase/tests/phase9/counter-replacement-assertions.sql');
 const MOBILE_ASSERTION_PATH = resolve(ROOT, 'supabase/tests/phase9/counter-mobile-assertions.sql');
+const SESSION_LOCATION_SCOPE_ASSERTION_PATH = resolve(ROOT, 'supabase/tests/phase9/session-location-scope-assertions.sql');
 const EXPECTED_ASSERTION_PASSES = 70;
 const EXPECTED_COUNTER_ASSERTION_PASSES = 47;
 const EXPECTED_REPLACEMENT_ASSERTION_PASSES = 28;
 const EXPECTED_MOBILE_ASSERTION_PASSES = 8;
 const EXPECTED_MAPPING_ASSERTION_PASSES = 23;
+const EXPECTED_SESSION_LOCATION_SCOPE_ASSERTION_PASSES = 10;
 let containerStarted = false;
 
 if (process.argv.length > 2) {
@@ -276,7 +279,7 @@ function verifyUnsafeOrderIsRejected(canonicalPaths) {
       'supabase/phase9a_inventory_stocktaking.sql',
     ]);
   } catch {
-    console.log('PASS migration runner rejects reapplying an older Phase 9 file after terminal Phase 9G-D');
+    console.log('PASS migration runner rejects reapplying an older Phase 9 file after terminal Phase 9H');
     return;
   }
   throw new Error('Unsafe post-Phase 9G migration reapplication was not rejected.');
@@ -346,10 +349,10 @@ async function main() {
   const paths = entries.map((entry) => entry.path);
   verifyUnsafeOrderIsRejected(paths);
   if (paths.at(-1) !== PHASE9_TERMINAL_MIGRATION) {
-    throw new Error('Phase 9G-D is not terminal.');
+    throw new Error('Phase 9H is not terminal.');
   }
   entries.forEach((entry) => resolveMigrationPath(entry.path));
-  if (![FIXTURE_PATH, ASSERTION_PATH, PRE_PHASE9D_FIXTURE_PATH, INTEGRITY_ASSERTION_PATH, IDENTITY_ASSERTION_PATH, STRUCTURED_ASSERTION_PATH, OPERATIONAL_ASSERTION_PATH, MAPPING_ASSERTION_PATH, COUNTER_FIXTURE_PATH, COUNTER_ASSERTION_PATH, REPLACEMENT_FIXTURE_PATH, REPLACEMENT_ASSERTION_PATH, MOBILE_ASSERTION_PATH].every(existsSync)) {
+  if (![FIXTURE_PATH, ASSERTION_PATH, PRE_PHASE9D_FIXTURE_PATH, INTEGRITY_ASSERTION_PATH, IDENTITY_ASSERTION_PATH, STRUCTURED_ASSERTION_PATH, OPERATIONAL_ASSERTION_PATH, MAPPING_ASSERTION_PATH, COUNTER_FIXTURE_PATH, COUNTER_ASSERTION_PATH, REPLACEMENT_FIXTURE_PATH, REPLACEMENT_ASSERTION_PATH, MOBILE_ASSERTION_PATH, SESSION_LOCATION_SCOPE_ASSERTION_PATH].every(existsSync)) {
     throw new Error('Phase 9 executable security SQL is missing.');
   }
 
@@ -431,6 +434,16 @@ async function main() {
   }
   mobilePassLines.forEach((line) => console.log(line));
   console.log(`Executable PostgreSQL mobile-counter assertions: ${mobilePassLines.length}/${mobilePassLines.length} passed.`);
+  const sessionLocationScopeAssertions = psql(readFileSync(SESSION_LOCATION_SCOPE_ASSERTION_PATH, 'utf8'));
+  const sessionLocationScopePassLines = `${sessionLocationScopeAssertions.stdout}\n${sessionLocationScopeAssertions.stderr}`
+    .split('\n')
+    .filter((line) => line.includes('PASS '))
+    .map((line) => line.replace(/^.*PASS /, 'PASS '));
+  if (sessionLocationScopePassLines.length !== EXPECTED_SESSION_LOCATION_SCOPE_ASSERTION_PASSES) {
+    throw new Error(`Expected ${EXPECTED_SESSION_LOCATION_SCOPE_ASSERTION_PASSES} executable session-location assertion passes, received ${sessionLocationScopePassLines.length}.`);
+  }
+  sessionLocationScopePassLines.forEach((line) => console.log(line));
+  console.log(`Executable PostgreSQL session-location assertions: ${sessionLocationScopePassLines.length}/${sessionLocationScopePassLines.length} passed.`);
   await verifyConcurrentCreation();
   await verifyConcurrentCounterSubmission();
   await verifyConcurrentCounterReplacement();
@@ -448,7 +461,7 @@ async function main() {
   passLines.forEach((line) => console.log(line));
   console.log(`Executable PostgreSQL security assertions: ${passLines.length}/${passLines.length} passed.`);
 
-  const terminalSql = readFileSync(resolveMigrationPath(PHASE9_TERMINAL_MIGRATION), 'utf8');
+  const productMappingSql = readFileSync(resolveMigrationPath(PHASE9_PRODUCT_MAPPING_MIGRATION), 'utf8');
   const historySnapshotSql = String.raw`
     select md5(
       coalesce((select jsonb_agg(to_jsonb(session) order by session.id)::text
@@ -480,10 +493,10 @@ async function main() {
     );
   `;
   const historyBeforeMappings = psql(historySnapshotSql, { tuplesOnly: true }).stdout.trim();
-  psql(terminalSql, { singleTransaction: true });
-  console.log(`PASS Phase 9G-D mappings applied after operational setup: ${PHASE9_TERMINAL_MIGRATION}`);
+  psql(productMappingSql, { singleTransaction: true });
+  console.log(`PASS Phase 9G-D mappings applied after operational setup: ${PHASE9_PRODUCT_MAPPING_MIGRATION}`);
   const mappedStateBeforeReplay = psql(mappedSnapshotSql, { tuplesOnly: true }).stdout.trim();
-  psql(terminalSql, { singleTransaction: true });
+  psql(productMappingSql, { singleTransaction: true });
   const mappedStateAfterReplay = psql(mappedSnapshotSql, { tuplesOnly: true }).stdout.trim();
   const historyAfterMappings = psql(historySnapshotSql, { tuplesOnly: true }).stdout.trim();
   if (!mappedStateBeforeReplay || mappedStateBeforeReplay !== mappedStateAfterReplay) {
