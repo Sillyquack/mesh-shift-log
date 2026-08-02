@@ -3338,6 +3338,61 @@ label.inventory-danger-option {
   font-size: 1.2rem;
 }
 
+.inventory-manager-primary-quantity > span,
+.inventory-field-help {
+  color: var(--muted);
+  font-size: 0.82rem;
+}
+
+.inventory-manager-primary-quantity input {
+  min-height: 54px;
+  border-width: 2px;
+  font-size: 1.25rem;
+  font-weight: 750;
+}
+
+.inventory-field-help {
+  display: block;
+  margin-top: 5px;
+  line-height: 1.4;
+}
+
+.inventory-line-save-status {
+  display: grid;
+  gap: 4px;
+  min-width: 0;
+  padding: 9px 10px;
+  border: 1px solid var(--line);
+  border-radius: 7px;
+  background: var(--surface-strong);
+  font-size: 0.88rem;
+  overflow-wrap: break-word;
+}
+
+.inventory-line-save-status.saved {
+  border-color: color-mix(in srgb, var(--brand) 48%, var(--line));
+}
+
+.inventory-line-save-status.unsaved,
+.inventory-line-save-status.saving,
+.inventory-line-save-status.invalid,
+.inventory-line-save-status.failed,
+.inventory-line-save-status.stale {
+  border-color: color-mix(in srgb, var(--important) 55%, var(--line));
+}
+
+.inventory-line-save-status.invalid,
+.inventory-line-save-status.failed,
+.inventory-line-save-status.stale {
+  color: var(--important);
+}
+
+.inventory-line-save-status > button {
+  width: fit-content;
+  min-height: 44px;
+  margin-top: 4px;
+}
+
 .shortage-text,
 .error-text,
 .danger-text,
@@ -3868,6 +3923,10 @@ label.inventory-danger-option {
   }
 
   .inventory-dormant-check button {
+    width: 100%;
+  }
+
+  .inventory-line-save-status > button {
     width: 100%;
   }
 }

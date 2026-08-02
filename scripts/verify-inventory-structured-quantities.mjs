@@ -10,6 +10,10 @@ import {
   parseCsvRows,
 } from '../src/data/inventoryCsv.js';
 import {
+  createInventoryManagerLineDraft,
+  evaluateInventoryManagerLineDraft,
+} from '../src/data/inventoryManagerLineDraft.js';
+import {
   addInventoryDecimals,
   calculateStructuredInventoryQuantity,
   decomposeInventoryTarget,
@@ -17,6 +21,7 @@ import {
   inventoryBaseUnit,
   inventoryDecimalDraftState,
   inventoryStructuredComponentLabel,
+  INVENTORY_COUNT_MODES,
   normalizeInventoryDecimal,
 } from '../src/data/inventoryStructuredQuantities.js';
 import {
@@ -214,10 +219,29 @@ test('client query results include snapshots and all structured components', () 
   }
 });
 
-test('frontend keeps structured drafts keyed by stable line ID', () => {
-  assert.match(workspace, /structuredDrafts\[line\.id\]/);
-  assert.match(workspace, /\[line\.id\]: value/);
-  assert.doesNotMatch(workspace, /structuredDrafts\[[^\]]*productName/);
+test('frontend manager draft preserves structured components and their exact total', () => {
+  const line = {
+    id: 'stable-line-id',
+    countMode: INVENTORY_COUNT_MODES.CONTAINER_PLUS_VOLUME,
+    containerCapacityLiters: '0.7',
+    countedQuantityExact: '2.5',
+    countedWholeUnitsExact: '3',
+    countedOpenVolumeLitersExact: '0.4',
+    countFullCases: null,
+    countLooseQuantity: null,
+    countedFullKegsExact: null,
+    countedPartialKegFractionExact: null,
+    countMethod: 'manual',
+    countStatus: 'counted',
+    note: '',
+    updatedAt: '2026-08-02T21:00:00.000Z',
+  };
+  const draft = createInventoryManagerLineDraft(line);
+  const evaluated = evaluateInventoryManagerLineDraft(line, draft);
+  assert.equal(draft.wholeUnits, '3');
+  assert.equal(draft.openVolumeLiters, '0.4');
+  assert.equal(evaluated.countedQuantity, '2.5');
+  assert.equal(evaluated.dirty, false);
 });
 
 test('session export includes stable identity, mode, snapshots, components, total, target, and gap', () => {

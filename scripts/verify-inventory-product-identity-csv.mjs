@@ -71,8 +71,8 @@ test('ambiguous display labels receive a non-prominent stable reference', () => 
 test('draft state remains keyed by stable count-line IDs', () => {
   const drafts = Object.fromEntries(identityFixtures.latest.map((line, index) => [line.id, index]));
   assert.deepEqual(Object.keys(drafts), ['latest-a', 'latest-b', 'latest-a-2']);
-  assert.match(inventoryWorkspaceSource, /drafts\[line\.id\]/);
-  assert.doesNotMatch(inventoryWorkspaceSource, /drafts\[[^\]]*productName/);
+  assert.match(inventoryWorkspaceSource, /lineDrafts\[line\.id\]/);
+  assert.doesNotMatch(inventoryWorkspaceSource, /lineDrafts\[[^\]]*productName/);
 });
 
 test('identity-sensitive projections fail loudly when a count-line identity is incomplete', () => {

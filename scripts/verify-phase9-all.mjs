@@ -13,6 +13,7 @@ const commands = [
   ['npm', ['run', 'verify:inventory-counter-mobile']],
   ['npm', ['run', 'verify:inventory-session-location-scope']],
   ['npm', ['run', 'verify:inventory-confirmation-dialog']],
+  ['npm', ['run', 'verify:inventory-variance-notes']],
   ['npm', ['run', 'verify:phase9-security-db']],
   ['npm', ['run', 'build']],
 ];

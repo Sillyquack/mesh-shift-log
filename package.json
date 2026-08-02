@@ -18,6 +18,7 @@
     "verify:inventory-counter-mobile": "node scripts/verify-inventory-counter-mobile.mjs",
     "verify:inventory-session-location-scope": "node scripts/verify-inventory-session-location-scope.mjs",
     "verify:inventory-confirmation-dialog": "node scripts/verify-inventory-confirmation-dialog.mjs",
+    "verify:inventory-variance-notes": "node scripts/verify-inventory-variance-notes.mjs",
     "verify:phase9-security-db": "node scripts/verify-phase9-security-db.mjs",
     "verify:phase9-all": "node scripts/verify-phase9-all.mjs",
     "preview": "vite preview",
