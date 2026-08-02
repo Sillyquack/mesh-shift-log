@@ -10,11 +10,13 @@ insert into auth.users (id) values
   ('10000000-0000-4000-8000-000000000006'),
   ('10000000-0000-4000-8000-000000000007'),
   ('10000000-0000-4000-8000-000000000008'),
-  ('20000000-0000-4000-8000-000000000001');
+  ('20000000-0000-4000-8000-000000000001'),
+  ('30000000-0000-4000-8000-000000000001');
 
 insert into public.organizations (id, name, slug) values
   ('aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaa1', 'Phase 9 Test Organization A', 'phase9-test-a'),
-  ('bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbb1', 'Phase 9 Test Organization B', 'phase9-test-b');
+  ('bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbb1', 'Phase 9 Test Organization B', 'phase9-test-b'),
+  ('cccccccc-cccc-4ccc-8ccc-ccccccccccc1', 'Phase 9 Test Organization C', 'phase9-test-c');
 
 insert into public.user_profiles (
   id, organization_id, display_name, role, active, is_shared_device, shared_device_label
@@ -27,28 +29,32 @@ insert into public.user_profiles (
   ('10000000-0000-4000-8000-000000000006', 'aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaa1', 'Organization A Shared Manager', 'manager', true, true, 'Shared manager fixture'),
   ('10000000-0000-4000-8000-000000000007', 'aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaa1', 'Organization A Inactive Manager', 'manager', false, false, null),
   ('10000000-0000-4000-8000-000000000008', null, 'Null Organization Manager', 'manager', true, false, null),
-  ('20000000-0000-4000-8000-000000000001', 'bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbb1', 'Organization B Manager', 'manager', true, false, null);
+  ('20000000-0000-4000-8000-000000000001', 'bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbb1', 'Organization B Manager', 'manager', true, false, null),
+  ('30000000-0000-4000-8000-000000000001', 'cccccccc-cccc-4ccc-8ccc-ccccccccccc1', 'Organization C Manager', 'manager', true, false, null);
 
 insert into public.inventory_products (
   id, organization_id, name, sku, category, unit_label, active, sort_order,
   created_by_auth_user_id, updated_by_auth_user_id
 ) values
   ('a1000000-0000-4000-8000-000000000001', 'aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaa1', 'Organization A Product', 'PHASE9-A', 'Test', 'piece', true, 1, '10000000-0000-4000-8000-000000000001', '10000000-0000-4000-8000-000000000001'),
-  ('b1000000-0000-4000-8000-000000000001', 'bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbb1', 'Organization B Product', 'PHASE9-B', 'Test', 'piece', true, 1, '20000000-0000-4000-8000-000000000001', '20000000-0000-4000-8000-000000000001');
+  ('b1000000-0000-4000-8000-000000000001', 'bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbb1', 'Organization B Product', 'PHASE9-B', 'Test', 'piece', true, 1, '20000000-0000-4000-8000-000000000001', '20000000-0000-4000-8000-000000000001'),
+  ('c1000000-0000-4000-8000-000000000001', 'cccccccc-cccc-4ccc-8ccc-ccccccccccc1', 'Organization C Product', 'PHASE9-C', 'Test', 'piece', true, 1, '30000000-0000-4000-8000-000000000001', '30000000-0000-4000-8000-000000000001');
 
 insert into public.inventory_locations (
   id, organization_id, name, code, location_type, active, sort_order,
   created_by_auth_user_id, updated_by_auth_user_id
 ) values
   ('a2000000-0000-4000-8000-000000000001', 'aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaa1', 'Organization A Location', 'PHASE9_LOC_A', 'storage', true, 1, '10000000-0000-4000-8000-000000000001', '10000000-0000-4000-8000-000000000001'),
-  ('b2000000-0000-4000-8000-000000000001', 'bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbb1', 'Organization B Location', 'PHASE9_LOC_B', 'storage', true, 1, '20000000-0000-4000-8000-000000000001', '20000000-0000-4000-8000-000000000001');
+  ('b2000000-0000-4000-8000-000000000001', 'bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbb1', 'Organization B Location', 'PHASE9_LOC_B', 'storage', true, 1, '20000000-0000-4000-8000-000000000001', '20000000-0000-4000-8000-000000000001'),
+  ('c2000000-0000-4000-8000-000000000001', 'cccccccc-cccc-4ccc-8ccc-ccccccccccc1', 'Organization C Location', 'PHASE9_LOC_C', 'storage', true, 1, '30000000-0000-4000-8000-000000000001', '30000000-0000-4000-8000-000000000001');
 
 insert into public.inventory_location_products (
   id, organization_id, location_id, product_id, par_quantity, count_order,
   active, stock_policy, created_by_auth_user_id, updated_by_auth_user_id
 ) values
   ('a3000000-0000-4000-8000-000000000001', 'aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaa1', 'a2000000-0000-4000-8000-000000000001', 'a1000000-0000-4000-8000-000000000001', 10, 1, true, 'exact_par', '10000000-0000-4000-8000-000000000001', '10000000-0000-4000-8000-000000000001'),
-  ('b3000000-0000-4000-8000-000000000001', 'bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbb1', 'b2000000-0000-4000-8000-000000000001', 'b1000000-0000-4000-8000-000000000001', 20, 1, true, 'exact_par', '20000000-0000-4000-8000-000000000001', '20000000-0000-4000-8000-000000000001');
+  ('b3000000-0000-4000-8000-000000000001', 'bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbb1', 'b2000000-0000-4000-8000-000000000001', 'b1000000-0000-4000-8000-000000000001', 20, 1, true, 'exact_par', '20000000-0000-4000-8000-000000000001', '20000000-0000-4000-8000-000000000001'),
+  ('c3000000-0000-4000-8000-000000000001', 'cccccccc-cccc-4ccc-8ccc-ccccccccccc1', 'c2000000-0000-4000-8000-000000000001', 'c1000000-0000-4000-8000-000000000001', 30, 1, true, 'exact_par', '30000000-0000-4000-8000-000000000001', '30000000-0000-4000-8000-000000000001');
 
 insert into public.inventory_count_sessions (
   id, organization_id, title, count_type, status, count_date,

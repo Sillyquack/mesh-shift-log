@@ -30,8 +30,13 @@
     {
       "id": "phase9c-security-hardening",
       "path": "supabase/phase9c_inventory_security_hardening.sql",
+      "repeatable": false
+    },
+    {
+      "id": "phase9d-session-integrity",
+      "path": "supabase/phase9d_inventory_session_integrity.sql",
       "repeatable": true
     }
   ],
-  "terminalSecurityMigration": "supabase/phase9c_inventory_security_hardening.sql"
+  "terminalMigration": "supabase/phase9d_inventory_session_integrity.sql"
 }

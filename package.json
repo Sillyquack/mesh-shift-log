@@ -8,6 +8,7 @@
     "build": "vite build",
     "verify:inventory-permissions": "node scripts/verify-inventory-permissions.mjs",
     "verify:phase9a": "node scripts/verify-phase9a.mjs",
+    "verify:inventory-session-lifecycle": "node scripts/verify-inventory-session-lifecycle.mjs",
     "verify:phase9-security-db": "node scripts/verify-phase9-security-db.mjs",
     "verify:phase9-all": "node scripts/verify-phase9-all.mjs",
     "preview": "vite preview",

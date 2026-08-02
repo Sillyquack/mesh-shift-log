@@ -2,9 +2,9 @@ import { randomUUID } from 'node:crypto';
 import { existsSync, readFileSync } from 'node:fs';
 import { dirname, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
-import { spawnSync } from 'node:child_process';
+import { spawn, spawnSync } from 'node:child_process';
 import {
-  PHASE9_TERMINAL_SECURITY_MIGRATION,
+  PHASE9_TERMINAL_MIGRATION,
   validatedPhase9MigrationEntries,
   validatePhase9MigrationOrder,
 } from './phase9MigrationOrder.mjs';
@@ -17,6 +17,8 @@ const CONTAINER = `mesh-shift-log-phase9-security-${process.pid}-${randomUUID().
 const PASSWORD = `phase9-${randomUUID()}`;
 const FIXTURE_PATH = resolve(ROOT, 'supabase/tests/phase9/security-fixtures.sql');
 const ASSERTION_PATH = resolve(ROOT, 'supabase/tests/phase9/security-assertions.sql');
+const PRE_PHASE9D_FIXTURE_PATH = resolve(ROOT, 'supabase/tests/phase9/pre-phase9d-compatibility.sql');
+const INTEGRITY_ASSERTION_PATH = resolve(ROOT, 'supabase/tests/phase9/session-integrity-assertions.sql');
 const EXPECTED_ASSERTION_PASSES = 70;
 let containerStarted = false;
 
@@ -44,14 +46,89 @@ function docker(args, options) {
   return command('docker', args, options);
 }
 
-function psql(sql, { singleTransaction = false, tuplesOnly = false } = {}) {
+function psql(sql, { singleTransaction = false, tuplesOnly = false, allowFailure = false } = {}) {
   const args = [
     'exec', '-i', CONTAINER,
     'psql', '--no-psqlrc', '--set=ON_ERROR_STOP=1', `--username=${MIGRATION_ROLE}`, `--dbname=${DATABASE}`,
   ];
   if (singleTransaction) args.push('--single-transaction');
   if (tuplesOnly) args.push('--tuples-only', '--no-align');
-  return docker(args, { input: sql, timeout: 60000 });
+  return docker(args, { input: sql, timeout: 60000, allowFailure });
+}
+
+function concurrentPsql(sql) {
+  return new Promise((resolvePromise, rejectPromise) => {
+    const child = spawn('docker', [
+      'exec', '-i', CONTAINER,
+      'psql', '--no-psqlrc', '--quiet', '--tuples-only', '--no-align', '--set=ON_ERROR_STOP=1',
+      `--username=${MIGRATION_ROLE}`, `--dbname=${DATABASE}`,
+    ], { cwd: ROOT, stdio: ['pipe', 'pipe', 'pipe'] });
+    let stdout = '';
+    let stderr = '';
+    child.stdout.on('data', (chunk) => { stdout += chunk; });
+    child.stderr.on('data', (chunk) => { stderr += chunk; });
+    child.on('error', rejectPromise);
+    child.on('close', (status) => resolvePromise({ status, stdout, stderr }));
+    child.stdin.end(sql);
+  });
+}
+
+function authenticatedSql(userId, statement) {
+  return String.raw`
+    do $block$ begin perform set_config('request.jwt.claim.sub', '${userId}', false); end $block$;
+    set role authenticated;
+    ${statement}
+  `;
+}
+
+function lastUuid(output) {
+  return output.match(/[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}/gi)?.at(-1) || '';
+}
+
+async function verifyConcurrentCreation() {
+  const managerId = '30000000-0000-4000-8000-000000000001';
+  const locationId = 'c2000000-0000-4000-8000-000000000001';
+  const sameKey = '94000000-0000-4000-8000-000000000001';
+  const createStatement = (title, key) => authenticatedSql(managerId, String.raw`
+    select public.create_inventory_count_session(
+      '${title}', 'daily', '${key}', current_date, array['${locationId}']::uuid[], null
+    ) #>> '{session,id}';
+  `);
+  const sameResults = await Promise.all([
+    concurrentPsql(createStatement('Concurrent idempotent count', sameKey)),
+    concurrentPsql(createStatement('Concurrent idempotent count', sameKey)),
+  ]);
+  const sameIds = sameResults.map((result) => lastUuid(result.stdout));
+  if (sameResults.some((result) => result.status !== 0) || !sameIds[0] || sameIds[0] !== sameIds[1]) {
+    throw new Error(`Concurrent same-key creation did not converge:\n${JSON.stringify(sameResults)}`);
+  }
+  const activeAfterReplay = psql(String.raw`
+    select count(*) from public.inventory_count_sessions
+    where organization_id = 'cccccccc-cccc-4ccc-8ccc-ccccccccccc1'
+      and status in ('draft','in_progress','completed');
+  `, { tuplesOnly: true }).stdout.trim();
+  if (activeAfterReplay !== '1') throw new Error('Concurrent same-key creation produced more than one active session.');
+  console.log('PASS concurrent same-key session creation returns one shared session');
+
+  psql(authenticatedSql(managerId, String.raw`
+    select public.cancel_inventory_count_session('${sameIds[0]}', 'Release concurrency fixture');
+  `));
+  const differentResults = await Promise.all([
+    concurrentPsql(createStatement('Concurrent different-key count A', '94000000-0000-4000-8000-000000000002')),
+    concurrentPsql(createStatement('Concurrent different-key count B', '94000000-0000-4000-8000-000000000003')),
+  ]);
+  const succeeded = differentResults.filter((result) => result.status === 0);
+  const failed = differentResults.filter((result) => result.status !== 0);
+  if (succeeded.length !== 1 || failed.length !== 1 || !/already has an active Stock Count/i.test(failed[0].stderr)) {
+    throw new Error(`Concurrent different-key creation did not reject exactly one request:\n${JSON.stringify(differentResults)}`);
+  }
+  const activeAfterRace = psql(String.raw`
+    select count(*) from public.inventory_count_sessions
+    where organization_id = 'cccccccc-cccc-4ccc-8ccc-ccccccccccc1'
+      and status in ('draft','in_progress','completed');
+  `, { tuplesOnly: true }).stdout.trim();
+  if (activeAfterRace !== '1') throw new Error('Concurrent different-key creation did not leave exactly one active session.');
+  console.log('PASS concurrent different-key session creation accepts exactly one active session');
 }
 
 function cleanup() {
@@ -85,10 +162,10 @@ function verifyUnsafeOrderIsRejected(canonicalPaths) {
       'supabase/phase9a_inventory_stocktaking.sql',
     ]);
   } catch {
-    console.log('PASS migration runner rejects reapplying an older Phase 9 file after Phase 9C');
+    console.log('PASS migration runner rejects reapplying an older Phase 9 file after Phase 9D');
     return;
   }
-  throw new Error('Unsafe post-Phase 9C migration reapplication was not rejected.');
+  throw new Error('Unsafe post-Phase 9D migration reapplication was not rejected.');
 }
 
 function reportDatabaseState() {
@@ -154,11 +231,11 @@ async function main() {
   const entries = validatedPhase9MigrationEntries();
   const paths = entries.map((entry) => entry.path);
   verifyUnsafeOrderIsRejected(paths);
-  if (paths.at(-1) !== PHASE9_TERMINAL_SECURITY_MIGRATION) {
-    throw new Error('Phase 9C is not terminal.');
+  if (paths.at(-1) !== PHASE9_TERMINAL_MIGRATION) {
+    throw new Error('Phase 9D is not terminal.');
   }
   entries.forEach((entry) => resolveMigrationPath(entry.path));
-  if (!existsSync(FIXTURE_PATH) || !existsSync(ASSERTION_PATH)) {
+  if (![FIXTURE_PATH, ASSERTION_PATH, PRE_PHASE9D_FIXTURE_PATH, INTEGRITY_ASSERTION_PATH].every(existsSync)) {
     throw new Error('Phase 9 executable security SQL is missing.');
   }
 
@@ -197,6 +274,23 @@ async function main() {
   console.log('Canonical migration order:');
   for (const [index, entry] of entries.entries()) {
     const sql = readFileSync(resolveMigrationPath(entry.path), 'utf8');
+    if (entry.path === PHASE9_TERMINAL_MIGRATION) {
+      psql(readFileSync(PRE_PHASE9D_FIXTURE_PATH, 'utf8'), { singleTransaction: true });
+      console.log('PASS pre-Phase 9D approved compatibility fixture installed');
+      const duplicatePreflight = psql(String.raw`
+        begin;
+        insert into public.organizations (id, name, slug) values
+          ('eeeeeeee-eeee-4eee-8eee-eeeeeeeeeee1', 'Phase 9D Conflict Probe', 'phase9d-conflict-probe');
+        insert into public.inventory_count_sessions (organization_id, title, count_type, status, started_by_name) values
+          ('eeeeeeee-eeee-4eee-8eee-eeeeeeeeeee1', 'Conflict one', 'daily', 'in_progress', 'Probe'),
+          ('eeeeeeee-eeee-4eee-8eee-eeeeeeeeeee1', 'Conflict two', 'daily', 'draft', 'Probe');
+        ${sql}
+      `, { allowFailure: true });
+      if (duplicatePreflight.status === 0 || !/cannot enforce one active Stock Count/i.test(`${duplicatePreflight.stdout}\n${duplicatePreflight.stderr}`)) {
+        throw new Error('Phase 9D duplicate-active preflight did not fail with the expected diagnostic.');
+      }
+      console.log('PASS Phase 9D rejects legacy duplicate-active data without modifying it');
+    }
     psql(sql, { singleTransaction: true });
     console.log(`PASS ${index + 1}. ${entry.path}`);
   }
@@ -209,6 +303,7 @@ async function main() {
 
   psql(readFileSync(FIXTURE_PATH, 'utf8'), { singleTransaction: true });
   console.log('PASS disposable organizations, Auth users, profiles, and inventory fixtures');
+  await verifyConcurrentCreation();
 
   const assertions = psql(readFileSync(ASSERTION_PATH, 'utf8'));
   const passLines = `${assertions.stdout}\n${assertions.stderr}`
@@ -222,6 +317,17 @@ async function main() {
   }
   passLines.forEach((line) => console.log(line));
   console.log(`Executable PostgreSQL security assertions: ${passLines.length}/${passLines.length} passed.`);
+
+  const integrityAssertions = psql(readFileSync(INTEGRITY_ASSERTION_PATH, 'utf8'));
+  const integrityPassLines = `${integrityAssertions.stdout}\n${integrityAssertions.stderr}`
+    .split('\n')
+    .filter((line) => line.includes('PASS '))
+    .map((line) => line.replace(/^.*PASS /, 'PASS '));
+  if (integrityPassLines.length !== 36) {
+    throw new Error(`Expected 36 executable integrity assertion passes, received ${integrityPassLines.length}.`);
+  }
+  integrityPassLines.forEach((line) => console.log(line));
+  console.log(`Executable PostgreSQL session-integrity assertions: ${integrityPassLines.length}/${integrityPassLines.length} passed.`);
   reportDatabaseState();
 }
 

@@ -179,16 +179,20 @@ select phase9_test.assert_lives(
 );
 select phase9_test.assert_lives(
   $sql$select public.set_inventory_count_line_quantity(
-    'a5000000-0000-4000-8000-000000000001', 4, 'Executable security test'
+    input_line_id => 'a5000000-0000-4000-8000-000000000001',
+    input_counted_quantity => 4,
+    input_note => 'Executable security test',
+    input_expected_updated_at => (select updated_at from public.inventory_count_lines where id = 'a5000000-0000-4000-8000-000000000001')
   )$sql$,
   'DB-RPC-4: Organization A manager updates an Organization A count line'
 );
 select phase9_test.assert_true(
-  (public.create_inventory_count_session(
-    'Actor identity test', 'daily', current_date,
-    array['a2000000-0000-4000-8000-000000000001']::uuid[],
-    'Forged Organization B operator', null
-  ) #>> '{session,started_by_name}') = 'Organization A Manager',
+  (public.set_inventory_count_line_quantity(
+    input_line_id => 'a5000000-0000-4000-8000-000000000001',
+    input_counted_quantity => 5,
+    input_actor_name => 'Forged Organization B operator',
+    input_expected_updated_at => (select updated_at from public.inventory_count_lines where id = 'a5000000-0000-4000-8000-000000000001')
+  ) ->> 'counted_by_name') = 'Organization A Manager',
   'DB-RPC-5: arbitrary operator text cannot replace the authenticated manager identity'
 );
 select phase9_test.assert_lives(
@@ -223,8 +227,8 @@ select phase9_test.assert_sqlstate(
 );
 select phase9_test.assert_sqlstate(
   $sql$select public.create_inventory_count_session(
-    'Cross-organization count', 'daily', current_date,
-    array['b2000000-0000-4000-8000-000000000001']::uuid[], null, null
+    'Cross-organization count', 'daily', '90000000-0000-4000-8000-000000000001', current_date,
+    array['b2000000-0000-4000-8000-000000000001']::uuid[], null
   )$sql$,
   'P0001',
   'DB-TENANT-4: Organization A manager cannot create a session from a B location ID'
@@ -307,7 +311,7 @@ begin
       ('copy standards', $sql$select public.copy_inventory_location_standards('a2000000-0000-4000-8000-000000000001', 'b2000000-0000-4000-8000-000000000001')$sql$),
       ('setup template', $sql$select public.setup_mesh_youngstorget_inventory_locations()$sql$),
       ('bulk standards', $sql$select public.bulk_upsert_inventory_location_standards('a2000000-0000-4000-8000-000000000001', '[]'::jsonb)$sql$),
-      ('create session', $sql$select public.create_inventory_count_session('Denied', 'daily', current_date, array['a2000000-0000-4000-8000-000000000001']::uuid[], 'Arbitrary operator', null)$sql$),
+      ('create session', $sql$select public.create_inventory_count_session('Denied', 'daily', '90000000-0000-4000-8000-000000000002', current_date, array['a2000000-0000-4000-8000-000000000001']::uuid[], null)$sql$),
       ('set line quantity', $sql$select public.set_inventory_count_line_quantity('a5000000-0000-4000-8000-000000000001', 1)$sql$),
       ('set line cases', $sql$select public.set_inventory_count_line_case_quantity('a5000000-0000-4000-8000-000000000001', 1, 0)$sql$),
       ('mark line use par', $sql$select public.mark_inventory_count_line_use_par('a5000000-0000-4000-8000-000000000001')$sql$),
@@ -318,7 +322,7 @@ begin
       ('complete location', $sql$select public.complete_inventory_count_location('a4000000-0000-4000-8000-000000000001', 'a2000000-0000-4000-8000-000000000001')$sql$),
       ('complete session', $sql$select public.complete_inventory_count_session('a4000000-0000-4000-8000-000000000001')$sql$),
       ('approve session', $sql$select public.approve_inventory_count_session('a4000000-0000-4000-8000-000000000001')$sql$),
-      ('reopen session', $sql$select public.reopen_inventory_count_session('a4000000-0000-4000-8000-000000000001', 'Denied')$sql$),
+      ('create correction', $sql$select public.create_inventory_correction_session('a4000000-0000-4000-8000-000000000001', 'Denied', '90000000-0000-4000-8000-000000000003')$sql$),
       ('cancel session', $sql$select public.cancel_inventory_count_session('a4000000-0000-4000-8000-000000000001', 'Denied')$sql$),
       ('import catalog', $sql$select public.import_inventory_catalog('[{"name":"Denied","unitLabel":"piece"}]'::jsonb, false)$sql$)
     ) denied_rpc(label, statement)
@@ -343,7 +347,7 @@ reset role;
 select set_config('request.jwt.claim.sub', '10000000-0000-4000-8000-000000000004', false);
 set role authenticated;
 select phase9_test.assert_true(not exists (select 1 from public.inventory_products), 'DB-READ-5: event floor manager cannot read inventory');
-select phase9_test.assert_sqlstate($sql$select public.create_inventory_count_session('Denied EFM', 'daily', current_date, null, 'Arbitrary operator', null)$sql$, 'P0001', 'DB-RPC-DENY-2: event floor manager and operator text are rejected');
+select phase9_test.assert_sqlstate($sql$select public.create_inventory_count_session('Denied EFM', 'daily', '90000000-0000-4000-8000-000000000004', current_date, null, null)$sql$, 'P0001', 'DB-RPC-DENY-2: event floor manager is rejected');
 reset role;
 
 select set_config('request.jwt.claim.sub', '10000000-0000-4000-8000-000000000005', false);
@@ -409,18 +413,18 @@ insert into phase9_test.expected_authenticated_functions (signature) values
   ('public.copy_inventory_location_standards(uuid,uuid,boolean)'),
   ('public.setup_mesh_youngstorget_inventory_locations()'),
   ('public.bulk_upsert_inventory_location_standards(uuid,jsonb)'),
-  ('public.create_inventory_count_session(text,text,date,uuid[],text,text)'),
+  ('public.create_inventory_count_session(text,text,uuid,date,uuid[],text)'),
+  ('public.create_inventory_correction_session(uuid,text,uuid)'),
   ('public.set_inventory_count_line_quantity(uuid,numeric,text,text,timestamp with time zone)'),
   ('public.set_inventory_count_line_case_quantity(uuid,integer,numeric,text,text,timestamp with time zone)'),
   ('public.mark_inventory_count_line_use_par(uuid,text,text,timestamp with time zone)'),
   ('public.clear_inventory_count_line(uuid,text,timestamp with time zone)'),
   ('public.skip_inventory_count_line(uuid,text,text,timestamp with time zone)'),
-  ('public.mark_inventory_location_use_par(uuid,uuid,boolean,text)'),
+  ('public.mark_inventory_location_use_par(uuid,uuid,boolean,text,timestamp with time zone)'),
   ('public.confirm_inventory_count_line_unchanged(uuid,timestamp with time zone)'),
   ('public.complete_inventory_count_location(uuid,uuid,text)'),
   ('public.complete_inventory_count_session(uuid,text,boolean,text)'),
   ('public.approve_inventory_count_session(uuid,text)'),
-  ('public.reopen_inventory_count_session(uuid,text)'),
   ('public.cancel_inventory_count_session(uuid,text)'),
   ('public.import_inventory_catalog(jsonb,boolean)');
 

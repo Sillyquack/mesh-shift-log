@@ -17,6 +17,14 @@ import {
   suggestInventoryCsvMapping,
 } from '../data/inventoryCsv.js';
 import {
+  ensureInventoryIdempotencyKey,
+  inventorySessionExceptionSummary,
+  inventorySessionKindLabel,
+  inventorySessionLockLabel,
+  isInventorySessionActive,
+  isInventorySessionEditable,
+} from '../data/inventorySessionLifecycle.js';
+import {
   approveInventoryCountSession,
   cancelInventoryCountSession,
   clearInventoryCountLine,
@@ -25,12 +33,12 @@ import {
   confirmInventoryCountLineUnchanged,
   copyInventoryStandards,
   createInventoryCountSession,
+  createInventoryCorrectionSession,
   getInventoryCountSession,
   importInventoryCatalog,
   loadInventoryWorkspace,
   markInventoryCountLineUsePar,
   markInventoryLocationUsePar,
-  reopenInventoryCountSession,
   saveInventoryLocation,
   saveInventoryProduct,
   saveInventoryStandardsBulk,
@@ -150,7 +158,7 @@ function InventoryOverview({ sessions, activeSession, lines, locations, onOpenSe
       {activeSession ? (
         <section className="inventory-panel">
           <div className="inventory-panel-heading">
-            <div><p className="eyebrow">Active count</p><h2>{activeSession.title}</h2><p className="muted">{activeSession.countDate}</p></div>
+            <div><p className="eyebrow">{activeSession.status === 'completed' ? 'Awaiting approval' : 'Active count'}</p><h2>{activeSession.title}</h2><p className="muted">{activeSession.countDate} · {inventorySessionKindLabel(activeSession)}</p></div>
             <Status tone="active">{activeSession.status.replace('_', ' ')}</Status>
           </div>
           <div className="inventory-summary-grid">
@@ -166,7 +174,7 @@ function InventoryOverview({ sessions, activeSession, lines, locations, onOpenSe
             <div><strong>{summary.dormantPhysicalRecountDue}</strong><span>dormant physical recounts due</span></div>
           </div>
           <div className="inventory-progress" aria-label={`${summary.progressPercent}% counted`}><span style={{ width: `${summary.progressPercent}%` }} /></div>
-          <button type="button" className="primary-button inventory-full-button" onClick={() => onOpenSession(activeSession.id)}>Continue stock count</button>
+          <button type="button" className="primary-button inventory-full-button" onClick={() => onOpenSession(activeSession.id)}>{activeSession.status === 'completed' ? 'Review and approve stock count' : 'Continue stock count'}</button>
         </section>
       ) : (
         <section className="inventory-panel inventory-empty">
@@ -184,7 +192,7 @@ function InventoryOverview({ sessions, activeSession, lines, locations, onOpenSe
 }
 
 function SessionCreator({ products, locations, standards, onCancel, onCreate, busy }) {
-  const [draft, setDraft] = useState(() => ({ title: `Daily stock count - ${osloDate()}`, countType: 'daily', countDate: osloDate(), locationIds: locations.filter((item) => item.active).map((item) => item.id), note: '' }));
+  const [draft, setDraft] = useState(() => ({ title: `Daily stock count - ${osloDate()}`, countType: 'daily', countDate: osloDate(), locationIds: locations.filter((item) => item.active).map((item) => item.id), note: '', idempotencyKey: ensureInventoryIdempotencyKey('') }));
   const effectiveLocationIds = useMemo(() => effectiveInventoryLocationIds(locations, draft.locationIds), [locations, draft.locationIds]);
   const selectedStandards = standards.filter((standard) => standard.active && effectiveLocationIds.includes(standard.locationId) && products.some((product) => product.id === standard.productId && product.active));
   const inactiveProductStandards = standards.filter((standard) => standard.active && effectiveLocationIds.includes(standard.locationId) && !products.some((product) => product.id === standard.productId && product.active));
@@ -236,7 +244,7 @@ function CountLineCard({ line, draftValue, setDraftValue, caseDraft, setCaseDraf
   );
 }
 
-function CountSession({ session, lines, locations, canManage, canCoordinate, requestWriteAccess, onRefresh, onBack, setStatus, remoteNotice, clearRemoteNotice }) {
+function CountSession({ session, sessions, lines, locations, canManage, canCoordinate, requestWriteAccess, onRefresh, onOpenSession, onBack, setStatus, remoteNotice, clearRemoteNotice }) {
   const [locationId, setLocationId] = useState(lines[0]?.locationId || '');
   const [drafts, setDrafts] = useState({});
   const [caseDrafts, setCaseDrafts] = useState({});
@@ -244,7 +252,10 @@ function CountSession({ session, lines, locations, canManage, canCoordinate, req
   const [busyId, setBusyId] = useState('');
   const [bulkReview, setBulkReview] = useState(null);
   const [completionNote, setCompletionNote] = useState('');
-  const [reason, setReason] = useState('');
+  const [allowExceptions, setAllowExceptions] = useState(false);
+  const [exceptionReason, setExceptionReason] = useState('');
+  const [actionReason, setActionReason] = useState('');
+  const [correctionIdempotencyKey, setCorrectionIdempotencyKey] = useState(() => ensureInventoryIdempotencyKey(''));
   const orderedLines = useMemo(() => sortInventorySessionLines(lines), [lines]);
   const locationIds = [...new Set(orderedLines.map((line) => line.locationId))];
   const completionMap = session.metadata?.locationCompletions || {};
@@ -254,8 +265,29 @@ function CountSession({ session, lines, locations, canManage, canCoordinate, req
   const exactUncounted = locationLines.filter((line) => line.stockPolicy === 'exact_par' && calculateInventoryLine(line).uncounted).length;
   const currentLocation = locations.find((item) => item.id === locationId) || { name: locationLines[0]?.locationName || 'Location' };
   const currentLocationLabel = contextualLocationName(currentLocation, locations);
-  const readOnly = !['draft', 'in_progress'].includes(session.status);
+  const readOnly = !isInventorySessionEditable(session.status);
+  const lockLabel = inventorySessionLockLabel(session.status);
+  const exceptionSummary = inventorySessionExceptionSummary(session);
+  const originalSession = session.originalSessionId ? sessions.find((item) => item.id === session.originalSessionId) : null;
+  const correctionSessions = sessions.filter((item) => item.originalSessionId === session.id);
   const isDirty = Object.keys(drafts).some((id) => drafts[id] !== String(lines.find((line) => line.id === id)?.countedQuantity ?? '')) || Object.keys(caseDrafts).length > 0 || Object.keys(notes).some((id) => notes[id] !== (lines.find((line) => line.id === id)?.note || ''));
+
+  useEffect(() => {
+    setDrafts({});
+    setCaseDrafts({});
+    setNotes({});
+    setBulkReview(null);
+    setCompletionNote(session.completionNote || '');
+    setAllowExceptions(false);
+    setExceptionReason('');
+    setActionReason('');
+    setCorrectionIdempotencyKey(ensureInventoryIdempotencyKey(''));
+  }, [session.id]);
+  useEffect(() => {
+    setLocationId((current) => current && lines.some((line) => line.locationId === current)
+      ? current
+      : (lines[0]?.locationId || ''));
+  }, [session.id, lines]);
 
   const runWrite = async (id, operation) => {
     if (!(await requestWriteAccess())) return;
@@ -263,7 +295,13 @@ function CountSession({ session, lines, locations, canManage, canCoordinate, req
     const result = await operation();
     setBusyId('');
     setStatus(result);
-    if (result.ok) { setDrafts({}); setCaseDrafts({}); setNotes({}); await onRefresh(); }
+    if (result.ok) {
+      setDrafts((current) => { const next = { ...current }; delete next[id]; return next; });
+      setCaseDrafts((current) => { const next = { ...current }; delete next[id]; return next; });
+      setNotes((current) => { const next = { ...current }; delete next[id]; return next; });
+      await onRefresh();
+    }
+    return result;
   };
   const lineAction = (line, kind) => {
     const common = { lineId: line.id, expectedUpdatedAt: line.updatedAt };
@@ -279,10 +317,11 @@ function CountSession({ session, lines, locations, canManage, canCoordinate, req
     <div className="inventory-stack">
       <section className="inventory-session-header">
         <button type="button" className="secondary-button" onClick={onBack}>Back to overview</button>
-        <div><p className="eyebrow">{session.countDate}</p><h2>{session.title}</h2><p>{sessionSummary.counted} of {sessionSummary.total} recorded · {sessionSummary.shortages} shortages</p></div>
+        <div><p className="eyebrow">{session.countDate} · {inventorySessionKindLabel(session)}</p><h2>{session.title}</h2><p>{sessionSummary.counted} of {sessionSummary.total} recorded · {sessionSummary.shortages} shortages</p>{lockLabel && <p className="inventory-audit"><strong>{lockLabel}</strong></p>}</div>
         <Status tone={session.status === 'approved' ? 'good' : 'active'}>{session.status}</Status>
       </section>
       {remoteNotice && <div className="inventory-remote-notice" role="status"><span>{isDirty ? 'Stock count changed elsewhere. Your unsaved entry is preserved.' : 'Stock count changed elsewhere.'}</span><button type="button" className="secondary-button" onClick={() => { clearRemoteNotice(); if (!isDirty) onRefresh(); }}>Review</button></div>}
+      {(originalSession || correctionSessions.length > 0) && <section className="inventory-panel"><h2>Correction history</h2>{originalSession && <button type="button" className="text-button" onClick={() => onOpenSession(originalSession.id)}>Original approved count: {originalSession.title}</button>}{correctionSessions.map((correction) => <button type="button" className="text-button" key={correction.id} onClick={() => onOpenSession(correction.id)}>Correction: {correction.title} · {correction.status.replace('_', ' ')}</button>)}</section>}
       <nav className="inventory-location-tabs" aria-label="Count locations">{locationIds.map((id) => { const location = locations.find((item) => item.id === id); const summary = summarizeInventoryLocation(lines.filter((line) => line.locationId === id), completionMap[id]); return <button type="button" key={id} className={id === locationId ? 'active' : ''} onClick={() => setLocationId(id)}><span>{location ? contextualLocationName(location, locations) : lines.find((line) => line.locationId === id)?.locationName}</span><small>{summary.counted}/{summary.total} · {inventoryStatusLabel(summary.status)}</small></button>; })}</nav>
       <section className="inventory-location-header">
         <div><h2>{currentLocationLabel}</h2><p>{locationSummary.counted} of {locationSummary.total} recorded · {locationSummary.shortages} policy gaps</p></div>
@@ -292,12 +331,14 @@ function CountSession({ session, lines, locations, canManage, canCoordinate, req
       <section className="inventory-panel inventory-session-actions">
         <h2>Session actions</h2>
         <div className="inventory-summary-grid"><div><strong>{sessionSummary.completedLocations}/{sessionSummary.locations}</strong><span>locations complete</span></div><div><strong>{sessionSummary.uncounted}</strong><span>uncounted</span></div><div><strong>{sessionSummary.skipped}</strong><span>skipped</span></div><div><strong>{sessionSummary.needsReview}</strong><span>needs review</span></div></div>
-        <label>Review note<textarea rows="2" value={completionNote} onChange={(event) => setCompletionNote(event.target.value)} /></label>
-        <div className="inventory-action-row"><button type="button" className="secondary-button" onClick={exportSession}>Export session CSV</button>{canCoordinate && readOnly === false && <button type="button" className="primary-button" onClick={() => runWrite('complete-session', () => completeInventoryCountSession({ sessionId: session.id, note: completionNote, allowExceptions: Boolean(completionNote.trim()) }))}>Complete session</button>}{canManage && session.status === 'completed' && <button type="button" className="primary-button" onClick={() => runWrite('approve', () => approveInventoryCountSession({ sessionId: session.id, note: completionNote }))}>Approve stock count</button>}</div>
-        {canManage && ['completed', 'approved'].includes(session.status) && <div className="inventory-reopen"><label>Reason for reopening<input value={reason} onChange={(event) => setReason(event.target.value)} /></label><button type="button" className="secondary-button" disabled={!reason.trim()} onClick={() => runWrite('reopen', () => reopenInventoryCountSession({ sessionId: session.id, reason }))}>Reopen count</button></div>}
-        {canManage && !['approved', 'cancelled'].includes(session.status) && <button type="button" className="text-button danger-text" disabled={!reason.trim()} onClick={() => runWrite('cancel', () => cancelInventoryCountSession({ sessionId: session.id, reason }))}>Cancel session using reason above</button>}
+        <label>Review note<textarea rows="2" value={completionNote} disabled={session.status === 'approved' || session.status === 'cancelled'} onChange={(event) => setCompletionNote(event.target.value)} /></label>
+        {canCoordinate && !readOnly && <div className="inventory-reopen"><label className="inventory-danger-option"><input type="checkbox" checked={allowExceptions} onChange={(event) => setAllowExceptions(event.target.checked)} />Finalize with documented exceptions</label>{allowExceptions && <label>Required exception reason<textarea rows="2" value={exceptionReason} onChange={(event) => setExceptionReason(event.target.value)} /></label>}</div>}
+        {exceptionSummary.hasExceptions && <div className="inventory-warning"><strong>Finalized with exceptions</strong><p>{exceptionSummary.reason}</p><p>{exceptionSummary.counts.skipped} skipped · {exceptionSummary.counts.uncounted} uncounted · {exceptionSummary.counts.needsReview} needs review · {exceptionSummary.counts.incompleteLocations} incomplete locations</p><p>Finalized by {session.finalizedByName || session.completedByName}{session.finalizedAt ? ` · ${formatDateTime(session.finalizedAt)}` : ''}</p></div>}
+        <div className="inventory-action-row"><button type="button" className="secondary-button" onClick={exportSession}>Export session CSV</button>{canCoordinate && !readOnly && <button type="button" className="primary-button" disabled={allowExceptions && !exceptionReason.trim()} onClick={() => runWrite('complete-session', () => completeInventoryCountSession({ sessionId: session.id, note: completionNote, allowExceptions, exceptionReason }))}>Complete session</button>}{canManage && session.status === 'completed' && <button type="button" className="primary-button" onClick={() => runWrite('approve', () => approveInventoryCountSession({ sessionId: session.id, note: completionNote }))}>Approve stock count</button>}</div>
+        {canManage && session.status === 'approved' && <div className="inventory-reopen"><label>Reason for correction<input value={actionReason} onChange={(event) => setActionReason(event.target.value)} /></label><button type="button" className="secondary-button" disabled={!actionReason.trim()} onClick={async () => { const result = await runWrite('correction', () => createInventoryCorrectionSession({ originalSessionId: session.id, reason: actionReason, idempotencyKey: correctionIdempotencyKey })); const correctionId = result?.data?.session?.id; if (result?.ok && correctionId) onOpenSession(correctionId); }}>Create correction count</button><p className="muted">The approved count remains permanently locked. Corrections are recorded in a new linked session.</p></div>}
+        {canManage && !['approved', 'cancelled'].includes(session.status) && <div className="inventory-reopen"><label>Cancellation reason<input value={actionReason} onChange={(event) => setActionReason(event.target.value)} /></label><button type="button" className="text-button danger-text" disabled={!actionReason.trim()} onClick={() => runWrite('cancel', () => cancelInventoryCountSession({ sessionId: session.id, reason: actionReason }))}>Cancel session</button></div>}
       </section>
-      {bulkReview && <div className="modal-backdrop" role="dialog" aria-modal="true" aria-labelledby="inventory-bulk-title"><section className="pilot-modal inventory-modal"><h2 id="inventory-bulk-title">{currentLocationLabel}</h2>{bulkReview.replace ? <><p>All non-skipped exact-par lines that differ from the fully stocked target will be replaced.</p><p>Manual, imported and adjusted exact-par counts may be replaced.</p><p>Protected event reserve, operating reserve, dormant stock and skipped lines remain unchanged.</p><p><strong>This is a manager-only action.</strong></p></> : <><p>{exactUncounted} uncounted exact-par lines will be marked fully stocked.</p><p>This is an explicit stocking attestation, not a physical count.</p><p>Other policies and existing counts remain unchanged.</p></>}{canManage && <label className="inventory-danger-option"><input type="checkbox" checked={bulkReview.replace} onChange={(event) => setBulkReview({ replace: event.target.checked })} />Replace existing exact-par counts (manager only)</label>}<div className="inventory-action-row"><button type="button" className="secondary-button" onClick={() => setBulkReview(null)}>Cancel</button><button type="button" className="primary-button" onClick={() => { const replace = bulkReview.replace; setBulkReview(null); runWrite('bulk', () => markInventoryLocationUsePar({ sessionId: session.id, locationId, replaceExisting: replace })); }}>{bulkReview.replace ? 'Replace with fully stocked' : 'Mark fully stocked'}</button></div></section></div>}
+      {bulkReview && <div className="modal-backdrop" role="dialog" aria-modal="true" aria-labelledby="inventory-bulk-title"><section className="pilot-modal inventory-modal"><h2 id="inventory-bulk-title">{currentLocationLabel}</h2>{bulkReview.replace ? <><p>All non-skipped exact-par lines that differ from the fully stocked target will be replaced.</p><p>Manual, imported and adjusted exact-par counts may be replaced.</p><p>Protected event reserve, operating reserve, dormant stock and skipped lines remain unchanged.</p><p><strong>This is a manager-only action.</strong></p></> : <><p>{exactUncounted} uncounted exact-par lines will be marked fully stocked.</p><p>This is an explicit stocking attestation, not a physical count.</p><p>Other policies and existing counts remain unchanged.</p></>}{canManage && <label className="inventory-danger-option"><input type="checkbox" checked={bulkReview.replace} onChange={(event) => setBulkReview({ replace: event.target.checked })} />Replace existing exact-par counts (manager only)</label>}<div className="inventory-action-row"><button type="button" className="secondary-button" onClick={() => setBulkReview(null)}>Cancel</button><button type="button" className="primary-button" onClick={() => { const replace = bulkReview.replace; setBulkReview(null); runWrite('bulk', () => markInventoryLocationUsePar({ sessionId: session.id, locationId, replaceExisting: replace, expectedSessionUpdatedAt: session.updatedAt })); }}>{bulkReview.replace ? 'Replace with fully stocked' : 'Mark fully stocked'}</button></div></section></div>}
     </div>
   );
 }
@@ -520,7 +561,7 @@ function InventoryHistory({ sessions, locations, onOpenSession }) {
     if (dateTo && session.countDate > dateTo) return false;
     return !search || `${session.title} ${session.completedByName} ${session.approvedByName}`.toLowerCase().includes(search.toLowerCase());
   });
-  return <div className="inventory-stack"><section className="inventory-panel"><h2>Count history</h2><p className="muted">Historical sessions use the product labels and stocking standards captured when each count started.</p><div className="inventory-form-grid"><label>From<input type="date" value={dateFrom} onChange={(event) => setDateFrom(event.target.value)} /></label><label>To<input type="date" value={dateTo} onChange={(event) => setDateTo(event.target.value)} /></label><label>Status<select value={statusFilter} onChange={(event) => setStatusFilter(event.target.value)}><option value="all">All statuses</option><option value="in_progress">In progress</option><option value="completed">Completed</option><option value="approved">Approved</option><option value="cancelled">Cancelled</option></select></label><label>Count type<select value={typeFilter} onChange={(event) => setTypeFilter(event.target.value)}><option value="all">All types</option>{[...new Set(sessions.map((session) => session.countType))].map((type) => <option key={type} value={type}>{type.replace('_', ' ')}</option>)}</select></label><label className="inventory-wide">Search title or completion actor<input type="search" value={search} onChange={(event) => setSearch(event.target.value)} /></label></div><div className="inventory-history-list">{visible.map((session) => <button type="button" key={session.id} onClick={() => onOpenSession(session.id)}><span><strong>{session.title}</strong><small>{session.countDate} · {session.countType.replace('_', ' ')}{session.completedByName ? ` · completed by ${session.completedByName}` : ''}</small></span><Status tone={session.status === 'approved' ? 'good' : ''}>{session.status}</Status></button>)}</div>{!visible.length && <p className="muted">No count sessions match these filters.</p>}</section><section className="inventory-panel"><h2>Latest approved vs previous approved</h2>{approved.length < 2 ? <p className="muted">Two approved sessions are needed for comparison.</p> : comparison.length ? <div className="inventory-comparison-list">{comparison.map((item) => <article key={`${item.locationName}-${item.productName}`}><div><strong>{item.productName}</strong><span>{item.locationName}</span></div><p>Latest {quantity(item.latest)} · Previous {quantity(item.previous)} · <strong>{item.change > 0 ? '+' : ''}{quantity(item.change)} {item.unitLabel}</strong></p></article>)}</div> : <p className="muted">No matching manually stored quantities were available to compare.</p>}</section></div>;
+  return <div className="inventory-stack"><section className="inventory-panel"><h2>Count history</h2><p className="muted">Historical sessions use the product labels and stocking standards captured when each count started. Approved counts are permanent; corrections appear as linked sessions.</p><div className="inventory-form-grid"><label>From<input type="date" value={dateFrom} onChange={(event) => setDateFrom(event.target.value)} /></label><label>To<input type="date" value={dateTo} onChange={(event) => setDateTo(event.target.value)} /></label><label>Status<select value={statusFilter} onChange={(event) => setStatusFilter(event.target.value)}><option value="all">All statuses</option><option value="in_progress">In progress</option><option value="completed">Completed</option><option value="approved">Approved</option><option value="cancelled">Cancelled</option></select></label><label>Count type<select value={typeFilter} onChange={(event) => setTypeFilter(event.target.value)}><option value="all">All types</option>{[...new Set(sessions.map((session) => session.countType))].map((type) => <option key={type} value={type}>{type.replace('_', ' ')}</option>)}</select></label><label className="inventory-wide">Search title or completion actor<input type="search" value={search} onChange={(event) => setSearch(event.target.value)} /></label></div><div className="inventory-history-list">{visible.map((session) => <button type="button" key={session.id} onClick={() => onOpenSession(session.id)}><span><strong>{session.title}</strong><small>{session.countDate} · {inventorySessionKindLabel(session)} · {session.countType.replace('_', ' ')}{session.completedByName ? ` · completed by ${session.completedByName}` : ''}{session.finalizedWithExceptions ? ' · exceptions documented' : ''}</small></span><Status tone={session.status === 'approved' ? 'good' : ''}>{session.status}</Status></button>)}</div>{!visible.length && <p className="muted">No count sessions match these filters.</p>}</section><section className="inventory-panel"><h2>Latest approved vs previous approved</h2>{approved.length < 2 ? <p className="muted">Two approved sessions are needed for comparison.</p> : comparison.length ? <div className="inventory-comparison-list">{comparison.map((item) => <article key={`${item.locationName}-${item.productName}`}><div><strong>{item.productName}</strong><span>{item.locationName}</span></div><p>Latest {quantity(item.latest)} · Previous {quantity(item.previous)} · <strong>{item.change > 0 ? '+' : ''}{quantity(item.change)} {item.unitLabel}</strong></p></article>)}</div> : <p className="muted">No matching manually stored quantities were available to compare.</p>}</section></div>;
 }
 
 function AuthorizedInventoryWorkspace({ user, requestWriteAccess, onClose }) {
@@ -545,7 +586,7 @@ function AuthorizedInventoryWorkspace({ user, requestWriteAccess, onClose }) {
     if (!mounted.current) return result;
     if (result.ok) {
       setData(result);
-      const open = result.sessions.find((session) => ['draft', 'in_progress'].includes(session.status));
+      const open = result.sessions.find((session) => isInventorySessionActive(session.status));
       if (!selectedSessionIdRef.current && open) setSelectedSessionId(open.id);
       setStatus(null);
     } else setStatus(result);
@@ -572,7 +613,7 @@ function AuthorizedInventoryWorkspace({ user, requestWriteAccess, onClose }) {
     return () => { subscription.unsubscribe(); window.clearInterval(timer); };
   }, [organizationId, selectedSessionId, refresh]);
 
-  const listedActiveSession = data.sessions.find((session) => ['draft', 'in_progress'].includes(session.status)) || null;
+  const listedActiveSession = data.sessions.find((session) => isInventorySessionActive(session.status)) || null;
   const activeSession = sessionDetail.record?.id === listedActiveSession?.id ? sessionDetail.record : listedActiveSession;
   const selectedSession = sessionDetail.record?.id === selectedSessionId
     ? sessionDetail.record
@@ -598,7 +639,7 @@ function AuthorizedInventoryWorkspace({ user, requestWriteAccess, onClose }) {
       <nav className="inventory-main-tabs" aria-label="Inventory views"><button type="button" className={tab === 'overview' ? 'active' : ''} onClick={() => setTab('overview')}>Overview</button><button type="button" className={tab === 'count' ? 'active' : ''} onClick={() => setTab('count')}>Count</button><button type="button" className={tab === 'restock' ? 'active' : ''} onClick={() => setTab('restock')}>Restock</button>{coordinator && <button type="button" className={tab === 'history' ? 'active' : ''} onClick={() => setTab('history')}>History</button>}{manager && <button type="button" className={tab === 'manage' ? 'active' : ''} onClick={() => setTab('manage')}>Manage</button>}</nav>
       <Message status={status} />
       {status?.ok === false && <button type="button" className="secondary-button inventory-retry-button" onClick={() => refresh()}>Retry inventory refresh</button>}
-      {showCreator ? <SessionCreator products={data.products} locations={data.locations} standards={data.standards} onCancel={() => setShowCreator(false)} onCreate={create} busy={creating} /> : tab === 'overview' ? <InventoryOverview sessions={data.sessions} activeSession={activeSession} lines={activeSession?.id === selectedSession?.id ? selectedLines : []} locations={data.locations} onOpenSession={openSession} onStart={() => setShowCreator(true)} canCoordinate={coordinator} /> : tab === 'count' ? selectedSession ? <CountSession session={selectedSession} lines={selectedLines} locations={data.locations} canManage={manager} canCoordinate={coordinator} requestWriteAccess={requestWriteAccess} onRefresh={async () => { await refreshSession(); await refresh(); }} onBack={() => setTab('overview')} setStatus={setStatus} remoteNotice={remoteNotice} clearRemoteNotice={() => setRemoteNotice(false)} /> : <section className="inventory-panel inventory-empty"><h2>No active stock count</h2>{coordinator && <button type="button" className="primary-button" onClick={() => setShowCreator(true)}>Start stock count</button>}</section> : tab === 'restock' ? <RestockView session={selectedSession} lines={selectedLines} /> : tab === 'history' ? <InventoryHistory sessions={data.sessions} locations={data.locations} onOpenSession={openSession} /> : <CatalogManager products={data.products} locations={data.locations} standards={data.standards} requestWriteAccess={requestWriteAccess} refresh={refresh} setStatus={setStatus} />}
+      {showCreator ? <SessionCreator products={data.products} locations={data.locations} standards={data.standards} onCancel={() => setShowCreator(false)} onCreate={create} busy={creating} /> : tab === 'overview' ? <InventoryOverview sessions={data.sessions} activeSession={activeSession} lines={activeSession?.id === selectedSession?.id ? selectedLines : []} locations={data.locations} onOpenSession={openSession} onStart={() => setShowCreator(true)} canCoordinate={coordinator} /> : tab === 'count' ? selectedSession ? <CountSession session={selectedSession} sessions={data.sessions} lines={selectedLines} locations={data.locations} canManage={manager} canCoordinate={coordinator} requestWriteAccess={requestWriteAccess} onRefresh={async () => { await refreshSession(); await refresh(); }} onOpenSession={openSession} onBack={() => setTab('overview')} setStatus={setStatus} remoteNotice={remoteNotice} clearRemoteNotice={() => setRemoteNotice(false)} /> : <section className="inventory-panel inventory-empty"><h2>No active stock count</h2>{coordinator && <button type="button" className="primary-button" onClick={() => setShowCreator(true)}>Start stock count</button>}</section> : tab === 'restock' ? <RestockView session={selectedSession} lines={selectedLines} /> : tab === 'history' ? <InventoryHistory sessions={data.sessions} locations={data.locations} onOpenSession={openSession} /> : <CatalogManager products={data.products} locations={data.locations} standards={data.standards} requestWriteAccess={requestWriteAccess} refresh={refresh} setStatus={setStatus} />}
       {data.refreshedAt && <p className="inventory-last-refresh">Last successful refresh: {formatDateTime(data.refreshedAt)}</p>}
     </main>
   );

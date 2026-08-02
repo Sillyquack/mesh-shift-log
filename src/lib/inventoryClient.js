@@ -4,7 +4,7 @@ import { isSupabaseConfigured } from './supabaseClient.js';
 const PRODUCT_COLUMNS = 'id,name,short_name,sku,barcode,category,unit_label,default_pack_size,supplier_name,notes,active,sort_order';
 const LOCATION_COLUMNS = 'id,name,code,location_type,parent_location_id,zone,description,active,sort_order';
 const STANDARD_COLUMNS = 'id,location_id,product_id,par_quantity,minimum_quantity,default_restock_quantity,count_order,active,notes,stock_policy,target_mode,reserve_multiplier,case_size,target_cases,target_loose_quantity,physical_recount_interval_days';
-const SESSION_COLUMNS = 'id,title,count_type,status,count_date,started_at,completed_at,approved_at,started_by_name,completed_by_name,approved_by_name,completion_note,approval_note';
+const SESSION_COLUMNS = 'id,title,count_type,status,count_date,started_at,completed_at,approved_at,started_by_name,completed_by_name,approved_by_name,completion_note,approval_note,session_kind,original_session_id,correction_reason,correction_created_by_name,correction_created_at,finalized_with_exceptions,exception_reason,exception_skipped_count,exception_uncounted_count,exception_needs_review_count,exception_incomplete_location_count,exception_location_ids,finalized_by_name,finalized_at,updated_at';
 const LINE_COLUMNS = 'id,location_id,product_name_snapshot,location_name_snapshot,unit_label_snapshot,category_snapshot,location_sort_order_snapshot,count_order_snapshot,product_sort_order_snapshot,par_quantity_snapshot,minimum_quantity_snapshot,stock_policy_snapshot,target_mode_snapshot,effective_target_quantity_snapshot,service_target_basis_snapshot,reserve_multiplier_snapshot,case_size_snapshot,target_cases_snapshot,target_loose_quantity_snapshot,physical_recount_interval_days_snapshot,previous_physical_count_quantity_snapshot,previous_physical_counted_at_snapshot,count_full_cases,count_loose_quantity,counted_quantity,count_method,count_status,variance_quantity,restock_quantity,note,counted_at,counted_by_name,updated_at';
 
 function output(ok, fields = {}) {
@@ -24,11 +24,15 @@ async function context() {
 
 function failure(error, fallback = 'Inventory request failed.') {
   const rawMessage = error?.message || '';
-  const message = /duplicate key|unique constraint/i.test(rawMessage)
-    ? 'A product or location already uses that SKU, barcode, code, or relationship.'
-    : /row-level security|permission denied/i.test(rawMessage)
-      ? 'You do not have permission for this inventory action.'
-      : rawMessage || fallback;
+  const message = /already has an active Stock Count|inventory_count_sessions_one_active_per_org/i.test(rawMessage)
+    ? 'An active Stock Count already exists. Complete and approve or cancel it before starting another.'
+    : /changed on another device|current (line|session) version is required/i.test(rawMessage)
+      ? 'This Stock Count changed on another device. Refresh before trying again; your unsaved value is still here.'
+      : /duplicate key|unique constraint/i.test(rawMessage)
+        ? 'A product or location already uses that SKU, barcode, code, or relationship.'
+        : /row-level security|permission denied/i.test(rawMessage)
+          ? 'You do not have permission for this inventory action.'
+          : rawMessage || fallback;
   return output(false, { mode: 'sync_error', message, error });
 }
 
@@ -113,6 +117,20 @@ function normalizeSession(row) {
     approvedByName: row.approved_by_name || '',
     completionNote: row.completion_note || '',
     approvalNote: row.approval_note || '',
+    sessionKind: row.session_kind || 'standard',
+    originalSessionId: row.original_session_id || '',
+    correctionReason: row.correction_reason || '',
+    correctionCreatedByName: row.correction_created_by_name || '',
+    correctionCreatedAt: row.correction_created_at || '',
+    finalizedWithExceptions: row.finalized_with_exceptions === true,
+    exceptionReason: row.exception_reason || '',
+    exceptionSkippedCount: Number(row.exception_skipped_count || 0),
+    exceptionUncountedCount: Number(row.exception_uncounted_count || 0),
+    exceptionNeedsReviewCount: Number(row.exception_needs_review_count || 0),
+    exceptionIncompleteLocationCount: Number(row.exception_incomplete_location_count || 0),
+    exceptionLocationIds: row.exception_location_ids || [],
+    finalizedByName: row.finalized_by_name || '',
+    finalizedAt: row.finalized_at || '',
     metadata: row.metadata || {},
     updatedAt: row.updated_at || '',
   };
@@ -296,9 +314,18 @@ export function createInventoryCountSession(payload) {
   return callRpc('create_inventory_count_session', {
     input_title: payload.title,
     input_count_type: payload.countType,
+    input_idempotency_key: payload.idempotencyKey,
     input_count_date: payload.countDate,
     input_location_ids: payload.locationIds,
     input_note: payload.note || null,
+  });
+}
+
+export function createInventoryCorrectionSession(payload) {
+  return callRpc('create_inventory_correction_session', {
+    input_original_session_id: payload.originalSessionId,
+    input_reason: payload.reason,
+    input_idempotency_key: payload.idempotencyKey,
   });
 }
 
@@ -356,6 +383,7 @@ export function markInventoryLocationUsePar(payload) {
     input_session_id: payload.sessionId,
     input_location_id: payload.locationId,
     input_replace_existing: payload.replaceExisting || false,
+    input_expected_session_updated_at: payload.expectedSessionUpdatedAt || null,
   });
 }
 
@@ -371,15 +399,12 @@ export function completeInventoryCountSession(payload) {
     input_session_id: payload.sessionId,
     input_completion_note: payload.note || null,
     input_allow_exceptions: payload.allowExceptions || false,
+    input_exception_reason: payload.exceptionReason || null,
   }, normalizeSession);
 }
 
 export function approveInventoryCountSession(payload) {
   return callRpc('approve_inventory_count_session', { input_session_id: payload.sessionId, input_approval_note: payload.note || null }, normalizeSession);
-}
-
-export function reopenInventoryCountSession(payload) {
-  return callRpc('reopen_inventory_count_session', { input_session_id: payload.sessionId, input_reason: payload.reason }, normalizeSession);
 }
 
 export function cancelInventoryCountSession(payload) {

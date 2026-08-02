@@ -3,6 +3,7 @@ import { spawnSync } from 'node:child_process';
 const commands = [
   ['npm', ['run', 'verify:inventory-permissions']],
   ['npm', ['run', 'verify:phase9a']],
+  ['npm', ['run', 'verify:inventory-session-lifecycle']],
   ['npm', ['run', 'verify:phase9-security-db']],
   ['npm', ['run', 'build']],
 ];
