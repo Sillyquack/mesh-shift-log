@@ -38,6 +38,11 @@ import {
   isInventorySessionEditable,
 } from '../data/inventorySessionLifecycle.js';
 import {
+  compareInventoryCatalogueOrder,
+  filterOwnedInventoryCatalogue,
+  INVENTORY_REFRIGERATOR_DEFINITIONS,
+} from '../data/inventoryOperationalScope.js';
+import {
   approveInventoryCountSession,
   cancelInventoryCountSession,
   clearInventoryCountLine,
@@ -54,24 +59,24 @@ import {
   markInventoryLocationUsePar,
   saveInventoryLocation,
   saveInventoryProduct,
+  saveInventoryProductReserveOverride,
   saveInventoryStandardsBulk,
   setInventoryCountLineCaseQuantity,
   setInventoryCountLineQuantity,
   setInventoryCountLineStructuredQuantity,
   setupMeshYoungstorgetInventoryLocations,
   skipInventoryCountLine,
+  verifyInventoryRefrigeratorTemplate,
 } from '../lib/inventoryClient.js';
 import { subscribeToInventoryRealtime } from '../lib/inventoryRealtime.js';
 import { canCoordinateInventory, canManageInventory, canUseInventory } from '../lib/permissions.js';
 
-const EMPTY_PRODUCT = { name: '', sku: '', barcode: '', category: 'Other', unitLabel: 'piece', countMode: 'unit', containerCapacityLiters: '', supplierName: '', notes: '', active: true, sortOrder: 0 };
+const EMPTY_PRODUCT = { name: '', shortName: '', sku: '', barcode: '', category: 'Other', unitLabel: 'piece', countMode: 'unit', containerCapacityLiters: '', supplierName: '', notes: '', active: true, sortOrder: 0, millumItemRef: '', ownershipStatus: 'unverified', reserveTargetOverride: null };
 const EMPTY_LOCATION = { name: '', code: '', locationType: 'storage', parentLocationId: '', zone: '', description: '', active: true, sortOrder: 0 };
 const PRODUCT_CATEGORY_PRESETS = ['Beer', 'Wine', 'Sparkling wine', 'Spirits', 'Soft drinks', 'Mineral water', 'Coffee', 'Milk and alternatives', 'Snacks', 'Food', 'Consumables', 'Cleaning', 'Other'];
 const YOUNGSTORGET_LOCATION_TEMPLATE = [
-  { code: 'WORKBAR', name: 'Workbar', children: ['Fridge 1', 'Fridge 2', 'Fridge 3', 'Coffee station', 'Snack shelf', 'Backbar shelves'] },
-  { code: 'CORNERBAR', name: 'Cornerbar', children: ['Fridge 1', 'Fridge 2', 'Backbar shelves'] },
-  { code: 'STORAGE', name: 'Storage', children: ['Dry Storage', 'Main Storage'] },
-  { code: 'BEVERAGE_STORAGE', name: 'Beverage Storage', children: ['Main beverage stock', 'Beer kegs', 'Cocktail ingredients', 'Event reserve', 'Dormant spirits'] },
+  { code: 'CORNERBAR', name: 'Cornerbar', children: ['Left Fridge', 'Middle Fridge', 'Right Fridge'] },
+  { code: 'WORKBAR', name: 'Workbar', children: ['Bar Left Fridge', 'Bar Right Fridge', 'Non-Alco Fridge'] },
 ];
 
 const STOCK_POLICY_OPTIONS = [
@@ -396,8 +401,9 @@ function RestockView({ session, lines }) {
 function ProductManager({ products, run }) {
   const [product, setProduct] = useState(EMPTY_PRODUCT);
   const [search, setSearch] = useState('');
-  const visibleProducts = products.filter((item) => !search || `${item.name} ${item.sku} ${item.category}`.toLowerCase().includes(search.toLowerCase()));
-  const duplicateProductName = product.name.trim() && products.find((item) => item.id !== product.id && item.name.trim().toLowerCase() === product.name.trim().toLowerCase());
+  const visibleProducts = products.filter((item) => !search || `${item.name} ${item.shortName} ${item.aliases?.join(' ')} ${item.millumItemRef} ${item.sku} ${item.category}`.toLowerCase().includes(search.toLowerCase()));
+  const requestedName = product.name.trim().toLowerCase();
+  const representedProduct = requestedName && products.find((item) => item.id !== product.id && item.ownershipStatus === 'owned' && [item.name, item.shortName, ...(item.aliases || [])].some((value) => value?.trim().toLowerCase() === requestedName));
   const identityPeers = products.map((item) => ({ ...item, productId: item.id, productName: item.name }));
   const capacityState = inventoryDecimalDraftState(product.containerCapacityLiters, { maxScale: 6, allowNegative: false });
   const capacityValid = product.countMode !== INVENTORY_COUNT_MODES.CONTAINER_PLUS_VOLUME || (capacityState.complete && capacityState.valid && Number(capacityState.value) > 0);
@@ -407,13 +413,15 @@ function ProductManager({ products, run }) {
       ? normalizeInventoryDecimal(product.containerCapacityLiters, { maxScale: 6, allowNegative: false })
       : null,
   }));
-  const exportCatalog = () => downloadCsv('mesh-inventory-products.csv', makeCsv(['Product name', 'Product ID', 'SKU', 'Barcode', 'Category', 'Configured unit', 'Count mode', 'Container capacity L', 'Active', 'Supplier'], products.map((item) => [item.name, item.id, item.sku, item.barcode, item.category, item.unitLabel, item.countMode, inventoryCsvNumeric(item.containerCapacityLiters), item.active ? 'yes' : 'no', item.supplierName])));
+  const exportCatalog = () => downloadCsv('mesh-inventory-products.csv', makeCsv(['Product name', 'Practical name', 'Product ID', 'Millum item ref', 'Millum groups', 'SKU', 'Barcode', 'Category', 'Configured unit', 'Count mode', 'Container capacity L', 'Active', 'Supplier'], products.map((item) => [item.name, item.shortName, item.id, item.millumItemRef, item.millumGroups?.map((group) => group.name).join(' | '), item.sku, item.barcode, item.category, item.unitLabel, item.countMode, inventoryCsvNumeric(item.containerCapacityLiters), item.active ? 'yes' : 'no', item.supplierName])));
   return (
     <section className="inventory-panel">
       <div className="inventory-panel-heading"><h2>Products</h2><button type="button" className="secondary-button" onClick={exportCatalog}>Export CSV</button></div>
       <label>Search products<input type="search" value={search} onChange={(event) => setSearch(event.target.value)} /></label>
       <div className="inventory-form-grid">
         <label>Name<input value={product.name} onChange={(event) => setProduct({ ...product, name: event.target.value })} /></label>
+        <label>Practical display name<input value={product.shortName || ''} onChange={(event) => setProduct({ ...product, shortName: event.target.value })} /></label>
+        {product.millumItemRef && <label>Millum item reference<input value={product.millumItemRef} readOnly /></label>}
         <label>Unit<input value={product.unitLabel} onChange={(event) => setProduct({ ...product, unitLabel: event.target.value })} /></label>
         <label>Category<input list="inventory-product-categories" value={product.category} onChange={(event) => setProduct({ ...product, category: event.target.value })} /><datalist id="inventory-product-categories">{PRODUCT_CATEGORY_PRESETS.map((category) => <option key={category} value={category} />)}</datalist></label>
         <label>SKU<input value={product.sku} onChange={(event) => setProduct({ ...product, sku: event.target.value })} /></label>
@@ -422,9 +430,9 @@ function ProductManager({ products, run }) {
       </div>
       <p className="muted">Count mode is snapshotted when a Stock Count starts. Bottles + open liters requires an exact positive container capacity; later product changes do not reinterpret existing sessions.</p>
       {!capacityValid && <p className="inventory-warning">Enter a positive container capacity using no more than 6 decimal places.</p>}
-      {duplicateProductName && <p className="inventory-warning">A product named {duplicateProductName.name} already exists. Duplicate names are allowed, but SKU or barcode should distinguish them.</p>}
-      <button type="button" className="primary-button" disabled={!product.name.trim() || !product.unitLabel.trim() || !capacityValid} onClick={saveProduct}>{product.id ? 'Save product' : 'Add product'}</button>
-      <div className="inventory-config-list">{visibleProducts.map((item) => { const reference = inventoryProductIdentityReference({ ...item, productId: item.id, productName: item.name }, identityPeers); return <article key={item.id}><div><strong>{item.name}</strong><span>{item.category || 'Other'} · {inventoryCountModeLabel(item.countMode)}{item.containerCapacityLiters ? ` · ${quantity(item.containerCapacityLiters)} L each` : ''} · {inventoryBaseUnit(item.countMode, item.unitLabel)}{reference ? ` · ${reference}` : ''}{!item.active ? ' · Archived' : ''}</span></div><div><button type="button" className="secondary-button" onClick={() => setProduct({ ...item, containerCapacityLiters: item.containerCapacityLiters ?? '' })}>Edit</button><button type="button" className="text-button" onClick={() => run(() => saveInventoryProduct({ ...item, active: !item.active }))}>{item.active ? 'Archive' : 'Reactivate'}</button></div></article>; })}</div>
+      {representedProduct && <p className="inventory-warning">{representedProduct.name} already represents this official or practical name. Select that stable product instead of creating a duplicate.</p>}
+      <div className="inventory-action-row"><button type="button" className="primary-button" disabled={!product.name.trim() || !product.unitLabel.trim() || !capacityValid || Boolean(representedProduct)} onClick={saveProduct}>{product.id ? 'Save product' : 'Add product'}</button>{product.id && product.ownershipStatus === 'owned' && <><label>Fixed reserve override<input type="number" min="0" step="any" placeholder="Automatic 3×" value={product.reserveTargetOverride ?? ''} onChange={(event) => setProduct({ ...product, reserveTargetOverride: event.target.value })} /></label><button type="button" className="secondary-button" onClick={() => run(() => saveInventoryProductReserveOverride(product.id, product.reserveTargetOverride ?? ''))}>Save reserve override</button></>}</div>
+      <div className="inventory-config-list">{visibleProducts.map((item) => { const reference = inventoryProductIdentityReference({ ...item, productId: item.id, productName: item.name }, identityPeers); return <article key={item.id}><div><strong>{item.shortName || item.name}</strong><span>{item.shortName && item.shortName !== item.name ? `${item.name} · ` : ''}{item.category || 'Other'}{item.millumItemRef ? ` · Millum ${item.millumItemRef}` : ''} · {inventoryCountModeLabel(item.countMode)}{item.containerCapacityLiters ? ` · ${quantity(item.containerCapacityLiters)} L each` : ''} · {inventoryBaseUnit(item.countMode, item.unitLabel)}{reference ? ` · ${reference}` : ''}{!item.active ? ' · Archived' : ''}</span></div><div><button type="button" className="secondary-button" onClick={() => setProduct({ ...item, containerCapacityLiters: item.containerCapacityLiters ?? '' })}>Edit</button><button type="button" className="text-button" onClick={() => run(() => saveInventoryProduct({ ...item, active: !item.active }))}>{item.active ? 'Archive' : 'Reactivate'}</button></div></article>; })}</div>
     </section>
   );
 }
@@ -442,19 +450,19 @@ function LocationManager({ locations, requestWriteAccess, refresh, run, setStatu
     setSetupBusy(false);
     if (!result.ok) { setStatus(result); return; }
     setSetupSummary(result.data);
-    setStatus({ ok: true, message: `Location setup complete: ${result.data?.created || 0} created, ${result.data?.reused || 0} reused, ${result.data?.restored || 0} restored. No duplicate template locations were created.` });
+    setStatus({ ok: true, message: `Operational setup complete: ${result.data?.refrigerators || 0} refrigerators, ${result.data?.catalogueProducts || 0} owned Millum products, ${result.data?.defaultRows || 0} confirmed defaults, and ${result.data?.unresolvedMappings || 0} unresolved mappings.` });
     await refresh(true);
   };
   const editLocation = (item) => { setLocation(item); setCustomOpen(true); };
   return (
     <div className="inventory-stack">
       <section className="inventory-panel inventory-template-setup">
-        <div><p className="eyebrow">Recommended first setup</p><h2>Mesh Youngstorget location setup</h2><p className="muted">Create or reuse the 19-location Workbar, Cornerbar, storage and Beverage Storage structure. Existing custom locations and historical counts remain untouched.</p></div>
+        <div><p className="eyebrow">Phase 9G operational setup</p><h2>Six refrigerators and Millum catalogue</h2><p className="muted">Normalize the six real refrigerators and seed the verified Bobby-owned Millum catalogue. Existing location IDs and historical count snapshots remain untouched; uncertain default names stay unresolved.</p></div>
         <div className="inventory-template-review" aria-label="Location setup review">
           {YOUNGSTORGET_LOCATION_TEMPLATE.map((group) => <div key={group.code}><strong>{group.name}</strong>{group.children.map((child) => <span key={child}>{child}</span>)}</div>)}
         </div>
-        <button type="button" className="primary-button inventory-full-button" disabled={setupBusy} onClick={applyTemplate}>{setupBusy ? 'Setting up locations...' : 'Set up Mesh Youngstorget'}</button>
-        {setupSummary && <div className="inventory-setup-result" role="status"><strong>Setup complete</strong><span>{setupSummary.created || 0} created</span><span>{setupSummary.reused || 0} reused</span><span>{setupSummary.restored || 0} restored</span><span>No duplicates</span></div>}
+        <button type="button" className="primary-button inventory-full-button" disabled={setupBusy} onClick={applyTemplate}>{setupBusy ? 'Setting up operational inventory...' : 'Set up six refrigerators and catalogue'}</button>
+        {setupSummary && <div className="inventory-setup-result" role="status"><strong>Setup complete</strong><span>{setupSummary.refrigerators || 0} refrigerators</span><span>{setupSummary.catalogueProducts || 0} owned products</span><span>{setupSummary.defaultRows || 0} confirmed defaults</span><span>{setupSummary.unresolvedMappings || 0} unresolved</span></div>}
       </section>
       <section className="inventory-panel">
         <div className="inventory-panel-heading"><div><p className="eyebrow">Current structure</p><h2>Locations</h2></div><Status>{locations.filter((item) => item.active).length} active</Status></div>
@@ -472,6 +480,90 @@ function LocationManager({ locations, requestWriteAccess, refresh, run, setStatu
         <div className="inventory-action-row"><button type="button" className="primary-button" disabled={!location.name.trim()} onClick={async () => { const result = await run(() => saveInventoryLocation(location)); if (result?.ok) setLocation(EMPTY_LOCATION); }}>{location.id ? 'Save location' : 'Add custom location'}</button>{location.id && <button type="button" className="secondary-button" onClick={() => setLocation(EMPTY_LOCATION)}>Cancel edit</button>}</div>
       </details>
     </div>
+  );
+}
+
+function RefrigeratorDefaultsManager({ products, locations, standards, refrigeratorTemplates, unresolvedMappings, reserves, requestWriteAccess, refresh, setStatus }) {
+  const refrigerators = INVENTORY_REFRIGERATOR_DEFINITIONS.map((definition) => {
+    const location = locations.find((item) => item.active && item.code === definition.code);
+    return location ? { ...definition, location } : null;
+  }).filter(Boolean);
+  const [locationId, setLocationId] = useState('');
+  const [search, setSearch] = useState('');
+  const [millumGroup, setMillumGroup] = useState('');
+  const [drafts, setDrafts] = useState({});
+  const [saving, setSaving] = useState(false);
+  const selected = refrigerators.find((item) => item.location.id === locationId) || refrigerators[0];
+  useEffect(() => { if (!locationId && refrigerators[0]) setLocationId(refrigerators[0].location.id); }, [locationId, refrigerators[0]?.location.id]);
+  const ownedProducts = useMemo(() => products.filter((product) => product.ownershipStatus === 'owned'), [products]);
+  const baseline = useMemo(() => Object.fromEntries(ownedProducts.map((product) => {
+    const standard = standards.find((item) => item.locationId === selected?.location.id && item.productId === product.id);
+    const sourceOrder = Math.min(...(product.millumGroups || []).map((group) => group.itemSortOrder || 999), product.sortOrder || 999);
+    return [product.id, { assigned: Boolean(standard?.active), quantity: standard?.parQuantity ?? 0, countOrder: standard?.countOrder ?? sourceOrder }];
+  })), [ownedProducts, standards, selected?.location.id]);
+  useEffect(() => { setDrafts(baseline); }, [baseline]);
+  const groupOptions = useMemo(() => {
+    const groups = new Map();
+    for (const product of ownedProducts) for (const group of product.millumGroups || []) groups.set(group.name, Math.min(groups.get(group.name) ?? 999, group.groupSortOrder));
+    return [...groups].sort((left, right) => left[1] - right[1]).map(([name]) => name);
+  }, [ownedProducts]);
+  const visibleProducts = filterOwnedInventoryCatalogue(ownedProducts, { search, millumGroup }).sort(compareInventoryCatalogueOrder);
+  const changedProducts = ownedProducts.filter((product) => {
+    const current = drafts[product.id]; const original = baseline[product.id];
+    return current && original && (current.assigned !== original.assigned || Number(current.quantity || 0) !== Number(original.quantity || 0));
+  });
+  const invalidQuantity = changedProducts.some((product) => drafts[product.id].assigned && (!Number.isFinite(Number(drafts[product.id].quantity)) || Number(drafts[product.id].quantity) < 0));
+  const template = refrigeratorTemplates.find((item) => item.locationId === selected?.location.id);
+  const unresolved = unresolvedMappings.filter((item) => item.locationId === selected?.location.id);
+  const reserveByProduct = new Map(reserves.map((item) => [item.productId, item]));
+  const update = (productId, patch) => setDrafts((current) => ({ ...current, [productId]: { ...current[productId], ...patch } }));
+  const save = async () => {
+    if (!selected || !changedProducts.length || invalidQuantity || !(await requestWriteAccess())) return;
+    setSaving(true);
+    const result = await saveInventoryStandardsBulk({
+      locationId: selected.location.id,
+      rows: changedProducts.map((product) => drafts[product.id].assigned ? {
+        productId: product.id,
+        assigned: true,
+        parQuantity: Number(drafts[product.id].quantity),
+        countOrder: Number(drafts[product.id].countOrder || 0),
+        stockPolicy: 'exact_par',
+      } : { productId: product.id, assigned: false }),
+    });
+    setSaving(false);
+    setStatus(result.ok ? { ok: true, message: `${selected.name} defaults saved. The template is incomplete until a manager verifies it.` } : result);
+    if (result.ok) await refresh(true);
+  };
+  const verify = async () => {
+    if (!selected || !(await requestWriteAccess())) return;
+    const result = await verifyInventoryRefrigeratorTemplate(selected.location.id);
+    setStatus(result.ok ? { ok: true, message: `${selected.name} marked verified.` } : result);
+    if (result.ok) await refresh(true);
+  };
+  if (!refrigerators.length) return <section className="inventory-panel"><h2>Refrigerator defaults</h2><p className="inventory-warning">Run the six-refrigerator operational setup from Locations before editing defaults.</p></section>;
+  return (
+    <section className="inventory-panel inventory-fridge-defaults">
+      <div className="inventory-panel-heading"><div><p className="eyebrow">Manager-only operational template</p><h2>Refrigerator defaults</h2></div><Status tone={template?.status === 'verified' ? 'good' : 'warning'}>{template?.status === 'verified' ? 'Verified' : 'Incomplete'}</Status></div>
+      <p className="muted">Defaults are stable product assignments, not a current count. Temporary substitutions and physical extras belong in the Stock Count and never overwrite this template.</p>
+      <div className="inventory-standards-toolbar">
+        <label>Refrigerator<select value={selected?.location.id || ''} onChange={(event) => setLocationId(event.target.value)}>{refrigerators.map((item) => <option value={item.location.id} key={item.code}>{item.name}</option>)}</select></label>
+        <label>Search catalogue<input type="search" placeholder="Official name, practical name, alias or Millum ref" value={search} onChange={(event) => setSearch(event.target.value)} /></label>
+        <label>Millum category<select value={millumGroup} onChange={(event) => setMillumGroup(event.target.value)}><option value="">All owned categories</option>{groupOptions.map((group) => <option value={group} key={group}>{group}</option>)}</select></label>
+      </div>
+      <div className="inventory-fridge-catalogue" aria-label={`${selected?.name} owned product catalogue`}>
+        {visibleProducts.map((product) => {
+          const row = drafts[product.id] || baseline[product.id];
+          const reserve = reserveByProduct.get(product.id);
+          const groupNames = product.millumGroups?.map((group) => group.name).join(' · ');
+          return <article className="inventory-fridge-product" key={product.id}><label className="inventory-fridge-product-choice"><input type="checkbox" checked={Boolean(row?.assigned)} onChange={(event) => update(product.id, { assigned: event.target.checked })} /><span><strong>{product.shortName || product.name}</strong>{product.shortName && product.shortName !== product.name && <small>{product.name}</small>}<small>Millum {product.millumItemRef} · {groupNames || product.category}</small></span></label><label>Default quantity<input type="number" min="0" step="any" disabled={!row?.assigned} value={row?.quantity ?? 0} onChange={(event) => update(product.id, { quantity: event.target.value })} /></label>{reserve && <small className="inventory-reserve-summary">All fridges {quantity(reserve.refrigeratorDefaultQuantity)} · reserve {quantity(reserve.reserveTargetQuantity)}{reserve.reserveTargetOverride !== null ? ' override' : ' (3×)'} · desired {quantity(reserve.combinedDesiredQuantity)}</small>}</article>;
+        })}
+        {!visibleProducts.length && <p className="muted">No Bobby-owned Millum products match this filter.</p>}
+      </div>
+      {unresolved.length > 0 && <details className="inventory-unresolved-mappings"><summary>{unresolved.length} unresolved default mapping{unresolved.length === 1 ? '' : 's'} for this refrigerator</summary><p className="muted">These quantities were intentionally not merged into catalogue products.</p>{unresolved.map((item) => <article key={item.id}><strong>{item.requestedName}: {quantity(item.requestedDefaultQuantity)}</strong><span>{item.reason}</span><small>{item.candidateMillumItemRefs.length ? `Candidate Millum refs: ${item.candidateMillumItemRefs.join(', ')}` : 'No candidate in the supplied export'}</small></article>)}</details>}
+      {invalidQuantity && <p className="inventory-warning">Default quantities must be non-negative numbers.</p>}
+      <div className="inventory-standards-save"><span>{changedProducts.length} changed product{changedProducts.length === 1 ? '' : 's'}</span><button type="button" className="primary-button" disabled={saving || !changedProducts.length || invalidQuantity} onClick={save}>{saving ? 'Saving defaults...' : 'Save changed defaults'}</button><button type="button" className="secondary-button" disabled={saving || changedProducts.length > 0 || template?.status === 'verified' || !ownedProducts.some((product) => baseline[product.id]?.assigned)} onClick={verify}>Mark template verified</button></div>
+      {template?.status === 'verified' && <p className="inventory-audit">Verified {formatDateTime(template.verifiedAt)} by {template.verifiedByName}. Any later default edit returns it to incomplete.</p>}
+    </section>
   );
 }
 
@@ -570,10 +662,10 @@ function StandardsManager({ products, locations, standards, requestWriteAccess, 
   );
 }
 
-function CatalogManager({ products, locations, standards, requestWriteAccess, refresh, setStatus }) {
-  const [view, setView] = useState('products');
+function CatalogManager({ products, locations, standards, refrigeratorTemplates, unresolvedMappings, reserves, requestWriteAccess, refresh, setStatus }) {
+  const [view, setView] = useState('fridges');
   const run = async (operation) => { if (!(await requestWriteAccess())) return; const result = await operation(); setStatus(result); if (result.ok) await refresh(true); return result; };
-  return <div className="inventory-stack"><nav className="inventory-subtabs"><button type="button" className={view === 'products' ? 'active' : ''} onClick={() => setView('products')}>Products</button><button type="button" className={view === 'locations' ? 'active' : ''} onClick={() => setView('locations')}>Locations</button><button type="button" className={view === 'standards' ? 'active' : ''} onClick={() => setView('standards')}>Standards</button><button type="button" className={view === 'import' ? 'active' : ''} onClick={() => setView('import')}>CSV import</button></nav>{view === 'products' && <ProductManager products={products} run={run} />}{view === 'locations' && <LocationManager locations={locations} requestWriteAccess={requestWriteAccess} refresh={refresh} run={run} setStatus={setStatus} />}{view === 'standards' && <StandardsManager products={products} locations={locations} standards={standards} requestWriteAccess={requestWriteAccess} refresh={refresh} run={run} setStatus={setStatus} />}{view === 'import' && <CsvImport products={products} locations={locations} requestWriteAccess={requestWriteAccess} refresh={refresh} setStatus={setStatus} />}</div>;
+  return <div className="inventory-stack"><nav className="inventory-subtabs"><button type="button" className={view === 'fridges' ? 'active' : ''} onClick={() => setView('fridges')}>Fridge defaults</button><button type="button" className={view === 'products' ? 'active' : ''} onClick={() => setView('products')}>Products</button><button type="button" className={view === 'locations' ? 'active' : ''} onClick={() => setView('locations')}>Locations</button><button type="button" className={view === 'standards' ? 'active' : ''} onClick={() => setView('standards')}>Other standards</button><button type="button" className={view === 'import' ? 'active' : ''} onClick={() => setView('import')}>CSV import</button></nav>{view === 'fridges' && <RefrigeratorDefaultsManager products={products} locations={locations} standards={standards} refrigeratorTemplates={refrigeratorTemplates} unresolvedMappings={unresolvedMappings} reserves={reserves} requestWriteAccess={requestWriteAccess} refresh={refresh} setStatus={setStatus} />}{view === 'products' && <ProductManager products={products} run={run} />}{view === 'locations' && <LocationManager locations={locations} requestWriteAccess={requestWriteAccess} refresh={refresh} run={run} setStatus={setStatus} />}{view === 'standards' && <StandardsManager products={products} locations={locations} standards={standards} requestWriteAccess={requestWriteAccess} refresh={refresh} run={run} setStatus={setStatus} />}{view === 'import' && <CsvImport products={products} locations={locations} requestWriteAccess={requestWriteAccess} refresh={refresh} setStatus={setStatus} />}</div>;
 }
 
 function CsvImport({ products, locations, requestWriteAccess, refresh, setStatus }) {
@@ -621,7 +713,7 @@ function AuthorizedInventoryWorkspace({ user, requestWriteAccess, onClose }) {
   const coordinator = canCoordinateInventory(user);
   const organizationId = user?.organizationId || user?.organization_id || '';
   const [tab, setTab] = useState('overview');
-  const [data, setData] = useState({ products: [], locations: [], standards: [], sessions: [] });
+  const [data, setData] = useState({ products: [], locations: [], standards: [], sessions: [], refrigeratorTemplates: [], unresolvedMappings: [], reserves: [] });
   const [selectedSessionId, setSelectedSessionId] = useState('');
   const [sessionDetail, setSessionDetail] = useState({ record: null, lines: [] });
   const [loading, setLoading] = useState(true);
@@ -691,7 +783,7 @@ function AuthorizedInventoryWorkspace({ user, requestWriteAccess, onClose }) {
       <nav className="inventory-main-tabs" aria-label="Inventory views"><button type="button" className={tab === 'overview' ? 'active' : ''} onClick={() => setTab('overview')}>Overview</button><button type="button" className={tab === 'count' ? 'active' : ''} onClick={() => setTab('count')}>Count</button><button type="button" className={tab === 'restock' ? 'active' : ''} onClick={() => setTab('restock')}>Restock</button>{coordinator && <button type="button" className={tab === 'history' ? 'active' : ''} onClick={() => setTab('history')}>History</button>}{manager && <button type="button" className={tab === 'manage' ? 'active' : ''} onClick={() => setTab('manage')}>Manage</button>}</nav>
       <Message status={status} />
       {status?.ok === false && <button type="button" className="secondary-button inventory-retry-button" onClick={() => refresh()}>Retry inventory refresh</button>}
-      {showCreator ? <SessionCreator products={data.products} locations={data.locations} standards={data.standards} onCancel={() => setShowCreator(false)} onCreate={create} busy={creating} /> : tab === 'overview' ? <InventoryOverview sessions={data.sessions} activeSession={activeSession} lines={activeSession?.id === selectedSession?.id ? selectedLines : []} locations={data.locations} onOpenSession={openSession} onStart={() => setShowCreator(true)} canCoordinate={coordinator} /> : tab === 'count' ? selectedSession ? <CountSession session={selectedSession} sessions={data.sessions} lines={selectedLines} locations={data.locations} canManage={manager} canCoordinate={coordinator} requestWriteAccess={requestWriteAccess} onRefresh={async () => { await refreshSession(); await refresh(); }} onOpenSession={openSession} onBack={() => setTab('overview')} setStatus={setStatus} remoteNotice={remoteNotice} clearRemoteNotice={() => setRemoteNotice(false)} /> : <section className="inventory-panel inventory-empty"><h2>No active stock count</h2>{coordinator && <button type="button" className="primary-button" onClick={() => setShowCreator(true)}>Start stock count</button>}</section> : tab === 'restock' ? <RestockView session={selectedSession} lines={selectedLines} /> : tab === 'history' ? <InventoryHistory sessions={data.sessions} locations={data.locations} onOpenSession={openSession} /> : <CatalogManager products={data.products} locations={data.locations} standards={data.standards} requestWriteAccess={requestWriteAccess} refresh={refresh} setStatus={setStatus} />}
+      {showCreator ? <SessionCreator products={data.products} locations={data.locations} standards={data.standards} onCancel={() => setShowCreator(false)} onCreate={create} busy={creating} /> : tab === 'overview' ? <InventoryOverview sessions={data.sessions} activeSession={activeSession} lines={activeSession?.id === selectedSession?.id ? selectedLines : []} locations={data.locations} onOpenSession={openSession} onStart={() => setShowCreator(true)} canCoordinate={coordinator} /> : tab === 'count' ? selectedSession ? <CountSession session={selectedSession} sessions={data.sessions} lines={selectedLines} locations={data.locations} canManage={manager} canCoordinate={coordinator} requestWriteAccess={requestWriteAccess} onRefresh={async () => { await refreshSession(); await refresh(); }} onOpenSession={openSession} onBack={() => setTab('overview')} setStatus={setStatus} remoteNotice={remoteNotice} clearRemoteNotice={() => setRemoteNotice(false)} /> : <section className="inventory-panel inventory-empty"><h2>No active stock count</h2>{coordinator && <button type="button" className="primary-button" onClick={() => setShowCreator(true)}>Start stock count</button>}</section> : tab === 'restock' ? <RestockView session={selectedSession} lines={selectedLines} /> : tab === 'history' ? <InventoryHistory sessions={data.sessions} locations={data.locations} onOpenSession={openSession} /> : <CatalogManager products={data.products} locations={data.locations} standards={data.standards} refrigeratorTemplates={data.refrigeratorTemplates} unresolvedMappings={data.unresolvedMappings} reserves={data.reserves} requestWriteAccess={requestWriteAccess} refresh={refresh} setStatus={setStatus} />}
       {data.refreshedAt && <p className="inventory-last-refresh">Last successful refresh: {formatDateTime(data.refreshedAt)}</p>}
     </main>
   );

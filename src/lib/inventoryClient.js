@@ -2,9 +2,14 @@ import { getCurrentSession, supabaseAuthClient } from './supabaseAuthClient.js';
 import { isSupabaseConfigured } from './supabaseClient.js';
 import { normalizeInventoryDecimal } from '../data/inventoryStructuredQuantities.js';
 
-const PRODUCT_COLUMNS = 'id,name,short_name,sku,barcode,category,unit_label,default_pack_size,count_mode,container_capacity_liters,supplier_name,notes,active,sort_order';
+const PRODUCT_COLUMNS = 'id,name,short_name,sku,barcode,category,unit_label,default_pack_size,count_mode,container_capacity_liters,supplier_name,notes,active,sort_order,millum_item_ref,ownership_status,reserve_target_override';
 const LOCATION_COLUMNS = 'id,name,code,location_type,parent_location_id,zone,description,active,sort_order';
 const STANDARD_COLUMNS = 'id,location_id,product_id,par_quantity,minimum_quantity,default_restock_quantity,count_order,active,notes,stock_policy,target_mode,reserve_multiplier,case_size,target_cases,target_loose_quantity,physical_recount_interval_days';
+const ALIAS_COLUMNS = 'id,product_id,alias,alias_source,active';
+const CATALOGUE_GROUP_COLUMNS = 'id,product_id,millum_group,group_sort_order,item_sort_order,millum_count_unit,source_occurrence_count';
+const REFRIGERATOR_TEMPLATE_COLUMNS = 'id,location_id,template_status,verified_at,verified_by_name,updated_at';
+const UNRESOLVED_MAPPING_COLUMNS = 'id,location_id,requested_name,requested_default_quantity,requested_count_order,candidate_millum_item_refs,reason,resolution_status,resolved_product_id';
+const RESERVE_COLUMNS = 'product_id,refrigerator_default_quantity,reserve_target_override,reserve_target_quantity,combined_desired_quantity';
 const SESSION_COLUMNS = 'id,title,count_type,status,count_date,started_at,completed_at,approved_at,started_by_name,completed_by_name,approved_by_name,completion_note,approval_note,session_kind,original_session_id,correction_reason,correction_created_by_name,correction_created_at,finalized_with_exceptions,exception_reason,exception_skipped_count,exception_uncounted_count,exception_needs_review_count,exception_incomplete_location_count,exception_location_ids,finalized_by_name,finalized_at,updated_at';
 const LINE_COLUMNS = 'id,location_id,product_id,product_name_snapshot,location_name_snapshot,unit_label_snapshot,category_snapshot,location_sort_order_snapshot,count_order_snapshot,product_sort_order_snapshot,par_quantity_snapshot,minimum_quantity_snapshot,stock_policy_snapshot,target_mode_snapshot,effective_target_quantity_snapshot,service_target_basis_snapshot,reserve_multiplier_snapshot,case_size_snapshot,target_cases_snapshot,target_loose_quantity_snapshot,physical_recount_interval_days_snapshot,previous_physical_count_quantity_snapshot,previous_physical_counted_at_snapshot,count_mode_snapshot,container_capacity_liters_snapshot,counted_whole_units,counted_open_volume_liters,counted_full_kegs,counted_partial_keg_fraction,count_full_cases,count_loose_quantity,counted_quantity,count_method,count_status,variance_quantity,restock_quantity,note,counted_at,counted_by_name,updated_at';
 
@@ -71,6 +76,11 @@ function normalizeProduct(row) {
     notes: row.notes || '',
     active: row.active !== false,
     sortOrder: row.sort_order || 0,
+    millumItemRef: row.millum_item_ref || '',
+    ownershipStatus: row.ownership_status || 'unverified',
+    reserveTargetOverride: exactDecimal(row.reserve_target_override),
+    aliases: row.aliases || [],
+    millumGroups: row.millumGroups || [],
   };
 }
 
@@ -215,20 +225,70 @@ export async function loadInventoryWorkspace({ includeArchived = false } = {}) {
   const locationQuery = supabaseAuthClient.from('inventory_locations').select(LOCATION_COLUMNS).order('sort_order').order('name');
   const standardQuery = supabaseAuthClient.from('inventory_location_products').select(STANDARD_COLUMNS).order('count_order');
   const sessionQuery = supabaseAuthClient.from('inventory_count_sessions').select(SESSION_COLUMNS).order('count_date', { ascending: false }).order('started_at', { ascending: false }).limit(60);
+  const aliasQuery = supabaseAuthClient.from('inventory_product_aliases').select(ALIAS_COLUMNS).eq('active', true).order('alias');
+  const groupQuery = supabaseAuthClient.from('inventory_product_catalogue_groups').select(CATALOGUE_GROUP_COLUMNS).order('group_sort_order').order('item_sort_order');
+  const templateQuery = supabaseAuthClient.from('inventory_refrigerator_templates').select(REFRIGERATOR_TEMPLATE_COLUMNS).order('updated_at');
+  const unresolvedQuery = supabaseAuthClient.from('inventory_catalogue_unresolved_mappings').select(UNRESOLVED_MAPPING_COLUMNS).eq('resolution_status', 'unresolved').order('requested_count_order');
+  const reserveQuery = supabaseAuthClient.from('inventory_refrigerator_reserve_targets').select(RESERVE_COLUMNS);
   if (!includeArchived) {
     productQuery.eq('active', true);
     locationQuery.eq('active', true);
     standardQuery.eq('active', true);
   }
-  const [products, locations, standards, sessions] = await Promise.all([productQuery, locationQuery, standardQuery, sessionQuery]);
-  const error = products.error || locations.error || standards.error || sessions.error;
+  const [products, locations, standards, sessions, aliases, groups, templates, unresolved, reserves] = await Promise.all([
+    productQuery, locationQuery, standardQuery, sessionQuery, aliasQuery, groupQuery,
+    templateQuery, unresolvedQuery, reserveQuery,
+  ]);
+  const error = products.error || locations.error || standards.error || sessions.error
+    || aliases.error || groups.error || templates.error || unresolved.error || reserves.error;
   if (error) return { ...failure(error), products: [], locations: [], standards: [], sessions: [] };
+  const aliasesByProduct = new Map();
+  for (const row of aliases.data || []) aliasesByProduct.set(row.product_id, [...(aliasesByProduct.get(row.product_id) || []), row.alias]);
+  const groupsByProduct = new Map();
+  for (const row of groups.data || []) groupsByProduct.set(row.product_id, [...(groupsByProduct.get(row.product_id) || []), {
+    id: row.id,
+    name: row.millum_group,
+    groupSortOrder: Number(row.group_sort_order || 0),
+    itemSortOrder: Number(row.item_sort_order || 0),
+    countUnit: row.millum_count_unit || '',
+    sourceOccurrenceCount: Number(row.source_occurrence_count || 1),
+  }]);
   return output(true, {
     mode: 'authenticated',
-    products: (products.data || []).map(normalizeProduct),
+    products: (products.data || []).map((row) => normalizeProduct({
+      ...row,
+      aliases: aliasesByProduct.get(row.id) || [],
+      millumGroups: groupsByProduct.get(row.id) || [],
+    })),
     locations: (locations.data || []).map(normalizeLocation),
     standards: (standards.data || []).map(normalizeStandard),
     sessions: (sessions.data || []).map(normalizeSession),
+    refrigeratorTemplates: (templates.data || []).map((row) => ({
+      id: row.id,
+      locationId: row.location_id,
+      status: row.template_status || 'incomplete',
+      verifiedAt: row.verified_at || '',
+      verifiedByName: row.verified_by_name || '',
+      updatedAt: row.updated_at || '',
+    })),
+    unresolvedMappings: (unresolved.data || []).map((row) => ({
+      id: row.id,
+      locationId: row.location_id,
+      requestedName: row.requested_name || '',
+      requestedDefaultQuantity: Number(row.requested_default_quantity || 0),
+      requestedCountOrder: Number(row.requested_count_order || 0),
+      candidateMillumItemRefs: row.candidate_millum_item_refs || [],
+      reason: row.reason || '',
+      resolutionStatus: row.resolution_status || 'unresolved',
+      resolvedProductId: row.resolved_product_id || '',
+    })),
+    reserves: (reserves.data || []).map((row) => ({
+      productId: row.product_id,
+      refrigeratorDefaultQuantity: Number(row.refrigerator_default_quantity || 0),
+      reserveTargetOverride: row.reserve_target_override == null ? null : Number(row.reserve_target_override),
+      reserveTargetQuantity: Number(row.reserve_target_quantity || 0),
+      combinedDesiredQuantity: Number(row.combined_desired_quantity || 0),
+    })),
     refreshedAt: new Date().toISOString(),
   });
 }
@@ -327,6 +387,17 @@ export function copyInventoryStandards(payload) {
 
 export function setupMeshYoungstorgetInventoryLocations() {
   return callRpc('setup_mesh_youngstorget_inventory_locations', {});
+}
+
+export function verifyInventoryRefrigeratorTemplate(locationId) {
+  return callRpc('verify_inventory_refrigerator_template', { input_location_id: locationId });
+}
+
+export function saveInventoryProductReserveOverride(productId, reserveTargetOverride) {
+  return callRpc('set_inventory_product_reserve_override', {
+    input_product_id: productId,
+    input_reserve_target_override: reserveTargetOverride === '' ? null : reserveTargetOverride,
+  });
 }
 
 export function saveInventoryStandardsBulk({ locationId, rows }) {

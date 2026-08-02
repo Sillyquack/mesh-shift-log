@@ -6,6 +6,7 @@ const commands = [
   ['npm', ['run', 'verify:inventory-session-lifecycle']],
   ['npm', ['run', 'verify:inventory-product-identity-csv']],
   ['npm', ['run', 'verify:inventory-structured-quantities']],
+  ['npm', ['run', 'verify:inventory-operational-scope']],
   ['npm', ['run', 'verify:phase9-security-db']],
   ['npm', ['run', 'build']],
 ];

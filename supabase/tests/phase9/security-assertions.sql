@@ -412,6 +412,8 @@ insert into phase9_test.expected_authenticated_functions (signature) values
   ('public.upsert_inventory_location_product(uuid,uuid,uuid,numeric,numeric,numeric,integer,boolean,text,jsonb,text[])'),
   ('public.copy_inventory_location_standards(uuid,uuid,boolean)'),
   ('public.setup_mesh_youngstorget_inventory_locations()'),
+  ('public.verify_inventory_refrigerator_template(uuid)'),
+  ('public.set_inventory_product_reserve_override(uuid,numeric)'),
   ('public.bulk_upsert_inventory_location_standards(uuid,jsonb)'),
   ('public.create_inventory_count_session(text,text,uuid,date,uuid[],text)'),
   ('public.create_inventory_correction_session(uuid,text,uuid)'),

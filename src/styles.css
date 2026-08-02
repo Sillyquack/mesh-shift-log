@@ -3167,7 +3167,7 @@ textarea {
 
 .inventory-standards-toolbar {
   display: grid;
-  grid-template-columns: minmax(220px, 0.8fr) minmax(260px, 1.2fr);
+  grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
   gap: 12px;
 }
 
@@ -3199,6 +3199,74 @@ textarea {
 .inventory-standard-list {
   display: grid;
   gap: 8px;
+}
+
+.inventory-fridge-catalogue {
+  display: grid;
+  gap: 8px;
+  max-height: 66vh;
+  overflow: auto;
+  padding-right: 4px;
+  overscroll-behavior: contain;
+}
+
+.inventory-fridge-product {
+  display: grid;
+  grid-template-columns: minmax(240px, 1fr) minmax(130px, 180px);
+  gap: 10px 14px;
+  align-items: center;
+  padding: 12px;
+  border: 1px solid var(--line);
+  border-radius: 6px;
+  background: var(--surface-strong);
+}
+
+.inventory-fridge-product-choice {
+  display: flex;
+  align-items: flex-start;
+  gap: 10px;
+  min-width: 0;
+}
+
+.inventory-fridge-product-choice > input {
+  width: 20px;
+  height: 20px;
+  flex: 0 0 auto;
+}
+
+.inventory-fridge-product-choice > span,
+.inventory-fridge-product > label:not(.inventory-fridge-product-choice) {
+  display: grid;
+  gap: 4px;
+}
+
+.inventory-fridge-product input[type='number'] {
+  width: 100%;
+  min-height: 42px;
+  border: 1px solid var(--line);
+  border-radius: 6px;
+  background: var(--surface);
+  color: var(--text);
+  padding: 9px;
+}
+
+.inventory-reserve-summary {
+  grid-column: 1 / -1;
+  color: var(--muted);
+}
+
+.inventory-unresolved-mappings > summary {
+  cursor: pointer;
+  font-weight: 800;
+}
+
+.inventory-unresolved-mappings article {
+  display: grid;
+  gap: 4px;
+  margin-top: 8px;
+  padding: 10px;
+  border-left: 3px solid var(--important);
+  background: var(--surface-strong);
 }
 
 .inventory-standard-row {
@@ -3389,7 +3457,8 @@ textarea {
   .inventory-location-picker,
   .inventory-template-review,
   .inventory-standards-toolbar,
-  .inventory-standard-row {
+  .inventory-standard-row,
+  .inventory-fridge-product {
     grid-template-columns: 1fr;
   }
 

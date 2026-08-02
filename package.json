@@ -11,6 +11,7 @@
     "verify:inventory-session-lifecycle": "node scripts/verify-inventory-session-lifecycle.mjs",
     "verify:inventory-product-identity-csv": "node scripts/verify-inventory-product-identity-csv.mjs",
     "verify:inventory-structured-quantities": "node scripts/verify-inventory-structured-quantities.mjs",
+    "verify:inventory-operational-scope": "node scripts/verify-inventory-operational-scope.mjs",
     "verify:phase9-security-db": "node scripts/verify-phase9-security-db.mjs",
     "verify:phase9-all": "node scripts/verify-phase9-all.mjs",
     "preview": "vite preview",

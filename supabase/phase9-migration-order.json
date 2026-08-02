@@ -45,8 +45,13 @@
     {
       "id": "phase9f-structured-quantities",
       "path": "supabase/phase9f_inventory_structured_quantities.sql",
+      "repeatable": false
+    },
+    {
+      "id": "phase9g-operational-scope",
+      "path": "supabase/phase9g_inventory_operational_scope.sql",
       "repeatable": true
     }
   ],
-  "terminalMigration": "supabase/phase9f_inventory_structured_quantities.sql"
+  "terminalMigration": "supabase/phase9g_inventory_operational_scope.sql"
 }
