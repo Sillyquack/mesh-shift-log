@@ -14,6 +14,7 @@
     "verify:inventory-operational-scope": "node scripts/verify-inventory-operational-scope.mjs",
     "verify:inventory-counter-workflow": "node scripts/verify-inventory-counter-workflow.mjs",
     "verify:inventory-counter-replacement": "node scripts/verify-inventory-counter-replacement.mjs",
+    "verify:inventory-counter-mobile": "node scripts/verify-inventory-counter-mobile.mjs",
     "verify:phase9-security-db": "node scripts/verify-phase9-security-db.mjs",
     "verify:phase9-all": "node scripts/verify-phase9-all.mjs",
     "preview": "vite preview",

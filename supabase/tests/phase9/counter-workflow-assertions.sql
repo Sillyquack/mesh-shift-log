@@ -123,10 +123,11 @@ select phase9gb_test.assert_true(
 select phase9gb_test.assert_true(
   (public.get_inventory_counter_workspace()#>'{assignments,0,lines,0}') ? 'product_id'
   and (public.get_inventory_counter_workspace()#>'{assignments,0,lines,0}') ? 'millum_item_ref'
+  and (public.get_inventory_counter_workspace()#>'{assignments,0,lines,0}') ? 'standard_quantity'
   and not ((public.get_inventory_counter_workspace()#>'{assignments,0,lines,0}') ? 'par_quantity_snapshot')
   and not ((public.get_inventory_counter_workspace()#>'{assignments,0,lines,0}') ? 'variance_quantity')
   and position('reserve' in lower(public.get_inventory_counter_workspace()::text)) = 0,
-  'DB-9GB-9: counter line identity is stable while defaults, variance, and reserves stay hidden'
+  'DB-9GB-9: counter line identity and assigned standard are safe while internal, variance, and reserve fields stay hidden'
 );
 
 select phase9gb_test.assert_sqlstate(

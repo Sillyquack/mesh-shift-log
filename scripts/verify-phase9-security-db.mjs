@@ -27,9 +27,11 @@ const COUNTER_FIXTURE_PATH = resolve(ROOT, 'supabase/tests/phase9/counter-fixtur
 const COUNTER_ASSERTION_PATH = resolve(ROOT, 'supabase/tests/phase9/counter-workflow-assertions.sql');
 const REPLACEMENT_FIXTURE_PATH = resolve(ROOT, 'supabase/tests/phase9/counter-replacement-fixtures.sql');
 const REPLACEMENT_ASSERTION_PATH = resolve(ROOT, 'supabase/tests/phase9/counter-replacement-assertions.sql');
+const MOBILE_ASSERTION_PATH = resolve(ROOT, 'supabase/tests/phase9/counter-mobile-assertions.sql');
 const EXPECTED_ASSERTION_PASSES = 70;
 const EXPECTED_COUNTER_ASSERTION_PASSES = 47;
 const EXPECTED_REPLACEMENT_ASSERTION_PASSES = 28;
+const EXPECTED_MOBILE_ASSERTION_PASSES = 8;
 let containerStarted = false;
 
 if (process.argv.length > 2) {
@@ -342,10 +344,10 @@ async function main() {
   const paths = entries.map((entry) => entry.path);
   verifyUnsafeOrderIsRejected(paths);
   if (paths.at(-1) !== PHASE9_TERMINAL_MIGRATION) {
-    throw new Error('Phase 9G is not terminal.');
+    throw new Error('Phase 9G-C is not terminal.');
   }
   entries.forEach((entry) => resolveMigrationPath(entry.path));
-  if (![FIXTURE_PATH, ASSERTION_PATH, PRE_PHASE9D_FIXTURE_PATH, INTEGRITY_ASSERTION_PATH, IDENTITY_ASSERTION_PATH, STRUCTURED_ASSERTION_PATH, OPERATIONAL_ASSERTION_PATH, COUNTER_FIXTURE_PATH, COUNTER_ASSERTION_PATH, REPLACEMENT_FIXTURE_PATH, REPLACEMENT_ASSERTION_PATH].every(existsSync)) {
+  if (![FIXTURE_PATH, ASSERTION_PATH, PRE_PHASE9D_FIXTURE_PATH, INTEGRITY_ASSERTION_PATH, IDENTITY_ASSERTION_PATH, STRUCTURED_ASSERTION_PATH, OPERATIONAL_ASSERTION_PATH, COUNTER_FIXTURE_PATH, COUNTER_ASSERTION_PATH, REPLACEMENT_FIXTURE_PATH, REPLACEMENT_ASSERTION_PATH, MOBILE_ASSERTION_PATH].every(existsSync)) {
     throw new Error('Phase 9 executable security SQL is missing.');
   }
 
@@ -417,6 +419,16 @@ async function main() {
   console.log('PASS isolated Phase 9G-B counter memberships and assignment fixtures');
   psql(readFileSync(REPLACEMENT_FIXTURE_PATH, 'utf8'), { singleTransaction: true });
   console.log('PASS isolated Phase 9G-B2 replacement and final-history fixtures');
+  const mobileAssertions = psql(readFileSync(MOBILE_ASSERTION_PATH, 'utf8'), { singleTransaction: true });
+  const mobilePassLines = `${mobileAssertions.stdout}\n${mobileAssertions.stderr}`
+    .split('\n')
+    .filter((line) => line.includes('PASS '))
+    .map((line) => line.replace(/^.*PASS /, 'PASS '));
+  if (mobilePassLines.length !== EXPECTED_MOBILE_ASSERTION_PASSES) {
+    throw new Error(`Expected ${EXPECTED_MOBILE_ASSERTION_PASSES} executable mobile-counter assertion passes, received ${mobilePassLines.length}.`);
+  }
+  mobilePassLines.forEach((line) => console.log(line));
+  console.log(`Executable PostgreSQL mobile-counter assertions: ${mobilePassLines.length}/${mobilePassLines.length} passed.`);
   await verifyConcurrentCreation();
   await verifyConcurrentCounterSubmission();
   await verifyConcurrentCounterReplacement();

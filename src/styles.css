@@ -2687,10 +2687,132 @@ textarea {
 
 .counter-workspace {
   max-width: 760px;
+  overflow-x: clip;
+}
+
+.counter-screen,
+.counter-assignment-list,
+.counter-count-list {
+  display: grid;
+  gap: 14px;
+  min-width: 0;
+}
+
+.counter-topbar,
+.counter-count-header,
+.counter-assignment-card,
+.counter-line-card {
+  min-width: 0;
+  overflow-wrap: anywhere;
+}
+
+.counter-back-button {
+  width: max-content;
+  min-height: 48px;
+}
+
+.counter-assignment-card {
+  display: grid;
+  gap: 12px;
+  padding: 16px;
+}
+
+.counter-home-progress {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: space-between;
+  gap: 8px;
+}
+
+.counter-unsaved-summary,
+.counter-deviation-label {
+  padding: 10px;
+  border: 1px solid color-mix(in srgb, var(--important) 50%, var(--line));
+  border-radius: 6px;
+  background: color-mix(in srgb, var(--important) 8%, var(--surface));
+}
+
+.counter-line-deviation {
+  border-left: 5px solid var(--important);
 }
 
 .counter-line-card {
   scroll-margin-top: 16px;
+  display: grid;
+  gap: 14px;
+  padding: 16px;
+}
+
+.counter-official-name {
+  color: var(--muted);
+  font-size: 0.9rem;
+}
+
+.counter-standard-actual {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 8px;
+}
+
+.counter-standard-actual > div {
+  display: grid;
+  gap: 4px;
+  min-width: 0;
+  padding: 10px;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  background: var(--surface-strong);
+}
+
+.counter-standard-actual span,
+.counter-primary-quantity > span {
+  color: var(--muted);
+  font-size: 0.82rem;
+}
+
+.counter-primary-quantity input {
+  min-height: 58px;
+  border-width: 2px;
+  font-size: 1.35rem;
+  font-weight: 750;
+}
+
+.counter-structured-fields input {
+  min-height: 54px;
+  font-size: 1.15rem;
+}
+
+.counter-save-status {
+  display: grid;
+  gap: 2px;
+  padding: 9px 10px;
+  border: 1px solid var(--line);
+  border-radius: 7px;
+  background: var(--surface-strong);
+  font-size: 0.88rem;
+}
+
+.counter-save-status.saved {
+  border-color: color-mix(in srgb, var(--brand) 48%, var(--line));
+}
+
+.counter-save-status.unsaved,
+.counter-save-status.saving,
+.counter-save-status.failed,
+.counter-save-status.stale {
+  border-color: color-mix(in srgb, var(--important) 55%, var(--line));
+}
+
+.counter-save-status.failed,
+.counter-save-status.stale {
+  color: var(--important);
+}
+
+.counter-save-button,
+.counter-assignment-card button,
+.counter-progress-actions button,
+.inventory-keg-fractions button {
+  min-height: 48px;
 }
 
 .counter-default-panel,
@@ -2699,8 +2821,10 @@ textarea {
 }
 
 .counter-progress-actions {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto minmax(0, 1fr);
   align-items: center;
-  justify-content: space-between;
+  gap: 8px;
   position: sticky;
   top: 8px;
   z-index: 4;
@@ -2709,6 +2833,23 @@ textarea {
   border-radius: 12px;
   background: color-mix(in srgb, var(--surface) 94%, transparent);
   backdrop-filter: blur(8px);
+}
+
+.counter-progress-actions span {
+  text-align: center;
+  white-space: nowrap;
+}
+
+.counter-return-message,
+.counter-readonly-state {
+  padding: 16px;
+  border: 2px solid color-mix(in srgb, var(--important) 55%, var(--line));
+  border-radius: 8px;
+  background: var(--surface);
+}
+
+.counter-review-panel details p {
+  margin-block: 8px;
 }
 
 .inventory-replacement-panel {
@@ -2752,6 +2893,32 @@ textarea {
 
   .counter-workspace .inventory-case-count > div {
     grid-column: 1 / -1;
+  }
+
+  .counter-workspace .inventory-panel,
+  .counter-workspace .inventory-session-header,
+  .counter-line-card,
+  .counter-assignment-card {
+    padding: 14px;
+  }
+
+  .counter-progress-actions {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+
+  .counter-progress-actions span {
+    grid-column: 1 / -1;
+    grid-row: 1;
+  }
+
+  .counter-standard-actual {
+    grid-template-columns: 1fr;
+  }
+
+  .counter-workspace button,
+  .counter-workspace input,
+  .counter-workspace textarea {
+    font-size: max(16px, 1em);
   }
 }
 
@@ -3607,6 +3774,36 @@ textarea {
   .inventory-dormant-check button {
     width: 100%;
   }
+}
+
+/* Counter controls override the shared manager form sizing declared above. */
+.counter-workspace button {
+  min-height: 48px;
+}
+
+.counter-workspace .counter-primary-quantity input {
+  min-height: 58px;
+  font-size: 1.35rem;
+  font-weight: 750;
+}
+
+.counter-workspace .counter-structured-fields input {
+  min-height: 54px;
+  font-size: 1.15rem;
+}
+
+.counter-workspace .inventory-danger-option {
+  min-height: 48px;
+  cursor: pointer;
+}
+
+.counter-workspace .inventory-danger-option input[type='checkbox'] {
+  width: 24px;
+  min-width: 24px;
+  height: 24px;
+  min-height: 24px;
+  flex: 0 0 24px;
+  padding: 0;
 }
 
 /* Event Operations Cockpit */

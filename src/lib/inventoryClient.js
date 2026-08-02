@@ -41,11 +41,15 @@ function failure(error, fallback = 'Inventory request failed.') {
     ? 'An active Stock Count already exists. Complete and approve or cancel it before starting another.'
     : /changed on another device|current (line|session|assignment|Stock Count) version is required|current assignment revision is required/i.test(rawMessage)
       ? 'This Stock Count changed on another device. Refresh before trying again; your unsaved value is still here.'
-      : /duplicate key|unique constraint/i.test(rawMessage)
-        ? 'A product or location already uses that SKU, barcode, code, or relationship.'
-        : /row-level security|permission denied/i.test(rawMessage)
-          ? 'You do not have permission for this inventory action.'
-          : rawMessage || fallback;
+      : /jwt expired|invalid jwt|not authenticated|auth session missing/i.test(rawMessage)
+        ? 'Your Stock Count sign-in expired. Sign in again; values not yet saved remain only on this screen.'
+        : /failed to fetch|network|timeout|connection/i.test(rawMessage)
+          ? 'The Stock Count could not reach the server. Your unsaved value is still here; check the connection and retry.'
+          : /duplicate key|unique constraint/i.test(rawMessage)
+            ? 'A product or location already uses that SKU, barcode, code, or relationship.'
+            : /row-level security|permission denied/i.test(rawMessage)
+              ? 'You do not have permission for this inventory action.'
+              : rawMessage || fallback;
   return output(false, { mode: 'sync_error', message, error });
 }
 
@@ -264,6 +268,8 @@ function normalizeCounterLine(row) {
     category: row.category_snapshot || '',
     countOrderSnapshot: Number(row.count_order_snapshot || 0),
     productSortOrderSnapshot: Number(row.product_sort_order_snapshot || 0),
+    standardQuantity: row.standard_quantity == null ? null : Number(row.standard_quantity),
+    standardQuantityExact: exactDecimal(row.standard_quantity),
     countMode: row.count_mode_snapshot || 'unit',
     containerCapacityLiters: exactDecimal(row.container_capacity_liters_snapshot),
     countedWholeUnits: row.counted_whole_units == null ? null : Number(row.counted_whole_units),

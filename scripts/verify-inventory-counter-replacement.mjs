@@ -9,10 +9,11 @@ const workflows = readFileSync(new URL('../src/components/InventoryCounterWorkfl
 const runner = readFileSync(new URL('./verify-phase9-security-db.mjs', import.meta.url), 'utf8');
 const assertions = readFileSync(new URL('../supabase/tests/phase9/counter-replacement-assertions.sql', import.meta.url), 'utf8');
 
-test('Phase 9G-B2 is terminal, repeatable, and directly follows Phase 9G-B', () => {
+test('Phase 9G-B2 remains directly before the repeatable Phase 9G-C terminal layer', () => {
   const entries = validatedPhase9MigrationEntries();
-  assert.equal(PHASE9_TERMINAL_MIGRATION, 'supabase/phase9gb2_inventory_counter_replacement.sql');
-  assert.equal(entries.at(-2).path, 'supabase/phase9gb_inventory_counter_assignments.sql');
+  assert.equal(PHASE9_TERMINAL_MIGRATION, 'supabase/phase9gc_inventory_counter_mobile.sql');
+  assert.equal(entries.at(-2).path, 'supabase/phase9gb2_inventory_counter_replacement.sql');
+  assert.equal(entries.at(-3).path, 'supabase/phase9gb_inventory_counter_assignments.sql');
   assert.deepEqual(entries.filter((entry) => entry.repeatable).map((entry) => entry.path), [PHASE9_TERMINAL_MIGRATION]);
 });
 

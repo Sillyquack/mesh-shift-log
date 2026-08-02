@@ -1,14 +1,22 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import {
-  calculateStructuredInventoryQuantity,
   compareInventoryDecimals,
   formatInventoryDecimal,
   inventoryCountModeLabel,
-  inventoryDecimalDraftState,
   inventoryStructuredComponentLabel,
   INVENTORY_COUNT_MODES,
-  normalizeInventoryDecimal,
 } from '../data/inventoryStructuredQuantities.js';
+import {
+  COUNTER_DRAFT_STATES,
+  counterAssignmentIsEditable,
+  counterLineDraftHasChanges,
+  counterLineIsDeviation,
+  createCounterLineDraft,
+  evaluateCounterLineDraft,
+  findAdjacentIncompleteLineId,
+  reconcileCounterDrafts,
+  summarizeCounterAssignment,
+} from '../data/inventoryCounterMobile.js';
 import { INVENTORY_REFRIGERATOR_DEFINITIONS } from '../data/inventoryOperationalScope.js';
 import {
   acceptInventoryCountAssignment,
@@ -49,121 +57,187 @@ function StatusBadge({ label, tone = '' }) {
   return <span className={`inventory-status ${tone}`.trim()}>{label}</span>;
 }
 
-function structuredDraftResult(line, draft) {
-  try {
-    if (line.countMode === INVENTORY_COUNT_MODES.CONTAINER_PLUS_VOLUME) {
-      return { ok: true, value: calculateStructuredInventoryQuantity({
-        countMode: line.countMode,
-        wholeCount: draft.wholeUnits,
-        openVolumeLiters: draft.openVolumeLiters,
-        containerCapacityLiters: line.containerCapacityLiters,
-      }) };
-    }
-    if (line.countMode === INVENTORY_COUNT_MODES.KEG_FRACTION) {
-      return { ok: true, value: calculateStructuredInventoryQuantity({
-        countMode: line.countMode,
-        fullKegs: draft.fullKegs,
-        partialKegFraction: draft.partialKegFraction,
-      }) };
-    }
-    return { ok: false, message: 'This line is not a structured count.' };
-  } catch (error) {
-    return { ok: false, message: error.message };
-  }
+function CounterDraftStatus({ line, draft }) {
+  const dirty = counterLineDraftHasChanges(line, draft);
+  const state = [COUNTER_DRAFT_STATES.SAVING, COUNTER_DRAFT_STATES.FAILED, COUNTER_DRAFT_STATES.STALE].includes(draft.saveState)
+    ? draft.saveState
+    : dirty
+      ? COUNTER_DRAFT_STATES.UNSAVED
+      : line.countStatus === 'counted'
+        ? COUNTER_DRAFT_STATES.SAVED
+        : COUNTER_DRAFT_STATES.IDLE;
+  const label = {
+    idle: 'Not counted',
+    unsaved: 'Unsaved changes',
+    saving: 'Saving…',
+    saved: 'Saved',
+    failed: 'Save failed — retry',
+    stale: 'Changed elsewhere — review and retry',
+  }[state];
+  return (
+    <div className={`counter-save-status ${state}`} data-save-state={state} role="status" aria-live="polite">
+      <strong>{label}</strong>
+      {draft.error && <span>{draft.error}</span>}
+    </div>
+  );
 }
 
-function CounterLineCard({ line, readOnly, busy, onSave }) {
-  const [draftValue, setDraftValue] = useState(line.countedQuantityExact ?? '');
-  const [note, setNote] = useState(line.note || '');
-  const [structuredDraft, setStructuredDraft] = useState({
-    wholeUnits: line.countedWholeUnitsExact ?? '',
-    openVolumeLiters: line.countedOpenVolumeLitersExact ?? '',
-    fullKegs: line.countedFullKegsExact ?? '',
-    partialKegFraction: line.countedPartialKegFractionExact ?? '',
-  });
-  const structured = structuredDraftResult(line, structuredDraft);
-  const unitDraft = inventoryDecimalDraftState(draftValue, { maxScale: 6, allowNegative: false });
+function CounterLineCard({ line, draft, readOnly, workspaceBusy, onDraft, onSave, onMoveIncomplete, onActive }) {
+  const savingRef = useRef(false);
+  const evaluated = evaluateCounterLineDraft(line, draft);
+  const dirty = counterLineDraftHasChanges(line, draft);
+  const saving = draft.saveState === COUNTER_DRAFT_STATES.SAVING;
   const productLabel = line.practicalName || line.productName;
   const officialLabel = line.practicalName && line.practicalName !== line.productName ? line.productName : '';
+  const deviation = evaluated.ok && counterLineIsDeviation(line, draft);
+  const inputPrefix = `counter-${line.id}`;
+  const change = (changes) => onDraft(line.id, { ...changes, saveState: COUNTER_DRAFT_STATES.UNSAVED, error: '' });
 
-  useEffect(() => {
-    setDraftValue(line.countedQuantityExact ?? '');
-    setNote(line.note || '');
-    setStructuredDraft({
-      wholeUnits: line.countedWholeUnitsExact ?? '',
-      openVolumeLiters: line.countedOpenVolumeLitersExact ?? '',
-      fullKegs: line.countedFullKegsExact ?? '',
-      partialKegFraction: line.countedPartialKegFractionExact ?? '',
-    });
-  }, [line.id, line.updatedAt]);
-
-  const save = () => {
-    if (line.countMode === INVENTORY_COUNT_MODES.UNIT) {
-      onSave(line, {
-        countedQuantity: normalizeInventoryDecimal(draftValue, { maxScale: 6, allowNegative: false }),
-        note,
-      });
-    } else if (structured.ok) {
-      onSave(line, { ...structured.value, note });
+  const save = async () => {
+    if (savingRef.current || !evaluated.ok || !dirty) return;
+    savingRef.current = true;
+    onDraft(line.id, { saveState: COUNTER_DRAFT_STATES.SAVING, error: '' });
+    const result = await onSave(line, evaluated);
+    savingRef.current = false;
+    if (result?.ok) {
+      onDraft(line.id, { saveState: COUNTER_DRAFT_STATES.SAVED, error: '' });
+      onMoveIncomplete(line.id, 1);
+      return;
     }
+    const stale = /changed on another device|refresh before trying again/i.test(result?.message || '');
+    onDraft(line.id, {
+      saveState: stale ? COUNTER_DRAFT_STATES.STALE : COUNTER_DRAFT_STATES.FAILED,
+      error: result?.message || 'The value was not saved. Retry when the connection is available.',
+    });
   };
 
   return (
-    <article id={`counter-line-${line.id}`} className="inventory-line-card counter-line-card">
+    <article id={`counter-line-${line.id}`} className={`inventory-line-card counter-line-card${deviation ? ' counter-line-deviation' : ''}`} data-line-state={line.countStatus}>
       <div className="inventory-line-heading">
         <div>
           <h3>{productLabel}</h3>
-          {officialLabel && <p>{officialLabel}</p>}
+          {officialLabel && <p className="counter-official-name">Official: {officialLabel}</p>}
           <p>{line.millumItemRef ? `Millum ${line.millumItemRef} · ` : ''}{inventoryCountModeLabel(line.countMode)} · {line.unitLabel}</p>
         </div>
-        <StatusBadge label={line.countStatus === 'counted' ? 'Recorded' : 'Incomplete'} tone={line.countStatus === 'counted' ? 'good' : ''} />
+        <StatusBadge label={line.countStatus === 'counted' ? 'Counted' : 'Not counted'} tone={line.countStatus === 'counted' ? 'good' : ''} />
       </div>
+      <div className="counter-standard-actual" aria-label={`${productLabel} standard and actual quantity`}>
+        <div><span>Configured standard</span><strong>{line.standardQuantityExact === null ? 'Not set' : `${quantity(line.standardQuantityExact)} ${line.unitLabel}`}</strong></div>
+        <div><span>Actual</span><strong>{evaluated.ok ? `${quantity(evaluated.countedQuantity)} ${line.unitLabel}` : 'Not counted'}</strong></div>
+      </div>
+      {deviation && <p className="counter-deviation-label"><strong>Deviation:</strong> actual quantity differs from the configured standard.</p>}
       {line.countMode === INVENTORY_COUNT_MODES.CONTAINER_PLUS_VOLUME ? (
         <>
           <p className="inventory-policy-note">Bottle size: {quantity(line.containerCapacityLiters)} L. Enter sealed bottles and combined open liters.</p>
-          <div className="inventory-case-count">
-            <label>Sealed bottles<input type="text" inputMode="numeric" value={structuredDraft.wholeUnits} disabled={readOnly || busy} onChange={(event) => setStructuredDraft((current) => ({ ...current, wholeUnits: event.target.value }))} /></label>
-            <label>Open liters<input type="text" inputMode="decimal" value={structuredDraft.openVolumeLiters} disabled={readOnly || busy} onChange={(event) => setStructuredDraft((current) => ({ ...current, openVolumeLiters: event.target.value }))} /></label>
-            <div><span>Total</span><strong>{structured.ok ? `${quantity(structured.value.countedQuantity)} L` : '-'}</strong></div>
+          <div className="inventory-case-count counter-structured-fields">
+            <label htmlFor={`${inputPrefix}-whole`}>Sealed bottles<input id={`${inputPrefix}-whole`} type="text" inputMode="numeric" enterKeyHint="next" autoComplete="off" value={draft.wholeUnits} disabled={readOnly || saving} onFocus={() => onActive(line.id)} onChange={(event) => change({ wholeUnits: event.target.value })} /></label>
+            <label htmlFor={`${inputPrefix}-open`}>Open liters<input id={`${inputPrefix}-open`} type="text" inputMode="decimal" enterKeyHint="next" autoComplete="off" value={draft.openVolumeLiters} disabled={readOnly || saving} onFocus={() => onActive(line.id)} onChange={(event) => change({ openVolumeLiters: event.target.value })} /></label>
+            <div><span>Calculated total</span><strong>{evaluated.ok ? `${quantity(evaluated.countedQuantity)} L` : 'Incomplete'}</strong></div>
           </div>
         </>
       ) : line.countMode === INVENTORY_COUNT_MODES.KEG_FRACTION ? (
         <>
-          <div className="inventory-case-count">
-            <label>Full kegs<input type="text" inputMode="numeric" value={structuredDraft.fullKegs} disabled={readOnly || busy} onChange={(event) => setStructuredDraft((current) => ({ ...current, fullKegs: event.target.value }))} /></label>
-            <label>Partial fraction<input type="text" inputMode="decimal" value={structuredDraft.partialKegFraction} disabled={readOnly || busy} onChange={(event) => setStructuredDraft((current) => ({ ...current, partialKegFraction: event.target.value }))} /></label>
-            <div><span>Total</span><strong>{structured.ok ? `${quantity(structured.value.countedQuantity)} kegs` : '-'}</strong></div>
+          <div className="inventory-case-count counter-structured-fields">
+            <label htmlFor={`${inputPrefix}-full`}>Full kegs<input id={`${inputPrefix}-full`} type="text" inputMode="numeric" enterKeyHint="next" autoComplete="off" value={draft.fullKegs} disabled={readOnly || saving} onFocus={() => onActive(line.id)} onChange={(event) => change({ fullKegs: event.target.value })} /></label>
+            <label htmlFor={`${inputPrefix}-partial`}>Partial keg fraction<input id={`${inputPrefix}-partial`} type="text" inputMode="decimal" enterKeyHint="next" autoComplete="off" value={draft.partialKegFraction} disabled={readOnly || saving} onFocus={() => onActive(line.id)} onChange={(event) => change({ partialKegFraction: event.target.value })} /></label>
+            <div><span>Calculated total</span><strong>{evaluated.ok ? `${quantity(evaluated.countedQuantity)} kegs` : 'Incomplete'}</strong></div>
           </div>
-          <div className="inventory-action-row inventory-keg-fractions">{[['0.25', '¼'], ['0.5', '½'], ['0.75', '¾']].map(([value, label]) => <button type="button" className="secondary-button" key={value} disabled={readOnly || busy} onClick={() => setStructuredDraft((current) => ({ ...current, partialKegFraction: value }))}>{label}</button>)}</div>
+          <div className="inventory-action-row inventory-keg-fractions" aria-label="Common partial keg fractions">{[['0.25', '¼ keg'], ['0.5', '½ keg'], ['0.75', '¾ keg']].map(([value, label]) => <button type="button" className="secondary-button" key={value} disabled={readOnly || saving} onClick={() => change({ partialKegFraction: value })}>{label}</button>)}</div>
         </>
       ) : (
-        <label>Physical counted quantity<div className="inventory-quantity-row"><input type="text" inputMode="decimal" value={draftValue} disabled={readOnly || busy} onChange={(event) => setDraftValue(event.target.value)} /><span>{line.unitLabel}</span></div></label>
+        <label className="counter-primary-quantity" htmlFor={`${inputPrefix}-quantity`}>Actual quantity<input id={`${inputPrefix}-quantity`} type="text" inputMode="decimal" enterKeyHint="next" autoComplete="off" value={draft.countedQuantity} disabled={readOnly || saving} aria-describedby={`${inputPrefix}-quantity-help`} onFocus={() => onActive(line.id)} onChange={(event) => change({ countedQuantity: event.target.value })} /><span id={`${inputPrefix}-quantity-help`}>Enter 0 when physically empty. Blank means not counted. Unit: {line.unitLabel}.</span></label>
       )}
-      {!structured.ok && line.countMode !== INVENTORY_COUNT_MODES.UNIT && <p className="error-text">{structured.message}</p>}
-      {line.countedQuantityExact !== null && <p className="inventory-policy-note"><strong>{inventoryStructuredComponentLabel(line) || `${quantity(line.countedQuantityExact)} ${line.unitLabel}`}</strong></p>}
-      <label>Count note<textarea rows="2" value={note} disabled={readOnly || busy} onChange={(event) => setNote(event.target.value)} /></label>
-      {!readOnly && <button type="button" className="primary-button inventory-full-button" disabled={busy || (line.countMode === INVENTORY_COUNT_MODES.UNIT ? !(unitDraft.complete && unitDraft.valid) : !structured.ok)} onClick={save}>{busy ? 'Saving...' : line.countMode === INVENTORY_COUNT_MODES.CONTAINER_PLUS_VOLUME ? 'Save bottle count' : line.countMode === INVENTORY_COUNT_MODES.KEG_FRACTION ? 'Save keg count' : 'Save physical count'}</button>}
-      {line.countedByName && <p className="inventory-audit">Recorded by {line.countedByName}{line.countedAt ? ` · ${formatDateTime(line.countedAt)}` : ''}</p>}
+      {!evaluated.ok && dirty && <p className="error-text">{evaluated.message}</p>}
+      {line.countedQuantityExact !== null && !dirty && <p className="inventory-policy-note"><strong>{inventoryStructuredComponentLabel(line) || `${quantity(line.countedQuantityExact)} ${line.unitLabel}`}</strong></p>}
+      <label htmlFor={`${inputPrefix}-note`}>Annen vare eller avvik (optional comment)<textarea id={`${inputPrefix}-note`} rows="2" value={draft.note} disabled={readOnly || saving} onFocus={() => onActive(line.id)} onChange={(event) => change({ note: event.target.value })} /></label>
+      <CounterDraftStatus line={line} draft={draft} />
+      {!readOnly && <button type="button" className="primary-button inventory-full-button counter-save-button" disabled={workspaceBusy || !dirty || !evaluated.ok} onClick={save}>{saving ? 'Saving…' : draft.saveState === COUNTER_DRAFT_STATES.FAILED || draft.saveState === COUNTER_DRAFT_STATES.STALE ? 'Retry save' : line.countMode === INVENTORY_COUNT_MODES.CONTAINER_PLUS_VOLUME ? 'Save bottle count' : line.countMode === INVENTORY_COUNT_MODES.KEG_FRACTION ? 'Save keg count' : 'Save actual quantity'}</button>}
+      {line.countedByName && <p className="inventory-audit">Last saved by {line.countedByName}{line.countedAt ? ` · ${formatDateTime(line.countedAt)}` : ''}</p>}
     </article>
+  );
+}
+
+function CounterAssignmentCard({ assignment, drafts, onOpen }) {
+  const summary = summarizeCounterAssignment(assignment, drafts);
+  const progress = summary.lines.length ? Math.round((summary.counted.length / summary.lines.length) * 100) : 0;
+  const actionable = assignment.state !== 'superseded';
+  const actionLabel = assignment.state === 'submitted' || assignment.state === 'accepted'
+    ? 'View status'
+    : summary.counted.length
+      ? 'Resume counting'
+      : 'Open refrigerator';
+  return (
+    <article className="inventory-line-card counter-assignment-card">
+      <div className="inventory-line-heading"><div><p className="eyebrow">{assignment.session.title} · {assignment.session.countDate}</p><h2>{assignment.location.name}</h2></div><StateBadge state={assignment.state} /></div>
+      <div className="counter-home-progress"><strong>{summary.counted.length}/{summary.lines.length} counted</strong><span>{summary.incomplete.length} incomplete</span></div>
+      <div className="inventory-progress" role="progressbar" aria-label={`${assignment.location.name} counting progress`} aria-valuemin="0" aria-valuemax="100" aria-valuenow={progress}><span style={{ width: `${progress}%` }} /></div>
+      {summary.unsafeDrafts.length > 0 && <p className="counter-unsaved-summary"><strong>{summary.unsafeDrafts.length} unsaved or failed line draft(s)</strong> remain on this device.</p>}
+      {assignment.state === 'returned' && <div className="inventory-warning"><strong>Returned by Bobby</strong><p>{assignment.returnMessage}</p></div>}
+      {assignment.state === 'submitted' && <p>Submitted and read-only while Bobby reviews it.</p>}
+      {assignment.state === 'accepted' && <p>Accepted and read-only. The manager owns session completion.</p>}
+      {assignment.state === 'superseded' && <p>This assignment was replaced and is no longer actionable.</p>}
+      {actionable && <button type="button" className="primary-button inventory-full-button" onClick={() => onOpen(assignment.id)}>{actionLabel}</button>}
+    </article>
+  );
+}
+
+function CounterSubmissionReview({ assignment, summary, busy, onBack, onSubmit }) {
+  const blocked = summary.incomplete.length > 0 || summary.unsafeDrafts.length > 0 || summary.invalidDrafts.length > 0 || busy;
+  return (
+    <div className="counter-screen" data-counter-screen="review">
+      <button type="button" className="secondary-button counter-back-button" onClick={onBack}>Back to counting</button>
+      <section className="inventory-session-header"><div><p className="eyebrow">Review refrigerator</p><h2>{assignment.location.name}</h2><p>{assignment.session.title} · {assignment.session.countDate}</p></div><StateBadge state={assignment.state} /></section>
+      <section className="inventory-panel counter-review-panel">
+        <h2>Ready to send?</h2>
+        <div className="inventory-summary-grid">
+          <div><strong>{summary.counted.length}/{summary.lines.length}</strong><span>counted</span></div>
+          <div><strong>{summary.incomplete.length}</strong><span>incomplete</span></div>
+          <div><strong>{summary.deviations.length}</strong><span>deviations</span></div>
+          <div><strong>{summary.notes.length}</strong><span>notes</span></div>
+          <div><strong>{summary.unsafeDrafts.length}</strong><span>unsaved/failed</span></div>
+          <div><strong>{summary.invalidDrafts.length}</strong><span>invalid drafts</span></div>
+        </div>
+        {summary.incomplete.length > 0 && <details open><summary>Incomplete products</summary>{summary.incomplete.map((line) => <p key={line.id}>{line.practicalName || line.productName}</p>)}</details>}
+        {summary.deviations.length > 0 && <details><summary>Deviations from standard</summary>{summary.deviations.map((line) => <p key={line.id}><strong>{line.practicalName || line.productName}</strong>: {quantity(line.countedQuantityExact)} / {quantity(line.standardQuantityExact)} {line.unitLabel}</p>)}</details>}
+        {summary.notes.length > 0 && <details><summary>Comments</summary>{summary.notes.map((line) => <p key={line.id}><strong>{line.practicalName || line.productName}</strong>: {line.note}</p>)}</details>}
+        {summary.unsafeDrafts.length > 0 && <div className="inventory-warning"><strong>Save or resolve every draft before submitting.</strong><p>Your local values have not been discarded.</p></div>}
+        <p className="muted">This sends only {assignment.location.name} to Bobby. It does not complete or approve the Stock Count.</p>
+        <button type="button" className="primary-button inventory-full-button" disabled={blocked} onClick={onSubmit}>{busy ? 'Sending…' : 'Ferdig – send til Bobby'}</button>
+      </section>
+    </div>
   );
 }
 
 export function CounterInventoryWorkspace({ requestWriteAccess, onClose }) {
   const [assignments, setAssignments] = useState([]);
   const [selectedId, setSelectedId] = useState('');
+  const [screen, setScreen] = useState('home');
+  const [drafts, setDrafts] = useState({});
   const [status, setStatus] = useState(null);
   const [loading, setLoading] = useState(true);
   const [busyId, setBusyId] = useState('');
   const [physicalConfirmation, setPhysicalConfirmation] = useState(false);
+  const [activeLineId, setActiveLineId] = useState('');
   const mounted = useRef(true);
+  const operationRef = useRef('');
+  const openedReturnsRef = useRef(new Set());
 
   const refresh = useCallback(async () => {
     const result = await loadInventoryCounterWorkspace();
     if (!mounted.current) return result;
     if (result.ok) {
       setAssignments(result.assignments);
+      setDrafts((current) => reconcileCounterDrafts(current, result.assignments));
       setSelectedId((current) => result.assignments.some((item) => item.id === current) ? current : (result.assignments[0]?.id || ''));
-    } else setStatus(result);
+      const returned = result.assignments.find((item) => item.state === 'returned' && !openedReturnsRef.current.has(`${item.id}:${item.revision}`));
+      if (returned) {
+        openedReturnsRef.current.add(`${returned.id}:${returned.revision}`);
+        setSelectedId(returned.id);
+        setScreen('count');
+      }
+    } else {
+      setStatus(result);
+    }
     setLoading(false);
     return result;
   }, []);
@@ -176,17 +250,45 @@ export function CounterInventoryWorkspace({ requestWriteAccess, onClose }) {
   }, [refresh]);
 
   const assignment = assignments.find((item) => item.id === selectedId) || assignments[0] || null;
-  const incomplete = assignment?.lines.filter((line) => line.countStatus !== 'counted') || [];
-  const readOnly = assignment ? !['assigned', 'returned'].includes(assignment.state) : true;
+  const summary = useMemo(() => summarizeCounterAssignment(assignment, drafts), [assignment, drafts]);
+  const hasUnsafeDrafts = useMemo(() => assignments.some((item) => summarizeCounterAssignment(item, drafts).unsafeDrafts.length > 0), [assignments, drafts]);
+  const readOnly = assignment ? !counterAssignmentIsEditable(assignment.state) : true;
 
-  const run = async (id, operation) => {
-    if (!(await requestWriteAccess())) return null;
+  useEffect(() => {
+    if (!hasUnsafeDrafts) return undefined;
+    const warn = (event) => { event.preventDefault(); event.returnValue = ''; };
+    window.addEventListener('beforeunload', warn);
+    return () => window.removeEventListener('beforeunload', warn);
+  }, [hasUnsafeDrafts]);
+
+  const updateDraft = (lineId, changes) => {
+    const line = assignments.flatMap((item) => item.lines).find((item) => item.id === lineId);
+    if (!line) return;
+    setDrafts((current) => ({ ...current, [lineId]: { ...(current[lineId] || createCounterLineDraft(line)), ...changes } }));
+  };
+
+  const run = async (id, operation, { quietSuccess = false } = {}) => {
+    if (operationRef.current) return { ok: false, mode: 'busy', message: 'Another Stock Count save is still in progress.' };
+    operationRef.current = id;
     setBusyId(id);
-    const result = await operation();
-    setBusyId('');
-    setStatus(result);
-    if (result.ok) await refresh();
-    return result;
+    let result;
+    try {
+      if (!(await requestWriteAccess())) {
+        result = { ok: false, mode: 'auth_required', message: 'Your Stock Count sign-in could not be verified. Your unsaved values remain on this screen.' };
+      } else {
+        result = await operation();
+      }
+      if (!quietSuccess || !result.ok) setStatus(result);
+      if (result.ok) await refresh();
+      return result;
+    } catch (error) {
+      result = { ok: false, mode: 'sync_error', message: error.message || 'The Stock Count request failed. Your draft is still here.' };
+      setStatus(result);
+      return result;
+    } finally {
+      operationRef.current = '';
+      setBusyId('');
+    }
   };
 
   const saveLine = (line, values) => {
@@ -198,44 +300,87 @@ export function CounterInventoryWorkspace({ requestWriteAccess, onClose }) {
       expectedLineUpdatedAt: line.updatedAt,
     };
     if (line.countMode === INVENTORY_COUNT_MODES.UNIT) {
-      return run(line.id, () => setInventoryCounterLineQuantity({ ...common, countedQuantity: values.countedQuantity }));
+      return run(`line-${line.id}`, () => setInventoryCounterLineQuantity({ ...common, countedQuantity: values.countedQuantity }), { quietSuccess: true });
     }
-    return run(line.id, () => setInventoryCounterLineStructuredQuantity({
+    return run(`line-${line.id}`, () => setInventoryCounterLineStructuredQuantity({
       ...common,
       wholeUnits: values.countedWholeUnits,
       openVolumeLiters: values.countedOpenVolumeLiters,
       fullKegs: values.countedFullKegs,
       partialKegFraction: values.countedPartialKegFraction,
-    }));
+    }), { quietSuccess: true });
   };
 
-  const nextIncomplete = () => {
-    const next = incomplete[0];
-    if (next) document.getElementById(`counter-line-${next.id}`)?.scrollIntoView({ behavior: 'smooth', block: 'start' });
+  const moveIncomplete = (currentLineId = activeLineId, direction = 1) => {
+    const targetId = findAdjacentIncompleteLineId(assignment?.lines || [], currentLineId, direction);
+    if (!targetId) return;
+    setActiveLineId(targetId);
+    window.requestAnimationFrame(() => {
+      const target = document.getElementById(`counter-line-${targetId}`);
+      target?.scrollIntoView({ behavior: 'smooth', block: 'start' });
+      target?.querySelector('input:not(:disabled), textarea:not(:disabled)')?.focus({ preventScroll: true });
+    });
   };
 
-  if (loading) return <main className="page inventory-workspace" role="status" aria-live="polite" aria-busy="true"><section className="inventory-panel"><p>Loading your refrigerator assignments...</p></section></main>;
+  const openAssignment = (assignmentId) => {
+    setSelectedId(assignmentId);
+    setPhysicalConfirmation(false);
+    setActiveLineId('');
+    setScreen('count');
+  };
+
+  const close = () => {
+    if (hasUnsafeDrafts && !window.confirm('Unsaved or failed Stock Count values will be lost if you log out. Log out anyway?')) return;
+    onClose();
+  };
+
+  const applyDefault = async () => {
+    const result = await run('default', () => applyInventoryCounterRefrigeratorDefault({ assignmentId: assignment.id, physicalConfirmation: true, expectedAssignmentRevision: assignment.revision }), { quietSuccess: true });
+    if (result?.ok) {
+      setPhysicalConfirmation(false);
+      setStatus({ ok: true, message: `Standard applied to ${Number(result.data?.updated || 0)} eligible uncounted line(s). ${Number(result.data?.preserved || 0)} previously entered line(s) were preserved. Review the remaining incomplete products.` });
+    }
+  };
+
+  const submit = async () => {
+    const result = await run('submit', () => submitInventoryCountAssignment({ assignmentId: assignment.id, expectedAssignmentRevision: assignment.revision, expectedSessionUpdatedAt: assignment.session.updatedAt }), { quietSuccess: true });
+    if (result?.ok) {
+      setStatus({ ok: true, message: `${assignment.location.name} was sent to Bobby and is now read-only.` });
+      setScreen('count');
+    }
+  };
+
+  if (loading) return <main className="page inventory-workspace" role="status" aria-live="polite" aria-busy="true"><section className="inventory-panel"><p>Loading your refrigerator assignments…</p></section></main>;
+  const activeScreen = assignment ? screen : 'home';
   return (
     <main className="page inventory-workspace counter-workspace">
-      <header className="inventory-topbar"><button type="button" className="secondary-button" onClick={onClose}>Log out</button><div><p className="eyebrow">Mesh Youngstorget</p><h1>Stock Count</h1><p className="muted">Assigned refrigerator counting only</p></div></header>
+      <header className="inventory-topbar counter-topbar"><button type="button" className="secondary-button" onClick={close}>Log out</button><div><p className="eyebrow">Counter · Mesh Youngstorget</p><h1>Stock Count</h1><p className="muted">Only your assigned refrigerators</p></div></header>
       <Message status={status} />
-      {!assignment ? (
-        <section className="inventory-panel inventory-empty"><h2>No active refrigerator assignment</h2><p className="muted">Ask Bobby to authorize and assign your refrigerator in the active Stock Count.</p><button type="button" className="secondary-button" onClick={refresh}>Refresh</button></section>
+      {status?.ok === false && <button type="button" className="secondary-button inventory-retry-button" disabled={Boolean(busyId)} onClick={refresh}>Refresh safely — keep local drafts</button>}
+      {activeScreen === 'home' ? (
+        <div className="counter-screen" data-counter-screen="home">
+          <section className="inventory-session-header"><div><p className="eyebrow">Counter home</p><h2>Your refrigerator assignments</h2><p>Open one refrigerator and continue where you left off.</p></div><StatusBadge label={`${assignments.length} assigned`} /></section>
+          {!assignments.length ? <section className="inventory-panel inventory-empty"><h2>No active refrigerator assignment</h2><p className="muted">Ask Bobby to authorize and assign your refrigerator in the active Stock Count.</p><button type="button" className="secondary-button" onClick={refresh}>Refresh assignments</button></section> : <div className="inventory-line-list counter-assignment-list">{assignments.map((item) => <CounterAssignmentCard key={item.id} assignment={item} drafts={drafts} onOpen={openAssignment} />)}</div>}
+        </div>
+      ) : activeScreen === 'review' ? (
+        <CounterSubmissionReview assignment={assignment} summary={summary} busy={busyId === 'submit'} onBack={() => setScreen('count')} onSubmit={submit} />
       ) : (
-        <>
-          {assignments.length > 1 && <nav className="inventory-location-tabs" aria-label="Your refrigerator assignments">{assignments.map((item) => <button type="button" key={item.id} className={item.id === assignment.id ? 'active' : ''} onClick={() => { setSelectedId(item.id); setPhysicalConfirmation(false); }}><span>{item.location.name}</span><small>{item.lines.filter((line) => line.countStatus === 'counted').length}/{item.lines.length} recorded</small></button>)}</nav>}
-          <section className="inventory-session-header">
-            <div><p className="eyebrow">{assignment.session.countDate}</p><h2>{assignment.location.name}</h2><p>{assignment.session.title} · {assignment.lines.length - incomplete.length} of {assignment.lines.length} recorded</p></div>
+        <div className="counter-screen" data-counter-screen="count">
+          <button type="button" className="secondary-button counter-back-button" onClick={() => setScreen('home')}>Back to assignments</button>
+          <section className="inventory-session-header counter-count-header">
+            <div><p className="eyebrow">{assignment.session.title} · {assignment.session.countDate}</p><h2>{assignment.location.name}</h2><p>{summary.counted.length} of {summary.lines.length} counted · {summary.incomplete.length} incomplete</p></div>
             <StateBadge state={assignment.state} />
           </section>
-          {assignment.state === 'returned' && <section className="inventory-warning"><strong>Returned by Bobby</strong><p>{assignment.returnMessage}</p><p className="inventory-audit">{formatDateTime(assignment.returnedAt)}</p></section>}
-          {assignment.state === 'submitted' && <section className="inventory-panel"><strong>Waiting for Bobby’s review</strong><p className="muted">You can read this refrigerator, but it is locked until Bobby accepts or returns it.</p></section>}
-          {assignment.state === 'accepted' && <section className="inventory-panel"><strong>Accepted by Bobby</strong><p className="muted">This refrigerator is finished. Session completion and approval remain manager actions.</p></section>}
-          {!readOnly && <section className="inventory-panel counter-default-panel"><h2>Physically full?</h2><p className="muted">After checking the refrigerator, apply its existing default to uncounted lines only. Saved deviations are preserved; the default itself is never changed.</p><label className="inventory-danger-option"><input type="checkbox" checked={physicalConfirmation} onChange={(event) => setPhysicalConfirmation(event.target.checked)} />I physically checked this refrigerator</label><button type="button" className="secondary-button inventory-full-button" disabled={!physicalConfirmation || Boolean(busyId)} onClick={async () => { const result = await run('default', () => applyInventoryCounterRefrigeratorDefault({ assignmentId: assignment.id, physicalConfirmation: true, expectedAssignmentRevision: assignment.revision })); if (result?.ok) setPhysicalConfirmation(false); }}>{busyId === 'default' ? 'Applying...' : 'Apply refrigerator default to uncounted lines'}</button></section>}
-          <div className="inventory-action-row counter-progress-actions"><button type="button" className="secondary-button" disabled={!incomplete.length} onClick={nextIncomplete}>Next incomplete line</button><span>{incomplete.length} incomplete</span></div>
-          <div className="inventory-line-list">{assignment.lines.map((line) => <CounterLineCard key={line.id} line={line} readOnly={readOnly} busy={busyId === line.id} onSave={saveLine} />)}</div>
-          {!readOnly && <section className="inventory-panel counter-submit-panel"><h2>Send this refrigerator for review</h2><p className="muted">This submits only {assignment.location.name}. It does not complete or approve the Stock Count.</p><button type="button" className="primary-button inventory-full-button" disabled={Boolean(busyId) || incomplete.length > 0} onClick={() => run('submit', () => submitInventoryCountAssignment({ assignmentId: assignment.id, expectedAssignmentRevision: assignment.revision, expectedSessionUpdatedAt: assignment.session.updatedAt }))}>{busyId === 'submit' ? 'Sending...' : 'Ferdig – send til Bobby'}</button></section>}
-        </>
+          {assignment.state === 'returned' && <section className="inventory-warning counter-return-message" role="status"><strong>Returned by Bobby — correction required</strong><p>{assignment.returnMessage}</p><p className="inventory-audit">{formatDateTime(assignment.returnedAt)}</p></section>}
+          {assignment.state === 'submitted' && <section className="inventory-panel counter-readonly-state"><strong>Sent to Bobby — waiting for review</strong><p className="muted">This refrigerator is submitted and read-only. Bobby may accept it or return it with a message.</p></section>}
+          {assignment.state === 'accepted' && <section className="inventory-panel counter-readonly-state"><strong>Accepted by Bobby</strong><p className="muted">This refrigerator is read-only and finished. Session completion and approval remain manager actions.</p></section>}
+          {assignment.state === 'superseded' && <section className="inventory-panel counter-readonly-state"><strong>Assignment replaced</strong><p className="muted">This refrigerator is no longer actionable from this counter account.</p></section>}
+          {!readOnly && <section className="inventory-panel counter-default-panel"><h2>Bruk standard</h2><p className="muted">Physically check this refrigerator first. This fills only eligible, previously uncounted exact-standard lines. Saved quantities, deviations, and comments are preserved; the refrigerator template is never edited.</p><label className="inventory-danger-option"><input type="checkbox" checked={physicalConfirmation} disabled={Boolean(busyId) || summary.unsafeDrafts.length > 0} onChange={(event) => setPhysicalConfirmation(event.target.checked)} />I physically checked this refrigerator</label>{summary.unsafeDrafts.length > 0 && <p className="inventory-policy-note">Save or resolve local drafts before applying the standard.</p>}<button type="button" className="secondary-button inventory-full-button" disabled={!physicalConfirmation || Boolean(busyId) || summary.unsafeDrafts.length > 0} onClick={applyDefault}>{busyId === 'default' ? 'Applying…' : 'Apply standard to eligible lines'}</button></section>}
+          <nav className="counter-progress-actions" aria-label="Incomplete product navigation"><button type="button" className="secondary-button" disabled={!summary.incomplete.length} onClick={() => moveIncomplete(activeLineId, -1)}>Previous incomplete</button><span><strong>{summary.incomplete.length}</strong> incomplete</span><button type="button" className="secondary-button" disabled={!summary.incomplete.length} onClick={() => moveIncomplete(activeLineId, 1)}>Next incomplete</button></nav>
+          <div className="inventory-line-list counter-count-list">{assignment.lines.map((line) => <CounterLineCard key={line.id} line={line} draft={drafts[line.id] || createCounterLineDraft(line)} readOnly={readOnly} workspaceBusy={Boolean(busyId)} onDraft={updateDraft} onSave={saveLine} onMoveIncomplete={moveIncomplete} onActive={setActiveLineId} />)}</div>
+          {!readOnly && <section className="inventory-panel counter-extra-note"><h2>Annen vare eller avvik</h2><p className="muted">There is no counter-safe full-catalogue extra-product lookup. Record an observed extra or relevant comment in the closest product’s comment field above; it stays inside this assigned refrigerator.</p></section>}
+          {!readOnly && <section className="inventory-panel counter-submit-panel"><h2>Review before sending</h2><p className="muted">Check incomplete products, deviations, comments, and save status before sending this refrigerator to Bobby.</p><button type="button" className="primary-button inventory-full-button" disabled={Boolean(busyId)} onClick={() => setScreen('review')}>Review refrigerator</button></section>}
+        </div>
       )}
     </main>
   );

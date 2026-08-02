@@ -60,8 +60,13 @@
     {
       "id": "phase9gb2-counter-replacement",
       "path": "supabase/phase9gb2_inventory_counter_replacement.sql",
+      "repeatable": false
+    },
+    {
+      "id": "phase9gc-counter-mobile",
+      "path": "supabase/phase9gc_inventory_counter_mobile.sql",
       "repeatable": true
     }
   ],
-  "terminalMigration": "supabase/phase9gb2_inventory_counter_replacement.sql"
+  "terminalMigration": "supabase/phase9gc_inventory_counter_mobile.sql"
 }
