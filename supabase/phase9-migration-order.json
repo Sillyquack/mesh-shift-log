@@ -55,8 +55,13 @@
     {
       "id": "phase9gb-counter-assignments",
       "path": "supabase/phase9gb_inventory_counter_assignments.sql",
+      "repeatable": false
+    },
+    {
+      "id": "phase9gb2-counter-replacement",
+      "path": "supabase/phase9gb2_inventory_counter_replacement.sql",
       "repeatable": true
     }
   ],
-  "terminalMigration": "supabase/phase9gb_inventory_counter_assignments.sql"
+  "terminalMigration": "supabase/phase9gb2_inventory_counter_replacement.sql"
 }

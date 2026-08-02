@@ -13,6 +13,7 @@
     "verify:inventory-structured-quantities": "node scripts/verify-inventory-structured-quantities.mjs",
     "verify:inventory-operational-scope": "node scripts/verify-inventory-operational-scope.mjs",
     "verify:inventory-counter-workflow": "node scripts/verify-inventory-counter-workflow.mjs",
+    "verify:inventory-counter-replacement": "node scripts/verify-inventory-counter-replacement.mjs",
     "verify:phase9-security-db": "node scripts/verify-phase9-security-db.mjs",
     "verify:phase9-all": "node scripts/verify-phase9-all.mjs",
     "preview": "vite preview",

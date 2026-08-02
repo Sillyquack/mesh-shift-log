@@ -17,10 +17,11 @@ export const EXPECTED_PHASE9_MIGRATION_ORDER = [
   'supabase/phase9f_inventory_structured_quantities.sql',
   'supabase/phase9g_inventory_operational_scope.sql',
   'supabase/phase9gb_inventory_counter_assignments.sql',
+  'supabase/phase9gb2_inventory_counter_replacement.sql',
 ];
 
 export const PHASE9_TERMINAL_MIGRATION =
-  'supabase/phase9gb_inventory_counter_assignments.sql';
+  'supabase/phase9gb2_inventory_counter_replacement.sql';
 
 export const PHASE9_SESSION_INTEGRITY_MIGRATION =
   'supabase/phase9d_inventory_session_integrity.sql';
@@ -40,7 +41,7 @@ export function validatePhase9MigrationOrder(paths) {
     }
   }
   if (paths.at(-1) !== PHASE9_TERMINAL_MIGRATION) {
-    throw new Error('Phase 9G-B counter assignments must be the terminal migration.');
+    throw new Error('Phase 9G-B2 counter replacement must be the terminal migration.');
   }
   return paths;
 }

@@ -2711,6 +2711,30 @@ textarea {
   backdrop-filter: blur(8px);
 }
 
+.inventory-replacement-panel {
+  border-top: 1px solid var(--line);
+  padding-top: 12px;
+}
+
+.inventory-replacement-panel > summary {
+  color: var(--important);
+  cursor: pointer;
+  font-weight: 700;
+}
+
+.inventory-replacement-panel fieldset {
+  display: grid;
+  gap: 8px;
+  margin: 0;
+  border: 1px solid var(--line);
+  border-radius: 10px;
+}
+
+.inventory-superseded-assignment {
+  border-left-color: var(--important);
+  opacity: 0.9;
+}
+
 @media (max-width: 600px) {
   .counter-workspace {
     padding-inline: 10px;

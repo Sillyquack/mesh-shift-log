@@ -25,8 +25,11 @@ const STRUCTURED_ASSERTION_PATH = resolve(ROOT, 'supabase/tests/phase9/structure
 const OPERATIONAL_ASSERTION_PATH = resolve(ROOT, 'supabase/tests/phase9/operational-scope-assertions.sql');
 const COUNTER_FIXTURE_PATH = resolve(ROOT, 'supabase/tests/phase9/counter-fixtures.sql');
 const COUNTER_ASSERTION_PATH = resolve(ROOT, 'supabase/tests/phase9/counter-workflow-assertions.sql');
+const REPLACEMENT_FIXTURE_PATH = resolve(ROOT, 'supabase/tests/phase9/counter-replacement-fixtures.sql');
+const REPLACEMENT_ASSERTION_PATH = resolve(ROOT, 'supabase/tests/phase9/counter-replacement-assertions.sql');
 const EXPECTED_ASSERTION_PASSES = 70;
 const EXPECTED_COUNTER_ASSERTION_PASSES = 47;
+const EXPECTED_REPLACEMENT_ASSERTION_PASSES = 28;
 let containerStarted = false;
 
 if (process.argv.length > 2) {
@@ -191,6 +194,53 @@ async function verifyConcurrentCounterSubmission() {
   console.log('PASS concurrent counter submissions accept once and reject the stale request');
 }
 
+async function verifyConcurrentCounterReplacement() {
+  const managerId = 'b2600000-0000-4000-8000-000000000001';
+  const assignmentState = psql(String.raw`
+    select assignment.id, assignment.revision
+    from public.inventory_count_assignments assignment
+    where assignment.location_id = 'b2200000-0000-4000-8000-000000000006'
+      and assignment.state <> 'superseded';
+  `, { tuplesOnly: true }).stdout.trim().split('|');
+  const [assignmentId, revision] = assignmentState;
+  if (!assignmentId || revision !== '1') throw new Error('Counter replacement concurrency fixture was not initialized at revision 1.');
+  const membershipIds = psql(String.raw`
+    select membership.id
+    from public.inventory_counter_memberships membership
+    where membership.counter_auth_user_id in (
+      'b2600000-0000-4000-8000-00000000000b',
+      'b2600000-0000-4000-8000-00000000000c'
+    )
+    order by membership.counter_auth_user_id;
+  `, { tuplesOnly: true }).stdout.trim().split('\n').filter(Boolean);
+  if (membershipIds.length !== 2) throw new Error('Counter replacement concurrency memberships were not initialized.');
+  const replaceStatement = (membershipId, reason) => authenticatedSql(managerId, String.raw`
+    select public.replace_inventory_count_assignment(
+      '${assignmentId}', '${membershipId}', '${reason}', 'preserve', false, ${revision}
+    );
+  `);
+  const results = await Promise.all([
+    concurrentPsql(replaceStatement(membershipIds[0], 'Concurrent replacement one')),
+    concurrentPsql(replaceStatement(membershipIds[1], 'Concurrent replacement two')),
+  ]);
+  const succeeded = results.filter((result) => result.status === 0);
+  const failed = results.filter((result) => result.status !== 0);
+  if (succeeded.length !== 1 || failed.length !== 1
+      || !/changed on another device|already been superseded/i.test(failed[0].stderr)) {
+    throw new Error(`Concurrent counter replacement did not accept exactly one request:\n${JSON.stringify(results)}`);
+  }
+  const finalState = psql(String.raw`
+    select
+      count(*) filter (where state = 'superseded'),
+      count(*) filter (where state <> 'superseded'),
+      max(revision) filter (where state = 'superseded')
+    from public.inventory_count_assignments
+    where location_id = 'b2200000-0000-4000-8000-000000000006';
+  `, { tuplesOnly: true }).stdout.trim();
+  if (finalState !== '1|1|2') throw new Error(`Concurrent counter replacement left unexpected state: ${finalState}`);
+  console.log('PASS concurrent counter replacements accept once and reject the stale request');
+}
+
 function cleanup() {
   if (!containerStarted) return;
   docker(['rm', '--force', CONTAINER], { allowFailure: true, timeout: 30000 });
@@ -295,7 +345,7 @@ async function main() {
     throw new Error('Phase 9G is not terminal.');
   }
   entries.forEach((entry) => resolveMigrationPath(entry.path));
-  if (![FIXTURE_PATH, ASSERTION_PATH, PRE_PHASE9D_FIXTURE_PATH, INTEGRITY_ASSERTION_PATH, IDENTITY_ASSERTION_PATH, STRUCTURED_ASSERTION_PATH, OPERATIONAL_ASSERTION_PATH, COUNTER_FIXTURE_PATH, COUNTER_ASSERTION_PATH].every(existsSync)) {
+  if (![FIXTURE_PATH, ASSERTION_PATH, PRE_PHASE9D_FIXTURE_PATH, INTEGRITY_ASSERTION_PATH, IDENTITY_ASSERTION_PATH, STRUCTURED_ASSERTION_PATH, OPERATIONAL_ASSERTION_PATH, COUNTER_FIXTURE_PATH, COUNTER_ASSERTION_PATH, REPLACEMENT_FIXTURE_PATH, REPLACEMENT_ASSERTION_PATH].every(existsSync)) {
     throw new Error('Phase 9 executable security SQL is missing.');
   }
 
@@ -365,8 +415,11 @@ async function main() {
   console.log('PASS disposable organizations, Auth users, profiles, and inventory fixtures');
   psql(readFileSync(COUNTER_FIXTURE_PATH, 'utf8'), { singleTransaction: true });
   console.log('PASS isolated Phase 9G-B counter memberships and assignment fixtures');
+  psql(readFileSync(REPLACEMENT_FIXTURE_PATH, 'utf8'), { singleTransaction: true });
+  console.log('PASS isolated Phase 9G-B2 replacement and final-history fixtures');
   await verifyConcurrentCreation();
   await verifyConcurrentCounterSubmission();
+  await verifyConcurrentCounterReplacement();
 
   const assertions = psql(readFileSync(ASSERTION_PATH, 'utf8'));
   const passLines = `${assertions.stdout}\n${assertions.stderr}`
@@ -435,6 +488,17 @@ async function main() {
   }
   counterPassLines.forEach((line) => console.log(line));
   console.log(`Executable PostgreSQL counter-workflow assertions: ${counterPassLines.length}/${counterPassLines.length} passed.`);
+
+  const replacementAssertions = psql(readFileSync(REPLACEMENT_ASSERTION_PATH, 'utf8'));
+  const replacementPassLines = `${replacementAssertions.stdout}\n${replacementAssertions.stderr}`
+    .split('\n')
+    .filter((line) => line.includes('PASS '))
+    .map((line) => line.replace(/^.*PASS /, 'PASS '));
+  if (replacementPassLines.length !== EXPECTED_REPLACEMENT_ASSERTION_PASSES) {
+    throw new Error(`Expected ${EXPECTED_REPLACEMENT_ASSERTION_PASSES} executable counter-replacement assertion passes, received ${replacementPassLines.length}.`);
+  }
+  replacementPassLines.forEach((line) => console.log(line));
+  console.log(`Executable PostgreSQL counter-replacement assertions: ${replacementPassLines.length}/${replacementPassLines.length} passed.`);
   reportDatabaseState();
 }
 

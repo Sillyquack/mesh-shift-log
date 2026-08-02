@@ -440,7 +440,8 @@ insert into phase9_test.expected_authenticated_functions (signature) values
   ('public.inventory_counter_apply_refrigerator_default(uuid,boolean,bigint)'),
   ('public.submit_inventory_count_assignment(uuid,bigint,timestamp with time zone)'),
   ('public.return_inventory_count_assignment(uuid,text,bigint)'),
-  ('public.accept_inventory_count_assignment(uuid,bigint)');
+  ('public.accept_inventory_count_assignment(uuid,bigint)'),
+  ('public.replace_inventory_count_assignment(uuid,uuid,text,text,boolean,bigint)');
 
 select phase9_test.assert_true(
   (select bool_and(to_regprocedure(signature) is not null)

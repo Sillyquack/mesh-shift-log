@@ -8,6 +8,7 @@ const commands = [
   ['npm', ['run', 'verify:inventory-structured-quantities']],
   ['npm', ['run', 'verify:inventory-operational-scope']],
   ['npm', ['run', 'verify:inventory-counter-workflow']],
+  ['npm', ['run', 'verify:inventory-counter-replacement']],
   ['npm', ['run', 'verify:phase9-security-db']],
   ['npm', ['run', 'build']],
 ];

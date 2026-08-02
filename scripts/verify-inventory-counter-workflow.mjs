@@ -4,6 +4,7 @@ import test from 'node:test';
 import { PHASE9_TERMINAL_MIGRATION, validatedPhase9MigrationEntries } from './phase9MigrationOrder.mjs';
 
 const migration = readFileSync(new URL('../supabase/phase9gb_inventory_counter_assignments.sql', import.meta.url), 'utf8');
+const replacementMigration = readFileSync(new URL('../supabase/phase9gb2_inventory_counter_replacement.sql', import.meta.url), 'utf8');
 const client = readFileSync(new URL('../src/lib/inventoryClient.js', import.meta.url), 'utf8');
 const workflows = readFileSync(new URL('../src/components/InventoryCounterWorkflows.jsx', import.meta.url), 'utf8');
 const workspace = readFileSync(new URL('../src/components/InventoryWorkspace.jsx', import.meta.url), 'utf8');
@@ -12,11 +13,12 @@ const app = readFileSync(new URL('../src/App.jsx', import.meta.url), 'utf8');
 const runner = readFileSync(new URL('./verify-phase9-security-db.mjs', import.meta.url), 'utf8');
 const assertions = readFileSync(new URL('../supabase/tests/phase9/counter-workflow-assertions.sql', import.meta.url), 'utf8');
 
-test('Phase 9G-B is the sole repeatable terminal migration', () => {
+test('Phase 9G-B2 is the sole repeatable terminal migration after Phase 9G-B', () => {
   const entries = validatedPhase9MigrationEntries();
-  assert.equal(PHASE9_TERMINAL_MIGRATION, 'supabase/phase9gb_inventory_counter_assignments.sql');
+  assert.equal(PHASE9_TERMINAL_MIGRATION, 'supabase/phase9gb2_inventory_counter_replacement.sql');
   assert.deepEqual(entries.filter((entry) => entry.repeatable).map((entry) => entry.path), [PHASE9_TERMINAL_MIGRATION]);
-  assert.equal(entries.at(-2).path, 'supabase/phase9g_inventory_operational_scope.sql');
+  assert.equal(entries.at(-2).path, 'supabase/phase9gb_inventory_counter_assignments.sql');
+  assert.equal(entries.at(-3).path, 'supabase/phase9g_inventory_operational_scope.sql');
 });
 
 test('counter role requires verified Supabase identity and never inherits manager permissions', () => {
@@ -36,6 +38,7 @@ test('counter profiles are automatically constrained to Stock Count instead of t
 test('membership and assignment tables bind organization, Auth counter, session, refrigerator, state, and revision', () => {
   for (const token of ['inventory_counter_memberships', 'counter_auth_user_id', 'inventory_count_assignments', 'counter_membership_id', 'session_id', 'location_id', 'state', 'revision']) assert.ok(migration.includes(token));
   assert.match(migration, /unique \(organization_id, session_id, location_id\)/i);
+  assert.match(replacementMigration, /inventory_count_assignments_one_current_location_idx/i);
   assert.match(migration, /role <> 'counter'/i);
   assert.match(migration, /inventory_phase9g_is_refrigerator/i);
 });
@@ -43,7 +46,8 @@ test('membership and assignment tables bind organization, Auth counter, session,
 test('assignment transitions are explicit and terminal acceptance cannot be self-reopened', () => {
   assert.match(migration, /old\.state in \('assigned', 'returned'\) and new\.state = 'submitted'/i);
   assert.match(migration, /old\.state = 'submitted' and new\.state in \('returned', 'accepted'\)/i);
-  assert.doesNotMatch(migration, /old\.state = 'accepted'.*new\.state/s);
+  assert.match(replacementMigration, /old\.state in \('assigned', 'returned'\) and new\.state = 'superseded'/i);
+  assert.doesNotMatch(migration + replacementMigration, /old\.state = 'accepted'.*new\.state/s);
   assert.match(migration, /Every assignment change must advance the revision exactly once/i);
 });
 
@@ -57,11 +61,12 @@ test('base inventory RLS remains manager-only while counter reads use one saniti
 });
 
 test('counter workspace exposes stable assigned-line identity but omits defaults, variance, and reserve data', () => {
-  const reader = migration.slice(migration.indexOf('create or replace function public.get_inventory_counter_workspace'), migration.indexOf('create or replace function public.set_inventory_counter_membership'));
+  const reader = replacementMigration.slice(replacementMigration.indexOf('create or replace function public.get_inventory_counter_workspace'), replacementMigration.indexOf('create or replace function public.set_inventory_counter_membership'));
   assert.match(reader, /'product_id'/);
   assert.match(reader, /'millum_item_ref'/);
   assert.doesNotMatch(reader, /'par_quantity_snapshot'|'variance_quantity'|'reserve_target'/);
   assert.match(reader, /session\.status in \('draft', 'in_progress'\)/);
+  assert.match(reader, /assignment\.state <> 'superseded'/);
 });
 
 test('counter line writes lock the exact assignment and exact assigned location with stale checks', () => {
@@ -100,7 +105,7 @@ test('submission is refrigerator-only, revisioned, complete-line guarded, and do
 
 test('session completion is manager-owned and blocked until every assignment is accepted', () => {
   assert.match(migration, /inventory_require_accepted_assignments_before_completion/);
-  assert.match(migration, /assignment\.state <> 'accepted'/);
+  assert.match(replacementMigration, /assignment\.state not in \('accepted', 'superseded'\)/);
   assert.match(migration, /before update of status on public\.inventory_count_sessions/);
 });
 
@@ -120,9 +125,9 @@ test('manager review shows required operational evidence and accept or return ac
 
 test('direct writes are revoked and every exposed Phase 9G-B function has an explicit grant', () => {
   for (const table of ['inventory_counter_memberships', 'inventory_count_assignments']) {
-    assert.match(migration, new RegExp(`revoke all privileges on table public\\.${table} from public, anon, authenticated, service_role`));
+    assert.match(migration + replacementMigration, new RegExp(`revoke all privileges on table public\\.${table} from public, anon, authenticated, service_role`));
   }
-  const grants = migration.match(/grant execute on function public\.[^(]+\([^;]*?\) to authenticated;/g) || [];
+  const grants = (migration + replacementMigration).match(/grant execute on function public\.[^(]+\([^;]*?\)\s+to authenticated;/g) || [];
   assert.ok(grants.length >= 11);
   assert.match(migration, /revoke all on function public\.inventory_resolve_counter\(\) from public, anon, authenticated/);
 });

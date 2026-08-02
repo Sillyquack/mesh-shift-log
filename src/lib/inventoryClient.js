@@ -12,7 +12,7 @@ const UNRESOLVED_MAPPING_COLUMNS = 'id,location_id,requested_name,requested_defa
 const RESERVE_COLUMNS = 'product_id,refrigerator_default_quantity,reserve_target_override,reserve_target_quantity,combined_desired_quantity';
 const COUNTER_PROFILE_COLUMNS = 'id,display_name,role,active,is_shared_device';
 const COUNTER_MEMBERSHIP_COLUMNS = 'id,counter_auth_user_id,active,authorized_at,authorized_by_name,revoked_at,revoked_by_name,updated_at';
-const COUNT_ASSIGNMENT_COLUMNS = 'id,session_id,location_id,counter_membership_id,state,revision,assigned_at,assigned_by_name,submitted_at,submitted_by_name,returned_at,returned_by_name,return_message,accepted_at,accepted_by_name,updated_at';
+const COUNT_ASSIGNMENT_COLUMNS = 'id,session_id,location_id,counter_membership_id,state,revision,assigned_at,assigned_by_name,submitted_at,submitted_by_name,returned_at,returned_by_name,return_message,accepted_at,accepted_by_name,replaces_assignment_id,superseded_by_assignment_id,superseded_at,superseded_by_name,supersession_reason,replacement_data_action,superseded_recorded_line_count,superseded_total_line_count,updated_at';
 const SESSION_COLUMNS = 'id,title,count_type,status,count_date,started_at,completed_at,approved_at,started_by_name,completed_by_name,approved_by_name,completion_note,approval_note,session_kind,original_session_id,correction_reason,correction_created_by_name,correction_created_at,finalized_with_exceptions,exception_reason,exception_skipped_count,exception_uncounted_count,exception_needs_review_count,exception_incomplete_location_count,exception_location_ids,finalized_by_name,finalized_at,updated_at';
 const LINE_COLUMNS = 'id,location_id,product_id,product_name_snapshot,location_name_snapshot,unit_label_snapshot,category_snapshot,location_sort_order_snapshot,count_order_snapshot,product_sort_order_snapshot,par_quantity_snapshot,minimum_quantity_snapshot,stock_policy_snapshot,target_mode_snapshot,effective_target_quantity_snapshot,service_target_basis_snapshot,reserve_multiplier_snapshot,case_size_snapshot,target_cases_snapshot,target_loose_quantity_snapshot,physical_recount_interval_days_snapshot,previous_physical_count_quantity_snapshot,previous_physical_counted_at_snapshot,count_mode_snapshot,container_capacity_liters_snapshot,counted_whole_units,counted_open_volume_liters,counted_full_kegs,counted_partial_keg_fraction,count_full_cases,count_loose_quantity,counted_quantity,count_method,count_status,variance_quantity,restock_quantity,note,counted_at,counted_by_name,updated_at';
 
@@ -240,6 +240,14 @@ function normalizeCountAssignment(row) {
     returnMessage: row.return_message || '',
     acceptedAt: row.accepted_at || '',
     acceptedByName: row.accepted_by_name || '',
+    replacesAssignmentId: row.replaces_assignment_id || '',
+    supersededByAssignmentId: row.superseded_by_assignment_id || '',
+    supersededAt: row.superseded_at || '',
+    supersededByName: row.superseded_by_name || '',
+    supersessionReason: row.supersession_reason || '',
+    replacementDataAction: row.replacement_data_action || '',
+    supersededRecordedLineCount: row.superseded_recorded_line_count == null ? null : Number(row.superseded_recorded_line_count),
+    supersededTotalLineCount: row.superseded_total_line_count == null ? null : Number(row.superseded_total_line_count),
     updatedAt: row.updated_at || '',
   };
 }
@@ -707,6 +715,17 @@ export function returnInventoryCountAssignment(payload) {
 export function acceptInventoryCountAssignment(payload) {
   return callRpc('accept_inventory_count_assignment', {
     input_assignment_id: payload.assignmentId,
+    input_expected_assignment_revision: payload.expectedAssignmentRevision,
+  });
+}
+
+export function replaceInventoryCountAssignment(payload) {
+  return callRpc('replace_inventory_count_assignment', {
+    input_assignment_id: payload.assignmentId,
+    input_replacement_counter_membership_id: payload.replacementCounterMembershipId,
+    input_reason: payload.reason,
+    input_data_action: payload.dataAction,
+    input_confirm_clear: payload.confirmClear === true,
     input_expected_assignment_revision: payload.expectedAssignmentRevision,
   });
 }
