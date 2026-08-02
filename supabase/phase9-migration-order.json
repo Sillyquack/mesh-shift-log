@@ -65,8 +65,13 @@
     {
       "id": "phase9gc-counter-mobile",
       "path": "supabase/phase9gc_inventory_counter_mobile.sql",
+      "repeatable": false
+    },
+    {
+      "id": "phase9gd-product-mappings",
+      "path": "supabase/phase9gd_inventory_product_mappings.sql",
       "repeatable": true
     }
   ],
-  "terminalMigration": "supabase/phase9gc_inventory_counter_mobile.sql"
+  "terminalMigration": "supabase/phase9gd_inventory_product_mappings.sql"
 }

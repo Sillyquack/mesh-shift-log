@@ -23,6 +23,7 @@ const INTEGRITY_ASSERTION_PATH = resolve(ROOT, 'supabase/tests/phase9/session-in
 const IDENTITY_ASSERTION_PATH = resolve(ROOT, 'supabase/tests/phase9/product-identity-assertions.sql');
 const STRUCTURED_ASSERTION_PATH = resolve(ROOT, 'supabase/tests/phase9/structured-quantity-assertions.sql');
 const OPERATIONAL_ASSERTION_PATH = resolve(ROOT, 'supabase/tests/phase9/operational-scope-assertions.sql');
+const MAPPING_ASSERTION_PATH = resolve(ROOT, 'supabase/tests/phase9/product-mapping-assertions.sql');
 const COUNTER_FIXTURE_PATH = resolve(ROOT, 'supabase/tests/phase9/counter-fixtures.sql');
 const COUNTER_ASSERTION_PATH = resolve(ROOT, 'supabase/tests/phase9/counter-workflow-assertions.sql');
 const REPLACEMENT_FIXTURE_PATH = resolve(ROOT, 'supabase/tests/phase9/counter-replacement-fixtures.sql');
@@ -32,6 +33,7 @@ const EXPECTED_ASSERTION_PASSES = 70;
 const EXPECTED_COUNTER_ASSERTION_PASSES = 47;
 const EXPECTED_REPLACEMENT_ASSERTION_PASSES = 28;
 const EXPECTED_MOBILE_ASSERTION_PASSES = 8;
+const EXPECTED_MAPPING_ASSERTION_PASSES = 23;
 let containerStarted = false;
 
 if (process.argv.length > 2) {
@@ -274,7 +276,7 @@ function verifyUnsafeOrderIsRejected(canonicalPaths) {
       'supabase/phase9a_inventory_stocktaking.sql',
     ]);
   } catch {
-    console.log('PASS migration runner rejects reapplying an older Phase 9 file after terminal Phase 9G');
+    console.log('PASS migration runner rejects reapplying an older Phase 9 file after terminal Phase 9G-D');
     return;
   }
   throw new Error('Unsafe post-Phase 9G migration reapplication was not rejected.');
@@ -344,10 +346,10 @@ async function main() {
   const paths = entries.map((entry) => entry.path);
   verifyUnsafeOrderIsRejected(paths);
   if (paths.at(-1) !== PHASE9_TERMINAL_MIGRATION) {
-    throw new Error('Phase 9G-C is not terminal.');
+    throw new Error('Phase 9G-D is not terminal.');
   }
   entries.forEach((entry) => resolveMigrationPath(entry.path));
-  if (![FIXTURE_PATH, ASSERTION_PATH, PRE_PHASE9D_FIXTURE_PATH, INTEGRITY_ASSERTION_PATH, IDENTITY_ASSERTION_PATH, STRUCTURED_ASSERTION_PATH, OPERATIONAL_ASSERTION_PATH, COUNTER_FIXTURE_PATH, COUNTER_ASSERTION_PATH, REPLACEMENT_FIXTURE_PATH, REPLACEMENT_ASSERTION_PATH, MOBILE_ASSERTION_PATH].every(existsSync)) {
+  if (![FIXTURE_PATH, ASSERTION_PATH, PRE_PHASE9D_FIXTURE_PATH, INTEGRITY_ASSERTION_PATH, IDENTITY_ASSERTION_PATH, STRUCTURED_ASSERTION_PATH, OPERATIONAL_ASSERTION_PATH, MAPPING_ASSERTION_PATH, COUNTER_FIXTURE_PATH, COUNTER_ASSERTION_PATH, REPLACEMENT_FIXTURE_PATH, REPLACEMENT_ASSERTION_PATH, MOBILE_ASSERTION_PATH].every(existsSync)) {
     throw new Error('Phase 9 executable security SQL is missing.');
   }
 
@@ -445,6 +447,64 @@ async function main() {
   }
   passLines.forEach((line) => console.log(line));
   console.log(`Executable PostgreSQL security assertions: ${passLines.length}/${passLines.length} passed.`);
+
+  const terminalSql = readFileSync(resolveMigrationPath(PHASE9_TERMINAL_MIGRATION), 'utf8');
+  const historySnapshotSql = String.raw`
+    select md5(
+      coalesce((select jsonb_agg(to_jsonb(session) order by session.id)::text
+                from public.inventory_count_sessions session), '[]')
+      || coalesce((select jsonb_agg(to_jsonb(line) order by line.id)::text
+                   from public.inventory_count_lines line), '[]')
+    );
+  `;
+  const mappedSnapshotSql = String.raw`
+    select md5(
+      coalesce((select jsonb_agg(to_jsonb(product) order by product.id)::text
+                from public.inventory_products product
+                where product.organization_id = 'aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaa1'
+                  and product.millum_item_ref = any(array[
+                    '707000631','4966818','5932918','6181002','6631634','6388581','5804190',
+                    '6503346','814467','5104666','5010707','5010715','6752422','5744222'
+                  ])), '[]')
+      || coalesce((select jsonb_agg(to_jsonb(standard) order by standard.id)::text
+                   from public.inventory_location_products standard
+                   join public.inventory_locations location on location.id = standard.location_id
+                   where standard.organization_id = 'aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaa1'
+                     and location.location_type = 'fridge'), '[]')
+      || coalesce((select jsonb_agg(to_jsonb(mapping) order by mapping.id)::text
+                   from public.inventory_catalogue_unresolved_mappings mapping
+                   where mapping.organization_id = 'aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaa1'), '[]')
+      || coalesce((select jsonb_agg(to_jsonb(template) order by template.id)::text
+                   from public.inventory_refrigerator_templates template
+                   where template.organization_id = 'aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaa1'), '[]')
+    );
+  `;
+  const historyBeforeMappings = psql(historySnapshotSql, { tuplesOnly: true }).stdout.trim();
+  psql(terminalSql, { singleTransaction: true });
+  console.log(`PASS Phase 9G-D mappings applied after operational setup: ${PHASE9_TERMINAL_MIGRATION}`);
+  const mappedStateBeforeReplay = psql(mappedSnapshotSql, { tuplesOnly: true }).stdout.trim();
+  psql(terminalSql, { singleTransaction: true });
+  const mappedStateAfterReplay = psql(mappedSnapshotSql, { tuplesOnly: true }).stdout.trim();
+  const historyAfterMappings = psql(historySnapshotSql, { tuplesOnly: true }).stdout.trim();
+  if (!mappedStateBeforeReplay || mappedStateBeforeReplay !== mappedStateAfterReplay) {
+    throw new Error('Phase 9G-D mapped data or audit timestamps changed on repeat application.');
+  }
+  if (!historyBeforeMappings || historyBeforeMappings !== historyAfterMappings) {
+    throw new Error('Phase 9G-D modified Stock Count session or line history.');
+  }
+  console.log('PASS Phase 9G-D mapped-state replay is a byte-stable no-op');
+  console.log('PASS Phase 9G-D preserves Stock Count session and line history byte-for-byte');
+
+  const mappingAssertions = psql(readFileSync(MAPPING_ASSERTION_PATH, 'utf8'));
+  const mappingPassLines = `${mappingAssertions.stdout}\n${mappingAssertions.stderr}`
+    .split('\n')
+    .filter((line) => line.includes('PASS '))
+    .map((line) => line.replace(/^.*PASS /, 'PASS '));
+  if (mappingPassLines.length !== EXPECTED_MAPPING_ASSERTION_PASSES) {
+    throw new Error(`Expected ${EXPECTED_MAPPING_ASSERTION_PASSES} executable product-mapping assertion passes, received ${mappingPassLines.length}.`);
+  }
+  mappingPassLines.forEach((line) => console.log(line));
+  console.log(`Executable PostgreSQL product-mapping assertions: ${mappingPassLines.length}/${mappingPassLines.length} passed.`);
 
   const identityAssertions = psql(readFileSync(IDENTITY_ASSERTION_PATH, 'utf8'));
   const identityPassLines = `${identityAssertions.stdout}\n${identityAssertions.stderr}`

@@ -19,10 +19,11 @@ export const EXPECTED_PHASE9_MIGRATION_ORDER = [
   'supabase/phase9gb_inventory_counter_assignments.sql',
   'supabase/phase9gb2_inventory_counter_replacement.sql',
   'supabase/phase9gc_inventory_counter_mobile.sql',
+  'supabase/phase9gd_inventory_product_mappings.sql',
 ];
 
 export const PHASE9_TERMINAL_MIGRATION =
-  'supabase/phase9gc_inventory_counter_mobile.sql';
+  'supabase/phase9gd_inventory_product_mappings.sql';
 
 export const PHASE9_SESSION_INTEGRITY_MIGRATION =
   'supabase/phase9d_inventory_session_integrity.sql';
@@ -42,7 +43,7 @@ export function validatePhase9MigrationOrder(paths) {
     }
   }
   if (paths.at(-1) !== PHASE9_TERMINAL_MIGRATION) {
-    throw new Error('Phase 9G-C mobile counter support must be the terminal migration.');
+    throw new Error('Phase 9G-D product mappings must be the terminal migration.');
   }
   return paths;
 }

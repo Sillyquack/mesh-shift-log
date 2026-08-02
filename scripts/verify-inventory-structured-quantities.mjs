@@ -167,9 +167,9 @@ test('trusted exact CSV numerics use decimal comma while text remains protected'
   assert.equal(csv.slice(1).includes('\uFEFF'), false);
 });
 
-test('Phase 9F remains ordered before the sole repeatable Phase 9G-C terminal migration', () => {
+test('Phase 9F remains ordered before the sole repeatable Phase 9G-D terminal migration', () => {
   const manifest = readPhase9MigrationManifest();
-  assert.equal(PHASE9_TERMINAL_MIGRATION, 'supabase/phase9gc_inventory_counter_mobile.sql');
+  assert.equal(PHASE9_TERMINAL_MIGRATION, 'supabase/phase9gd_inventory_product_mappings.sql');
   assert.ok(manifest.orderedMigrations.findIndex((entry) => entry.path === 'supabase/phase9f_inventory_structured_quantities.sql') < manifest.orderedMigrations.length - 1);
   assert.equal(manifest.orderedMigrations.at(-1).path, PHASE9_TERMINAL_MIGRATION);
   assert.deepEqual(manifest.orderedMigrations.filter((entry) => entry.repeatable).map((entry) => entry.path), [PHASE9_TERMINAL_MIGRATION]);

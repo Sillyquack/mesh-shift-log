@@ -7,6 +7,7 @@ const commands = [
   ['npm', ['run', 'verify:inventory-product-identity-csv']],
   ['npm', ['run', 'verify:inventory-structured-quantities']],
   ['npm', ['run', 'verify:inventory-operational-scope']],
+  ['npm', ['run', 'verify:inventory-product-mappings']],
   ['npm', ['run', 'verify:inventory-counter-workflow']],
   ['npm', ['run', 'verify:inventory-counter-replacement']],
   ['npm', ['run', 'verify:inventory-counter-mobile']],

@@ -109,7 +109,7 @@ select phase9g_test.assert_true(
 );
 
 select phase9g_test.assert_true(
-  (select count(*) = 37
+  (select count(*) = 53
    from public.inventory_location_products standard
    join public.inventory_locations location on location.id = standard.location_id
    join public.inventory_products product on product.id = standard.product_id
@@ -119,7 +119,7 @@ select phase9g_test.assert_true(
        'CORNERBAR_LEFT_FRIDGE', 'CORNERBAR_MIDDLE_FRIDGE', 'CORNERBAR_RIGHT_FRIDGE',
        'WORKBAR_BAR_LEFT_FRIDGE', 'WORKBAR_BAR_RIGHT_FRIDGE', 'WORKBAR_NON_ALCO_FRIDGE'
      )),
-  'DB-9G-6: only the 37 confirmed refrigerator defaults are active'
+  'DB-9G-6: all 53 terminal Phase 9G-D refrigerator defaults are active'
 );
 
 select phase9g_test.assert_true(
@@ -128,11 +128,14 @@ select phase9g_test.assert_true(
      and count(*) filter (
        where requested_name = 'Schweppes Indian Tonic'
          and cardinality(candidate_millum_item_refs) = 0
+         and resolution_status = 'dismissed'
      ) = 1
+     and count(*) filter (where resolution_status = 'resolved') = 15
+     and count(*) filter (where resolution_status = 'unresolved') = 0
      and bool_and(nullif(trim(reason), '') is not null)
    from public.inventory_catalogue_unresolved_mappings
-   where resolution_status = 'unresolved'),
-  'DB-9G-7: all 16 ambiguous defaults stay explicit with candidates and reasons'
+  ),
+  'DB-9G-7: all 16 mapping audit records retain candidates and reach terminal status'
 );
 
 select phase9g_test.assert_true(
@@ -144,9 +147,9 @@ select phase9g_test.assert_true(
   )
   and exists (
     select 1 from public.inventory_catalogue_unresolved_mappings
-    where requested_name = 'Schweppes Indian Tonic' and resolution_status = 'unresolved'
+    where requested_name = 'Schweppes Indian Tonic' and resolution_status = 'dismissed'
   ),
-  'DB-9G-8: observations and unverified substitutions are not seeded as defaults'
+  'DB-9G-8: observations and transitional Schweppes stock are not seeded as defaults'
 );
 
 select phase9g_test.assert_true(

@@ -12,6 +12,7 @@
     "verify:inventory-product-identity-csv": "node scripts/verify-inventory-product-identity-csv.mjs",
     "verify:inventory-structured-quantities": "node scripts/verify-inventory-structured-quantities.mjs",
     "verify:inventory-operational-scope": "node scripts/verify-inventory-operational-scope.mjs",
+    "verify:inventory-product-mappings": "node scripts/verify-inventory-product-mappings.mjs",
     "verify:inventory-counter-workflow": "node scripts/verify-inventory-counter-workflow.mjs",
     "verify:inventory-counter-replacement": "node scripts/verify-inventory-counter-replacement.mjs",
     "verify:inventory-counter-mobile": "node scripts/verify-inventory-counter-mobile.mjs",
