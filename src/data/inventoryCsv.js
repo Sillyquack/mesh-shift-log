@@ -1,4 +1,5 @@
 const HEADER_ALIASES = {
+  productId: ['product id'],
   name: ['product', 'product name', 'name'],
   sku: ['sku', 'product code'],
   barcode: ['barcode', 'ean'],
@@ -13,38 +14,67 @@ const HEADER_ALIASES = {
   notes: ['notes', 'note'],
 };
 
-function splitCsvLine(line, separator) {
-  const values = [];
+export const INVENTORY_CSV_CONTRACT = Object.freeze({
+  delimiter: ';',
+  newline: '\r\n',
+  encoding: 'UTF-8 with BOM',
+  decimalSeparator: ',',
+  formulaPrefix: "'",
+});
+
+function detectSeparator(text) {
+  let quoted = false;
+  let commas = 0;
+  let semicolons = 0;
+  for (let index = 0; index < text.length; index += 1) {
+    const character = text[index];
+    if (character === '"' && quoted && text[index + 1] === '"') index += 1;
+    else if (character === '"') quoted = !quoted;
+    else if (!quoted && (character === '\r' || character === '\n')) break;
+    else if (!quoted && character === ',') commas += 1;
+    else if (!quoted && character === ';') semicolons += 1;
+  }
+  return semicolons > commas ? ';' : ',';
+}
+
+export function parseCsvRows(text = '', separator = '') {
+  const normalized = String(text).replace(/^\uFEFF/, '');
+  const delimiter = separator || detectSeparator(normalized);
+  const records = [];
+  let record = [];
   let value = '';
   let quoted = false;
-  for (let index = 0; index < line.length; index += 1) {
-    const character = line[index];
-    if (character === '"' && quoted && line[index + 1] === '"') {
+  for (let index = 0; index < normalized.length; index += 1) {
+    const character = normalized[index];
+    if (character === '"' && quoted && normalized[index + 1] === '"') {
       value += '"';
       index += 1;
     } else if (character === '"') quoted = !quoted;
-    else if (character === separator && !quoted) {
-      values.push(value.trim());
+    else if (character === delimiter && !quoted) {
+      record.push(value);
       value = '';
+    } else if ((character === '\r' || character === '\n') && !quoted) {
+      record.push(value);
+      if (record.some((cell) => cell.length > 0)) records.push(record);
+      record = [];
+      value = '';
+      if (character === '\r' && normalized[index + 1] === '\n') index += 1;
     } else value += character;
   }
-  values.push(value.trim());
-  return values;
+  record.push(value);
+  if (record.some((cell) => cell.length > 0)) records.push(record);
+  return { rows: records, separator: delimiter };
 }
 
 export function parseInventoryCsv(text = '') {
-  const normalized = String(text).replace(/^\uFEFF/, '').replace(/\r\n?/g, '\n');
-  const lines = normalized.split('\n').filter((line) => line.trim());
-  if (!lines.length) return { headers: [], rows: [], separator: ',', error: 'The CSV file is empty.' };
-  const commaCount = (lines[0].match(/,/g) || []).length;
-  const semicolonCount = (lines[0].match(/;/g) || []).length;
-  const separator = semicolonCount > commaCount ? ';' : ',';
-  const headers = splitCsvLine(lines[0], separator);
-  const rows = lines.slice(1).map((line, rowIndex) => {
-    const values = splitCsvLine(line, separator);
+  const parsed = parseCsvRows(text);
+  if (!parsed.rows.length) return { headers: [], rows: [], separator: ',', error: 'The CSV file is empty.' };
+  const headers = parsed.rows[0].map((value) => value.trim());
+  const rows = parsed.rows.slice(1).map((record, rowIndex) => {
+    const values = record.map((value) => value.trim());
     return { rowNumber: rowIndex + 2, values, raw: Object.fromEntries(headers.map((header, index) => [header, values[index] || ''])) };
   });
-  return { headers, rows, separator, error: '' };
+  return { headers, rows, separator: parsed.separator, error: '' };
 }
 
 export function suggestInventoryCsvMapping(headers = []) {
@@ -71,17 +101,22 @@ export function previewInventoryCsv({ parsed, mapping, locations = [], products 
     });
     if (mapped.countOrder !== undefined && mapped.countOrder !== '' && !Number.isInteger(Number(mapped.countOrder))) errors.push('Count order must be a whole number.');
     let existingProduct = null;
-    if (mapped.sku?.trim()) {
+    const explicitProductId = mapped.productId?.trim();
+    if (explicitProductId) {
+      existingProduct = products.find((product) => product.id === explicitProductId) || null;
+      if (!existingProduct) errors.push('Unknown product ID.');
+    }
+    if (!explicitProductId && mapped.sku?.trim()) {
       const matches = products.filter((product) => normalize(product.sku) === normalize(mapped.sku));
       if (matches.length > 1) errors.push('SKU matches multiple products.');
       else if (matches.length === 1) existingProduct = matches[0];
     }
-    if (!existingProduct && mapped.barcode?.trim()) {
+    if (!explicitProductId && !existingProduct && mapped.barcode?.trim()) {
       const matches = products.filter((product) => normalize(product.barcode) === normalize(mapped.barcode));
       if (matches.length > 1) errors.push('Barcode matches multiple products.');
       else if (matches.length === 1) existingProduct = matches[0];
     }
-    if (!existingProduct && mapped.name?.trim()) {
+    if (!explicitProductId && !existingProduct && mapped.name?.trim()) {
       const matches = products.filter((product) => normalize(product.name) === normalize(mapped.name));
       if (matches.length > 1) errors.push('Multiple products have this name. Add a unique SKU or barcode.');
       else if (matches.length === 1) existingProduct = matches[0];
@@ -111,7 +146,9 @@ export function previewInventoryCsv({ parsed, mapping, locations = [], products 
     if (hasLocation && (mapped.parQuantity === undefined || mapped.parQuantity.trim() === '')) {
       errors.push('Par is required when a location is provided.');
     }
-    const key = `${mapped.sku || ''}|${mapped.barcode || ''}|${mapped.name || ''}`.toLowerCase();
+    const key = mapped.productId
+      ? `product:${mapped.productId}`
+      : `new:${mapped.sku || ''}|${mapped.barcode || ''}|${mapped.name || ''}`.toLowerCase();
     if (seen.has(key)) warnings.push('Duplicate row in this file.');
     seen.add(key);
     if (existingProduct) warnings.push('Existing product will be updated.');
@@ -120,17 +157,44 @@ export function previewInventoryCsv({ parsed, mapping, locations = [], products 
   });
 }
 
-function quote(value) {
+function formatNumber(value) {
+  if (!Number.isFinite(value)) return '';
+  const text = Object.is(value, -0) ? '0' : String(value);
+  const expanded = /e/i.test(text)
+    ? value.toLocaleString('en-US', { useGrouping: false, maximumSignificantDigits: 21 })
+    : text;
+  return expanded.replace('.', INVENTORY_CSV_CONTRACT.decimalSeparator);
+}
+
+export function isDangerousCsvText(value) {
+  const text = String(value ?? '');
+  return /^[\u0000-\u0008\u000b\u000c\u000e-\u0020]*[\t\r\n=+\-@]/u.test(text);
+}
+
+export function neutralizeCsvText(value) {
   const text = value === null || value === undefined ? '' : String(value);
-  return /[",\n;]/.test(text) ? `"${text.replace(/"/g, '""')}"` : text;
+  return isDangerousCsvText(text) ? `${INVENTORY_CSV_CONTRACT.formulaPrefix}${text}` : text;
+}
+
+function serializeCell(value) {
+  if (value === null || value === undefined) return '';
+  if (typeof value === 'number') return formatNumber(value);
+  if (typeof value === 'bigint') return String(value);
+  const original = String(value);
+  const protectedText = neutralizeCsvText(original);
+  const requiresQuotes = /[;"\r\n]/u.test(protectedText) || /^\s|\s$/u.test(original);
+  return requiresQuotes ? `"${protectedText.replace(/"/g, '""')}"` : protectedText;
 }
 
 export function makeCsv(headers, rows) {
-  return [headers.map(quote).join(','), ...rows.map((row) => row.map(quote).join(','))].join('\n');
+  const records = [headers, ...rows]
+    .map((row) => row.map(serializeCell).join(INVENTORY_CSV_CONTRACT.delimiter));
+  return `\uFEFF${records.join(INVENTORY_CSV_CONTRACT.newline)}`;
 }
 
 export function downloadCsv(filename, content) {
-  const blob = new Blob([`\uFEFF${content}`], { type: 'text/csv;charset=utf-8' });
+  const csv = String(content).startsWith('\uFEFF') ? String(content) : `\uFEFF${content}`;
+  const blob = new Blob([csv], { type: 'text/csv;charset=utf-8' });
   const url = URL.createObjectURL(blob);
   const anchor = document.createElement('a');
   anchor.href = url;

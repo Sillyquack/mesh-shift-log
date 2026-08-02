@@ -15,9 +15,11 @@ const phase9a4Sql = readFileSync(new URL('../supabase/phase9a4_inventory_locatio
 const phase9bSql = readFileSync(new URL('../supabase/phase9b_stock_policies.sql', import.meta.url), 'utf8');
 const phase9cSql = readFileSync(new URL('../supabase/phase9c_inventory_security_hardening.sql', import.meta.url), 'utf8');
 const phase9dSql = readFileSync(new URL('../supabase/phase9d_inventory_session_integrity.sql', import.meta.url), 'utf8');
+const phase9eSql = readFileSync(new URL('../supabase/phase9e_inventory_product_identity_csv.sql', import.meta.url), 'utf8');
 const client = readFileSync(new URL('../src/lib/inventoryClient.js', import.meta.url), 'utf8');
 const realtime = readFileSync(new URL('../src/lib/inventoryRealtime.js', import.meta.url), 'utf8');
 const calculations = readFileSync(new URL('../src/data/inventoryCalculations.js', import.meta.url), 'utf8');
+const csv = readFileSync(new URL('../src/data/inventoryCsv.js', import.meta.url), 'utf8');
 const workspace = readFileSync(new URL('../src/components/InventoryWorkspace.jsx', import.meta.url), 'utf8');
 const app = readFileSync(new URL('../src/App.jsx', import.meta.url), 'utf8');
 const permissions = readFileSync(new URL('../src/lib/permissions.js', import.meta.url), 'utf8');
@@ -26,7 +28,9 @@ const databaseRunner = readFileSync(new URL('./verify-phase9-security-db.mjs', i
 const databaseFixtures = readFileSync(new URL('../supabase/tests/phase9/security-fixtures.sql', import.meta.url), 'utf8');
 const databaseAssertions = readFileSync(new URL('../supabase/tests/phase9/security-assertions.sql', import.meta.url), 'utf8');
 const integrityAssertions = readFileSync(new URL('../supabase/tests/phase9/session-integrity-assertions.sql', import.meta.url), 'utf8');
+const identityAssertions = readFileSync(new URL('../supabase/tests/phase9/product-identity-assertions.sql', import.meta.url), 'utf8');
 const lifecycleVerification = readFileSync(new URL('./verify-inventory-session-lifecycle.mjs', import.meta.url), 'utf8');
+const identityCsvVerification = readFileSync(new URL('./verify-inventory-product-identity-csv.mjs', import.meta.url), 'utf8');
 const migrationEntries = validatedPhase9MigrationEntries();
 const migrationPaths = migrationEntries.map((entry) => entry.path);
 let unsafeMigrationOrderRejected = false;
@@ -75,6 +79,13 @@ function phase9dFunctionBody(name) {
   return end < 0 ? '' : phase9dSql.slice(start, end + 4);
 }
 
+function phase9eFunctionBody(name) {
+  const start = phase9eSql.indexOf(`create or replace function public.${name}(`);
+  if (start < 0) return '';
+  const end = phase9eSql.indexOf('\n$$;', start);
+  return end < 0 ? '' : phase9eSql.slice(start, end + 4);
+}
+
 function check(name, condition) {
   return { name, passed: Boolean(condition) };
 }
@@ -111,7 +122,7 @@ const bulkUsePar = functionBody('mark_inventory_location_use_par');
 const locationTemplate = phase9a4FunctionBody('setup_mesh_youngstorget_inventory_locations');
 const bulkStandards = phase9a4FunctionBody('bulk_upsert_inventory_location_standards');
 const safeSessionRecord = phase9dFunctionBody('get_inventory_count_session_record');
-const safeLineRecord = functionBody('inventory_count_line_client_record');
+const safeLineRecord = phase9eFunctionBody('inventory_count_line_client_record');
 const productResponseKeys = returnedJsonKeys('upsert_inventory_product');
 const locationResponseKeys = returnedJsonKeys('upsert_inventory_location');
 const standardResponseKeys = returnedJsonKeys('upsert_inventory_location_product');
@@ -183,6 +194,11 @@ const phase9dLineLock = phase9dFunctionBody('inventory_lock_mutable_count_line')
 const phase9dSessionTrigger = phase9dFunctionBody('inventory_enforce_count_session_integrity');
 const phase9dLineTrigger = phase9dFunctionBody('inventory_enforce_count_line_integrity');
 const phase9dGrants = phase9dSql.slice(phase9dSql.indexOf('revoke all on function public.inventory_enforce_count_session_integrity'));
+const phase9eLineRecord = phase9eFunctionBody('inventory_count_line_client_record');
+const phase9eLineGrant = phase9eSql.slice(
+  phase9eSql.indexOf('grant select ('),
+  phase9eSql.indexOf(') on table public.inventory_count_lines to authenticated'),
+);
 const effectiveInventoryMutationBodies = [
   functionBody('upsert_inventory_product'),
   functionBody('upsert_inventory_location'),
@@ -372,15 +388,26 @@ const checks = [
   check('SEC-D13: Phase 9C security-definer helpers use safe search paths and schema-qualified relations', (phase9cSql.match(/security definer\nset search_path = pg_catalog/g) || []).length === 4 && !/from\s+user_profiles|from\s+inventory_count_sessions/i.test(phase9cSql)),
   check('SEC-D14: Phase 9C contains no metadata-based authorization or service-role frontend credential', !/user_metadata|raw_user_meta_data|service_role_key|VITE_[A-Z_]*SERVICE/i.test(phase9cSql + client + workspace)),
   check('SEC-D15: focused security documentation states the enforced boundary and executable test layers', /manager-only/i.test(securityDocumentation) && /Supabase Auth/i.test(securityDocumentation) && /staff-code/i.test(securityDocumentation) && /shared-device/i.test(securityDocumentation) && /executable PostgreSQL/i.test(securityDocumentation)),
+  check('9E-1: product ID is selected, normalized, and returned by guarded line mutations', /\bproduct_id\b/i.test(lineColumns) && /productId: row\.product_id/i.test(normalizerSource('normalizeLine', 'callRpc')) && /'product_id', v_line\.product_id/i.test(phase9eLineRecord)),
+  check('9E-2: restock grouping is product-ID based with stable line and location identities', /requireCountLineIdentity\(line, 'Restock aggregation'\)/i.test(calculations) && /const key = productId/i.test(calculations) && /products\.get\(key\)/i.test(calculations) && /lineId,/i.test(calculations) && !/const key = `\$\{line\.productName[^\n]*unitLabel/i.test(calculations)),
+  check('9E-3: approved comparisons use location and product IDs rather than display snapshots', /function identityPairKey[\s\S]*?requireCountLineIdentity[\s\S]*?JSON\.stringify\(\[locationId, productId\]\)/i.test(calculations) && /compareInventoryApprovedLines\(latest\.lines, previous\.lines\)/i.test(workspace) && !/previousByKey/i.test(workspace)),
+  check('9E-4: corrections preserve exact product IDs and approved quantities remain untouched', /source\.product_id/i.test(phase9dCorrectionSession) && !/update public\.inventory_count_lines/i.test(phase9eSql) && /does not rewrite approved historical quantities/i.test(identityAssertions)),
+  check('9E-5: CSV export contract is BOM, semicolon, CRLF, and decimal comma', /delimiter: ';'/i.test(csv) && /newline: '\\r\\n'/i.test(csv) && /UTF-8 with BOM/i.test(csv) && /decimalSeparator: ','/i.test(csv)),
+  check('9E-6: untrusted formula-capable text is neutralized before standards-compliant quoting', /isDangerousCsvText/i.test(csv) && /[=+\\\-@]/i.test(csv) && /neutralizeCsvText\(original\)/i.test(csv) && /replace\(\/"\/g, '""'\)/i.test(csv)),
+  check('9E-7: every inventory CSV export includes stable product identity', (workspace.match(/makeCsv\(\[[^\]]*'Product ID'/g) || []).length === 4),
+  check('9E-8: duplicate display labels receive a conditional product reference rather than a display-derived key', /inventoryProductIdentityReference/i.test(workspace) && /matchingIds\.size < 2/i.test(calculations) && /Product ref/i.test(calculations)),
+  check('9E-9: terminal SQL exposes only the safe product-ID column and keeps the helper internal', /\bproduct_id\b/i.test(phase9eLineGrant) && /revoke all on function public\.inventory_count_line_client_record\(uuid\) from public, anon, authenticated/i.test(phase9eSql) && !/grant execute on function public\.inventory_count_line_client_record/i.test(phase9eSql)),
+  check('9E-10: executable fixtures cover same-display identity, correction copying, formula injection and CSV round trips', /DB-IDENTITY-8/i.test(identityAssertions) && /same-name and same-unit products remain separate/i.test(identityCsvVerification) && /formula-capable untrusted text/i.test(identityCsvVerification) && /round-trip from the final CSV string/i.test(identityCsvVerification)),
   check('MIG-1: canonical migration manifest matches the exact Phase 9 prerequisite order', JSON.stringify(migrationPaths) === JSON.stringify(EXPECTED_PHASE9_MIGRATION_ORDER)),
   check('MIG-2: Phase 7A shared-device prerequisite is ordered before Phase 9A', migrationPaths.indexOf('supabase/phase7a_workbar_device_auth.sql') < migrationPaths.indexOf('supabase/phase9a_inventory_stocktaking.sql') && /add column if not exists is_shared_device/i.test(phase7aSql) && /current_user_is_shared_device/i.test(sql)),
-  check('MIG-3: Phase 9D is terminal and unsafe older-phase reapplication is rejected', migrationPaths.at(-1) === PHASE9_TERMINAL_MIGRATION && unsafeMigrationOrderRejected),
+  check('MIG-3: Phase 9E is terminal and unsafe older-phase reapplication is rejected', migrationPaths.at(-1) === PHASE9_TERMINAL_MIGRATION && unsafeMigrationOrderRejected),
   check('MIG-4: baseline manager-review DO block has valid double-dollar delimiters', !/\bdo\s+\$(?!\$)\s/i.test(schemaSql) && /do \$\$[\s\S]*?manager_daily_reviews_local_id_key[\s\S]*?end\s*\n\$\$;/i.test(schemaSql)),
   check('MIG-5: database runner is pinned, network-isolated, pull-disabled and accepts no connection arguments', /public\.ecr\.aws\/supabase\/postgres:17\.6\.1\.141/i.test(databaseRunner) && /'--network', 'none'/i.test(databaseRunner) && /'--pull', 'never'/i.test(databaseRunner) && /process\.argv\.length > 2/i.test(databaseRunner) && !/DATABASE_URL|SUPABASE_DB_URL|postgres(?:ql)?:\/\//i.test(databaseRunner)),
   check('MIG-6: disposable fixtures cover two organizations and every required profile type', ['Organization A Manager', 'Organization B Manager', 'Organization A Staff', 'Organization A Shift Lead', 'Organization A Event Floor Manager', 'Organization A Time2Staff', 'Organization A Shared Manager', 'Organization A Inactive Manager', 'Null Organization Manager'].every((fixture) => databaseFixtures.includes(fixture))),
   check('MIG-7: executable assertions cover RLS, profile authority, every mutation RPC, tenant IDs and effective EXECUTE grants', /DB-RLS-1/i.test(databaseAssertions) && /DB-PROFILE-6/i.test(databaseAssertions) && (databaseAssertions.match(/\('(?:upsert product|upsert location|upsert standard|copy standards|setup template|bulk standards|create session|set line quantity|set line cases|mark line use par|clear line|skip line|mark location use par|confirm unchanged|complete location|complete session|approve session|create correction|cancel session|import catalog)'/g) || []).length === 20 && /DB-TENANT-6/i.test(databaseAssertions) && /DB-EXEC-9/i.test(databaseAssertions)),
   check('MIG-9: executable Phase 9D assertions cover stale writes, immutable approval, corrections and structured exceptions', /DB-INTEGRITY-2/i.test(integrityAssertions) && /DB-INTEGRITY-15/i.test(integrityAssertions) && /DB-INTEGRITY-18/i.test(integrityAssertions) && /DB-INTEGRITY-32/i.test(integrityAssertions)),
   check('MIG-10: pure lifecycle assertions cover active slots, lock labels, explicit exceptions and retry key retention', /isInventorySessionActive/i.test(lifecycleVerification) && /inventorySessionLockLabel/i.test(lifecycleVerification) && /do not infer exceptions/i.test(lifecycleVerification) && /retries retain one idempotency key/i.test(lifecycleVerification)),
+  check('MIG-11: Phase 9E is the only repeatable terminal layer and has executable DB identity coverage', migrationEntries.filter((entry) => entry.repeatable).length === 1 && migrationEntries.at(-1).path === 'supabase/phase9e_inventory_product_identity_csv.sql' && /product-identity-assertions\.sql/i.test(databaseRunner)),
   check('MIG-8: documentation distinguishes static, in-memory, executable database and outstanding browser coverage', /static source checks/i.test(securityDocumentation) && /in-memory JavaScript/i.test(securityDocumentation) && /executable PostgreSQL/i.test(securityDocumentation) && /browser/i.test(securityDocumentation)),
 ];
 

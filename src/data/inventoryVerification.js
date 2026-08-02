@@ -104,8 +104,8 @@ export function runInventoryVerification() {
     ...Array.from({ length: 2 }, () => ({ countedQuantity: null, parQuantity: 3, countMethod: 'uncounted', countStatus: 'not_counted' })),
   ]);
   const restock = buildInventoryRestockList([
-    { productName: 'Pepsi Max', locationName: 'Fridge 1', unitLabel: 'can', countedQuantity: 13, parQuantity: 18, countStatus: 'counted' },
-    { productName: 'Pepsi Max', locationName: 'Fridge 2', unitLabel: 'can', countedQuantity: 15, parQuantity: 18, countStatus: 'counted' },
+    { id: 'pepsi-fridge-1', locationId: 'fridge-1', productId: 'pepsi', productName: 'Pepsi Max', locationName: 'Fridge 1', unitLabel: 'can', countedQuantity: 13, parQuantity: 18, countStatus: 'counted' },
+    { id: 'pepsi-fridge-2', locationId: 'fridge-2', productId: 'pepsi', productName: 'Pepsi Max', locationName: 'Fridge 2', unitLabel: 'can', countedQuantity: 15, parQuantity: 18, countStatus: 'counted' },
   ]);
   const parsedCsv = parseInventoryCsv('Product;Unit;Location;Par\nOatly;carton;Fridge 1;8\nBroken;;Unknown;-1');
   const csvPreview = previewInventoryCsv({
@@ -123,11 +123,11 @@ export function runInventoryVerification() {
     { id: 'location-b', name: 'Fridge 1', code: 'WORK-F1', active: true },
   ];
   const identityCsv = parseInventoryCsv([
-    'Product;Unit;SKU;Barcode;Location;Location code;Par',
-    'Oatly;carton;OAT-B;;Fridge 1;WORK-F1;8',
-    'Oatly;carton;;111;Fridge 1;BAR-F1;8',
-    'Oatly;carton;;;Fridge 1;WORK-F1;8',
-    'New product;piece;;;Fridge 1;;4',
+    'Product ID;Product;Unit;SKU;Barcode;Location;Location code;Par',
+    'product-b;Oatly;carton;OAT-B;;Fridge 1;WORK-F1;8',
+    ';Oatly;carton;;111;Fridge 1;BAR-F1;8',
+    ';Oatly;carton;;;Fridge 1;WORK-F1;8',
+    ';New product;piece;;;Fridge 1;;4',
   ].join('\n'));
   const identityPreview = previewInventoryCsv({
     parsed: identityCsv,
@@ -221,7 +221,7 @@ export function runInventoryVerification() {
   const derivedTarget = calculateStandardPolicyTarget({ productId: 'pepsi', stockPolicy: 'operating_reserve', targetMode: 'derived_multiplier', reserveMultiplier: 3 }, policyContext);
   const fixedTarget = calculateStandardPolicyTarget({ productId: 'pepsi', stockPolicy: 'operating_reserve', targetMode: 'fixed_quantity', parQuantity: 90 }, policyContext);
   const eventTarget = calculateStandardPolicyTarget({ stockPolicy: 'protected_event_reserve', caseSize: 24, targetCases: 3, targetLooseQuantity: 0 }, policyContext);
-  const eventLine = { id: 'event-line', productName: 'Pepsi Max', locationName: 'Event reserve', unitLabel: 'can', stockPolicy: 'protected_event_reserve', effectiveTargetQuantity: 72, caseSize: 24, targetCases: 3, targetLooseQuantity: 0, countFullCases: 2, countLooseQuantity: 0, countedQuantity: 48, countMethod: 'manual', countStatus: 'counted' };
+  const eventLine = { id: 'event-line', locationId: 'event-reserve', productId: 'pepsi-event', productName: 'Pepsi Max', locationName: 'Event reserve', unitLabel: 'can', stockPolicy: 'protected_event_reserve', effectiveTargetQuantity: 72, caseSize: 24, targetCases: 3, targetLooseQuantity: 0, countFullCases: 2, countLooseQuantity: 0, countedQuantity: 48, countMethod: 'manual', countStatus: 'counted' };
   const eventCalculated = calculateInventoryLine(eventLine);
   const dormantAvailable = { stockPolicy: 'verify_unchanged', previousPhysicalCountQuantity: 7, previousPhysicalCountedAt: '2026-06-01T10:00:00.000Z', physicalRecountIntervalDays: 90 };
   const dormantExpired = { ...dormantAvailable, previousPhysicalCountedAt: '2026-01-01T10:00:00.000Z' };
@@ -237,10 +237,10 @@ export function runInventoryVerification() {
     { id: 'dormant-expired', locationId: 'policy-dormant', stockPolicy: 'verify_unchanged', countedQuantity: null, countMethod: 'uncounted', countStatus: 'not_counted', previousPhysicalCountedAt: '2000-01-01T10:00:00.000Z', physicalRecountIntervalDays: 90 },
   ], policyLocations);
   const policyRestock = buildInventoryRestockList([
-    { productName: 'Exact', locationName: 'Fridge', unitLabel: 'unit', stockPolicy: 'exact_par', effectiveTargetQuantity: 10, countedQuantity: 8, countStatus: 'counted' },
-    { productName: 'Reserve', locationName: 'Main beverage stock', unitLabel: 'unit', stockPolicy: 'operating_reserve', effectiveTargetQuantity: 30, countedQuantity: 20, countStatus: 'counted' },
+    { id: 'exact-line', locationId: 'exact-location', productId: 'exact-product', productName: 'Exact', locationName: 'Fridge', unitLabel: 'unit', stockPolicy: 'exact_par', effectiveTargetQuantity: 10, countedQuantity: 8, countStatus: 'counted' },
+    { id: 'reserve-line', locationId: 'reserve-location', productId: 'reserve-product', productName: 'Reserve', locationName: 'Main beverage stock', unitLabel: 'unit', stockPolicy: 'operating_reserve', effectiveTargetQuantity: 30, countedQuantity: 20, countStatus: 'counted' },
     eventLine,
-    { productName: 'Dormant', locationName: 'Dormant spirits', unitLabel: 'bottle', stockPolicy: 'verify_unchanged', countedQuantity: 4, countStatus: 'counted' },
+    { id: 'dormant-line', locationId: 'dormant-location', productId: 'dormant-product', productName: 'Dormant', locationName: 'Dormant spirits', unitLabel: 'bottle', stockPolicy: 'verify_unchanged', countedQuantity: 4, countStatus: 'counted' },
   ]);
   const protectedList = buildProtectedEventReserveList([eventLine]);
   const phase9bExistingBottle = { id: 'existing-bottle-row', code: 'BEVERAGE_STORAGE_BOTTLES', name: 'Wine & bottle storage', active: true };
@@ -256,7 +256,7 @@ export function runInventoryVerification() {
     assertion('P: CSV preview accepts valid rows and blocks invalid rows', csvPreview[0]?.ready && !csvPreview[1]?.ready && csvPreview[1]?.errors.length >= 2),
     assertion('P1: duplicate product name is rejected', !identityPreview[2]?.ready && identityPreview[2]?.errors.some((error) => /multiple products/i.test(error))),
     assertion('P2: duplicate location name is rejected', !identityPreview[3]?.ready && identityPreview[3]?.errors.some((error) => /multiple active locations/i.test(error))),
-    assertion('P3: unique SKU selects one existing product', identityPreview[0]?.ready && identityPreview[0]?.values.productId === 'product-b'),
+    assertion('P3: explicit product ID selects one existing product', identityPreview[0]?.ready && identityPreview[0]?.values.productId === 'product-b'),
     assertion('P4: unique barcode selects one existing product', identityPreview[1]?.ready && identityPreview[1]?.values.productId === 'product-a'),
     assertion('P5: unique location code selects one active location', identityPreview[0]?.ready && identityPreview[0]?.values.locationId === 'location-b'),
     assertion('P6: location with blank par is rejected', !parPreview[0]?.ready && parPreview[0]?.errors.some((error) => /par is required/i.test(error))),

@@ -5,7 +5,7 @@ const PRODUCT_COLUMNS = 'id,name,short_name,sku,barcode,category,unit_label,defa
 const LOCATION_COLUMNS = 'id,name,code,location_type,parent_location_id,zone,description,active,sort_order';
 const STANDARD_COLUMNS = 'id,location_id,product_id,par_quantity,minimum_quantity,default_restock_quantity,count_order,active,notes,stock_policy,target_mode,reserve_multiplier,case_size,target_cases,target_loose_quantity,physical_recount_interval_days';
 const SESSION_COLUMNS = 'id,title,count_type,status,count_date,started_at,completed_at,approved_at,started_by_name,completed_by_name,approved_by_name,completion_note,approval_note,session_kind,original_session_id,correction_reason,correction_created_by_name,correction_created_at,finalized_with_exceptions,exception_reason,exception_skipped_count,exception_uncounted_count,exception_needs_review_count,exception_incomplete_location_count,exception_location_ids,finalized_by_name,finalized_at,updated_at';
-const LINE_COLUMNS = 'id,location_id,product_name_snapshot,location_name_snapshot,unit_label_snapshot,category_snapshot,location_sort_order_snapshot,count_order_snapshot,product_sort_order_snapshot,par_quantity_snapshot,minimum_quantity_snapshot,stock_policy_snapshot,target_mode_snapshot,effective_target_quantity_snapshot,service_target_basis_snapshot,reserve_multiplier_snapshot,case_size_snapshot,target_cases_snapshot,target_loose_quantity_snapshot,physical_recount_interval_days_snapshot,previous_physical_count_quantity_snapshot,previous_physical_counted_at_snapshot,count_full_cases,count_loose_quantity,counted_quantity,count_method,count_status,variance_quantity,restock_quantity,note,counted_at,counted_by_name,updated_at';
+const LINE_COLUMNS = 'id,location_id,product_id,product_name_snapshot,location_name_snapshot,unit_label_snapshot,category_snapshot,location_sort_order_snapshot,count_order_snapshot,product_sort_order_snapshot,par_quantity_snapshot,minimum_quantity_snapshot,stock_policy_snapshot,target_mode_snapshot,effective_target_quantity_snapshot,service_target_basis_snapshot,reserve_multiplier_snapshot,case_size_snapshot,target_cases_snapshot,target_loose_quantity_snapshot,physical_recount_interval_days_snapshot,previous_physical_count_quantity_snapshot,previous_physical_counted_at_snapshot,count_full_cases,count_loose_quantity,counted_quantity,count_method,count_status,variance_quantity,restock_quantity,note,counted_at,counted_by_name,updated_at';
 
 function output(ok, fields = {}) {
   return { ok, ...fields };
@@ -140,6 +140,7 @@ function normalizeLine(row) {
   return row && {
     id: row.id,
     locationId: row.location_id,
+    productId: row.product_id,
     productName: row.product_name_snapshot || '',
     locationName: row.location_name_snapshot || '',
     unitLabel: row.unit_label_snapshot || '',

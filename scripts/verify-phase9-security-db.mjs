@@ -4,6 +4,7 @@ import { dirname, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { spawn, spawnSync } from 'node:child_process';
 import {
+  PHASE9_SESSION_INTEGRITY_MIGRATION,
   PHASE9_TERMINAL_MIGRATION,
   validatedPhase9MigrationEntries,
   validatePhase9MigrationOrder,
@@ -19,6 +20,7 @@ const FIXTURE_PATH = resolve(ROOT, 'supabase/tests/phase9/security-fixtures.sql'
 const ASSERTION_PATH = resolve(ROOT, 'supabase/tests/phase9/security-assertions.sql');
 const PRE_PHASE9D_FIXTURE_PATH = resolve(ROOT, 'supabase/tests/phase9/pre-phase9d-compatibility.sql');
 const INTEGRITY_ASSERTION_PATH = resolve(ROOT, 'supabase/tests/phase9/session-integrity-assertions.sql');
+const IDENTITY_ASSERTION_PATH = resolve(ROOT, 'supabase/tests/phase9/product-identity-assertions.sql');
 const EXPECTED_ASSERTION_PASSES = 70;
 let containerStarted = false;
 
@@ -162,7 +164,7 @@ function verifyUnsafeOrderIsRejected(canonicalPaths) {
       'supabase/phase9a_inventory_stocktaking.sql',
     ]);
   } catch {
-    console.log('PASS migration runner rejects reapplying an older Phase 9 file after Phase 9D');
+    console.log('PASS migration runner rejects reapplying an older Phase 9 file after Phase 9E');
     return;
   }
   throw new Error('Unsafe post-Phase 9D migration reapplication was not rejected.');
@@ -232,10 +234,10 @@ async function main() {
   const paths = entries.map((entry) => entry.path);
   verifyUnsafeOrderIsRejected(paths);
   if (paths.at(-1) !== PHASE9_TERMINAL_MIGRATION) {
-    throw new Error('Phase 9D is not terminal.');
+    throw new Error('Phase 9E is not terminal.');
   }
   entries.forEach((entry) => resolveMigrationPath(entry.path));
-  if (![FIXTURE_PATH, ASSERTION_PATH, PRE_PHASE9D_FIXTURE_PATH, INTEGRITY_ASSERTION_PATH].every(existsSync)) {
+  if (![FIXTURE_PATH, ASSERTION_PATH, PRE_PHASE9D_FIXTURE_PATH, INTEGRITY_ASSERTION_PATH, IDENTITY_ASSERTION_PATH].every(existsSync)) {
     throw new Error('Phase 9 executable security SQL is missing.');
   }
 
@@ -274,7 +276,7 @@ async function main() {
   console.log('Canonical migration order:');
   for (const [index, entry] of entries.entries()) {
     const sql = readFileSync(resolveMigrationPath(entry.path), 'utf8');
-    if (entry.path === PHASE9_TERMINAL_MIGRATION) {
+    if (entry.path === PHASE9_SESSION_INTEGRITY_MIGRATION) {
       psql(readFileSync(PRE_PHASE9D_FIXTURE_PATH, 'utf8'), { singleTransaction: true });
       console.log('PASS pre-Phase 9D approved compatibility fixture installed');
       const duplicatePreflight = psql(String.raw`
@@ -317,6 +319,17 @@ async function main() {
   }
   passLines.forEach((line) => console.log(line));
   console.log(`Executable PostgreSQL security assertions: ${passLines.length}/${passLines.length} passed.`);
+
+  const identityAssertions = psql(readFileSync(IDENTITY_ASSERTION_PATH, 'utf8'));
+  const identityPassLines = `${identityAssertions.stdout}\n${identityAssertions.stderr}`
+    .split('\n')
+    .filter((line) => line.includes('PASS '))
+    .map((line) => line.replace(/^.*PASS /, 'PASS '));
+  if (identityPassLines.length !== 8) {
+    throw new Error(`Expected 8 executable product-identity assertion passes, received ${identityPassLines.length}.`);
+  }
+  identityPassLines.forEach((line) => console.log(line));
+  console.log(`Executable PostgreSQL product-identity assertions: ${identityPassLines.length}/${identityPassLines.length} passed.`);
 
   const integrityAssertions = psql(readFileSync(INTEGRITY_ASSERTION_PATH, 'utf8'));
   const integrityPassLines = `${integrityAssertions.stdout}\n${integrityAssertions.stderr}`

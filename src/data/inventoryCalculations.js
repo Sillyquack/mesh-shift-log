@@ -9,6 +9,71 @@ function integerOrZero(value) {
   return Number.isInteger(parsed) ? parsed : 0;
 }
 
+function productIdentity(item = {}) {
+  return item.productId || item.product_id || '';
+}
+
+function locationIdentity(item = {}) {
+  return item.locationId || item.location_id || '';
+}
+
+function requireCountLineIdentity(item = {}, context = 'Inventory operation') {
+  const lineId = item.id || '';
+  const productId = productIdentity(item);
+  const locationId = locationIdentity(item);
+  if (!lineId || !productId || !locationId) {
+    throw new Error(`${context} requires count-line, product, and location IDs.`);
+  }
+  return { lineId, productId, locationId };
+}
+
+function displayProductName(item = {}) {
+  return item.productName || item.product_name_snapshot || item.name || 'Product';
+}
+
+function displayUnitLabel(item = {}) {
+  return item.unitLabel || item.unit_label_snapshot || 'unit';
+}
+
+function identityPairKey(item = {}) {
+  const { locationId, productId } = requireCountLineIdentity(item, 'Approved-count comparison');
+  return JSON.stringify([locationId, productId]);
+}
+
+export function inventoryProductIdentityReference(item = {}, peers = []) {
+  const productId = productIdentity(item);
+  if (!productId) return 'Product reference unavailable';
+  const displayKey = `${displayProductName(item)}\u0000${displayUnitLabel(item)}`.toLocaleLowerCase();
+  const matchingIds = new Set(peers
+    .filter((peer) => `${displayProductName(peer)}\u0000${displayUnitLabel(peer)}`.toLocaleLowerCase() === displayKey)
+    .map(productIdentity)
+    .filter(Boolean));
+  if (matchingIds.size < 2) return '';
+  return item.sku ? `SKU ${item.sku}` : `Product ref ${productId.slice(0, 8)}`;
+}
+
+export function compareInventoryApprovedLines(latestLines = [], previousLines = [], limit = 12) {
+  const previousByIdentity = new Map(previousLines
+    .map((line) => [identityPairKey(line), line]));
+  return latestLines.map((line) => {
+    const key = identityPairKey(line);
+    const previous = previousByIdentity.get(key);
+    const latestQuantity = numberOrNull(line.countedQuantity ?? line.counted_quantity);
+    const previousQuantity = numberOrNull(previous?.countedQuantity ?? previous?.counted_quantity);
+    if (latestQuantity === null || previousQuantity === null) return null;
+    return {
+      productId: productIdentity(line),
+      locationId: locationIdentity(line),
+      productName: displayProductName(line),
+      locationName: line.locationName || line.location_name_snapshot || 'Location',
+      unitLabel: displayUnitLabel(line),
+      latest: latestQuantity,
+      previous: previousQuantity,
+      change: latestQuantity - previousQuantity,
+    };
+  }).filter(Boolean).sort((a, b) => Math.abs(b.change) - Math.abs(a.change)).slice(0, limit);
+}
+
 export function compareInventorySessionLines(left = {}, right = {}) {
   return integerOrZero(left.locationSortOrderSnapshot ?? left.location_sort_order_snapshot)
     - integerOrZero(right.locationSortOrderSnapshot ?? right.location_sort_order_snapshot)
@@ -180,16 +245,20 @@ export function buildInventoryRestockList(lines = []) {
     .filter((line) => ['exact_par', 'operating_reserve'].includes(line.calculation.stockPolicy) && line.calculation.restockQuantity > 0);
   const products = new Map();
   entries.forEach((line) => {
-    const key = `${line.productName || line.product_name_snapshot}|${line.unitLabel || line.unit_label_snapshot}`;
+    const { lineId, productId, locationId } = requireCountLineIdentity(line, 'Restock aggregation');
+    const key = productId;
     const current = products.get(key) || {
-      productName: line.productName || line.product_name_snapshot || 'Product',
-      unitLabel: line.unitLabel || line.unit_label_snapshot || 'unit',
+      productId,
+      productName: displayProductName(line),
+      unitLabel: displayUnitLabel(line),
       category: line.category || line.category_snapshot || 'Other',
       totalMissing: 0,
       locations: [],
     };
     current.totalMissing += line.calculation.restockQuantity;
     current.locations.push({
+      lineId,
+      locationId,
       locationName: line.locationName || line.location_name_snapshot || 'Location',
       missingQuantity: line.calculation.restockQuantity,
     });
@@ -201,19 +270,24 @@ export function buildInventoryRestockList(lines = []) {
 export function buildProtectedEventReserveList(lines = []) {
   return lines.map((line) => ({ ...line, calculation: calculateInventoryLine(line) }))
     .filter((line) => line.calculation.stockPolicy === 'protected_event_reserve')
-    .map((line) => ({
-      id: line.id,
-      productName: line.productName || line.product_name_snapshot || 'Product',
-      unitLabel: line.unitLabel || line.unit_label_snapshot || 'unit',
-      locationName: line.locationName || line.location_name_snapshot || 'Event reserve',
-      targetCases: numberOrNull(line.targetCases ?? line.target_cases_snapshot),
-      countFullCases: numberOrNull(line.countFullCases ?? line.count_full_cases),
-      countLooseQuantity: numberOrNull(line.countLooseQuantity ?? line.count_loose_quantity),
-      targetUnits: line.calculation.effectiveTarget,
-      actualUnits: line.calculation.countedQuantity,
-      shortageUnits: line.calculation.restockQuantity,
-      readinessPercent: line.calculation.readinessPercent,
-    }));
+    .map((line) => {
+      const { lineId, productId, locationId } = requireCountLineIdentity(line, 'Event-reserve projection');
+      return {
+        id: lineId,
+        productId,
+        locationId,
+        productName: displayProductName(line),
+        unitLabel: displayUnitLabel(line),
+        locationName: line.locationName || line.location_name_snapshot || 'Event reserve',
+        targetCases: numberOrNull(line.targetCases ?? line.target_cases_snapshot),
+        countFullCases: numberOrNull(line.countFullCases ?? line.count_full_cases),
+        countLooseQuantity: numberOrNull(line.countLooseQuantity ?? line.count_loose_quantity),
+        targetUnits: line.calculation.effectiveTarget,
+        actualUnits: line.calculation.countedQuantity,
+        shortageUnits: line.calculation.restockQuantity,
+        readinessPercent: line.calculation.readinessPercent,
+      };
+    });
 }
 
 export function inventoryStatusLabel(status) {

@@ -35,8 +35,13 @@
     {
       "id": "phase9d-session-integrity",
       "path": "supabase/phase9d_inventory_session_integrity.sql",
+      "repeatable": false
+    },
+    {
+      "id": "phase9e-product-identity-csv",
+      "path": "supabase/phase9e_inventory_product_identity_csv.sql",
       "repeatable": true
     }
   ],
-  "terminalMigration": "supabase/phase9d_inventory_session_integrity.sql"
+  "terminalMigration": "supabase/phase9e_inventory_product_identity_csv.sql"
 }
