@@ -58,6 +58,12 @@ import {
   inventorySessionSelection,
 } from '../data/inventorySessionLocations.js';
 import {
+  createMillumExportActionGuard,
+  createMillumExportFile,
+  downloadMillumExportFile,
+  shareMillumExportFile,
+} from '../data/inventoryMillumExport.js';
+import {
   approveInventoryCountSession,
   cancelInventoryCountSession,
   clearInventoryCountLine,
@@ -68,6 +74,7 @@ import {
   createInventoryCountSession,
   createInventoryCorrectionSession,
   getInventoryCountSession,
+  getInventoryMillumExport,
   importInventoryCatalog,
   loadInventoryWorkspace,
   markInventoryCountLineUsePar,
@@ -309,6 +316,80 @@ function CountLineCard({ line, identityReference, draft, onDraft, onSave, onRevi
   );
 }
 
+export function MillumExportView({ session, onBack, loadExport = getInventoryMillumExport }) {
+  const [exportData, setExportData] = useState(null);
+  const [loadState, setLoadState] = useState({ loading: true, error: '' });
+  const [actionState, setActionState] = useState({ busy: false, message: '', error: '' });
+  const actionGuardRef = useRef(createMillumExportActionGuard());
+  const filePromiseRef = useRef(null);
+
+  const load = useCallback(async () => {
+    setLoadState({ loading: true, error: '' });
+    const result = await loadExport(session.id);
+    if (result.ok) {
+      setExportData(result.record);
+      setLoadState({ loading: false, error: '' });
+    } else {
+      setExportData(null);
+      setLoadState({ loading: false, error: result.message || 'The approved Millum export could not be loaded.' });
+    }
+  }, [loadExport, session.id]);
+
+  useEffect(() => { load(); }, [load]);
+
+  const getFile = () => {
+    if (!filePromiseRef.current) {
+      filePromiseRef.current = createMillumExportFile(exportData).catch((error) => {
+        filePromiseRef.current = null;
+        throw error;
+      });
+    }
+    return filePromiseRef.current;
+  };
+
+  const runPdfAction = (operation) => actionGuardRef.current.run(async () => {
+    setActionState({ busy: true, message: '', error: '' });
+    try {
+      const generated = await getFile();
+      const result = await operation(generated);
+      setActionState({ busy: false, message: result?.message || `PDF ready (${generated.pageCount} pages).`, error: '' });
+      return result;
+    } catch (error) {
+      setActionState({ busy: false, message: '', error: error?.message || 'The PDF could not be generated. Retry or use the diagnostics below.' });
+      return null;
+    }
+  });
+
+  if (loadState.loading) return <section className="inventory-panel" role="status" aria-live="polite"><p>Loading approved Millum export…</p></section>;
+  if (loadState.error) return <div className="inventory-stack"><button type="button" className="secondary-button inventory-export-back" onClick={onBack}>Back to approved count</button><section className="inventory-panel inventory-empty" role="alert"><h2>Millum export unavailable</h2><p>{loadState.error}</p><button type="button" className="secondary-button" onClick={load}>Retry</button></section></div>;
+
+  const diagnostics = exportData?.diagnostics || [];
+  const mappingDiagnostics = exportData?.mappingDiagnostics || [];
+  return (
+    <div className="inventory-stack inventory-millum-export">
+      <section className="inventory-session-header inventory-millum-header">
+        <button type="button" className="secondary-button" onClick={onBack}>Back to approved count</button>
+        <div><p className="eyebrow">Manager-only · immutable approved source</p><h2>Millum view / Export count</h2><p>{exportData.countDate} · Session {exportData.sessionShortRef} · Profile v{exportData.profileVersion}</p></div>
+        <Status tone={exportData.ready ? 'good' : ''}>{exportData.ready ? 'Ready' : 'Blocked'}</Status>
+      </section>
+      <section className="inventory-panel inventory-millum-instructions">
+        <div><h3>Manual Millum entry</h3><p>Type the prominent final value from each row into <strong>Counted break bulk</strong>. The approved Stock Count remains unchanged.</p></div>
+        <div className="inventory-action-row">
+          <button type="button" className="primary-button" disabled={!exportData.ready || actionState.busy} onClick={() => runPdfAction(async ({ file, pageCount }) => { downloadMillumExportFile(file); return { message: `PDF downloaded (${pageCount} pages).` }; })}>{actionState.busy ? 'Preparing PDF…' : 'Download PDF'}</button>
+          <button type="button" className="secondary-button" disabled={!exportData.ready || actionState.busy} onClick={() => runPdfAction(async ({ file }) => shareMillumExportFile(file))}>Share PDF</button>
+        </div>
+        {actionState.message && <p className="inventory-message success" role="status">{actionState.message}</p>}
+        {actionState.error && <p className="inventory-message error" role="alert">{actionState.error}</p>}
+      </section>
+      {diagnostics.length > 0 && <section className="inventory-panel inventory-millum-diagnostics" role="alert"><h3>Clean export blocked</h3><p>Resolve these manager-only mapping or source-count gaps in a future approved count/profile before generating the final PDF.</p><ul>{diagnostics.map((item, index) => <li key={`${item.code}-${item.rowKey || item.productId || index}`}><strong>{item.itemNumber ? `${item.itemNumber} · ` : ''}{item.productName}</strong><span>{item.message}</span></li>)}</ul></section>}
+      <div className="inventory-millum-groups" aria-label="Millum Counted break bulk values">
+        {(exportData.groups || []).map((group) => <section className="inventory-panel inventory-millum-group" key={group.name}><h3>{group.name}</h3><div className="inventory-millum-table" role="table" aria-label={group.name}><div className="inventory-millum-row inventory-millum-columns" role="row"><strong role="columnheader">Item</strong><strong role="columnheader">Product</strong><strong role="columnheader">Counted break bulk</strong></div>{(group.rows || []).map((row) => <div className={`inventory-millum-row ${row.state !== 'ready' ? 'blocked' : ''}`} role="row" key={row.rowKey}><span role="cell">{row.itemNumber}</span><span role="cell">{row.productName}</span><strong role="cell" aria-label={row.state === 'ready' ? `Final Millum value ${row.finalValue}` : 'Missing final Millum value'}>{row.state === 'ready' ? row.finalValue : 'Missing'}</strong></div>)}</div></section>)}
+      </div>
+      <details className="inventory-panel inventory-millum-profile-diagnostics"><summary>Profile mapping diagnostics ({mappingDiagnostics.length})</summary><p className="muted">Disabled manifest positions stay preserved in profile v{exportData.profileVersion} but never receive copied values or appear in the clean PDF.</p><ul>{mappingDiagnostics.map((item) => <li key={item.rowKey}><strong>{item.group} row {item.rowOrder} · {item.itemNumber}</strong><span>{item.officialName} · {item.message}</span></li>)}</ul></details>
+    </div>
+  );
+}
+
 function CountSession({ session, sessions, lines, locations, canManage, canCoordinate, requestWriteAccess, onRefresh, onOpenSession, onBack, setStatus, remoteNotice, clearRemoteNotice }) {
   const [locationId, setLocationId] = useState(lines[0]?.locationId || '');
   const [lineDrafts, setLineDrafts] = useState({});
@@ -322,6 +403,7 @@ function CountSession({ session, sessions, lines, locations, canManage, canCoord
   const [allowExceptions, setAllowExceptions] = useState(false);
   const [exceptionReason, setExceptionReason] = useState('');
   const [actionReason, setActionReason] = useState('');
+  const [millumOpen, setMillumOpen] = useState(false);
   const [correctionIdempotencyKey, setCorrectionIdempotencyKey] = useState(() => ensureInventoryIdempotencyKey(''));
   const orderedLines = useMemo(() => sortInventorySessionLines(lines), [lines]);
   const locationIds = [...new Set(orderedLines.map((line) => line.locationId))];
@@ -351,6 +433,7 @@ function CountSession({ session, sessions, lines, locations, canManage, canCoord
     setAllowExceptions(false);
     setExceptionReason('');
     setActionReason('');
+    setMillumOpen(false);
     setCorrectionIdempotencyKey(ensureInventoryIdempotencyKey(''));
   }, [session.id]);
   useEffect(() => {
@@ -511,6 +594,7 @@ function CountSession({ session, sessions, lines, locations, canManage, canCoord
     runWrite('bulk', () => markInventoryLocationUsePar({ sessionId: session.id, locationId, replaceExisting: replace, expectedSessionUpdatedAt: session.updatedAt }));
   };
   const exportSession = () => downloadCsv(`mesh-stock-count-${session.countDate}.csv`, makeCsv(['Date', 'Session', 'Status', 'Location', 'Product', 'Product ID', 'Count mode', 'Base unit', 'Container capacity L', 'Whole / sealed', 'Open liters', 'Full kegs', 'Partial keg fraction', 'Stock policy', 'Target', 'Counted', 'Gap', 'Count method', 'Components', 'Note', 'Counted by', 'Counted at'], orderedLines.map((line) => { const calculated = calculateInventoryLine(line); const numeric = (value) => inventoryCsvNumeric(value); return [session.countDate, session.title, session.status, line.locationName, line.productName, line.productId, line.countMode, line.unitLabel, numeric(line.containerCapacityLiters), numeric(line.countedWholeUnitsExact), numeric(line.countedOpenVolumeLitersExact), numeric(line.countedFullKegsExact), numeric(line.countedPartialKegFractionExact), line.stockPolicy, numeric(calculated.effectiveTargetExact), numeric(line.countedQuantityExact), numeric(calculated.restockQuantityExact), line.countMethod, inventoryStructuredComponentLabel(line), line.note, line.countedByName, line.countedAt]; })));
+  if (millumOpen) return <MillumExportView session={session} onBack={() => setMillumOpen(false)} />;
   return (
     <div className="inventory-stack">
       <section className="inventory-session-header">
@@ -532,7 +616,7 @@ function CountSession({ session, sessions, lines, locations, canManage, canCoord
         <label>Review note<textarea rows="2" value={completionNote} disabled={session.status === 'approved' || session.status === 'cancelled'} onChange={(event) => setCompletionNote(event.target.value)} /></label>
         {canCoordinate && !readOnly && <div className="inventory-reopen"><label className="inventory-danger-option"><input type="checkbox" checked={allowExceptions} onChange={(event) => setAllowExceptions(event.target.checked)} /><span>Finalize with documented exceptions</span></label>{allowExceptions && <label>Required exception reason<textarea rows="2" value={exceptionReason} onChange={(event) => setExceptionReason(event.target.value)} /></label>}</div>}
         {exceptionSummary.hasExceptions && <div className="inventory-warning"><strong>Finalized with exceptions</strong><p>{exceptionSummary.reason}</p><p>{exceptionSummary.counts.skipped} skipped · {exceptionSummary.counts.uncounted} uncounted · {exceptionSummary.counts.needsReview} needs review · {exceptionSummary.counts.incompleteLocations} incomplete locations</p><p>Finalized by {session.finalizedByName || session.completedByName}{session.finalizedAt ? ` · ${formatDateTime(session.finalizedAt)}` : ''}</p></div>}
-        <div className="inventory-action-row"><button type="button" className="secondary-button" onClick={exportSession}>Export session CSV</button>{canCoordinate && !readOnly && <button type="button" className="primary-button" disabled={allowExceptions && !exceptionReason.trim()} onClick={() => runWrite('complete-session', () => completeInventoryCountSession({ sessionId: session.id, note: completionNote, allowExceptions, exceptionReason }))}>Complete session</button>}{canManage && session.status === 'completed' && <button type="button" className="primary-button" onClick={() => runWrite('approve', () => approveInventoryCountSession({ sessionId: session.id, note: completionNote }))}>Approve stock count</button>}</div>
+        <div className="inventory-action-row"><button type="button" className="secondary-button" onClick={exportSession}>Export session CSV</button>{canManage && session.status === 'approved' && <button type="button" className="primary-button" onClick={() => setMillumOpen(true)}>Millum view / Export count</button>}{canCoordinate && !readOnly && <button type="button" className="primary-button" disabled={allowExceptions && !exceptionReason.trim()} onClick={() => runWrite('complete-session', () => completeInventoryCountSession({ sessionId: session.id, note: completionNote, allowExceptions, exceptionReason }))}>Complete session</button>}{canManage && session.status === 'completed' && <button type="button" className="primary-button" onClick={() => runWrite('approve', () => approveInventoryCountSession({ sessionId: session.id, note: completionNote }))}>Approve stock count</button>}</div>
         {canManage && session.status === 'approved' && <div className="inventory-reopen"><label>Reason for correction<input value={actionReason} onChange={(event) => setActionReason(event.target.value)} /></label><button type="button" className="secondary-button" disabled={!actionReason.trim()} onClick={async () => { const result = await runWrite('correction', () => createInventoryCorrectionSession({ originalSessionId: session.id, reason: actionReason, idempotencyKey: correctionIdempotencyKey })); const correctionId = result?.data?.session?.id; if (result?.ok && correctionId) onOpenSession(correctionId); }}>Create correction count</button><p className="muted">The approved count remains permanently locked. Corrections are recorded in a new linked session.</p></div>}
         {canManage && !['approved', 'cancelled'].includes(session.status) && <div className="inventory-reopen"><label>Cancellation reason<input value={actionReason} onChange={(event) => setActionReason(event.target.value)} /></label><button type="button" className="text-button danger-text" disabled={!actionReason.trim()} onClick={() => runWrite('cancel', () => cancelInventoryCountSession({ sessionId: session.id, reason: actionReason }))}>Cancel session</button></div>}
       </section>

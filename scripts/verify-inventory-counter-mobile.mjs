@@ -54,12 +54,13 @@ test('counter-only role routing remains automatic while managers retain the mana
   assert.match(workspace, /return <AuthorizedInventoryWorkspace \{\.\.\.props\} \/>/);
 });
 
-test('Phase 9G-C and Phase 9G-D remain before the repeatable Phase 9H terminal migration', () => {
+test('Phase 9G-C and Phase 9G-D remain before repeatable Phase 9H and terminal Phase 9I', () => {
   const entries = validatedPhase9MigrationEntries();
-  assert.equal(PHASE9_TERMINAL_MIGRATION, 'supabase/phase9h_inventory_session_location_scope.sql');
-  assert.equal(entries.at(-2).path, 'supabase/phase9gd_inventory_product_mappings.sql');
-  assert.equal(entries.at(-3).path, 'supabase/phase9gc_inventory_counter_mobile.sql');
-  assert.deepEqual(entries.filter((entry) => entry.repeatable).map((entry) => entry.path), [PHASE9_TERMINAL_MIGRATION]);
+  assert.equal(PHASE9_TERMINAL_MIGRATION, 'supabase/phase9i_millum_stock_count_exports.sql');
+  assert.equal(entries.at(-2).path, 'supabase/phase9h_inventory_session_location_scope.sql');
+  assert.equal(entries.at(-3).path, 'supabase/phase9gd_inventory_product_mappings.sql');
+  assert.equal(entries.at(-4).path, 'supabase/phase9gc_inventory_counter_mobile.sql');
+  assert.deepEqual(entries.filter((entry) => entry.repeatable).map((entry) => entry.path), [entries.at(-2).path, PHASE9_TERMINAL_MIGRATION]);
 });
 
 test('mobile migration exposes only the assigned standard through the existing guarded RPC', () => {

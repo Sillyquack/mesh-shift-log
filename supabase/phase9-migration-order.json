@@ -76,7 +76,12 @@
       "id": "phase9h-session-location-scope",
       "path": "supabase/phase9h_inventory_session_location_scope.sql",
       "repeatable": true
+    },
+    {
+      "id": "phase9i-millum-stock-count-exports",
+      "path": "supabase/phase9i_millum_stock_count_exports.sql",
+      "repeatable": true
     }
   ],
-  "terminalMigration": "supabase/phase9h_inventory_session_location_scope.sql"
+  "terminalMigration": "supabase/phase9i_millum_stock_count_exports.sql"
 }

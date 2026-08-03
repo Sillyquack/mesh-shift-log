@@ -436,6 +436,16 @@ export async function getInventoryCountSession(sessionId) {
   return output(true, { mode: 'authenticated', record: normalizeSession(sessionResult.data), lines: (linesResult.data || []).map(normalizeLine) });
 }
 
+export async function getInventoryMillumExport(sessionId) {
+  const ctx = await context();
+  if (!ctx.ok) return { ...ctx, record: null };
+  const { data, error } = await supabaseAuthClient.rpc('get_inventory_millum_export', {
+    input_session_id: sessionId,
+  });
+  if (error) return { ...failure(error, 'The approved Millum export could not be loaded.'), record: null };
+  return output(true, { mode: 'authenticated', record: data, message: 'Approved Millum export loaded.' });
+}
+
 export function saveInventoryProduct(payload) {
   const fieldMap = {
     name: 'name', shortName: 'short_name', sku: 'sku', barcode: 'barcode',

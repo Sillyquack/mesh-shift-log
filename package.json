@@ -19,6 +19,7 @@
     "verify:inventory-session-location-scope": "node scripts/verify-inventory-session-location-scope.mjs",
     "verify:inventory-confirmation-dialog": "node scripts/verify-inventory-confirmation-dialog.mjs",
     "verify:inventory-variance-notes": "node scripts/verify-inventory-variance-notes.mjs",
+    "verify:inventory-millum-export": "node scripts/verify-inventory-millum-export.mjs",
     "verify:phase9-security-db": "node scripts/verify-phase9-security-db.mjs",
     "verify:phase9-all": "node scripts/verify-phase9-all.mjs",
     "preview": "vite preview",
@@ -26,6 +27,7 @@
   },
   "dependencies": {
     "@supabase/supabase-js": "^2.108.2",
+    "pdf-lib": "1.17.1",
     "react": "^18.3.1",
     "react-dom": "^18.3.1"
   },

@@ -409,6 +409,7 @@ insert into phase9_test.expected_authenticated_functions (signature) values
   ('public.current_user_can_count_inventory()'),
   ('public.inventory_counter_session_is_active(uuid,uuid)'),
   ('public.get_inventory_count_session_record(uuid)'),
+  ('public.get_inventory_millum_export(uuid)'),
   ('public.get_inventory_counter_workspace()'),
   ('public.upsert_inventory_product(uuid,text,text,text,text,text,text,numeric,text,text,boolean,integer,jsonb,text,numeric,text[])'),
   ('public.upsert_inventory_location(uuid,text,text,text,uuid,text,text,boolean,integer,jsonb,text[])'),

@@ -31,12 +31,15 @@ const REPLACEMENT_FIXTURE_PATH = resolve(ROOT, 'supabase/tests/phase9/counter-re
 const REPLACEMENT_ASSERTION_PATH = resolve(ROOT, 'supabase/tests/phase9/counter-replacement-assertions.sql');
 const MOBILE_ASSERTION_PATH = resolve(ROOT, 'supabase/tests/phase9/counter-mobile-assertions.sql');
 const SESSION_LOCATION_SCOPE_ASSERTION_PATH = resolve(ROOT, 'supabase/tests/phase9/session-location-scope-assertions.sql');
+const MILLUM_EXPORT_FIXTURE_PATH = resolve(ROOT, 'supabase/tests/phase9/millum-export-fixtures.sql');
+const MILLUM_EXPORT_ASSERTION_PATH = resolve(ROOT, 'supabase/tests/phase9/millum-export-assertions.sql');
 const EXPECTED_ASSERTION_PASSES = 70;
 const EXPECTED_COUNTER_ASSERTION_PASSES = 47;
 const EXPECTED_REPLACEMENT_ASSERTION_PASSES = 28;
 const EXPECTED_MOBILE_ASSERTION_PASSES = 8;
 const EXPECTED_MAPPING_ASSERTION_PASSES = 23;
 const EXPECTED_SESSION_LOCATION_SCOPE_ASSERTION_PASSES = 10;
+const EXPECTED_MILLUM_EXPORT_ASSERTION_PASSES = 48;
 let containerStarted = false;
 
 if (process.argv.length > 2) {
@@ -279,7 +282,7 @@ function verifyUnsafeOrderIsRejected(canonicalPaths) {
       'supabase/phase9a_inventory_stocktaking.sql',
     ]);
   } catch {
-    console.log('PASS migration runner rejects reapplying an older Phase 9 file after terminal Phase 9H');
+    console.log('PASS migration runner rejects reapplying an older Phase 9 file after terminal Phase 9I');
     return;
   }
   throw new Error('Unsafe post-Phase 9G migration reapplication was not rejected.');
@@ -349,10 +352,10 @@ async function main() {
   const paths = entries.map((entry) => entry.path);
   verifyUnsafeOrderIsRejected(paths);
   if (paths.at(-1) !== PHASE9_TERMINAL_MIGRATION) {
-    throw new Error('Phase 9H is not terminal.');
+    throw new Error('Phase 9I is not terminal.');
   }
   entries.forEach((entry) => resolveMigrationPath(entry.path));
-  if (![FIXTURE_PATH, ASSERTION_PATH, PRE_PHASE9D_FIXTURE_PATH, INTEGRITY_ASSERTION_PATH, IDENTITY_ASSERTION_PATH, STRUCTURED_ASSERTION_PATH, OPERATIONAL_ASSERTION_PATH, MAPPING_ASSERTION_PATH, COUNTER_FIXTURE_PATH, COUNTER_ASSERTION_PATH, REPLACEMENT_FIXTURE_PATH, REPLACEMENT_ASSERTION_PATH, MOBILE_ASSERTION_PATH, SESSION_LOCATION_SCOPE_ASSERTION_PATH].every(existsSync)) {
+  if (![FIXTURE_PATH, ASSERTION_PATH, PRE_PHASE9D_FIXTURE_PATH, INTEGRITY_ASSERTION_PATH, IDENTITY_ASSERTION_PATH, STRUCTURED_ASSERTION_PATH, OPERATIONAL_ASSERTION_PATH, MAPPING_ASSERTION_PATH, COUNTER_FIXTURE_PATH, COUNTER_ASSERTION_PATH, REPLACEMENT_FIXTURE_PATH, REPLACEMENT_ASSERTION_PATH, MOBILE_ASSERTION_PATH, SESSION_LOCATION_SCOPE_ASSERTION_PATH, MILLUM_EXPORT_FIXTURE_PATH, MILLUM_EXPORT_ASSERTION_PATH].every(existsSync)) {
     throw new Error('Phase 9 executable security SQL is missing.');
   }
 
@@ -460,6 +463,19 @@ async function main() {
   }
   passLines.forEach((line) => console.log(line));
   console.log(`Executable PostgreSQL security assertions: ${passLines.length}/${passLines.length} passed.`);
+
+  psql(readFileSync(MILLUM_EXPORT_FIXTURE_PATH, 'utf8'), { singleTransaction: true });
+  console.log('PASS disposable approved Millum export profile and session fixtures');
+  const millumExportAssertions = psql(readFileSync(MILLUM_EXPORT_ASSERTION_PATH, 'utf8'));
+  const millumExportPassLines = `${millumExportAssertions.stdout}\n${millumExportAssertions.stderr}`
+    .split('\n')
+    .filter((line) => line.includes('PASS '))
+    .map((line) => line.replace(/^.*PASS /, 'PASS '));
+  if (millumExportPassLines.length !== EXPECTED_MILLUM_EXPORT_ASSERTION_PASSES) {
+    throw new Error(`Expected ${EXPECTED_MILLUM_EXPORT_ASSERTION_PASSES} executable Millum-export assertion passes, received ${millumExportPassLines.length}.`);
+  }
+  millumExportPassLines.forEach((line) => console.log(line));
+  console.log(`Executable PostgreSQL Millum-export assertions: ${millumExportPassLines.length}/${millumExportPassLines.length} passed.`);
 
   const productMappingSql = readFileSync(resolveMigrationPath(PHASE9_PRODUCT_MAPPING_MIGRATION), 'utf8');
   const historySnapshotSql = String.raw`

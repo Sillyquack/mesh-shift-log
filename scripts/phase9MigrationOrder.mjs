@@ -21,10 +21,16 @@ export const EXPECTED_PHASE9_MIGRATION_ORDER = [
   'supabase/phase9gc_inventory_counter_mobile.sql',
   'supabase/phase9gd_inventory_product_mappings.sql',
   'supabase/phase9h_inventory_session_location_scope.sql',
+  'supabase/phase9i_millum_stock_count_exports.sql',
 ];
 
 export const PHASE9_TERMINAL_MIGRATION =
-  'supabase/phase9h_inventory_session_location_scope.sql';
+  'supabase/phase9i_millum_stock_count_exports.sql';
+
+export const PHASE9_REPEATABLE_MIGRATIONS = new Set([
+  'supabase/phase9h_inventory_session_location_scope.sql',
+  PHASE9_TERMINAL_MIGRATION,
+]);
 
 export const PHASE9_PRODUCT_MAPPING_MIGRATION =
   'supabase/phase9gd_inventory_product_mappings.sql';
@@ -47,7 +53,7 @@ export function validatePhase9MigrationOrder(paths) {
     }
   }
   if (paths.at(-1) !== PHASE9_TERMINAL_MIGRATION) {
-    throw new Error('Phase 9H session location scope must be the terminal migration.');
+    throw new Error('Phase 9I Millum exports must be the terminal migration.');
   }
   return paths;
 }
@@ -64,7 +70,7 @@ export function validatedPhase9MigrationEntries(manifest = readPhase9MigrationMa
     throw new Error('Phase 9 migration manifest contains a duplicate path.');
   }
   for (const entry of entries) {
-    const expectedRepeatable = entry.path === PHASE9_TERMINAL_MIGRATION;
+    const expectedRepeatable = PHASE9_REPEATABLE_MIGRATIONS.has(entry.path);
     if (entry.repeatable !== expectedRepeatable) {
       throw new Error(`Phase 9 migration repeatability is incorrect for ${entry.path}.`);
     }
