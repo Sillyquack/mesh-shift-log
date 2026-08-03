@@ -32,12 +32,12 @@ insert into public.inventory_products (
   ('e1000000-0000-4000-8000-000000000001', 'e0000000-0000-4000-8000-000000000001', 'Cross Org Counter Product', 'Cross org drink', 'COUNTER-E-UNIT', 'Beer', 'bottles', true, 1, 'unit', null, 'E-UNIT-1', 'owned', 'e6000000-0000-4000-8000-000000000001', 'e6000000-0000-4000-8000-000000000001');
 
 insert into public.inventory_locations (
-  id, organization_id, name, code, location_type, active, sort_order,
+  id, organization_id, name, code, location_type, active, countable, sort_order,
   created_by_auth_user_id, updated_by_auth_user_id
 ) values
-  ('7b200000-0000-4000-8000-000000000001', '7b000000-0000-4000-8000-000000000001', 'Counter D Left Fridge', 'CORNERBAR_LEFT_FRIDGE', 'fridge', true, 1, '7b600000-0000-4000-8000-000000000001', '7b600000-0000-4000-8000-000000000001'),
-  ('7b200000-0000-4000-8000-000000000002', '7b000000-0000-4000-8000-000000000001', 'Counter D Right Fridge', 'CORNERBAR_RIGHT_FRIDGE', 'fridge', true, 2, '7b600000-0000-4000-8000-000000000001', '7b600000-0000-4000-8000-000000000001'),
-  ('e2000000-0000-4000-8000-000000000001', 'e0000000-0000-4000-8000-000000000001', 'Counter E Left Fridge', 'CORNERBAR_LEFT_FRIDGE', 'fridge', true, 1, 'e6000000-0000-4000-8000-000000000001', 'e6000000-0000-4000-8000-000000000001');
+  ('7b200000-0000-4000-8000-000000000001', '7b000000-0000-4000-8000-000000000001', 'Counter D Left Fridge', 'CORNERBAR_LEFT_FRIDGE', 'fridge', true, true, 1, '7b600000-0000-4000-8000-000000000001', '7b600000-0000-4000-8000-000000000001'),
+  ('7b200000-0000-4000-8000-000000000002', '7b000000-0000-4000-8000-000000000001', 'Counter D Right Fridge', 'CORNERBAR_RIGHT_FRIDGE', 'fridge', true, true, 2, '7b600000-0000-4000-8000-000000000001', '7b600000-0000-4000-8000-000000000001'),
+  ('e2000000-0000-4000-8000-000000000001', 'e0000000-0000-4000-8000-000000000001', 'Counter E Left Fridge', 'CORNERBAR_LEFT_FRIDGE', 'fridge', true, true, 1, 'e6000000-0000-4000-8000-000000000001', 'e6000000-0000-4000-8000-000000000001');
 
 insert into public.inventory_location_products (
   id, organization_id, location_id, product_id, par_quantity, count_order,

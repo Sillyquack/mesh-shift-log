@@ -172,13 +172,14 @@ test('trusted exact CSV numerics use decimal comma while text remains protected'
   assert.equal(csv.slice(1).includes('\uFEFF'), false);
 });
 
-test('Phase 9F remains ordered before repeatable Phase 9H and terminal Phase 9I', () => {
+test('Phase 9F remains ordered before repeatable Phase 9H through terminal Phase 9J', () => {
   const manifest = readPhase9MigrationManifest();
-  assert.equal(PHASE9_TERMINAL_MIGRATION, 'supabase/phase9i_millum_stock_count_exports.sql');
+  assert.equal(PHASE9_TERMINAL_MIGRATION, 'supabase/phase9j_inventory_shelf_storage_guidance.sql');
   assert.ok(manifest.orderedMigrations.findIndex((entry) => entry.path === 'supabase/phase9f_inventory_structured_quantities.sql') < manifest.orderedMigrations.length - 1);
   assert.equal(manifest.orderedMigrations.at(-1).path, PHASE9_TERMINAL_MIGRATION);
   assert.deepEqual(manifest.orderedMigrations.filter((entry) => entry.repeatable).map((entry) => entry.path), [
     'supabase/phase9h_inventory_session_location_scope.sql',
+    'supabase/phase9i_millum_stock_count_exports.sql',
     PHASE9_TERMINAL_MIGRATION,
   ]);
 });

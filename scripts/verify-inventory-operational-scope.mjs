@@ -148,16 +148,17 @@ test('Phase 9G never rewrites completed or approved session history', () => {
   assert.doesNotMatch(migration, /drop trigger if exists inventory_count_lines_integrity/i);
 });
 
-test('Phase 9G-D remains immediately before repeatable Phase 9H and terminal Phase 9I', () => {
+test('Phase 9G-D remains immediately before repeatable Phase 9H through terminal Phase 9J', () => {
   const manifest = readPhase9MigrationManifest();
   const entries = validatedPhase9MigrationEntries(manifest);
-  assert.equal(PHASE9_TERMINAL_MIGRATION, 'supabase/phase9i_millum_stock_count_exports.sql');
+  assert.equal(PHASE9_TERMINAL_MIGRATION, 'supabase/phase9j_inventory_shelf_storage_guidance.sql');
   assert.equal(entries.at(-1).path, PHASE9_TERMINAL_MIGRATION);
-  assert.equal(entries.at(-2).path, 'supabase/phase9h_inventory_session_location_scope.sql');
-  assert.deepEqual(entries.filter((entry) => entry.repeatable).map((entry) => entry.path), [entries.at(-2).path, PHASE9_TERMINAL_MIGRATION]);
+  assert.equal(entries.at(-2).path, 'supabase/phase9i_millum_stock_count_exports.sql');
+  assert.equal(entries.at(-3).path, 'supabase/phase9h_inventory_session_location_scope.sql');
+  assert.deepEqual(entries.filter((entry) => entry.repeatable).map((entry) => entry.path), [entries.at(-3).path, entries.at(-2).path, PHASE9_TERMINAL_MIGRATION]);
   assert.ok(entries.findIndex((entry) => entry.path.includes('phase9f_')) < entries.findIndex((entry) => entry.path.includes('phase9g_inventory_')));
-  assert.equal(entries.at(-3).path, 'supabase/phase9gd_inventory_product_mappings.sql');
-  assert.equal(entries.at(-4).path, 'supabase/phase9gc_inventory_counter_mobile.sql');
+  assert.equal(entries.at(-4).path, 'supabase/phase9gd_inventory_product_mappings.sql');
+  assert.equal(entries.at(-5).path, 'supabase/phase9gc_inventory_counter_mobile.sql');
 });
 
 test('client loads category, alias, unresolved, template, and reserve records without text-derived identities', () => {

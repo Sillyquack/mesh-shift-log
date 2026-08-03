@@ -9,8 +9,7 @@ import {
 const workspace = readFileSync(new URL('../src/components/InventoryWorkspace.jsx', import.meta.url), 'utf8');
 const styles = readFileSync(new URL('../src/styles.css', import.meta.url), 'utf8');
 const selectionSource = readFileSync(new URL('../src/data/inventorySessionLocations.js', import.meta.url), 'utf8');
-const migration = readFileSync(new URL('../supabase/phase9h_inventory_session_location_scope.sql', import.meta.url), 'utf8');
-const assignments = readFileSync(new URL('../supabase/phase9gb_inventory_counter_assignments.sql', import.meta.url), 'utf8');
+const migration = readFileSync(new URL('../supabase/phase9j_inventory_shelf_storage_guidance.sql', import.meta.url), 'utf8');
 
 const currentOrganizationId = 'fixture-organization-a';
 const foreignOrganizationId = 'fixture-organization-b';
@@ -35,13 +34,14 @@ const locations = [
     locationType: 'fridge',
     parentLocationId: fixture.parentLocationId,
     active: true,
+    countable: true,
     sortOrder: fixture.sortOrder,
   })),
-  { id: 'storage', name: 'Main beverage stock', locationType: 'storage', active: true, sortOrder: 30 },
-  { id: 'archived-fridge', name: 'Archived fridge', locationType: 'fridge', active: false, sortOrder: 31 },
-  { id: 'empty-fridge', name: 'Empty fridge', locationType: 'fridge', active: true, sortOrder: 32 },
-  { id: 'inactive-default-fridge', name: 'Inactive default fridge', locationType: 'fridge', active: true, sortOrder: 33 },
-  { id: 'inactive-product-fridge', name: 'Inactive product fridge', locationType: 'fridge', active: true, sortOrder: 34 },
+  { id: 'storage', name: 'Main beverage stock', locationType: 'storage', active: true, countable: false, sortOrder: 30 },
+  { id: 'archived-fridge', name: 'Archived fridge', locationType: 'fridge', active: false, countable: true, sortOrder: 31 },
+  { id: 'empty-fridge', name: 'Empty fridge', locationType: 'fridge', active: true, countable: true, sortOrder: 32 },
+  { id: 'inactive-default-fridge', name: 'Inactive default fridge', locationType: 'fridge', active: true, countable: true, sortOrder: 33 },
+  { id: 'inactive-product-fridge', name: 'Inactive product fridge', locationType: 'fridge', active: true, countable: true, sortOrder: 34 },
 ];
 const refrigeratorTemplates = [
   ...fridgeIds,
@@ -118,9 +118,9 @@ test('parents, storage, empty, archived, inactive-default, and inactive-product 
   }
 });
 
-test('eligibility automatically admits a new refrigerator with a template and active persisted default', () => {
+test('eligibility automatically admits a new countable location with an active persisted standard', () => {
   const eligible = eligibleInventorySessionLocations({
-    locations: [...locations, { id: 'future-fridge', name: 'Future fridge', locationType: 'fridge', active: true, sortOrder: 40 }],
+    locations: [...locations, { id: 'future-fridge', name: 'Future fridge', locationType: 'fridge', active: true, countable: true, sortOrder: 40 }],
     standards: [...standards, { id: 'future-default', locationId: 'future-fridge', productId: 'product-1', active: true }],
     products,
     refrigeratorTemplates: [...refrigeratorTemplates, { locationId: 'future-fridge' }],
@@ -197,9 +197,9 @@ test('selection sanitizes duplicates and ineligible or foreign-looking identifie
 });
 
 test('session creator renders only derived eligibility and a live selected/default summary', () => {
-  assert.match(workspace, /eligibleInventorySessionLocations\(\{[\s\S]*?refrigeratorTemplates/);
+  assert.match(workspace, /eligibleInventorySessionLocations\(\{[\s\S]*?locations,[\s\S]*?standards,[\s\S]*?products/);
   assert.match(workspace, /inventorySessionSelection\(\{[\s\S]*?selectedLocationIds: draft\.locationIds/);
-  assert.match(workspace, /Refrigerators with active defaults/);
+  assert.match(workspace, /Countable locations with active standards/);
   assert.match(workspace, /role="status" aria-live="polite"/);
   assert.match(workspace, /selection\.locationCount[\s\S]*?selection\.defaultLineCount/);
   assert.match(workspace, /onCreate\(\{ \.\.\.draft, locationIds: selection\.locationIds \}\)/);
@@ -223,20 +223,20 @@ test('mobile selector controls retain tap size, checkbox geometry, wrapping, foc
   assert.match(styles, /@media \(max-width: 700px\)[\s\S]*?\.inventory-location-picker,[\s\S]*?grid-template-columns:\s*1fr;/);
 });
 
-test('Phase 9H validates every selected refrigerator at the authoritative server boundary', () => {
+test('Phase 9J validates every selected countable location at the authoritative server boundary', () => {
   assert.match(migration, /security definer\nset search_path = pg_catalog/);
-  assert.match(migration, /inventory_phase9g_is_refrigerator\(location\.id, location\.organization_id\)/);
-  assert.match(migration, /inventory_refrigerator_templates template/);
-  assert.match(migration, /standard\.active = true/);
-  assert.match(migration, /product\.active = true/);
+  assert.match(migration, /location\.active[\s\S]*?location\.countable/);
+  assert.match(migration, /standard\.active/);
+  assert.match(migration, /product\.active/);
   assert.match(migration, /foreach v_location_id in array v_selected_location_ids/);
   assert.match(migration, /location\.organization_id = v_actor\.organization_id/);
-  assert.match(migration, /for share of location, template, standard, product/);
-  assert.match(migration, /v_location_count <> cardinality\(v_selected_location_ids\)/);
+  assert.match(migration, /for share of location, standard, product/);
+  assert.match(migration, /Every selected location must be active, countable/);
   assert.match(migration, /revoke all on function public\.create_inventory_count_session[\s\S]*?from public, anon, authenticated;[\s\S]*?grant execute[\s\S]*?to authenticated;/);
-  assert.doesNotMatch(migration, /\b(?:create|alter|drop)\s+table\b|\bcreate\s+policy\b|\balter\s+policy\b/i);
 });
 
-test('the retained assignment boundary cannot create an assignment for a location without session lines', () => {
-  assert.match(assignments, /if not exists \([\s\S]*?from public\.inventory_count_lines line[\s\S]*?line\.session_id = new\.session_id[\s\S]*?line\.location_id = new\.location_id[\s\S]*?Assigned refrigerator is not part of this Stock Count/);
+test('the terminal assignment boundary rejects inactive, non-countable, or out-of-session locations', () => {
+  assert.match(migration, /inventory_location_is_countable\(input_location_id, v_actor\.organization_id\)/);
+  assert.match(migration, /from public\.inventory_count_lines line[\s\S]*?line\.session_id = v_session\.id and line\.location_id = input_location_id/);
+  assert.match(migration, /Choose an active countable location in this Stock Count/);
 });

@@ -192,11 +192,11 @@ export function runInventoryVerification() {
   });
   const policyLocations = [
     { id: 'policy-workbar', code: 'WORKBAR', active: true },
-    { id: 'policy-workbar-fridge-1', code: 'WORKBAR_FRIDGE_1', parentLocationId: 'policy-workbar', active: true },
-    { id: 'policy-workbar-fridge-2', code: 'WORKBAR_FRIDGE_2', parentLocationId: 'policy-workbar', active: true },
-    { id: 'policy-workbar-archived', code: 'WORKBAR_OLD', parentLocationId: 'policy-workbar', active: false },
+    { id: 'policy-workbar-fridge-1', code: 'WORKBAR_FRIDGE_1', locationType: 'fridge', parentLocationId: 'policy-workbar', active: true, countable: true },
+    { id: 'policy-workbar-fridge-2', code: 'WORKBAR_FRIDGE_2', locationType: 'fridge', parentLocationId: 'policy-workbar', active: true, countable: true },
+    { id: 'policy-workbar-archived', code: 'WORKBAR_OLD', locationType: 'fridge', parentLocationId: 'policy-workbar', active: false, countable: true },
     { id: 'policy-cornerbar', code: 'CORNERBAR', active: true },
-    { id: 'policy-cornerbar-fridge-1', code: 'CORNERBAR_FRIDGE_1', parentLocationId: 'policy-cornerbar', active: true },
+    { id: 'policy-cornerbar-fridge-1', code: 'CORNERBAR_FRIDGE_1', locationType: 'fridge', parentLocationId: 'policy-cornerbar', active: true, countable: true },
     { id: 'policy-main-beverage', code: 'BEVERAGE_STORAGE_BOTTLES', active: true },
     { id: 'policy-event-reserve', code: 'BEVERAGE_STORAGE_EVENT_RESERVE', active: true },
     { id: 'policy-dormant', code: 'BEVERAGE_STORAGE_DORMANT_SPIRITS', active: true },
@@ -207,16 +207,16 @@ export function runInventoryVerification() {
     { id: 'archived-product', name: 'Archived', active: false },
   ];
   const policyStandards = [
-    { id: 'service-1', locationId: 'policy-workbar-fridge-1', productId: 'pepsi', stockPolicy: 'exact_par', parQuantity: 18, active: true },
-    { id: 'service-2', locationId: 'policy-workbar-fridge-2', productId: 'pepsi', stockPolicy: 'exact_par', parQuantity: 12, active: true },
-    { id: 'service-3', locationId: 'policy-cornerbar-fridge-1', productId: 'pepsi', stockPolicy: 'exact_par', parQuantity: 12, active: true },
+    { id: 'service-1', locationId: 'policy-workbar-fridge-1', productId: 'pepsi', stockPolicy: 'exact_par', parQuantity: 18, active: true, contributesToStorageTarget: true },
+    { id: 'service-2', locationId: 'policy-workbar-fridge-2', productId: 'pepsi', stockPolicy: 'exact_par', parQuantity: 12, active: true, contributesToStorageTarget: true },
+    { id: 'service-3', locationId: 'policy-cornerbar-fridge-1', productId: 'pepsi', stockPolicy: 'exact_par', parQuantity: 12, active: true, contributesToStorageTarget: true },
     { id: 'parent-double-count', locationId: 'policy-workbar', productId: 'pepsi', stockPolicy: 'exact_par', parQuantity: 999, active: true },
     { id: 'archived-location', locationId: 'policy-workbar-archived', productId: 'pepsi', stockPolicy: 'exact_par', parQuantity: 100, active: true },
     { id: 'archived-standard', locationId: 'policy-workbar-fridge-1', productId: 'pepsi', stockPolicy: 'exact_par', parQuantity: 100, active: false },
     { id: 'unrelated-storage', locationId: 'policy-dry', productId: 'pepsi', stockPolicy: 'exact_par', parQuantity: 100, active: true },
     { id: 'reserve-not-service', locationId: 'policy-main-beverage', productId: 'pepsi', stockPolicy: 'operating_reserve', parQuantity: 126, active: true },
   ];
-  const policyContext = { standards: policyStandards, locations: policyLocations, products: policyProducts };
+  const policyContext = { standards: policyStandards, locations: policyLocations, products: policyProducts, storageSettings: { targetMultiplier: 3 } };
   const serviceTarget = calculateServiceStockTarget({ productId: 'pepsi', ...policyContext });
   const derivedTarget = calculateStandardPolicyTarget({ productId: 'pepsi', stockPolicy: 'operating_reserve', targetMode: 'derived_multiplier', reserveMultiplier: 3 }, policyContext);
   const fixedTarget = calculateStandardPolicyTarget({ productId: 'pepsi', stockPolicy: 'operating_reserve', targetMode: 'fixed_quantity', parQuantity: 90 }, policyContext);

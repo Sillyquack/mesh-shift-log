@@ -11,10 +11,8 @@ export function eligibleInventorySessionLocations({
   locations = [],
   standards = [],
   products = [],
-  refrigeratorTemplates = [],
 } = {}) {
   const activeProductIds = new Set(products.filter(isActive).map((product) => product.id));
-  const refrigeratorLocationIds = new Set(refrigeratorTemplates.map((template) => template.locationId));
   const locationIdsWithActiveDefaults = new Set(
     standards
       .filter((standard) => isActive(standard) && activeProductIds.has(standard.productId))
@@ -24,8 +22,7 @@ export function eligibleInventorySessionLocations({
   return locations
     .filter((location) => (
       isActive(location)
-      && location.locationType === 'fridge'
-      && refrigeratorLocationIds.has(location.id)
+      && location.countable === true
       && locationIdsWithActiveDefaults.has(location.id)
     ))
     .sort(compareLocations);

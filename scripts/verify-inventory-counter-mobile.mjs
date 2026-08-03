@@ -54,13 +54,14 @@ test('counter-only role routing remains automatic while managers retain the mana
   assert.match(workspace, /return <AuthorizedInventoryWorkspace \{\.\.\.props\} \/>/);
 });
 
-test('Phase 9G-C and Phase 9G-D remain before repeatable Phase 9H and terminal Phase 9I', () => {
+test('Phase 9G-C and Phase 9G-D remain before repeatable Phase 9H through terminal Phase 9J', () => {
   const entries = validatedPhase9MigrationEntries();
-  assert.equal(PHASE9_TERMINAL_MIGRATION, 'supabase/phase9i_millum_stock_count_exports.sql');
-  assert.equal(entries.at(-2).path, 'supabase/phase9h_inventory_session_location_scope.sql');
-  assert.equal(entries.at(-3).path, 'supabase/phase9gd_inventory_product_mappings.sql');
-  assert.equal(entries.at(-4).path, 'supabase/phase9gc_inventory_counter_mobile.sql');
-  assert.deepEqual(entries.filter((entry) => entry.repeatable).map((entry) => entry.path), [entries.at(-2).path, PHASE9_TERMINAL_MIGRATION]);
+  assert.equal(PHASE9_TERMINAL_MIGRATION, 'supabase/phase9j_inventory_shelf_storage_guidance.sql');
+  assert.equal(entries.at(-2).path, 'supabase/phase9i_millum_stock_count_exports.sql');
+  assert.equal(entries.at(-3).path, 'supabase/phase9h_inventory_session_location_scope.sql');
+  assert.equal(entries.at(-4).path, 'supabase/phase9gd_inventory_product_mappings.sql');
+  assert.equal(entries.at(-5).path, 'supabase/phase9gc_inventory_counter_mobile.sql');
+  assert.deepEqual(entries.filter((entry) => entry.repeatable).map((entry) => entry.path), [entries.at(-3).path, entries.at(-2).path, PHASE9_TERMINAL_MIGRATION]);
 });
 
 test('mobile migration exposes only the assigned standard through the existing guarded RPC', () => {
@@ -81,7 +82,7 @@ test('counter client still uses one RPC loader and normalizes the assigned stand
 });
 
 test('counter home renders session, assignments, progress, state, resume actions, and return messages', () => {
-  for (const label of ['Counter home', 'Your refrigerator assignments', 'counted', 'incomplete', 'Resume counting', 'Open refrigerator', 'View status', 'Returned by Bobby']) assert.ok(workflows.includes(label), label);
+  for (const label of ['Counter home', 'Your location assignments', 'counted', 'incomplete', 'Resume counting', 'Open location', 'View status', 'Returned by Bobby']) assert.ok(workflows.includes(label), label);
   assert.match(counterUi, /data-counter-screen="home"/);
 });
 
@@ -116,9 +117,9 @@ test('previous and next navigation move among incomplete lines without returning
 
 test('default application requires physical confirmation and explains preservation semantics', () => {
   assert.match(counterUi, /Bruk standard/);
-  assert.match(counterUi, /I physically checked this refrigerator/);
-  assert.match(counterUi, /previously uncounted exact-standard lines/);
-  assert.match(counterUi, /Saved quantities, deviations, and comments are preserved/);
+  assert.match(counterUi, /I physically checked this location/);
+  assert.match(counterUi, /previously uncounted exact-target lines/);
+  assert.match(counterUi, /Saved quantities, targetless lines, historical suggestions, deviations, and comments are preserved/);
   assert.match(counterUi, /physicalConfirmation: true/);
 });
 

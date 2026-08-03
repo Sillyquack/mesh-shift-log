@@ -6,6 +6,7 @@ import { PHASE9_TERMINAL_MIGRATION, validatedPhase9MigrationEntries } from './ph
 const migration = readFileSync(new URL('../supabase/phase9gb_inventory_counter_assignments.sql', import.meta.url), 'utf8');
 const replacementMigration = readFileSync(new URL('../supabase/phase9gb2_inventory_counter_replacement.sql', import.meta.url), 'utf8');
 const mobileMigration = readFileSync(new URL('../supabase/phase9gc_inventory_counter_mobile.sql', import.meta.url), 'utf8');
+const terminalMigration = readFileSync(new URL('../supabase/phase9j_inventory_shelf_storage_guidance.sql', import.meta.url), 'utf8');
 const client = readFileSync(new URL('../src/lib/inventoryClient.js', import.meta.url), 'utf8');
 const workflows = readFileSync(new URL('../src/components/InventoryCounterWorkflows.jsx', import.meta.url), 'utf8');
 const workspace = readFileSync(new URL('../src/components/InventoryWorkspace.jsx', import.meta.url), 'utf8');
@@ -14,13 +15,14 @@ const app = readFileSync(new URL('../src/App.jsx', import.meta.url), 'utf8');
 const runner = readFileSync(new URL('./verify-phase9-security-db.mjs', import.meta.url), 'utf8');
 const assertions = readFileSync(new URL('../supabase/tests/phase9/counter-workflow-assertions.sql', import.meta.url), 'utf8');
 
-test('Phase 9G-C and Phase 9G-D remain before repeatable Phase 9H and terminal Phase 9I', () => {
+test('Phase 9G-C and Phase 9G-D remain before repeatable Phase 9H, 9I and terminal Phase 9J', () => {
   const entries = validatedPhase9MigrationEntries();
-  assert.equal(PHASE9_TERMINAL_MIGRATION, 'supabase/phase9i_millum_stock_count_exports.sql');
-  assert.equal(entries.at(-2).path, 'supabase/phase9h_inventory_session_location_scope.sql');
-  assert.deepEqual(entries.filter((entry) => entry.repeatable).map((entry) => entry.path), [entries.at(-2).path, PHASE9_TERMINAL_MIGRATION]);
-  assert.equal(entries.at(-3).path, 'supabase/phase9gd_inventory_product_mappings.sql');
-  assert.equal(entries.at(-4).path, 'supabase/phase9gc_inventory_counter_mobile.sql');
+  assert.equal(PHASE9_TERMINAL_MIGRATION, 'supabase/phase9j_inventory_shelf_storage_guidance.sql');
+  assert.equal(entries.at(-2).path, 'supabase/phase9i_millum_stock_count_exports.sql');
+  assert.equal(entries.at(-3).path, 'supabase/phase9h_inventory_session_location_scope.sql');
+  assert.deepEqual(entries.filter((entry) => entry.repeatable).map((entry) => entry.path), [entries.at(-3).path, entries.at(-2).path, PHASE9_TERMINAL_MIGRATION]);
+  assert.equal(entries.at(-4).path, 'supabase/phase9gd_inventory_product_mappings.sql');
+  assert.equal(entries.at(-5).path, 'supabase/phase9gc_inventory_counter_mobile.sql');
 });
 
 test('counter role requires verified Supabase identity and never inherits manager permissions', () => {
@@ -37,12 +39,12 @@ test('counter profiles are automatically constrained to Stock Count instead of t
   assert.match(app, /onClose=\{inventoryCounterUser \? logout/);
 });
 
-test('membership and assignment tables bind organization, Auth counter, session, refrigerator, state, and revision', () => {
+test('membership and assignment tables bind organization, Auth counter, session, countable location, state, and revision', () => {
   for (const token of ['inventory_counter_memberships', 'counter_auth_user_id', 'inventory_count_assignments', 'counter_membership_id', 'session_id', 'location_id', 'state', 'revision']) assert.ok(migration.includes(token));
   assert.match(migration, /unique \(organization_id, session_id, location_id\)/i);
   assert.match(replacementMigration, /inventory_count_assignments_one_current_location_idx/i);
   assert.match(migration, /role <> 'counter'/i);
-  assert.match(migration, /inventory_phase9g_is_refrigerator/i);
+  assert.match(terminalMigration, /inventory_location_is_countable/i);
 });
 
 test('assignment transitions are explicit and terminal acceptance cannot be self-reopened', () => {
@@ -62,11 +64,12 @@ test('base inventory RLS remains manager-only while counter reads use one saniti
   assert.doesNotMatch(counterLoader, /\.from\(/);
 });
 
-test('counter workspace exposes stable identity and assigned standard but omits variance and reserve data', () => {
-  const reader = mobileMigration.slice(mobileMigration.indexOf('create or replace function public.get_inventory_counter_workspace'));
+test('counter workspace exposes stable identity and targetless guidance but omits variance and reserve data', () => {
+  const reader = terminalMigration.slice(terminalMigration.indexOf('create or replace function public.get_inventory_counter_workspace'));
   assert.match(reader, /'product_id'/);
   assert.match(reader, /'millum_item_ref'/);
-  assert.match(reader, /'standard_quantity', line\.par_quantity_snapshot/);
+  assert.match(reader, /'standard_quantity', case[\s\S]*?physical_count_only[\s\S]*?then null/);
+  assert.match(reader, /'reference_guidance'/);
   assert.doesNotMatch(reader, /'par_quantity_snapshot'|'variance_quantity'|'reserve_target'/);
   assert.match(reader, /session\.status in \('draft', 'in_progress'\)/);
   assert.match(reader, /assignment\.state <> 'superseded'/);
@@ -98,7 +101,7 @@ test('counter default application requires physical confirmation and preserves d
   assert.doesNotMatch(defaultRpc, /input_replace_existing|update public\.inventory_location_products/i);
 });
 
-test('submission is refrigerator-only, revisioned, complete-line guarded, and does not complete the session', () => {
+test('submission is location-scoped, revisioned, complete-line guarded, and does not complete the session', () => {
   const submit = migration.slice(migration.indexOf('create or replace function public.submit_inventory_count_assignment'), migration.indexOf('create or replace function public.return_inventory_count_assignment'));
   assert.match(submit, /line\.location_id = v_assignment\.location_id/);
   assert.match(submit, /line\.count_status <> 'counted'/);
@@ -114,15 +117,15 @@ test('session completion is manager-owned and blocked until every assignment is 
 
 test('counter interface has only assigned counting, incomplete navigation, default confirmation, and exact submission label', () => {
   assert.match(workflows, /Next incomplete/);
-  assert.match(workflows, /I physically checked this refrigerator/);
+  assert.match(workflows, /I physically checked this location/);
   assert.match(workflows, /Ferdig – send til Bobby/);
   assert.match(workflows, /It does not complete or approve the Stock Count/);
   const counterUi = workflows.slice(workflows.indexOf('export function CounterInventoryWorkspace'), workflows.indexOf('function assignmentReview'));
   assert.doesNotMatch(counterUi, /downloadCsv|Export CSV|History tab|Approve stock count|Create correction|Save current count as default/i);
 });
 
-test('manager review shows required operational evidence and accept or return actions', () => {
-  for (const label of ['Counter authorization', 'Assign refrigerators', 'Manager review', 'recorded', 'incomplete', 'deviations', 'extra products', 'Line notes', 'Submitted', 'Return message', 'Return for correction', 'Accept refrigerator']) assert.ok(workflows.includes(label), label);
+test('manager review shows required operational evidence and generic location actions', () => {
+  for (const label of ['Counter authorization', 'Assign countable locations', 'Manager review', 'recorded', 'incomplete', 'deviations', 'extra products', 'Line notes', 'Submitted', 'Return message', 'Return for correction', 'Assign location']) assert.ok(workflows.includes(label), label);
   assert.match(workspace, />Assignments<\/button>/);
 });
 

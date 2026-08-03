@@ -1,20 +1,27 @@
 import { getCurrentSession, supabaseAuthClient } from './supabaseAuthClient.js';
 import { isSupabaseConfigured } from './supabaseClient.js';
 import { normalizeInventoryDecimal } from '../data/inventoryStructuredQuantities.js';
+import {
+  createInventoryReferenceObjectPath,
+  INVENTORY_REFERENCE_BUCKET,
+  validateInventoryReferenceFileContent,
+} from '../data/inventoryLocationGuidance.js';
 
 const PRODUCT_COLUMNS = 'id,name,short_name,sku,barcode,category,unit_label,default_pack_size,count_mode,container_capacity_liters,supplier_name,notes,active,sort_order,millum_item_ref,ownership_status,reserve_target_override';
-const LOCATION_COLUMNS = 'id,name,code,location_type,parent_location_id,zone,description,active,sort_order';
-const STANDARD_COLUMNS = 'id,location_id,product_id,par_quantity,minimum_quantity,default_restock_quantity,count_order,active,notes,stock_policy,target_mode,reserve_multiplier,case_size,target_cases,target_loose_quantity,physical_recount_interval_days';
+const LOCATION_COLUMNS = 'id,name,code,location_type,parent_location_id,zone,description,active,countable,sort_order';
+const STANDARD_COLUMNS = 'id,location_id,product_id,par_quantity,minimum_quantity,default_restock_quantity,count_order,active,notes,stock_policy,target_mode,reserve_multiplier,case_size,target_cases,target_loose_quantity,physical_recount_interval_days,contributes_to_storage_target,historical_suggestion_quantity,historical_suggestion_note,historical_suggestion_source';
 const ALIAS_COLUMNS = 'id,product_id,alias,alias_source,active';
 const CATALOGUE_GROUP_COLUMNS = 'id,product_id,millum_group,group_sort_order,item_sort_order,millum_count_unit,source_occurrence_count';
 const REFRIGERATOR_TEMPLATE_COLUMNS = 'id,location_id,template_status,verified_at,verified_by_name,updated_at';
 const UNRESOLVED_MAPPING_COLUMNS = 'id,location_id,requested_name,requested_default_quantity,requested_count_order,candidate_millum_item_refs,reason,resolution_status,resolved_product_id';
 const RESERVE_COLUMNS = 'product_id,refrigerator_default_quantity,reserve_target_override,reserve_target_quantity,combined_desired_quantity';
+const STORAGE_SETTINGS_COLUMNS = 'organization_id,target_multiplier,rule_version,updated_at';
+const REFERENCE_GUIDANCE_COLUMNS = 'id,location_id,object_path,caption,mime_type,byte_size,original_file_name,revision,updated_at';
 const COUNTER_PROFILE_COLUMNS = 'id,display_name,role,active,is_shared_device';
 const COUNTER_MEMBERSHIP_COLUMNS = 'id,counter_auth_user_id,active,authorized_at,authorized_by_name,revoked_at,revoked_by_name,updated_at';
 const COUNT_ASSIGNMENT_COLUMNS = 'id,session_id,location_id,counter_membership_id,state,revision,assigned_at,assigned_by_name,submitted_at,submitted_by_name,returned_at,returned_by_name,return_message,accepted_at,accepted_by_name,replaces_assignment_id,superseded_by_assignment_id,superseded_at,superseded_by_name,supersession_reason,replacement_data_action,superseded_recorded_line_count,superseded_total_line_count,updated_at';
 const SESSION_COLUMNS = 'id,title,count_type,status,count_date,started_at,completed_at,approved_at,started_by_name,completed_by_name,approved_by_name,completion_note,approval_note,session_kind,original_session_id,correction_reason,correction_created_by_name,correction_created_at,finalized_with_exceptions,exception_reason,exception_skipped_count,exception_uncounted_count,exception_needs_review_count,exception_incomplete_location_count,exception_location_ids,finalized_by_name,finalized_at,updated_at';
-const LINE_COLUMNS = 'id,location_id,product_id,product_name_snapshot,location_name_snapshot,unit_label_snapshot,category_snapshot,location_sort_order_snapshot,count_order_snapshot,product_sort_order_snapshot,par_quantity_snapshot,minimum_quantity_snapshot,stock_policy_snapshot,target_mode_snapshot,effective_target_quantity_snapshot,service_target_basis_snapshot,reserve_multiplier_snapshot,case_size_snapshot,target_cases_snapshot,target_loose_quantity_snapshot,physical_recount_interval_days_snapshot,previous_physical_count_quantity_snapshot,previous_physical_counted_at_snapshot,count_mode_snapshot,container_capacity_liters_snapshot,counted_whole_units,counted_open_volume_liters,counted_full_kegs,counted_partial_keg_fraction,count_full_cases,count_loose_quantity,counted_quantity,count_method,count_status,variance_quantity,restock_quantity,note,counted_at,counted_by_name,updated_at';
+const LINE_COLUMNS = 'id,location_id,product_id,product_name_snapshot,location_name_snapshot,unit_label_snapshot,category_snapshot,location_sort_order_snapshot,count_order_snapshot,product_sort_order_snapshot,par_quantity_snapshot,minimum_quantity_snapshot,stock_policy_snapshot,target_mode_snapshot,effective_target_quantity_snapshot,service_target_basis_snapshot,reserve_multiplier_snapshot,case_size_snapshot,target_cases_snapshot,target_loose_quantity_snapshot,physical_recount_interval_days_snapshot,previous_physical_count_quantity_snapshot,previous_physical_counted_at_snapshot,historical_suggestion_quantity_snapshot,historical_suggestion_note_snapshot,historical_suggestion_source_snapshot,storage_rule_version_snapshot,count_mode_snapshot,container_capacity_liters_snapshot,counted_whole_units,counted_open_volume_liters,counted_full_kegs,counted_partial_keg_fraction,count_full_cases,count_loose_quantity,counted_quantity,count_method,count_status,variance_quantity,restock_quantity,note,counted_at,counted_by_name,updated_at';
 
 function exactDecimal(value) {
   return value === null || value === undefined || value === '' ? null : normalizeInventoryDecimal(value);
@@ -101,6 +108,7 @@ function normalizeLocation(row) {
     zone: row.zone || '',
     description: row.description || '',
     active: row.active !== false,
+    countable: row.countable === true,
     sortOrder: row.sort_order || 0,
   };
 }
@@ -123,6 +131,11 @@ function normalizeStandard(row) {
     targetCases: row.target_cases == null ? null : Number(row.target_cases),
     targetLooseQuantity: row.target_loose_quantity == null ? null : Number(row.target_loose_quantity),
     physicalRecountIntervalDays: row.physical_recount_interval_days == null ? null : Number(row.physical_recount_interval_days),
+    contributesToStorageTarget: row.contributes_to_storage_target === true,
+    historicalSuggestionQuantity: row.historical_suggestion_quantity == null ? null : Number(row.historical_suggestion_quantity),
+    historicalSuggestionQuantityExact: exactDecimal(row.historical_suggestion_quantity),
+    historicalSuggestionNote: row.historical_suggestion_note || '',
+    historicalSuggestionSource: row.historical_suggestion_source || '',
   };
 }
 
@@ -187,6 +200,11 @@ function normalizeLine(row) {
     physicalRecountIntervalDays: row.physical_recount_interval_days_snapshot == null ? null : Number(row.physical_recount_interval_days_snapshot),
     previousPhysicalCountQuantity: row.previous_physical_count_quantity_snapshot == null ? null : Number(row.previous_physical_count_quantity_snapshot),
     previousPhysicalCountedAt: row.previous_physical_counted_at_snapshot || '',
+    historicalSuggestionQuantity: row.historical_suggestion_quantity_snapshot == null ? null : Number(row.historical_suggestion_quantity_snapshot),
+    historicalSuggestionQuantityExact: exactDecimal(row.historical_suggestion_quantity_snapshot),
+    historicalSuggestionNote: row.historical_suggestion_note_snapshot || '',
+    historicalSuggestionSource: row.historical_suggestion_source_snapshot || '',
+    storageRuleVersion: row.storage_rule_version_snapshot || '',
     countMode: row.count_mode_snapshot || 'unit',
     containerCapacityLiters: exactDecimal(row.container_capacity_liters_snapshot),
     countedWholeUnits: row.counted_whole_units == null ? null : Number(row.counted_whole_units),
@@ -270,6 +288,11 @@ function normalizeCounterLine(row) {
     productSortOrderSnapshot: Number(row.product_sort_order_snapshot || 0),
     standardQuantity: row.standard_quantity == null ? null : Number(row.standard_quantity),
     standardQuantityExact: exactDecimal(row.standard_quantity),
+    stockPolicy: row.stock_policy_snapshot || 'exact_par',
+    historicalSuggestionQuantity: row.historical_suggestion_quantity_snapshot == null ? null : Number(row.historical_suggestion_quantity_snapshot),
+    historicalSuggestionQuantityExact: exactDecimal(row.historical_suggestion_quantity_snapshot),
+    historicalSuggestionNote: row.historical_suggestion_note_snapshot || '',
+    historicalSuggestionSource: row.historical_suggestion_source_snapshot || '',
     countMode: row.count_mode_snapshot || 'unit',
     containerCapacityLiters: exactDecimal(row.container_capacity_liters_snapshot),
     countedWholeUnits: row.counted_whole_units == null ? null : Number(row.counted_whole_units),
@@ -307,7 +330,22 @@ function normalizeCounterAssignment(row) {
       updatedAt: row.session?.updated_at || '',
     },
     location: { id: row.location?.id || '', name: row.location?.name || '' },
+    referenceGuidance: normalizeReferenceGuidance(row.reference_guidance),
     lines: (row.lines || []).map(normalizeCounterLine),
+  };
+}
+
+function normalizeReferenceGuidance(row) {
+  return row && {
+    id: row.id || '',
+    locationId: row.location_id || '',
+    objectPath: row.object_path || '',
+    caption: row.caption || '',
+    mimeType: row.mime_type || '',
+    byteSize: row.byte_size == null ? null : Number(row.byte_size),
+    originalFileName: row.original_file_name || '',
+    revision: Number(row.revision || 0),
+    updatedAt: row.updated_at || '',
   };
 }
 
@@ -334,6 +372,8 @@ export async function loadInventoryWorkspace({ includeArchived = false } = {}) {
   const templateQuery = supabaseAuthClient.from('inventory_refrigerator_templates').select(REFRIGERATOR_TEMPLATE_COLUMNS).order('updated_at');
   const unresolvedQuery = supabaseAuthClient.from('inventory_catalogue_unresolved_mappings').select(UNRESOLVED_MAPPING_COLUMNS).eq('resolution_status', 'unresolved').order('requested_count_order');
   const reserveQuery = supabaseAuthClient.from('inventory_refrigerator_reserve_targets').select(RESERVE_COLUMNS);
+  const storageSettingsQuery = supabaseAuthClient.from('inventory_storage_settings').select(STORAGE_SETTINGS_COLUMNS).maybeSingle();
+  const referenceGuidanceQuery = supabaseAuthClient.from('inventory_location_reference_guidance').select(REFERENCE_GUIDANCE_COLUMNS).order('updated_at');
   const counterProfileQuery = supabaseAuthClient.from('user_profiles').select(COUNTER_PROFILE_COLUMNS).eq('role', 'counter').order('display_name');
   const counterMembershipQuery = supabaseAuthClient.from('inventory_counter_memberships').select(COUNTER_MEMBERSHIP_COLUMNS).order('authorized_at');
   const assignmentQuery = supabaseAuthClient.from('inventory_count_assignments').select(COUNT_ASSIGNMENT_COLUMNS).order('assigned_at');
@@ -342,12 +382,14 @@ export async function loadInventoryWorkspace({ includeArchived = false } = {}) {
     locationQuery.eq('active', true);
     standardQuery.eq('active', true);
   }
-  const [products, locations, standards, sessions, aliases, groups, templates, unresolved, reserves, counterProfiles, counterMemberships, assignments] = await Promise.all([
+  const [products, locations, standards, sessions, aliases, groups, templates, unresolved, reserves, storageSettings, referenceGuidance, counterProfiles, counterMemberships, assignments] = await Promise.all([
     productQuery, locationQuery, standardQuery, sessionQuery, aliasQuery, groupQuery,
-    templateQuery, unresolvedQuery, reserveQuery, counterProfileQuery, counterMembershipQuery, assignmentQuery,
+    templateQuery, unresolvedQuery, reserveQuery, storageSettingsQuery, referenceGuidanceQuery,
+    counterProfileQuery, counterMembershipQuery, assignmentQuery,
   ]);
   const error = products.error || locations.error || standards.error || sessions.error
     || aliases.error || groups.error || templates.error || unresolved.error || reserves.error
+    || storageSettings.error || referenceGuidance.error
     || counterProfiles.error || counterMemberships.error || assignments.error;
   if (error) return { ...failure(error), products: [], locations: [], standards: [], sessions: [] };
   const aliasesByProduct = new Map();
@@ -397,6 +439,13 @@ export async function loadInventoryWorkspace({ includeArchived = false } = {}) {
       reserveTargetQuantity: Number(row.reserve_target_quantity || 0),
       combinedDesiredQuantity: Number(row.combined_desired_quantity || 0),
     })),
+    storageSettings: storageSettings.data ? {
+      organizationId: storageSettings.data.organization_id,
+      targetMultiplier: Number(storageSettings.data.target_multiplier || 3),
+      ruleVersion: storageSettings.data.rule_version || 'refrigerator-targets-v1',
+      updatedAt: storageSettings.data.updated_at || '',
+    } : null,
+    referenceGuidance: (referenceGuidance.data || []).map(normalizeReferenceGuidance),
     counterProfiles: (counterProfiles.data || []).map((row) => ({
       id: row.id,
       displayName: row.display_name || '',
@@ -495,6 +544,19 @@ export function saveInventoryLocation(payload) {
   }, normalizeLocation);
 }
 
+export function setInventoryLocationCountable(locationId, countable) {
+  return callRpc('set_inventory_location_countable', {
+    input_location_id: locationId,
+    input_countable: countable === true,
+  });
+}
+
+export function setInventoryStorageMultiplier(targetMultiplier) {
+  return callRpc('set_inventory_storage_multiplier', {
+    input_multiplier: targetMultiplier,
+  });
+}
+
 export function saveInventoryStandard(payload) {
   const fieldMap = {
     locationId: 'location_id', productId: 'product_id', parQuantity: 'par_quantity',
@@ -544,6 +606,107 @@ export function saveInventoryStandardsBulk({ locationId, rows }) {
     input_location_id: locationId,
     input_rows: rows,
   });
+}
+
+async function removeReferenceObjectAndAcknowledge(objectPath) {
+  if (!objectPath) return true;
+  const { error } = await supabaseAuthClient.storage.from(INVENTORY_REFERENCE_BUCKET).remove([objectPath]);
+  if (error) return false;
+  await supabaseAuthClient.rpc('acknowledge_inventory_reference_cleanup', { input_object_path: objectPath });
+  return true;
+}
+
+async function queueFailedReferenceCleanup(locationId, objectPath) {
+  if (!objectPath) return;
+  await supabaseAuthClient.rpc('queue_inventory_reference_cleanup_path', {
+    input_location_id: locationId,
+    input_object_path: objectPath,
+    input_reason: 'failed_upload_cleanup',
+  });
+}
+
+export async function loadInventoryReferenceImage(objectPath) {
+  const ctx = await context();
+  if (!ctx.ok || !objectPath) return { ...ctx, ok: false, message: objectPath ? ctx.message : 'No reference image is available.' };
+  const { data, error } = await supabaseAuthClient.storage.from(INVENTORY_REFERENCE_BUCKET).download(objectPath);
+  if (error) return failure(error, 'The reference image could not be loaded.');
+  return output(true, { mode: 'authenticated', blob: data });
+}
+
+export async function saveInventoryLocationReferenceGuidance({
+  organizationId,
+  locationId,
+  currentGuidance,
+  caption,
+  file = null,
+}) {
+  const ctx = await context();
+  if (!ctx.ok) return ctx;
+  let objectPath = currentGuidance?.objectPath || null;
+  let mimeType = currentGuidance?.mimeType || null;
+  let byteSize = currentGuidance?.byteSize ?? null;
+  let originalFileName = currentGuidance?.originalFileName || null;
+  let uploadedPath = '';
+  if (file) {
+    const validation = await validateInventoryReferenceFileContent(file);
+    if (!validation.ok) return output(false, { mode: 'validation_error', message: validation.message });
+    try {
+      uploadedPath = createInventoryReferenceObjectPath({
+        organizationId,
+        locationId,
+        mimeType: file.type,
+        objectId: crypto.randomUUID(),
+      });
+    } catch (error) {
+      return output(false, { mode: 'validation_error', message: error.message });
+    }
+    const upload = await supabaseAuthClient.storage.from(INVENTORY_REFERENCE_BUCKET).upload(uploadedPath, file, {
+      cacheControl: '3600', contentType: file.type, upsert: false,
+    });
+    if (upload.error) return failure(upload.error, 'The new reference image was not uploaded. The previous image is unchanged.');
+    objectPath = uploadedPath;
+    mimeType = file.type;
+    byteSize = file.size;
+    originalFileName = file.name;
+  }
+  const { data, error } = await supabaseAuthClient.rpc('set_inventory_location_reference_guidance', {
+    input_location_id: locationId,
+    input_object_path: objectPath,
+    input_caption: caption || null,
+    input_mime_type: mimeType,
+    input_byte_size: byteSize,
+    input_original_file_name: originalFileName,
+    input_expected_revision: currentGuidance?.revision || 0,
+  });
+  if (error) {
+    if (uploadedPath && !(await removeReferenceObjectAndAcknowledge(uploadedPath))) {
+      await queueFailedReferenceCleanup(locationId, uploadedPath);
+    }
+    return failure(error, 'The reference guidance was not changed. The previous image remains valid.');
+  }
+  if (data?.cleanup_path) await removeReferenceObjectAndAcknowledge(data.cleanup_path);
+  return output(true, { mode: 'authenticated', record: normalizeReferenceGuidance(data), message: uploadedPath ? 'Reference image and caption saved.' : 'Reference caption saved.' });
+}
+
+export async function removeInventoryLocationReferenceImage({ locationId, currentGuidance }) {
+  const ctx = await context();
+  if (!ctx.ok) return ctx;
+  const { data, error } = await supabaseAuthClient.rpc('remove_inventory_location_reference_image', {
+    input_location_id: locationId,
+    input_expected_revision: currentGuidance?.revision || 0,
+  });
+  if (error) return failure(error, 'The reference image was not removed. The previous image remains valid.');
+  if (data?.cleanup_path) await removeReferenceObjectAndAcknowledge(data.cleanup_path);
+  return output(true, { mode: 'authenticated', record: normalizeReferenceGuidance(data), message: 'Reference image removed. The caption was preserved.' });
+}
+
+export async function cleanupInventoryReferenceImages() {
+  const ctx = await context();
+  if (!ctx.ok) return ctx;
+  const { data, error } = await supabaseAuthClient.rpc('list_inventory_reference_cleanup_paths');
+  if (error) return failure(error, 'Pending reference image cleanup could not be loaded.');
+  const results = await Promise.all((data || []).map((item) => removeReferenceObjectAndAcknowledge(item.object_path)));
+  return output(true, { mode: 'authenticated', cleaned: results.filter(Boolean).length, pending: results.filter((item) => !item).length });
 }
 
 export function createInventoryCountSession(payload) {
@@ -756,4 +919,5 @@ export const inventoryNormalizers = {
   normalizeCounterAssignment,
   normalizeCounterMembership,
   normalizeCountAssignment,
+  normalizeReferenceGuidance,
 };

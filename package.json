@@ -20,6 +20,7 @@
     "verify:inventory-confirmation-dialog": "node scripts/verify-inventory-confirmation-dialog.mjs",
     "verify:inventory-variance-notes": "node scripts/verify-inventory-variance-notes.mjs",
     "verify:inventory-millum-export": "node scripts/verify-inventory-millum-export.mjs",
+    "verify:inventory-shelf-storage-guidance": "node scripts/verify-inventory-shelf-storage-guidance.mjs",
     "verify:phase9-security-db": "node scripts/verify-phase9-security-db.mjs",
     "verify:phase9-all": "node scripts/verify-phase9-all.mjs",
     "preview": "vite preview",

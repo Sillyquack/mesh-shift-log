@@ -15,6 +15,7 @@ const commands = [
   ['npm', ['run', 'verify:inventory-confirmation-dialog']],
   ['npm', ['run', 'verify:inventory-variance-notes']],
   ['npm', ['run', 'verify:inventory-millum-export']],
+  ['npm', ['run', 'verify:inventory-shelf-storage-guidance']],
   ['npm', ['run', 'verify:phase9-security-db']],
   ['npm', ['run', 'build']],
 ];

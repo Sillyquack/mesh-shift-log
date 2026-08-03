@@ -172,15 +172,16 @@ test('Phase 9G-D changes no RLS, grant, alias, session, or count-line definition
   assert.doesNotMatch(migration, /(?:update|delete\s+from)\s+public\.inventory_count_(?:sessions|lines)/i);
 });
 
-test('Phase 9G-D remains the product-mapping layer before repeatable Phase 9H and terminal Phase 9I', () => {
+test('Phase 9G-D remains the product-mapping layer before repeatable Phase 9H through terminal Phase 9J', () => {
   const manifest = readPhase9MigrationManifest();
   const entries = validatedPhase9MigrationEntries(manifest);
   assert.equal(PHASE9_PRODUCT_MAPPING_MIGRATION, 'supabase/phase9gd_inventory_product_mappings.sql');
-  assert.equal(PHASE9_TERMINAL_MIGRATION, 'supabase/phase9i_millum_stock_count_exports.sql');
-  assert.equal(entries.at(-2).path, 'supabase/phase9h_inventory_session_location_scope.sql');
-  assert.equal(entries.at(-3).path, PHASE9_PRODUCT_MAPPING_MIGRATION);
-  assert.equal(entries.at(-4).path, 'supabase/phase9gc_inventory_counter_mobile.sql');
-  assert.deepEqual(entries.filter((entry) => entry.repeatable).map((entry) => entry.path), [entries.at(-2).path, PHASE9_TERMINAL_MIGRATION]);
+  assert.equal(PHASE9_TERMINAL_MIGRATION, 'supabase/phase9j_inventory_shelf_storage_guidance.sql');
+  assert.equal(entries.at(-2).path, 'supabase/phase9i_millum_stock_count_exports.sql');
+  assert.equal(entries.at(-3).path, 'supabase/phase9h_inventory_session_location_scope.sql');
+  assert.equal(entries.at(-4).path, PHASE9_PRODUCT_MAPPING_MIGRATION);
+  assert.equal(entries.at(-5).path, 'supabase/phase9gc_inventory_counter_mobile.sql');
+  assert.deepEqual(entries.filter((entry) => entry.repeatable).map((entry) => entry.path), [entries.at(-3).path, entries.at(-2).path, PHASE9_TERMINAL_MIGRATION]);
   assert.equal(packageJson.scripts['verify:inventory-product-mappings'], 'node scripts/verify-inventory-product-mappings.mjs');
   assert.match(aggregate, /verify:inventory-product-mappings/);
 });

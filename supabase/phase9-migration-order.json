@@ -81,7 +81,12 @@
       "id": "phase9i-millum-stock-count-exports",
       "path": "supabase/phase9i_millum_stock_count_exports.sql",
       "repeatable": true
+    },
+    {
+      "id": "phase9j-shelf-storage-guidance",
+      "path": "supabase/phase9j_inventory_shelf_storage_guidance.sql",
+      "repeatable": true
     }
   ],
-  "terminalMigration": "supabase/phase9i_millum_stock_count_exports.sql"
+  "terminalMigration": "supabase/phase9j_inventory_shelf_storage_guidance.sql"
 }

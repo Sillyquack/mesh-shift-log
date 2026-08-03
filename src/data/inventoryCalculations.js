@@ -121,27 +121,24 @@ export function sortInventorySessionLines(lines = []) {
 }
 
 export function calculateServiceStockTarget({ productId, standards = [], locations = [], products = [] }) {
-  const activeLocations = locations.filter((location) => location.active !== false);
-  const roots = activeLocations.filter((location) => ['WORKBAR', 'CORNERBAR'].includes(String(location.code || '').trim().toUpperCase()));
-  const descendantIds = new Set();
-  const includeChildren = (parentId) => activeLocations.filter((location) => location.parentLocationId === parentId).forEach((location) => {
-    if (descendantIds.has(location.id)) return;
-    descendantIds.add(location.id);
-    includeChildren(location.id);
-  });
-  roots.forEach((root) => includeChildren(root.id));
+  const qualifyingLocationIds = new Set(locations.filter((location) => (
+    location.active !== false
+    && location.countable === true
+    && location.locationType === 'fridge'
+  )).map((location) => location.id));
   const productActive = products.some((product) => product.id === productId && product.active !== false);
   if (!productActive) return 0;
   return standards.filter((standard) => standard.active !== false
     && standard.productId === productId
     && (standard.stockPolicy || 'exact_par') === 'exact_par'
-    && descendantIds.has(standard.locationId))
+    && standard.contributesToStorageTarget === true
+    && qualifyingLocationIds.has(standard.locationId))
     .reduce((total, standard) => total + (numberOrNull(standard.parQuantity) || 0), 0);
 }
 
 export function calculateStandardPolicyTarget(standard = {}, context = {}) {
   const policy = standard.stockPolicy || 'exact_par';
-  if (policy === 'verify_unchanged') return { effectiveTarget: null, serviceTargetBasis: null };
+  if (['verify_unchanged', 'physical_count_only'].includes(policy)) return { effectiveTarget: null, serviceTargetBasis: null };
   if (policy === 'protected_event_reserve') {
     const caseSize = numberOrNull(standard.caseSize) || 0;
     const targetCases = numberOrNull(standard.targetCases) || 0;
@@ -150,7 +147,8 @@ export function calculateStandardPolicyTarget(standard = {}, context = {}) {
   }
   if (policy === 'operating_reserve' && standard.targetMode === 'derived_multiplier') {
     const serviceTargetBasis = calculateServiceStockTarget({ productId: standard.productId, ...context });
-    return { effectiveTarget: serviceTargetBasis * (numberOrNull(standard.reserveMultiplier) || 0), serviceTargetBasis };
+    const multiplier = numberOrNull(context.storageSettings?.targetMultiplier ?? context.storageMultiplier) || 3;
+    return { effectiveTarget: serviceTargetBasis * multiplier, serviceTargetBasis, appliedMultiplier: multiplier };
   }
   return { effectiveTarget: numberOrNull(standard.parQuantity) || 0, serviceTargetBasis: null };
 }
@@ -169,7 +167,7 @@ export function calculateInventoryLine(line = {}) {
   const parQuantity = numberFromExact(parQuantityExact);
   const minimumQuantity = numberOrNull(line.minimumQuantity ?? line.minimum_quantity_snapshot);
   const stockPolicy = line.stockPolicy || line.stock_policy_snapshot || 'exact_par';
-  const effectiveTargetExact = stockPolicy === 'verify_unchanged'
+  const effectiveTargetExact = ['verify_unchanged', 'physical_count_only'].includes(stockPolicy)
     ? null
     : exactOrNull(line.effectiveTargetQuantityExact ?? line.effectiveTargetQuantity ?? line.effective_target_quantity_snapshot) ?? parQuantityExact;
   const effectiveTarget = numberFromExact(effectiveTargetExact);

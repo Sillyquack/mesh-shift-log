@@ -206,14 +206,14 @@ select public.set_inventory_product_reserve_override(
 );
 select phase9g_test.assert_true(
   (select refrigerator_default_quantity = 74
-      and reserve_target_override = 50
-      and reserve_target_quantity = 50
-      and combined_desired_quantity = 124
+      and reserve_target_override is null
+      and reserve_target_quantity = 222
+      and combined_desired_quantity = 296
    from public.inventory_refrigerator_reserve_targets
    where product_id = (
      select id from public.inventory_products where millum_item_ref = '6274237'
    )),
-  'DB-9G-13: manager override replaces only the derived reserve quantity'
+  'DB-9G-13: legacy per-product override cannot bypass the terminal organization multiplier rule'
 );
 
 select public.set_inventory_product_reserve_override(

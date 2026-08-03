@@ -81,8 +81,9 @@ import {
   markInventoryLocationUsePar,
   saveInventoryLocation,
   saveInventoryProduct,
-  saveInventoryProductReserveOverride,
   saveInventoryStandardsBulk,
+  setInventoryLocationCountable,
+  setInventoryStorageMultiplier,
   setInventoryCountLineCaseQuantity,
   setInventoryCountLineQuantity,
   setInventoryCountLineStructuredQuantity,
@@ -93,6 +94,7 @@ import {
 import { subscribeToInventoryRealtime } from '../lib/inventoryRealtime.js';
 import { canCoordinateInventory, canManageInventory, canUseInventory, isInventoryCounter } from '../lib/permissions.js';
 import { CounterAssignmentManager, CounterInventoryWorkspace } from './InventoryCounterWorkflows.jsx';
+import { LocationReferenceGuidanceManager, LocationReferenceViewer } from './LocationReferenceGuidance.jsx';
 
 const EMPTY_PRODUCT = { name: '', shortName: '', sku: '', barcode: '', category: 'Other', unitLabel: 'piece', countMode: 'unit', containerCapacityLiters: '', supplierName: '', notes: '', active: true, sortOrder: 0, millumItemRef: '', ownershipStatus: 'unverified', reserveTargetOverride: null };
 const EMPTY_LOCATION = { name: '', code: '', locationType: 'storage', parentLocationId: '', zone: '', description: '', active: true, sortOrder: 0 };
@@ -104,6 +106,7 @@ const YOUNGSTORGET_LOCATION_TEMPLATE = [
 
 const STOCK_POLICY_OPTIONS = [
   ['exact_par', 'Exact par'],
+  ['physical_count_only', 'Physical count only (no target)'],
   ['operating_reserve', 'Operating reserve'],
   ['protected_event_reserve', 'Protected event reserve'],
   ['verify_unchanged', 'Verify unchanged'],
@@ -212,18 +215,17 @@ function InventoryOverview({ sessions, activeSession, lines, locations, onOpenSe
   );
 }
 
-function SessionCreator({ products, locations, standards, refrigeratorTemplates, onCancel, onCreate, busy }) {
+function SessionCreator({ products, locations, standards, storageSettings, onCancel, onCreate, busy }) {
   const eligibleLocations = useMemo(() => eligibleInventorySessionLocations({
     locations,
     standards,
     products,
-    refrigeratorTemplates,
-  }), [locations, standards, products, refrigeratorTemplates]);
+  }), [locations, standards, products]);
   const [draft, setDraft] = useState(() => ({
     title: `Daily stock count - ${osloDate()}`,
     countType: 'daily',
     countDate: osloDate(),
-    locationIds: eligibleInventorySessionLocations({ locations, standards, products, refrigeratorTemplates }).map((item) => item.id),
+    locationIds: eligibleInventorySessionLocations({ locations, standards, products }).map((item) => item.id),
     note: '',
     idempotencyKey: ensureInventoryIdempotencyKey(''),
   }));
@@ -253,7 +255,7 @@ function SessionCreator({ products, locations, standards, refrigeratorTemplates,
         <label className="inventory-wide">Optional note<textarea rows="2" value={draft.note} onChange={(event) => setDraft({ ...draft, note: event.target.value })} /></label>
       </div>
       <fieldset className="inventory-location-picker">
-        <legend>Refrigerators with active defaults</legend>
+        <legend>Countable locations with active standards</legend>
         {locationGroups.map((group) => (
           <div className="inventory-location-choice-group" key={group.key}>
             <strong>{group.label}</strong>
@@ -269,8 +271,8 @@ function SessionCreator({ products, locations, standards, refrigeratorTemplates,
           </div>
         ))}
       </fieldset>
-      <div className="inventory-preview" role="status" aria-live="polite"><strong>{selection.locationCount} eligible location{selection.locationCount === 1 ? '' : 's'} selected</strong><span>{selection.defaultLineCount} active default line{selection.defaultLineCount === 1 ? '' : 's'} represented</span><span>{selection.representedDefaults.filter((item) => calculateStandardPolicyTarget(item, { standards, locations, products }).effectiveTarget > 0).length} configured targets above zero</span></div>
-      {selection.representedDefaults.some((item) => item.stockPolicy !== 'verify_unchanged' && calculateStandardPolicyTarget(item, { standards, locations, products }).effectiveTarget === 0) && <p className="inventory-warning">Some selected products have a target of zero. Review those standards if that is not intentional.</p>}
+      <div className="inventory-preview" role="status" aria-live="polite"><strong>{selection.locationCount} eligible location{selection.locationCount === 1 ? '' : 's'} selected</strong><span>{selection.defaultLineCount} active standard line{selection.defaultLineCount === 1 ? '' : 's'} represented</span><span>{selection.representedDefaults.filter((item) => calculateStandardPolicyTarget(item, { standards, locations, products, storageSettings }).effectiveTarget > 0).length} configured targets above zero</span></div>
+      {selection.representedDefaults.some((item) => !['verify_unchanged', 'physical_count_only'].includes(item.stockPolicy) && calculateStandardPolicyTarget(item, { standards, locations, products, storageSettings }).effectiveTarget === 0) && <p className="inventory-warning">Some target-based products have a target of zero. Review those standards if that is not intentional.</p>}
       <button type="button" className="primary-button inventory-full-button" disabled={busy || !draft.title.trim() || !selection.locationCount || !selection.defaultLineCount} onClick={() => onCreate({ ...draft, locationIds: selection.locationIds })}>{busy ? 'Starting count...' : 'Confirm and start count'}</button>
     </section>
   );
@@ -302,6 +304,8 @@ function CountLineCard({ line, identityReference, draft, onDraft, onSave, onRevi
     <article className={`inventory-line-card ${calculated.shortage ? 'shortage' : ''}`}>
       <div className="inventory-line-heading"><div><h3>{line.productName}</h3><p>{line.unitLabel}{identityReference ? ` · ${identityReference}` : ''} · {modeLabel} · {policyLabel}{calculated.effectiveTargetExact !== null ? ` · Target ${quantity(calculated.effectiveTargetExact)} ${line.unitLabel}` : ''}</p></div><Status tone={calculated.shortage ? 'warning' : calculated.counted ? 'good' : ''}>{calculated.uncounted ? 'Not counted' : calculated.confirmedUnchanged ? 'Confirmed unchanged' : calculated.acceptedAsStandard ? 'Fully stocked' : calculated.skipped ? 'Skipped' : 'Physical count'}</Status></div>
       {calculated.stockPolicy === 'operating_reserve' && line.targetMode === 'derived_multiplier' && <p className="inventory-policy-note">Service stock {quantity(line.serviceTargetBasis)} × {quantity(line.reserveMultiplier)} = reserve target {quantity(calculated.effectiveTarget)}</p>}
+      {calculated.stockPolicy === 'physical_count_only' && <p className="inventory-policy-note"><strong>Physical count only.</strong> This line has no automatic target and can never be bulk-defaulted to zero.</p>}
+      {line.historicalSuggestionQuantityExact !== null && <div className="inventory-historical-suggestion"><strong>Previous count suggestion: {quantity(line.historicalSuggestionQuantityExact)} bottle-equivalents</strong><span>{line.historicalSuggestionSource || 'Historical Stock Count'} · verify the current sealed/open quantities physically.</span>{line.historicalSuggestionNote && <p>{line.historicalSuggestionNote}</p>}</div>}
       {calculated.stockPolicy === 'protected_event_reserve' && <div className="inventory-protected-note"><strong>Protected event reserve</strong><span>Target: {quantity(line.targetCases)} cases × {quantity(line.caseSize)} units + {quantity(line.targetLooseQuantity)} loose = {quantity(calculated.effectiveTarget)} units.</span><span>Not for daily restocking. Count this separately from Main beverage stock.</span></div>}
       {line.countMode === INVENTORY_COUNT_MODES.CONTAINER_PLUS_VOLUME ? <><p className="inventory-policy-note">Container size: {quantity(line.containerCapacityLiters)} L per bottle. Open liters are the combined liquid remaining across all open bottles.</p><div className="inventory-case-count"><label htmlFor={`${inputId}-whole`}>Sealed bottles<input id={`${inputId}-whole`} type="text" inputMode="numeric" value={draft.wholeUnits} disabled={readOnly || busy} onChange={(event) => update({ saveKind: INVENTORY_MANAGER_SAVE_KINDS.STRUCTURED, wholeUnits: event.target.value })} /></label><label htmlFor={`${inputId}-open`}>Open liters<input id={`${inputId}-open`} type="text" inputMode="decimal" value={draft.openVolumeLiters} disabled={readOnly || busy} onChange={(event) => update({ saveKind: INVENTORY_MANAGER_SAVE_KINDS.STRUCTURED, openVolumeLiters: event.target.value })} /></label><div><span>Calculated total liters</span><strong>{evaluated.ok ? `${quantity(evaluated.countedQuantity)} L` : '-'}</strong></div></div></> : line.countMode === INVENTORY_COUNT_MODES.KEG_FRACTION ? <><div className="inventory-case-count"><label htmlFor={`${inputId}-full-kegs`}>Full kegs<input id={`${inputId}-full-kegs`} type="text" inputMode="numeric" value={draft.fullKegs} disabled={readOnly || busy} onChange={(event) => update({ saveKind: INVENTORY_MANAGER_SAVE_KINDS.STRUCTURED, fullKegs: event.target.value })} /></label><label htmlFor={`${inputId}-partial-keg`}>Partial keg fraction<input id={`${inputId}-partial-keg`} type="text" inputMode="decimal" value={draft.partialKegFraction} disabled={readOnly || busy} onChange={(event) => update({ saveKind: INVENTORY_MANAGER_SAVE_KINDS.STRUCTURED, partialKegFraction: event.target.value })} /></label><div><span>Calculated keg equivalent</span><strong>{evaluated.ok ? `${quantity(evaluated.countedQuantity)} kegs` : '-'}</strong></div></div><div className="inventory-action-row inventory-keg-fractions" aria-label="Common partial keg fractions">{[['0.25', '¼ keg'], ['0.5', '½ keg'], ['0.75', '¾ keg']].map(([value, label]) => <button type="button" className="secondary-button" key={value} disabled={readOnly || busy} onClick={() => update({ saveKind: INVENTORY_MANAGER_SAVE_KINDS.STRUCTURED, partialKegFraction: value })}>{label}</button>)}</div></> : calculated.stockPolicy === 'protected_event_reserve' ? <><div className="inventory-case-count"><label htmlFor={`${inputId}-full-cases`}>Full cases<input id={`${inputId}-full-cases`} type="number" min="0" step="1" inputMode="numeric" value={draft.fullCases} disabled={readOnly || busy} onChange={(event) => update({ saveKind: INVENTORY_MANAGER_SAVE_KINDS.CASES, fullCases: event.target.value })} /></label><label htmlFor={`${inputId}-loose`}>Loose units<input id={`${inputId}-loose`} type="number" min="0" step="any" inputMode="decimal" value={draft.looseQuantity} disabled={readOnly || busy} onChange={(event) => update({ saveKind: INVENTORY_MANAGER_SAVE_KINDS.CASES, looseQuantity: event.target.value })} /></label><div><span>Calculated total</span><strong>{quantity((Number(draft.fullCases) || 0) * (line.caseSize || 0) + (Number(draft.looseQuantity) || 0))}</strong></div></div><details><summary>Count total units instead</summary><label htmlFor={inputId}>Physical total units</label><input id={inputId} type="text" inputMode="decimal" value={draft.countedQuantity} disabled={readOnly || busy} onChange={(event) => update({ saveKind: INVENTORY_MANAGER_SAVE_KINDS.QUANTITY, countedQuantity: event.target.value })} /></details></> : <label className="inventory-manager-primary-quantity" htmlFor={inputId}>Physical counted quantity<input id={inputId} type="text" inputMode="decimal" value={draft.countedQuantity} disabled={readOnly || busy} aria-describedby={`${inputId}-quantity-help`} onChange={(event) => update({ saveKind: INVENTORY_MANAGER_SAVE_KINDS.QUANTITY, countedQuantity: event.target.value })} /><span id={`${inputId}-quantity-help`}>Enter 0 when physically empty. Blank means not counted. Unit: {line.unitLabel}.</span></label>}
       {!calculated.uncounted && !calculated.skipped && line.countMode !== INVENTORY_COUNT_MODES.UNIT && <p className="inventory-policy-note"><strong>{inventoryStructuredComponentLabel(line)}</strong></p>}
@@ -390,7 +394,7 @@ export function MillumExportView({ session, onBack, loadExport = getInventoryMil
   );
 }
 
-function CountSession({ session, sessions, lines, locations, canManage, canCoordinate, requestWriteAccess, onRefresh, onOpenSession, onBack, setStatus, remoteNotice, clearRemoteNotice }) {
+function CountSession({ session, sessions, lines, locations, referenceGuidance, canManage, canCoordinate, requestWriteAccess, onRefresh, onOpenSession, onBack, setStatus, remoteNotice, clearRemoteNotice }) {
   const [locationId, setLocationId] = useState(lines[0]?.locationId || '');
   const [lineDrafts, setLineDrafts] = useState({});
   const [busyId, setBusyId] = useState('');
@@ -609,6 +613,7 @@ function CountSession({ session, sessions, lines, locations, canManage, canCoord
         <div><h2>{currentLocationLabel}</h2><p>{locationSummary.counted} of {locationSummary.total} recorded · {locationSummary.shortages} restock {locationSummary.shortages === 1 ? 'need' : 'needs'} · {locationSummary.needsReview} need review</p><p className="inventory-policy-note">Restock needs mean the physical quantity is below its target. Notes document context but do not change the target or replenishment quantity.</p></div>
         <div className="inventory-location-controls"><button ref={bulkTriggerRef} type="button" className="secondary-button" disabled={readOnly || !exactUncounted} onClick={() => setBulkReview({ replace: false, acknowledged: false })}>Mark exact-par lines fully stocked</button><button type="button" className="primary-button" disabled={readOnly || inventoryLocationCompletionBlocked(locationSummary)} onClick={() => runWrite(`complete-${locationId}`, () => completeInventoryCountLocation({ sessionId: session.id, locationId }))}>{completionMap[locationId] ? 'Location complete' : 'Complete location'}</button></div>
       </section>
+      {isInventorySessionEditable(session.status) && <LocationReferenceViewer locationName={currentLocationLabel} guidance={referenceGuidance.find((item) => item.locationId === locationId) || { locationId }} />}
       <div className="inventory-line-list">{locationLines.map((line) => <CountLineCard key={line.id} line={line} identityReference={inventoryProductIdentityReference(line, locationLines)} draft={lineDrafts[line.id] || createInventoryManagerLineDraft(line)} onDraft={(changes) => updateLineDraft(line, changes)} onSave={() => saveLine(line)} onReview={() => reviewLine(line)} action={(kind) => lineAction(line, kind)} busy={busyId === line.id} readOnly={readOnly} canManage={canManage} />)}</div>
       <section className="inventory-panel inventory-session-actions">
         <h2>Session actions</h2>
@@ -629,7 +634,7 @@ function CountSession({ session, sessions, lines, locations, canManage, canCoord
             </div>
             <label className="inventory-danger-option" htmlFor="inventory-bulk-acknowledgement">
               <input id="inventory-bulk-acknowledgement" type="checkbox" checked={bulkReview.acknowledged} onChange={(event) => setBulkReview((current) => ({ ...current, acknowledged: event.target.checked }))} />
-              <span>I confirm the eligible exact-par lines in this refrigerator are fully stocked</span>
+              <span>I confirm the eligible exact-par lines in this location are fully stocked</span>
             </label>
             {canManage && <label className="inventory-danger-option" htmlFor="inventory-bulk-replace"><input id="inventory-bulk-replace" type="checkbox" checked={bulkReview.replace} onChange={(event) => setBulkReview((current) => ({ ...current, replace: event.target.checked }))} /><span>Replace existing exact-par counts (manager only)</span></label>}
             <div className="inventory-action-row"><button ref={bulkCancelRef} type="button" className="secondary-button" onClick={dismissBulkReview}>Cancel</button><button type="button" className="primary-button" disabled={!bulkReview.acknowledged || busyId === 'bulk'} onClick={confirmBulkReview}>{bulkReview.replace ? 'Replace with fully stocked' : 'Mark fully stocked'}</button></div>
@@ -680,7 +685,7 @@ function ProductManager({ products, run }) {
       <p className="muted">Count mode is snapshotted when a Stock Count starts. Bottles + open liters requires an exact positive container capacity; later product changes do not reinterpret existing sessions.</p>
       {!capacityValid && <p className="inventory-warning">Enter a positive container capacity using no more than 6 decimal places.</p>}
       {representedProduct && <p className="inventory-warning">{representedProduct.name} already represents this official or practical name. Select that stable product instead of creating a duplicate.</p>}
-      <div className="inventory-action-row"><button type="button" className="primary-button" disabled={!product.name.trim() || !product.unitLabel.trim() || !capacityValid || Boolean(representedProduct)} onClick={saveProduct}>{product.id ? 'Save product' : 'Add product'}</button>{product.id && product.ownershipStatus === 'owned' && <><label>Fixed reserve override<input type="number" min="0" step="any" placeholder="Automatic 3×" value={product.reserveTargetOverride ?? ''} onChange={(event) => setProduct({ ...product, reserveTargetOverride: event.target.value })} /></label><button type="button" className="secondary-button" onClick={() => run(() => saveInventoryProductReserveOverride(product.id, product.reserveTargetOverride ?? ''))}>Save reserve override</button></>}</div>
+      <div className="inventory-action-row"><button type="button" className="primary-button" disabled={!product.name.trim() || !product.unitLabel.trim() || !capacityValid || Boolean(representedProduct)} onClick={saveProduct}>{product.id ? 'Save product' : 'Add product'}</button></div>
       <div className="inventory-config-list">{visibleProducts.map((item) => { const reference = inventoryProductIdentityReference({ ...item, productId: item.id, productName: item.name }, identityPeers); return <article key={item.id}><div><strong>{item.shortName || item.name}</strong><span>{item.shortName && item.shortName !== item.name ? `${item.name} · ` : ''}{item.category || 'Other'}{item.millumItemRef ? ` · Millum ${item.millumItemRef}` : ''} · {inventoryCountModeLabel(item.countMode)}{item.containerCapacityLiters ? ` · ${quantity(item.containerCapacityLiters)} L each` : ''} · {inventoryBaseUnit(item.countMode, item.unitLabel)}{reference ? ` · ${reference}` : ''}{!item.active ? ' · Archived' : ''}</span></div><div><button type="button" className="secondary-button" onClick={() => setProduct({ ...item, containerCapacityLiters: item.containerCapacityLiters ?? '' })}>Edit</button><button type="button" className="text-button" onClick={() => run(() => saveInventoryProduct({ ...item, active: !item.active }))}>{item.active ? 'Archive' : 'Reactivate'}</button></div></article>; })}</div>
     </section>
   );
@@ -715,7 +720,7 @@ function LocationManager({ locations, requestWriteAccess, refresh, run, setStatu
       </section>
       <section className="inventory-panel">
         <div className="inventory-panel-heading"><div><p className="eyebrow">Current structure</p><h2>Locations</h2></div><Status>{locations.filter((item) => item.active).length} active</Status></div>
-        <div className="inventory-location-tree">{groups.map((group) => <section key={group.key}><h3>{group.label}</h3>{group.locations.map((item) => <article key={item.id} className={!item.active ? 'archived' : ''}><div><strong>{contextualLocationName(item, locations)}</strong><span>{item.code || 'No code'} · {item.locationType || 'location'}{!item.active ? ' · Archived' : ''}</span></div><div><button type="button" className="secondary-button" onClick={() => editLocation(item)}>Edit</button><button type="button" className="text-button" onClick={() => run(() => saveInventoryLocation({ ...item, active: !item.active }))}>{item.active ? 'Archive' : 'Reactivate'}</button></div></article>)}</section>)}</div>
+        <div className="inventory-location-tree">{groups.map((group) => <section key={group.key}><h3>{group.label}</h3>{group.locations.map((item) => <article key={item.id} className={!item.active ? 'archived' : ''}><div><strong>{contextualLocationName(item, locations)}</strong><span>{item.code || 'No code'} · {item.locationType || 'location'} · {item.countable ? 'Countable' : 'Not selectable for counts'}{!item.active ? ' · Archived' : ''}</span></div><div><button type="button" className="secondary-button" onClick={() => editLocation(item)}>Edit</button><button type="button" className="secondary-button" onClick={() => run(() => setInventoryLocationCountable(item.id, !item.countable))}>{item.countable ? 'Disable counting' : 'Enable counting'}</button><button type="button" className="text-button" onClick={() => run(() => saveInventoryLocation({ ...item, active: !item.active }))}>{item.active ? 'Archive' : 'Reactivate'}</button></div></article>)}</section>)}</div>
       </section>
       <details className="inventory-panel inventory-secondary-setup" open={customOpen} onToggle={(event) => setCustomOpen(event.currentTarget.open)}>
         <summary>Custom location</summary>
@@ -748,7 +753,7 @@ function RefrigeratorDefaultsManager({ products, locations, standards, refrigera
   const baseline = useMemo(() => Object.fromEntries(ownedProducts.map((product) => {
     const standard = standards.find((item) => item.locationId === selected?.location.id && item.productId === product.id);
     const sourceOrder = Math.min(...(product.millumGroups || []).map((group) => group.itemSortOrder || 999), product.sortOrder || 999);
-    return [product.id, { assigned: Boolean(standard?.active), quantity: standard?.parQuantity ?? 0, countOrder: standard?.countOrder ?? sourceOrder }];
+    return [product.id, { assigned: Boolean(standard?.active), quantity: standard?.parQuantity ?? 0, countOrder: standard?.countOrder ?? sourceOrder, contributesToStorageTarget: standard?.contributesToStorageTarget === true }];
   })), [ownedProducts, standards, selected?.location.id]);
   useEffect(() => { setDrafts(baseline); }, [baseline]);
   const groupOptions = useMemo(() => {
@@ -759,7 +764,7 @@ function RefrigeratorDefaultsManager({ products, locations, standards, refrigera
   const visibleProducts = filterOwnedInventoryCatalogue(ownedProducts, { search, millumGroup }).sort(compareInventoryCatalogueOrder);
   const changedProducts = ownedProducts.filter((product) => {
     const current = drafts[product.id]; const original = baseline[product.id];
-    return current && original && (current.assigned !== original.assigned || Number(current.quantity || 0) !== Number(original.quantity || 0));
+    return current && original && (current.assigned !== original.assigned || Number(current.quantity || 0) !== Number(original.quantity || 0) || current.contributesToStorageTarget !== original.contributesToStorageTarget);
   });
   const invalidQuantity = changedProducts.some((product) => drafts[product.id].assigned && (!Number.isFinite(Number(drafts[product.id].quantity)) || Number(drafts[product.id].quantity) < 0));
   const template = refrigeratorTemplates.find((item) => item.locationId === selected?.location.id);
@@ -777,6 +782,7 @@ function RefrigeratorDefaultsManager({ products, locations, standards, refrigera
         parQuantity: Number(drafts[product.id].quantity),
         countOrder: Number(drafts[product.id].countOrder || 0),
         stockPolicy: 'exact_par',
+        contributesToStorageTarget: true,
       } : { productId: product.id, assigned: false }),
     });
     setSaving(false);
@@ -816,7 +822,7 @@ function RefrigeratorDefaultsManager({ products, locations, standards, refrigera
   );
 }
 
-function StandardsManager({ products, locations, standards, requestWriteAccess, refresh, run, setStatus }) {
+function StandardsManager({ products, locations, standards, storageSettings, requestWriteAccess, refresh, run, setStatus }) {
   const activeLocations = locations.filter((item) => item.active);
   const identityPeers = products.map((item) => ({ ...item, productId: item.id, productName: item.name }));
   const preferredLocation = activeLocations.find((item) => item.parentLocationId) || activeLocations.find((item) => item.locationType === 'storage') || activeLocations[0];
@@ -824,6 +830,8 @@ function StandardsManager({ products, locations, standards, requestWriteAccess, 
   const [search, setSearch] = useState('');
   const [drafts, setDrafts] = useState({});
   const [saving, setSaving] = useState(false);
+  const [storageMultiplier, setStorageMultiplier] = useState(String(storageSettings?.targetMultiplier ?? 3));
+  const [multiplierBusy, setMultiplierBusy] = useState(false);
   const [saveStatus, setSaveStatus] = useState(null);
   const [copy, setCopy] = useState({ sourceLocationId: '', destinationLocationId: '', overwriteExisting: false });
   useEffect(() => { if (!locationId && preferredLocation) setLocationId(preferredLocation.id); }, [locationId, preferredLocation?.id]);
@@ -832,7 +840,7 @@ function StandardsManager({ products, locations, standards, requestWriteAccess, 
     const code = String(selectedLocation?.code || '').toUpperCase();
     const parent = locations.find((location) => location.id === selectedLocation?.parentLocationId);
     const parentCode = String(parent?.code || '').toUpperCase();
-    if (code === 'BEVERAGE_STORAGE_BOTTLES') return 'operating_reserve';
+    if (code === 'MAIN_STORAGE' || code === 'BEVERAGE_STORAGE_BOTTLES') return 'operating_reserve';
     if (code === 'BEVERAGE_STORAGE_EVENT_RESERVE') return 'protected_event_reserve';
     if (code === 'BEVERAGE_STORAGE_DORMANT_SPIRITS') return 'verify_unchanged';
     if (['WORKBAR', 'CORNERBAR'].includes(parentCode)) return 'exact_par';
@@ -845,18 +853,22 @@ function StandardsManager({ products, locations, standards, requestWriteAccess, 
       assigned: Boolean(standard?.active), parQuantity: standard?.parQuantity ?? 0,
       countOrder: standard?.countOrder ?? product.sortOrder ?? 0, stockPolicy,
       targetMode: standard?.targetMode || (stockPolicy === 'operating_reserve' ? 'derived_multiplier' : ''),
-      reserveMultiplier: standard?.reserveMultiplier ?? 3,
       caseSize: standard?.caseSize ?? product.defaultPackSize ?? 24,
       targetCases: standard?.targetCases ?? 0,
       targetLooseQuantity: standard?.targetLooseQuantity ?? 0,
       physicalRecountIntervalDays: standard?.physicalRecountIntervalDays ?? 90,
+      contributesToStorageTarget: standard?.contributesToStorageTarget === true,
+      historicalSuggestionQuantity: standard?.historicalSuggestionQuantity ?? '',
+      historicalSuggestionNote: standard?.historicalSuggestionNote ?? '',
+      historicalSuggestionSource: standard?.historicalSuggestionSource ?? '',
     }];
   })), [products, standards, locationId, suggestedPolicy]);
+  useEffect(() => { setStorageMultiplier(String(storageSettings?.targetMultiplier ?? 3)); }, [storageSettings?.targetMultiplier]);
   useEffect(() => { setDrafts(baseline); setSaveStatus(null); }, [baseline]);
   const updateDraft = (productId, patch) => setDrafts((current) => ({ ...current, [productId]: { ...current[productId], ...patch } }));
   const isChanged = (productId) => {
     const row = drafts[productId]; const original = baseline[productId];
-    const fields = ['assigned', 'parQuantity', 'countOrder', 'stockPolicy', 'targetMode', 'reserveMultiplier', 'caseSize', 'targetCases', 'targetLooseQuantity', 'physicalRecountIntervalDays'];
+    const fields = ['assigned', 'parQuantity', 'countOrder', 'stockPolicy', 'targetMode', 'caseSize', 'targetCases', 'targetLooseQuantity', 'physicalRecountIntervalDays', 'contributesToStorageTarget', 'historicalSuggestionQuantity', 'historicalSuggestionNote', 'historicalSuggestionSource'];
     return Boolean(row && original && fields.some((field) => String(row[field] ?? '') !== String(original[field] ?? '')));
   };
   const changedProducts = products.filter((product) => isChanged(product.id));
@@ -864,11 +876,11 @@ function StandardsManager({ products, locations, standards, requestWriteAccess, 
     Number(row.countOrder) < 0 || !Number.isInteger(Number(row.countOrder))
     || (['exact_par'].includes(row.stockPolicy) && (row.parQuantity === '' || Number(row.parQuantity) < 0))
     || (row.stockPolicy === 'operating_reserve' && row.targetMode === 'fixed_quantity' && (row.parQuantity === '' || Number(row.parQuantity) < 0))
-    || (row.stockPolicy === 'operating_reserve' && row.targetMode === 'derived_multiplier' && Number(row.reserveMultiplier) <= 0)
+    || (row.stockPolicy === 'physical_count_only' && row.historicalSuggestionQuantity !== '' && (!Number.isFinite(Number(row.historicalSuggestionQuantity)) || Number(row.historicalSuggestionQuantity) < 0))
     || (row.stockPolicy === 'protected_event_reserve' && (Number(row.caseSize) <= 0 || Number(row.targetCases) < 0 || !Number.isInteger(Number(row.targetCases)) || Number(row.targetLooseQuantity) < 0))
     || (row.stockPolicy === 'verify_unchanged' && (Number(row.physicalRecountIntervalDays) <= 0 || !Number.isInteger(Number(row.physicalRecountIntervalDays))))
   ));
-  const validationError = invalidRow ? 'Review the highlighted policy values. Targets cannot be negative; multipliers, case sizes and recount intervals must be greater than zero.' : '';
+  const validationError = invalidRow ? 'Review the highlighted policy values. Targets and historical suggestions cannot be negative; case sizes and recount intervals must be greater than zero.' : '';
   const saveChanges = async () => {
     if (validationError || !locationId || !changedProducts.length) return;
     if (!(await requestWriteAccess())) return;
@@ -877,10 +889,13 @@ function StandardsManager({ products, locations, standards, requestWriteAccess, 
       productId: product.id, assigned: true, parQuantity: Number(drafts[product.id].parQuantity || 0),
       countOrder: Number(drafts[product.id].countOrder), stockPolicy: drafts[product.id].stockPolicy,
       targetMode: drafts[product.id].targetMode || null,
-      reserveMultiplier: Number(drafts[product.id].reserveMultiplier || 0),
       caseSize: Number(drafts[product.id].caseSize || 0), targetCases: Number(drafts[product.id].targetCases || 0),
       targetLooseQuantity: Number(drafts[product.id].targetLooseQuantity || 0),
       physicalRecountIntervalDays: Number(drafts[product.id].physicalRecountIntervalDays || 90),
+      contributesToStorageTarget: drafts[product.id].contributesToStorageTarget === true,
+      historicalSuggestionQuantity: drafts[product.id].historicalSuggestionQuantity,
+      historicalSuggestionNote: drafts[product.id].historicalSuggestionNote,
+      historicalSuggestionSource: drafts[product.id].historicalSuggestionSource,
     } : { productId: product.id, assigned: false });
     const result = await saveInventoryStandardsBulk({ locationId, rows });
     setSaving(false);
@@ -894,14 +909,15 @@ function StandardsManager({ products, locations, standards, requestWriteAccess, 
   const archivedProducts = products.filter((product) => !product.active && baseline[product.id]?.assigned && matchesSearch(product));
   const renderRow = (product, archived = false) => {
     const row = drafts[product.id] || baseline[product.id]; if (!row) return null;
-    const target = calculateStandardPolicyTarget({ ...row, productId: product.id }, { standards, locations, products });
+    const target = calculateStandardPolicyTarget({ ...row, productId: product.id }, { standards, locations, products, storageSettings });
     const reference = inventoryProductIdentityReference({ ...product, productId: product.id, productName: product.name }, identityPeers) || product.sku;
-    return <article className={`inventory-standard-row inventory-policy-standard ${archived ? 'archived' : ''}`} key={product.id}><div className="inventory-standard-product"><label><input type="checkbox" checked={row.assigned} disabled={archived && !row.assigned} onChange={(event) => updateDraft(product.id, { assigned: event.target.checked })} /><span><strong>{product.name}</strong><small>{product.category || 'Other'}{reference ? ` · ${reference}` : ''}{archived ? ' · Archived product' : ''}</small></span></label><Status tone={isChanged(product.id) ? 'warning' : row.assigned ? 'good' : ''}>{isChanged(product.id) ? 'Unsaved' : row.assigned ? 'Assigned' : 'Available'}</Status></div><div className="inventory-policy-fields"><label>Stock policy<select disabled={!row.assigned} value={row.stockPolicy} onChange={(event) => updateDraft(product.id, { stockPolicy: event.target.value, targetMode: event.target.value === 'operating_reserve' ? (row.targetMode || 'derived_multiplier') : '' })}>{STOCK_POLICY_OPTIONS.map(([value, label]) => <option value={value} key={value}>{label}</option>)}</select></label>{row.stockPolicy === 'exact_par' && <label>Target quantity<input type="number" min="0" step="any" disabled={!row.assigned} value={row.parQuantity} onChange={(event) => updateDraft(product.id, { parQuantity: event.target.value })} /></label>}{row.stockPolicy === 'operating_reserve' && <><label>Target mode<select disabled={!row.assigned} value={row.targetMode} onChange={(event) => updateDraft(product.id, { targetMode: event.target.value })}><option value="derived_multiplier">Derived from service stock</option><option value="fixed_quantity">Fixed quantity</option></select></label>{row.targetMode === 'derived_multiplier' ? <><label>Reserve multiplier<input type="number" min="0.01" step="any" disabled={!row.assigned} value={row.reserveMultiplier} onChange={(event) => updateDraft(product.id, { reserveMultiplier: event.target.value })} /></label><div className="inventory-policy-result"><span>Service stock: {quantity(target.serviceTargetBasis)}</span><strong>{quantity(target.serviceTargetBasis)} × {quantity(row.reserveMultiplier)} = {quantity(target.effectiveTarget)}</strong></div></> : <label>Target quantity<input type="number" min="0" step="any" disabled={!row.assigned} value={row.parQuantity} onChange={(event) => updateDraft(product.id, { parQuantity: event.target.value })} /></label>}</>}{row.stockPolicy === 'protected_event_reserve' && <><label>Case size<input type="number" min="0.01" step="any" disabled={!row.assigned} value={row.caseSize} onChange={(event) => updateDraft(product.id, { caseSize: event.target.value })} /></label><label>Target cases<input type="number" min="0" step="1" disabled={!row.assigned} value={row.targetCases} onChange={(event) => updateDraft(product.id, { targetCases: event.target.value })} /></label><label>Loose target<input type="number" min="0" step="any" disabled={!row.assigned} value={row.targetLooseQuantity} onChange={(event) => updateDraft(product.id, { targetLooseQuantity: event.target.value })} /></label><div className="inventory-policy-result protected"><span>Protected event reserve · not for daily restocking</span><strong>Target: {quantity(target.effectiveTarget)} units</strong></div></>}{row.stockPolicy === 'verify_unchanged' && <><label>Physical recount interval (days)<input type="number" min="1" step="1" disabled={!row.assigned} value={row.physicalRecountIntervalDays} onChange={(event) => updateDraft(product.id, { physicalRecountIntervalDays: event.target.value })} /></label><div className="inventory-policy-result"><span>Shopbox is not integrated.</span><strong>Unchanged confirmation is a manager attestation, not automatic movement validation.</strong></div></>}<label>Count order<input type="number" min="0" step="1" disabled={!row.assigned} value={row.countOrder} onChange={(event) => updateDraft(product.id, { countOrder: event.target.value })} /></label></div></article>;
+    return <article className={`inventory-standard-row inventory-policy-standard ${archived ? 'archived' : ''}`} key={product.id}><div className="inventory-standard-product"><label><input type="checkbox" checked={row.assigned} disabled={archived && !row.assigned} onChange={(event) => updateDraft(product.id, { assigned: event.target.checked })} /><span><strong>{product.name}</strong><small>{product.category || 'Other'}{reference ? ` · ${reference}` : ''}{archived ? ' · Archived product' : ''}</small></span></label><Status tone={isChanged(product.id) ? 'warning' : row.assigned ? 'good' : ''}>{isChanged(product.id) ? 'Unsaved' : row.assigned ? 'Assigned' : 'Available'}</Status></div><div className="inventory-policy-fields"><label>Stock policy<select disabled={!row.assigned} value={row.stockPolicy} onChange={(event) => updateDraft(product.id, { stockPolicy: event.target.value, targetMode: event.target.value === 'operating_reserve' ? (row.targetMode || 'derived_multiplier') : '' })}>{STOCK_POLICY_OPTIONS.map(([value, label]) => <option value={value} key={value}>{label}</option>)}</select></label>{row.stockPolicy === 'exact_par' && <><label>Target quantity<input type="number" min="0" step="any" disabled={!row.assigned} value={row.parQuantity} onChange={(event) => updateDraft(product.id, { parQuantity: event.target.value })} /></label>{selectedLocation?.locationType === 'fridge' && <label className="inventory-danger-option"><input type="checkbox" disabled={!row.assigned} checked={row.contributesToStorageTarget === true} onChange={(event) => updateDraft(product.id, { contributesToStorageTarget: event.target.checked })} /><span>Include this refrigerator target in Main Storage</span></label>}</>}{row.stockPolicy === 'physical_count_only' && <><div className="inventory-policy-result"><span>No automatic target</span><strong>Must be physically counted; bulk actions cannot verify it.</strong></div><label>Previous count suggestion<input type="number" min="0" step="any" disabled={!row.assigned} placeholder="Optional bottle-equivalent" value={row.historicalSuggestionQuantity} onChange={(event) => updateDraft(product.id, { historicalSuggestionQuantity: event.target.value })} /></label><label>Suggestion source<input disabled={!row.assigned} placeholder="e.g. June 2026 Stock Count" value={row.historicalSuggestionSource} onChange={(event) => updateDraft(product.id, { historicalSuggestionSource: event.target.value })} /></label><label className="inventory-wide">Suggestion note<textarea rows="2" disabled={!row.assigned} value={row.historicalSuggestionNote} onChange={(event) => updateDraft(product.id, { historicalSuggestionNote: event.target.value })} /></label></>}{row.stockPolicy === 'operating_reserve' && <><label>Target mode<select disabled={!row.assigned} value={row.targetMode} onChange={(event) => updateDraft(product.id, { targetMode: event.target.value })}><option value="derived_multiplier">Derived from qualifying refrigerator targets</option><option value="fixed_quantity">Fixed quantity</option></select></label>{row.targetMode === 'derived_multiplier' ? <div className="inventory-policy-result"><span>Qualifying refrigerator targets: {quantity(target.serviceTargetBasis)}</span><strong>{quantity(target.serviceTargetBasis)} × {quantity(storageSettings?.targetMultiplier ?? 3)} = {quantity(target.effectiveTarget)}</strong></div> : <label>Target quantity<input type="number" min="0" step="any" disabled={!row.assigned} value={row.parQuantity} onChange={(event) => updateDraft(product.id, { parQuantity: event.target.value })} /></label>}</>}{row.stockPolicy === 'protected_event_reserve' && <><label>Case size<input type="number" min="0.01" step="any" disabled={!row.assigned} value={row.caseSize} onChange={(event) => updateDraft(product.id, { caseSize: event.target.value })} /></label><label>Target cases<input type="number" min="0" step="1" disabled={!row.assigned} value={row.targetCases} onChange={(event) => updateDraft(product.id, { targetCases: event.target.value })} /></label><label>Loose target<input type="number" min="0" step="any" disabled={!row.assigned} value={row.targetLooseQuantity} onChange={(event) => updateDraft(product.id, { targetLooseQuantity: event.target.value })} /></label><div className="inventory-policy-result protected"><span>Protected event reserve · not for daily restocking</span><strong>Target: {quantity(target.effectiveTarget)} units</strong></div></>}{row.stockPolicy === 'verify_unchanged' && <><label>Physical recount interval (days)<input type="number" min="1" step="1" disabled={!row.assigned} value={row.physicalRecountIntervalDays} onChange={(event) => updateDraft(product.id, { physicalRecountIntervalDays: event.target.value })} /></label><div className="inventory-policy-result"><span>Shopbox is not integrated.</span><strong>Unchanged confirmation is a manager attestation, not automatic movement validation.</strong></div></>}<label>Count order<input type="number" min="0" step="1" disabled={!row.assigned} value={row.countOrder} onChange={(event) => updateDraft(product.id, { countOrder: event.target.value })} /></label></div></article>;
   };
-  const exportStandards = () => downloadCsv('mesh-inventory-standards.csv', makeCsv(['Location', 'Product', 'Product ID', 'SKU', 'Stock policy', 'Target mode', 'Configured target', 'Multiplier', 'Case size', 'Target cases', 'Loose target', 'Recount interval', 'Count order'], standards.map((item) => { const product = products.find((candidate) => candidate.id === item.productId); return [contextualLocationName(locations.find((location) => location.id === item.locationId), locations), product?.name || '', item.productId, product?.sku || '', item.stockPolicy, item.targetMode, item.parQuantity, item.reserveMultiplier, item.caseSize, item.targetCases, item.targetLooseQuantity, item.physicalRecountIntervalDays, item.countOrder]; })));
+  const exportStandards = () => downloadCsv('mesh-inventory-standards.csv', makeCsv(['Location', 'Product', 'Product ID', 'SKU', 'Stock policy', 'Target mode', 'Configured target', 'Storage source', 'Historical suggestion', 'Suggestion source', 'Case size', 'Target cases', 'Loose target', 'Recount interval', 'Count order'], standards.map((item) => { const product = products.find((candidate) => candidate.id === item.productId); return [contextualLocationName(locations.find((location) => location.id === item.locationId), locations), product?.name || '', item.productId, product?.sku || '', item.stockPolicy, item.targetMode, item.parQuantity, item.contributesToStorageTarget, item.historicalSuggestionQuantity, item.historicalSuggestionSource, item.caseSize, item.targetCases, item.targetLooseQuantity, item.physicalRecountIntervalDays, item.countOrder]; })));
   return (
     <section className="inventory-panel">
       <div className="inventory-panel-heading"><div><p className="eyebrow">Location-first setup</p><h2>Location standards</h2></div><button type="button" className="secondary-button" onClick={exportStandards}>Export CSV</button></div>
+      <div className="inventory-storage-setting"><label>Organization Main Storage multiplier<input type="number" min="0.01" max="100" step="any" value={storageMultiplier} onChange={(event) => setStorageMultiplier(event.target.value)} /></label><button type="button" className="secondary-button" disabled={multiplierBusy || !Number.isFinite(Number(storageMultiplier)) || Number(storageMultiplier) <= 0 || Number(storageMultiplier) > 100 || Number(storageMultiplier) === Number(storageSettings?.targetMultiplier ?? 3)} onClick={async () => { if (!(await requestWriteAccess())) return; setMultiplierBusy(true); const result = await setInventoryStorageMultiplier(Number(storageMultiplier)); setMultiplierBusy(false); setStatus(result); if (result.ok) await refresh(true); }}>{multiplierBusy ? 'Saving…' : 'Save multiplier'}</button><p className="muted">Applied only to future derived Main Storage snapshots. Physical counts are never used in the calculation.</p></div>
       <div className="inventory-standards-toolbar"><label>1. Choose location<GroupedLocationSelect locations={activeLocations} value={locationId} onChange={(event) => setLocationId(event.target.value)} preferPhysical label="Choose counting location" /></label><label>2. Search active products<input type="search" placeholder="Name, SKU or category" value={search} onChange={(event) => setSearch(event.target.value)} /></label></div>
       <p className="muted">Physical counting locations are listed first and selected by default. Suggested policies are shown for new assignments but nothing is saved until you choose products and press Save.</p>
       {selectedLocation?.code === 'BEVERAGE_STORAGE_EVENT_RESERVE' && <p className="inventory-protected-note"><strong>Protected event reserve</strong><span>Keep physically separate from Main beverage stock. This phase records readiness but creates no transfer.</span></p>}
@@ -911,10 +927,11 @@ function StandardsManager({ products, locations, standards, requestWriteAccess, 
   );
 }
 
-function CatalogManager({ products, locations, standards, refrigeratorTemplates, unresolvedMappings, reserves, requestWriteAccess, refresh, setStatus }) {
+function CatalogManager({ data, requestWriteAccess, refresh, setStatus }) {
+  const { products, locations, standards, refrigeratorTemplates, unresolvedMappings, reserves, storageSettings } = data;
   const [view, setView] = useState('fridges');
   const run = async (operation) => { if (!(await requestWriteAccess())) return; const result = await operation(); setStatus(result); if (result.ok) await refresh(true); return result; };
-  return <div className="inventory-stack"><nav className="inventory-subtabs"><button type="button" className={view === 'fridges' ? 'active' : ''} onClick={() => setView('fridges')}>Fridge defaults</button><button type="button" className={view === 'products' ? 'active' : ''} onClick={() => setView('products')}>Products</button><button type="button" className={view === 'locations' ? 'active' : ''} onClick={() => setView('locations')}>Locations</button><button type="button" className={view === 'standards' ? 'active' : ''} onClick={() => setView('standards')}>Other standards</button><button type="button" className={view === 'import' ? 'active' : ''} onClick={() => setView('import')}>CSV import</button></nav>{view === 'fridges' && <RefrigeratorDefaultsManager products={products} locations={locations} standards={standards} refrigeratorTemplates={refrigeratorTemplates} unresolvedMappings={unresolvedMappings} reserves={reserves} requestWriteAccess={requestWriteAccess} refresh={refresh} setStatus={setStatus} />}{view === 'products' && <ProductManager products={products} run={run} />}{view === 'locations' && <LocationManager locations={locations} requestWriteAccess={requestWriteAccess} refresh={refresh} run={run} setStatus={setStatus} />}{view === 'standards' && <StandardsManager products={products} locations={locations} standards={standards} requestWriteAccess={requestWriteAccess} refresh={refresh} run={run} setStatus={setStatus} />}{view === 'import' && <CsvImport products={products} locations={locations} requestWriteAccess={requestWriteAccess} refresh={refresh} setStatus={setStatus} />}</div>;
+  return <div className="inventory-stack"><nav className="inventory-subtabs"><button type="button" className={view === 'fridges' ? 'active' : ''} onClick={() => setView('fridges')}>Fridge defaults</button><button type="button" className={view === 'products' ? 'active' : ''} onClick={() => setView('products')}>Products</button><button type="button" className={view === 'locations' ? 'active' : ''} onClick={() => setView('locations')}>Locations</button><button type="button" className={view === 'standards' ? 'active' : ''} onClick={() => setView('standards')}>Standards</button><button type="button" className={view === 'guidance' ? 'active' : ''} onClick={() => setView('guidance')}>Reference images</button><button type="button" className={view === 'import' ? 'active' : ''} onClick={() => setView('import')}>CSV import</button></nav>{view === 'fridges' && <RefrigeratorDefaultsManager products={products} locations={locations} standards={standards} refrigeratorTemplates={refrigeratorTemplates} unresolvedMappings={unresolvedMappings} reserves={reserves} requestWriteAccess={requestWriteAccess} refresh={refresh} setStatus={setStatus} />}{view === 'products' && <ProductManager products={products} run={run} />}{view === 'locations' && <LocationManager locations={locations} requestWriteAccess={requestWriteAccess} refresh={refresh} run={run} setStatus={setStatus} />}{view === 'standards' && <StandardsManager products={products} locations={locations} standards={standards} storageSettings={storageSettings} requestWriteAccess={requestWriteAccess} refresh={refresh} run={run} setStatus={setStatus} />}{view === 'guidance' && <LocationReferenceGuidanceManager data={data} requestWriteAccess={requestWriteAccess} refresh={refresh} setStatus={setStatus} />}{view === 'import' && <CsvImport products={products} locations={locations} requestWriteAccess={requestWriteAccess} refresh={refresh} setStatus={setStatus} />}</div>;
 }
 
 function CsvImport({ products, locations, requestWriteAccess, refresh, setStatus }) {
@@ -962,7 +979,7 @@ function AuthorizedInventoryWorkspace({ user, requestWriteAccess, onClose }) {
   const coordinator = canCoordinateInventory(user);
   const organizationId = user?.organizationId || user?.organization_id || '';
   const [tab, setTab] = useState('overview');
-  const [data, setData] = useState({ products: [], locations: [], standards: [], sessions: [], refrigeratorTemplates: [], unresolvedMappings: [], reserves: [], counterProfiles: [], counterMemberships: [], assignments: [] });
+  const [data, setData] = useState({ products: [], locations: [], standards: [], sessions: [], refrigeratorTemplates: [], unresolvedMappings: [], reserves: [], storageSettings: null, referenceGuidance: [], counterProfiles: [], counterMemberships: [], assignments: [] });
   const [selectedSessionId, setSelectedSessionId] = useState('');
   const [sessionDetail, setSessionDetail] = useState({ record: null, lines: [] });
   const [loading, setLoading] = useState(true);
@@ -1032,7 +1049,7 @@ function AuthorizedInventoryWorkspace({ user, requestWriteAccess, onClose }) {
       <nav className="inventory-main-tabs" aria-label="Inventory views"><button type="button" className={tab === 'overview' ? 'active' : ''} onClick={() => setTab('overview')}>Overview</button><button type="button" className={tab === 'count' ? 'active' : ''} onClick={() => setTab('count')}>Count</button>{manager && <button type="button" className={tab === 'assignments' ? 'active' : ''} onClick={() => setTab('assignments')}>Assignments</button>}<button type="button" className={tab === 'restock' ? 'active' : ''} onClick={() => setTab('restock')}>Restock</button>{coordinator && <button type="button" className={tab === 'history' ? 'active' : ''} onClick={() => setTab('history')}>History</button>}{manager && <button type="button" className={tab === 'manage' ? 'active' : ''} onClick={() => setTab('manage')}>Manage</button>}</nav>
       <Message status={status} />
       {status?.ok === false && <button type="button" className="secondary-button inventory-retry-button" onClick={() => refresh()}>Retry inventory refresh</button>}
-      {showCreator ? <SessionCreator products={data.products} locations={data.locations} standards={data.standards} refrigeratorTemplates={data.refrigeratorTemplates} onCancel={() => setShowCreator(false)} onCreate={create} busy={creating} /> : tab === 'overview' ? <InventoryOverview sessions={data.sessions} activeSession={activeSession} lines={activeSession?.id === selectedSession?.id ? selectedLines : []} locations={data.locations} onOpenSession={openSession} onStart={() => setShowCreator(true)} canCoordinate={coordinator} /> : tab === 'count' ? selectedSession ? <CountSession session={selectedSession} sessions={data.sessions} lines={selectedLines} locations={data.locations} canManage={manager} canCoordinate={coordinator} requestWriteAccess={requestWriteAccess} onRefresh={async () => { const sessionResult = await refreshSession(); const workspaceResult = await refresh(); return sessionResult?.ok === false ? sessionResult : workspaceResult?.ok === false ? workspaceResult : { ok: true }; }} onOpenSession={openSession} onBack={() => setTab('overview')} setStatus={setStatus} remoteNotice={remoteNotice} clearRemoteNotice={() => setRemoteNotice(false)} /> : <section className="inventory-panel inventory-empty"><h2>No active stock count</h2>{coordinator && <button type="button" className="primary-button" onClick={() => setShowCreator(true)}>Start stock count</button>}</section> : tab === 'assignments' ? <CounterAssignmentManager data={data} activeSession={activeSession} lines={activeSession?.id === selectedSession?.id ? selectedLines : []} requestWriteAccess={requestWriteAccess} refresh={async () => { await refreshSession(); await refresh(); }} setStatus={setStatus} /> : tab === 'restock' ? <RestockView session={selectedSession} lines={selectedLines} /> : tab === 'history' ? <InventoryHistory sessions={data.sessions} locations={data.locations} onOpenSession={openSession} /> : <CatalogManager products={data.products} locations={data.locations} standards={data.standards} refrigeratorTemplates={data.refrigeratorTemplates} unresolvedMappings={data.unresolvedMappings} reserves={data.reserves} requestWriteAccess={requestWriteAccess} refresh={refresh} setStatus={setStatus} />}
+      {showCreator ? <SessionCreator products={data.products} locations={data.locations} standards={data.standards} storageSettings={data.storageSettings} onCancel={() => setShowCreator(false)} onCreate={create} busy={creating} /> : tab === 'overview' ? <InventoryOverview sessions={data.sessions} activeSession={activeSession} lines={activeSession?.id === selectedSession?.id ? selectedLines : []} locations={data.locations} onOpenSession={openSession} onStart={() => setShowCreator(true)} canCoordinate={coordinator} /> : tab === 'count' ? selectedSession ? <CountSession session={selectedSession} sessions={data.sessions} lines={selectedLines} locations={data.locations} referenceGuidance={data.referenceGuidance || []} canManage={manager} canCoordinate={coordinator} requestWriteAccess={requestWriteAccess} onRefresh={async () => { const sessionResult = await refreshSession(); const workspaceResult = await refresh(); return sessionResult?.ok === false ? sessionResult : workspaceResult?.ok === false ? workspaceResult : { ok: true }; }} onOpenSession={openSession} onBack={() => setTab('overview')} setStatus={setStatus} remoteNotice={remoteNotice} clearRemoteNotice={() => setRemoteNotice(false)} /> : <section className="inventory-panel inventory-empty"><h2>No active stock count</h2>{coordinator && <button type="button" className="primary-button" onClick={() => setShowCreator(true)}>Start stock count</button>}</section> : tab === 'assignments' ? <CounterAssignmentManager data={data} activeSession={activeSession} lines={activeSession?.id === selectedSession?.id ? selectedLines : []} requestWriteAccess={requestWriteAccess} refresh={async () => { await refreshSession(); await refresh(); }} setStatus={setStatus} /> : tab === 'restock' ? <RestockView session={selectedSession} lines={selectedLines} /> : tab === 'history' ? <InventoryHistory sessions={data.sessions} locations={data.locations} onOpenSession={openSession} /> : <CatalogManager data={data} requestWriteAccess={requestWriteAccess} refresh={refresh} setStatus={setStatus} />}
       {data.refreshedAt && <p className="inventory-last-refresh">Last successful refresh: {formatDateTime(data.refreshedAt)}</p>}
     </main>
   );

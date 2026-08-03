@@ -91,13 +91,13 @@ insert into public.inventory_products (
 );
 
 insert into public.inventory_locations (
-  id, organization_id, name, code, location_type, active, sort_order,
+  id, organization_id, name, code, location_type, active, countable, sort_order,
   created_by_auth_user_id, updated_by_auth_user_id
 ) values
-  ('c2000000-0000-4000-8000-000000000002', 'cccccccc-cccc-4ccc-8ccc-ccccccccccc1', 'Organization C Parent Area', 'PHASE9H_PARENT', 'bar', true, 2, '30000000-0000-4000-8000-000000000001', '30000000-0000-4000-8000-000000000001'),
-  ('c2000000-0000-4000-8000-000000000003', 'cccccccc-cccc-4ccc-8ccc-ccccccccccc1', 'Organization C Empty Fridge', 'WORKBAR_BAR_RIGHT_FRIDGE', 'fridge', true, 3, '30000000-0000-4000-8000-000000000001', '30000000-0000-4000-8000-000000000001'),
-  ('c2000000-0000-4000-8000-000000000004', 'cccccccc-cccc-4ccc-8ccc-ccccccccccc1', 'Organization C Inactive Default Fridge', 'WORKBAR_NON_ALCO_FRIDGE', 'fridge', true, 4, '30000000-0000-4000-8000-000000000001', '30000000-0000-4000-8000-000000000001'),
-  ('c2000000-0000-4000-8000-000000000005', 'cccccccc-cccc-4ccc-8ccc-ccccccccccc1', 'Organization C Inactive Product Fridge', 'CORNERBAR_RIGHT_FRIDGE', 'fridge', true, 5, '30000000-0000-4000-8000-000000000001', '30000000-0000-4000-8000-000000000001');
+  ('c2000000-0000-4000-8000-000000000002', 'cccccccc-cccc-4ccc-8ccc-ccccccccccc1', 'Organization C Parent Area', 'PHASE9H_PARENT', 'bar', true, false, 2, '30000000-0000-4000-8000-000000000001', '30000000-0000-4000-8000-000000000001'),
+  ('c2000000-0000-4000-8000-000000000003', 'cccccccc-cccc-4ccc-8ccc-ccccccccccc1', 'Organization C Empty Fridge', 'WORKBAR_BAR_RIGHT_FRIDGE', 'fridge', true, true, 3, '30000000-0000-4000-8000-000000000001', '30000000-0000-4000-8000-000000000001'),
+  ('c2000000-0000-4000-8000-000000000004', 'cccccccc-cccc-4ccc-8ccc-ccccccccccc1', 'Organization C Inactive Default Fridge', 'WORKBAR_NON_ALCO_FRIDGE', 'fridge', true, true, 4, '30000000-0000-4000-8000-000000000001', '30000000-0000-4000-8000-000000000001'),
+  ('c2000000-0000-4000-8000-000000000005', 'cccccccc-cccc-4ccc-8ccc-ccccccccccc1', 'Organization C Inactive Product Fridge', 'CORNERBAR_RIGHT_FRIDGE', 'fridge', true, true, 5, '30000000-0000-4000-8000-000000000001', '30000000-0000-4000-8000-000000000001');
 
 insert into public.inventory_location_products (
   id, organization_id, location_id, product_id, par_quantity, count_order,
@@ -147,32 +147,32 @@ select public.cancel_inventory_count_session(
 
 select phase9h_test.assert_session_rejected(
   $sql$select public.create_inventory_count_session('Rejected parent', 'daily', '98000000-0000-4000-8000-000000000002', current_date, array['c2000000-0000-4000-8000-000000000002']::uuid[], null)$sql$,
-  '%eligible refrigerator with active defaults%', 'Rejected parent',
+  '%active, countable, and have active product standards%', 'Rejected parent',
   'DB-9H-3: a parent area is rejected at the server boundary'
 );
 select phase9h_test.assert_session_rejected(
   $sql$select public.create_inventory_count_session('Rejected empty fridge', 'daily', '98000000-0000-4000-8000-000000000003', current_date, array['c2000000-0000-4000-8000-000000000003']::uuid[], null)$sql$,
-  '%eligible refrigerator with active defaults%', 'Rejected empty fridge',
+  '%active, countable, and have active product standards%', 'Rejected empty fridge',
   'DB-9H-4: an operational refrigerator without an active persisted default is rejected'
 );
 select phase9h_test.assert_session_rejected(
   $sql$select public.create_inventory_count_session('Rejected inactive default', 'daily', '98000000-0000-4000-8000-000000000004', current_date, array['c2000000-0000-4000-8000-000000000004']::uuid[], null)$sql$,
-  '%eligible refrigerator with active defaults%', 'Rejected inactive default',
+  '%active, countable, and have active product standards%', 'Rejected inactive default',
   'DB-9H-5: an inactive persisted default does not make a refrigerator eligible'
 );
 select phase9h_test.assert_session_rejected(
   $sql$select public.create_inventory_count_session('Rejected inactive product', 'daily', '98000000-0000-4000-8000-000000000005', current_date, array['c2000000-0000-4000-8000-000000000005']::uuid[], null)$sql$,
-  '%eligible refrigerator with active defaults%', 'Rejected inactive product',
+  '%active, countable, and have active product standards%', 'Rejected inactive product',
   'DB-9H-6: a default for an inactive product does not make a refrigerator eligible'
 );
 select phase9h_test.assert_session_rejected(
   $sql$select public.create_inventory_count_session('Rejected foreign fridge', 'daily', '98000000-0000-4000-8000-000000000006', current_date, array['b2000000-0000-4000-8000-000000000001']::uuid[], null)$sql$,
-  '%eligible refrigerator with active defaults%', 'Rejected foreign fridge',
+  '%active, countable, and have active product standards%', 'Rejected foreign fridge',
   'DB-9H-7: a foreign operational refrigerator is rejected at the server boundary'
 );
 select phase9h_test.assert_session_rejected(
   $sql$select public.create_inventory_count_session('Rejected mixed scope', 'daily', '98000000-0000-4000-8000-000000000007', current_date, array['c2000000-0000-4000-8000-000000000001','c2000000-0000-4000-8000-000000000003']::uuid[], null)$sql$,
-  '%eligible refrigerator with active defaults%', 'Rejected mixed scope',
+  '%active, countable, and have active product standards%', 'Rejected mixed scope',
   'DB-9H-8: a mixed valid and invalid selection is rejected atomically instead of silently narrowed'
 );
 
@@ -198,7 +198,7 @@ select phase9h_test.assert_assignment_rejected(
     (select id from public.inventory_counter_memberships where counter_auth_user_id = '30000000-0000-4000-8000-000000000002'),
     (select updated_at from public.inventory_count_sessions where title = 'Phase 9H derived eligible scope')
   )$sql$,
-  '%Assigned refrigerator is not part of this Stock Count%',
+  '%active countable location in this Stock Count%',
   (select id from public.inventory_count_sessions where title = 'Phase 9H derived eligible scope'),
   'c2000000-0000-4000-8000-000000000003',
   'DB-9H-10: a refrigerator with no session lines cannot create an empty assignment'

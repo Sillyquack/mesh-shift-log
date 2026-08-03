@@ -22,13 +22,15 @@ export const EXPECTED_PHASE9_MIGRATION_ORDER = [
   'supabase/phase9gd_inventory_product_mappings.sql',
   'supabase/phase9h_inventory_session_location_scope.sql',
   'supabase/phase9i_millum_stock_count_exports.sql',
+  'supabase/phase9j_inventory_shelf_storage_guidance.sql',
 ];
 
 export const PHASE9_TERMINAL_MIGRATION =
-  'supabase/phase9i_millum_stock_count_exports.sql';
+  'supabase/phase9j_inventory_shelf_storage_guidance.sql';
 
 export const PHASE9_REPEATABLE_MIGRATIONS = new Set([
   'supabase/phase9h_inventory_session_location_scope.sql',
+  'supabase/phase9i_millum_stock_count_exports.sql',
   PHASE9_TERMINAL_MIGRATION,
 ]);
 
@@ -53,7 +55,7 @@ export function validatePhase9MigrationOrder(paths) {
     }
   }
   if (paths.at(-1) !== PHASE9_TERMINAL_MIGRATION) {
-    throw new Error('Phase 9I Millum exports must be the terminal migration.');
+    throw new Error('Phase 9J shelf, storage, and reference guidance must be the terminal migration.');
   }
   return paths;
 }

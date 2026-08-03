@@ -18,6 +18,7 @@ const phase9dSql = readFileSync(new URL('../supabase/phase9d_inventory_session_i
 const phase9eSql = readFileSync(new URL('../supabase/phase9e_inventory_product_identity_csv.sql', import.meta.url), 'utf8');
 const phase9fSql = readFileSync(new URL('../supabase/phase9f_inventory_structured_quantities.sql', import.meta.url), 'utf8');
 const phase9gSql = readFileSync(new URL('../supabase/phase9g_inventory_operational_scope.sql', import.meta.url), 'utf8');
+const phase9jSql = readFileSync(new URL('../supabase/phase9j_inventory_shelf_storage_guidance.sql', import.meta.url), 'utf8');
 const client = readFileSync(new URL('../src/lib/inventoryClient.js', import.meta.url), 'utf8');
 const realtime = readFileSync(new URL('../src/lib/inventoryRealtime.js', import.meta.url), 'utf8');
 const calculations = readFileSync(new URL('../src/data/inventoryCalculations.js', import.meta.url), 'utf8');
@@ -96,6 +97,13 @@ function phase9fFunctionBody(name) {
   return end < 0 ? '' : phase9fSql.slice(start, end + 4);
 }
 
+function phase9jFunctionBody(name) {
+  const start = phase9jSql.indexOf(`create or replace function public.${name}(`);
+  if (start < 0) return '';
+  const end = phase9jSql.indexOf('\n$$;', start);
+  return end < 0 ? '' : phase9jSql.slice(start, end + 4);
+}
+
 function check(name, condition) {
   return { name, passed: Boolean(condition) };
 }
@@ -169,6 +177,7 @@ const templateCodes = [
 const templateReturn = locationTemplate.slice(locationTemplate.lastIndexOf('return jsonb_build_object('));
 const bulkStandardsReturn = bulkStandards.slice(bulkStandards.lastIndexOf('return jsonb_build_object('));
 const phase9bTarget = phase9bFunctionBody('inventory_stock_policy_target');
+const phase9jTargetDetails = phase9jFunctionBody('inventory_stock_policy_target_details');
 const phase9bCreateSession = phase9bFunctionBody('create_inventory_count_session');
 const phase9bCaseCount = phase9bFunctionBody('set_inventory_count_line_case_quantity');
 const phase9bConfirmUnchanged = phase9bFunctionBody('confirm_inventory_count_line_unchanged');
@@ -295,8 +304,8 @@ const checks = [
   check('19b: configuration response shapes omit organization, auth, metadata and timestamps', [productResponseKeys, locationResponseKeys, standardResponseKeys].every((keys) => forbiddenConfigurationFields.every((field) => !keys.includes(field)))),
   check('19c: configuration normalizers consume every response field', productClientFields.every((field) => productNormalizer.includes(`row.${field}`)) && locationClientFields.every((field) => locationNormalizer.includes(`row.${field}`)) && standardClientFields.every((field) => standardNormalizer.includes(`row.${field}`))),
   check('19d: configuration function grants retain their argument signatures', /grant execute on function public\.upsert_inventory_product\(uuid, text, text, text, text, text, text, numeric, text, text, boolean, integer, jsonb, text\[\]\) to authenticated/i.test(sql) && /grant execute on function public\.upsert_inventory_location\(uuid, text, text, text, uuid, text, text, boolean, integer, jsonb, text\[\]\) to authenticated/i.test(sql) && /grant execute on function public\.upsert_inventory_location_product\(uuid, uuid, uuid, numeric, numeric, numeric, integer, boolean, text, jsonb, text\[\]\) to authenticated/i.test(sql)),
-  check('20: session preview uses only eligible refrigerator locations and submits the sanitized selection', /eligibleInventorySessionLocations/i.test(workspace) && /inventorySessionSelection/i.test(workspace) && /onCreate\(\{ \.\.\.draft, locationIds: selection\.locationIds \}\)/i.test(workspace)),
-  check('20a: session selector no longer expands parent areas into the count scope', !/effectiveInventoryLocationIds/i.test(workspace) && /Refrigerators with active defaults/i.test(workspace)),
+  check('20: session preview uses only eligible countable locations and submits the sanitized selection', /eligibleInventorySessionLocations/i.test(workspace) && /inventorySessionSelection/i.test(workspace) && /onCreate\(\{ \.\.\.draft, locationIds: selection\.locationIds \}\)/i.test(workspace)),
+  check('20a: session selector no longer expands parent areas into the count scope', !/effectiveInventoryLocationIds/i.test(workspace) && /Countable locations with active standards/i.test(workspace)),
   check('21: replace-all review warns that existing exact-par count methods may be replaced', /bulkReview\.replace \? <>[\s\S]*?Manual, imported and adjusted exact-par counts may be replaced\.[\s\S]*?Protected event reserve, operating reserve, dormant stock and skipped lines remain unchanged\.[\s\S]*?manager-only action/i.test(workspace)),
   check('21a: default review describes the exact-par stocking attestation and preserves other work', /: <><p>\{exactUncounted\}[\s\S]*?explicit stocking attestation, not a physical count\.[\s\S]*?Other policies and existing counts remain unchanged\./i.test(workspace)),
   check('21b: destructive confirmation uses a distinct action label', /bulkReview\.replace \? 'Replace with fully stocked' : 'Mark fully stocked'/i.test(workspace)),
@@ -320,11 +329,11 @@ const checks = [
   check('9B-2: migration preserves existing par quantities', !/alter table public\.inventory_location_products[\s\S]*?drop column[\s\S]*?par_quantity/i.test(phase9bSql) && !/update public\.inventory_location_products\s+set par_quantity\s*=/i.test(phase9bSql)),
   check('9B-3: existing minimum values remain stored', !/drop column(?: if exists)? minimum_quantity/i.test(phase9bSql) && !/update public\.inventory_location_products\s+set minimum_quantity\s*=/i.test(phase9bSql)),
   check('9B-4: exact-par effective target equals configured par', /if v_standard\.stock_policy = 'exact_par'[\s\S]*?v_standard\.par_quantity/i.test(phase9bTarget) && purePassed('9B-4:')),
-  check('9B-5: derived reserve sums eligible active Workbar and Cornerbar exact-par descendants', /upper\(trim\(root\.code\)\) in \('WORKBAR', 'CORNERBAR'\)/i.test(phase9bTarget) && /service_standard\.stock_policy = 'exact_par'/i.test(phase9bTarget) && purePassed('9B-5:')),
+  check('9B-5: derived reserve sums only active opted-in countable refrigerator exact-par targets', /location\.countable/i.test(phase9jTargetDetails) && /location\.location_type = 'fridge'/i.test(phase9jTargetDetails) && /source\.stock_policy = 'exact_par'/i.test(phase9jTargetDetails) && /source\.contributes_to_storage_target/i.test(phase9jTargetDetails) && purePassed('9B-5:')),
   check('9B-6: archived standards are excluded from reserve target', /service_standard\.active = true/i.test(phase9bTarget) && purePassed('9B-6:')),
   check('9B-7: archived locations are excluded from reserve target', /root\.active = true[\s\S]*?child\.active = true/i.test(phase9bTarget) && purePassed('9B-7:')),
   check('9B-8: parent locations are not double counted', /select child\.id[\s\S]*?child\.parent_location_id = root\.id/i.test(phase9bTarget) && !/select root\.id/i.test(phase9bTarget) && purePassed('9B-8:')),
-  check('9B-9: operating reserve multiplier is applied', /v_service_target \* v_standard\.reserve_multiplier/i.test(phase9bTarget) && purePassed('9B-9:')),
+  check('9B-9: organization Main Storage multiplier is applied', /settings\.target_multiplier/i.test(phase9jTargetDetails) && /v_basis \* v_multiplier/i.test(phase9jTargetDetails) && purePassed('9B-9:')),
   check('9B-10: fixed operating reserve uses configured par', /target_mode = 'fixed_quantity'[\s\S]*?v_standard\.par_quantity/i.test(phase9bTarget) && purePassed('9B-10:')),
   check('9B-11: event target is case size times cases plus loose', /v_standard\.case_size \* v_standard\.target_cases \+ coalesce\(v_standard\.target_loose_quantity, 0\)/i.test(phase9bTarget) && purePassed('9B-11:')),
   check('9B-12: zero event loose target is valid', /target_loose_quantity >= 0/i.test(phase9bSql) && purePassed('9B-12:')),
@@ -345,7 +354,7 @@ const checks = [
   check('9B-27: Phase 9B template remains serialized, code-idempotent and exactly 19 locations', /pg_advisory_xact_lock/i.test(phase9bTemplate) && /lower\(trim\(location\.code\)\) = lower\(v_template\.code\)/i.test(phase9bTemplate) && (phase9bTemplate.match(/\{"code":/g) || []).length === 19 && purePassed('9B-27:')),
   check('9B-28: installed setup cannot rename Main beverage stock back', phase9bTemplate.includes('"name":"Main beverage stock"') && !phase9bTemplate.includes('Wine & bottle storage')),
   check('9B-29: exact-par standards UI no longer requires Minimum', /stockPolicy === 'exact_par'[\s\S]*?Target quantity/i.test(standardsWorkspace) && !/>Minimum</i.test(standardsWorkspace)),
-  check('9B-30: operating reserve UI shows service basis, multiplier and derived target', /Service stock:/i.test(standardsWorkspace) && /Reserve multiplier/i.test(standardsWorkspace) && /Derived from service stock/i.test(standardsWorkspace)),
+  check('9B-30: operating reserve UI shows qualifying basis, organization multiplier and derived target', /Qualifying refrigerator targets:/i.test(standardsWorkspace) && /Organization Main Storage multiplier/i.test(standardsWorkspace) && /Derived from qualifying refrigerator targets/i.test(standardsWorkspace)),
   check('9B-31: event reserve UI supports full cases and loose units', /Full cases/i.test(workspace) && /Loose units/i.test(workspace) && /Calculated total/i.test(workspace)),
   check('9B-32: dormant UI states Shopbox is not integrated and confirmation is attestation', /Shopbox movement validation is not connected/i.test(workspace) && /manager attestation/i.test(workspace)),
   check('9B-33: protected event reserve is separate from daily restocking', /\['exact_par', 'operating_reserve'\]\.includes/i.test(calculations) && /Not for daily restocking/i.test(workspace) && purePassed('9B-33:')),
@@ -420,7 +429,7 @@ const checks = [
   check('MIG-7: executable assertions cover RLS, profile authority, mutation RPCs, tenant IDs and effective EXECUTE grants', /DB-RLS-1/i.test(databaseAssertions) && /DB-PROFILE-6/i.test(databaseAssertions) && (databaseAssertions.match(/\('(?:upsert product|upsert location|upsert standard|copy standards|setup template|bulk standards|create session|set line quantity|set line cases|mark line use par|clear line|skip line|mark location use par|confirm unchanged|complete location|complete session|approve session|create correction|cancel session|import catalog)'/g) || []).length === 20 && /DB-9F-17/i.test(readFileSync(new URL('../supabase/tests/phase9/structured-quantity-assertions.sql', import.meta.url), 'utf8')) && /DB-TENANT-6/i.test(databaseAssertions) && /DB-EXEC-9/i.test(databaseAssertions)),
   check('MIG-9: executable Phase 9D assertions cover stale writes, immutable approval, corrections and structured exceptions', /DB-INTEGRITY-2/i.test(integrityAssertions) && /DB-INTEGRITY-15/i.test(integrityAssertions) && /DB-INTEGRITY-18/i.test(integrityAssertions) && /DB-INTEGRITY-32/i.test(integrityAssertions)),
   check('MIG-10: pure lifecycle assertions cover active slots, lock labels, explicit exceptions and retry key retention', /isInventorySessionActive/i.test(lifecycleVerification) && /inventorySessionLockLabel/i.test(lifecycleVerification) && /do not infer exceptions/i.test(lifecycleVerification) && /retries retain one idempotency key/i.test(lifecycleVerification)),
-  check('MIG-11: Phase 9H and terminal Phase 9I are repeatable after retained Phase 9F through 9G-D coverage', JSON.stringify(migrationEntries.filter((entry) => entry.repeatable).map((entry) => entry.path)) === JSON.stringify(['supabase/phase9h_inventory_session_location_scope.sql', 'supabase/phase9i_millum_stock_count_exports.sql']) && migrationEntries.at(-1).path === 'supabase/phase9i_millum_stock_count_exports.sql' && migrationEntries.at(-2).path === 'supabase/phase9h_inventory_session_location_scope.sql' && migrationEntries.at(-3).path === 'supabase/phase9gd_inventory_product_mappings.sql' && migrationEntries.at(-4).path === 'supabase/phase9gc_inventory_counter_mobile.sql' && migrationEntries.at(-5).path === 'supabase/phase9gb2_inventory_counter_replacement.sql' && migrationEntries.at(-6).path === 'supabase/phase9gb_inventory_counter_assignments.sql' && /inventory_count_line_structured_quantity/i.test(phase9fSql) && /inventory_refrigerator_reserve_targets/i.test(phase9gSql) && /three 0\.7 L sealed bottles/i.test(structuredQuantityVerification)),
+  check('MIG-11: Phase 9H, 9I and terminal Phase 9J are repeatable after retained Phase 9F through 9G-D coverage', JSON.stringify(migrationEntries.filter((entry) => entry.repeatable).map((entry) => entry.path)) === JSON.stringify(['supabase/phase9h_inventory_session_location_scope.sql', 'supabase/phase9i_millum_stock_count_exports.sql', 'supabase/phase9j_inventory_shelf_storage_guidance.sql']) && migrationEntries.at(-1).path === 'supabase/phase9j_inventory_shelf_storage_guidance.sql' && migrationEntries.at(-2).path === 'supabase/phase9i_millum_stock_count_exports.sql' && migrationEntries.at(-3).path === 'supabase/phase9h_inventory_session_location_scope.sql' && migrationEntries.at(-4).path === 'supabase/phase9gd_inventory_product_mappings.sql' && migrationEntries.at(-5).path === 'supabase/phase9gc_inventory_counter_mobile.sql' && migrationEntries.at(-6).path === 'supabase/phase9gb2_inventory_counter_replacement.sql' && migrationEntries.at(-7).path === 'supabase/phase9gb_inventory_counter_assignments.sql' && /inventory_count_line_structured_quantity/i.test(phase9fSql) && /inventory_refrigerator_reserve_targets/i.test(phase9gSql) && /physical_count_only/i.test(phase9jSql) && /three 0\.7 L sealed bottles/i.test(structuredQuantityVerification)),
   check('MIG-8: documentation distinguishes static, in-memory, executable database and outstanding browser coverage', /static source checks/i.test(securityDocumentation) && /in-memory JavaScript/i.test(securityDocumentation) && /executable PostgreSQL/i.test(securityDocumentation) && /browser/i.test(securityDocumentation)),
 ];
 

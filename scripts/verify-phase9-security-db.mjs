@@ -31,6 +31,7 @@ const REPLACEMENT_FIXTURE_PATH = resolve(ROOT, 'supabase/tests/phase9/counter-re
 const REPLACEMENT_ASSERTION_PATH = resolve(ROOT, 'supabase/tests/phase9/counter-replacement-assertions.sql');
 const MOBILE_ASSERTION_PATH = resolve(ROOT, 'supabase/tests/phase9/counter-mobile-assertions.sql');
 const SESSION_LOCATION_SCOPE_ASSERTION_PATH = resolve(ROOT, 'supabase/tests/phase9/session-location-scope-assertions.sql');
+const SHELF_STORAGE_GUIDANCE_ASSERTION_PATH = resolve(ROOT, 'supabase/tests/phase9/shelf-storage-guidance-assertions.sql');
 const MILLUM_EXPORT_FIXTURE_PATH = resolve(ROOT, 'supabase/tests/phase9/millum-export-fixtures.sql');
 const MILLUM_EXPORT_ASSERTION_PATH = resolve(ROOT, 'supabase/tests/phase9/millum-export-assertions.sql');
 const EXPECTED_ASSERTION_PASSES = 70;
@@ -39,6 +40,7 @@ const EXPECTED_REPLACEMENT_ASSERTION_PASSES = 28;
 const EXPECTED_MOBILE_ASSERTION_PASSES = 8;
 const EXPECTED_MAPPING_ASSERTION_PASSES = 23;
 const EXPECTED_SESSION_LOCATION_SCOPE_ASSERTION_PASSES = 10;
+const EXPECTED_SHELF_STORAGE_GUIDANCE_ASSERTION_PASSES = 31;
 const EXPECTED_MILLUM_EXPORT_ASSERTION_PASSES = 48;
 let containerStarted = false;
 
@@ -282,7 +284,7 @@ function verifyUnsafeOrderIsRejected(canonicalPaths) {
       'supabase/phase9a_inventory_stocktaking.sql',
     ]);
   } catch {
-    console.log('PASS migration runner rejects reapplying an older Phase 9 file after terminal Phase 9I');
+    console.log('PASS migration runner rejects reapplying an older Phase 9 file after terminal Phase 9J');
     return;
   }
   throw new Error('Unsafe post-Phase 9G migration reapplication was not rejected.');
@@ -301,7 +303,7 @@ function reportDatabaseState() {
     from pg_catalog.pg_class relation
     join pg_catalog.pg_namespace namespace on namespace.oid = relation.relnamespace
     where namespace.nspname = 'public'
-      and relation.relname in ('inventory_products','inventory_locations','inventory_location_products','inventory_count_sessions','inventory_count_lines','inventory_counter_memberships','inventory_count_assignments')
+      and relation.relname in ('inventory_products','inventory_locations','inventory_location_products','inventory_count_sessions','inventory_count_lines','inventory_counter_memberships','inventory_count_assignments','inventory_storage_settings','inventory_location_reference_guidance','inventory_reference_image_cleanup_queue')
     order by relation.relname;
 
     select 'FUNCTION|' || function.oid::regprocedure::text || '|owner=' || pg_catalog.pg_get_userbyid(function.proowner) || '|security_definer=' || function.prosecdef
@@ -352,10 +354,10 @@ async function main() {
   const paths = entries.map((entry) => entry.path);
   verifyUnsafeOrderIsRejected(paths);
   if (paths.at(-1) !== PHASE9_TERMINAL_MIGRATION) {
-    throw new Error('Phase 9I is not terminal.');
+    throw new Error('Phase 9J is not terminal.');
   }
   entries.forEach((entry) => resolveMigrationPath(entry.path));
-  if (![FIXTURE_PATH, ASSERTION_PATH, PRE_PHASE9D_FIXTURE_PATH, INTEGRITY_ASSERTION_PATH, IDENTITY_ASSERTION_PATH, STRUCTURED_ASSERTION_PATH, OPERATIONAL_ASSERTION_PATH, MAPPING_ASSERTION_PATH, COUNTER_FIXTURE_PATH, COUNTER_ASSERTION_PATH, REPLACEMENT_FIXTURE_PATH, REPLACEMENT_ASSERTION_PATH, MOBILE_ASSERTION_PATH, SESSION_LOCATION_SCOPE_ASSERTION_PATH, MILLUM_EXPORT_FIXTURE_PATH, MILLUM_EXPORT_ASSERTION_PATH].every(existsSync)) {
+  if (![FIXTURE_PATH, ASSERTION_PATH, PRE_PHASE9D_FIXTURE_PATH, INTEGRITY_ASSERTION_PATH, IDENTITY_ASSERTION_PATH, STRUCTURED_ASSERTION_PATH, OPERATIONAL_ASSERTION_PATH, MAPPING_ASSERTION_PATH, COUNTER_FIXTURE_PATH, COUNTER_ASSERTION_PATH, REPLACEMENT_FIXTURE_PATH, REPLACEMENT_ASSERTION_PATH, MOBILE_ASSERTION_PATH, SESSION_LOCATION_SCOPE_ASSERTION_PATH, SHELF_STORAGE_GUIDANCE_ASSERTION_PATH, MILLUM_EXPORT_FIXTURE_PATH, MILLUM_EXPORT_ASSERTION_PATH].every(existsSync)) {
     throw new Error('Phase 9 executable security SQL is missing.');
   }
 
@@ -391,6 +393,23 @@ async function main() {
   const version = psql('show server_version;', { tuplesOnly: true }).stdout.trim();
   console.log(`PostgreSQL ${version} in network-isolated disposable container ${CONTAINER}`);
   console.log(`Migration role: ${MIGRATION_ROLE} (disposable database owner)`);
+  psql(String.raw`
+    create schema if not exists storage;
+    create table if not exists storage.buckets (
+      id text primary key,
+      name text not null,
+      public boolean not null default false,
+      file_size_limit bigint,
+      allowed_mime_types text[]
+    );
+    create table if not exists storage.objects (
+      id uuid primary key,
+      bucket_id text not null,
+      name text not null
+    );
+    alter table storage.objects enable row level security;
+  `);
+  console.log('PASS disposable Supabase Storage policy surface bootstrapped');
   console.log('Canonical migration order:');
   for (const [index, entry] of entries.entries()) {
     const sql = readFileSync(resolveMigrationPath(entry.path), 'utf8');
@@ -463,6 +482,23 @@ async function main() {
   }
   passLines.forEach((line) => console.log(line));
   console.log(`Executable PostgreSQL security assertions: ${passLines.length}/${passLines.length} passed.`);
+
+  const terminalHistorySnapshotSql = String.raw`
+    select md5(
+      coalesce((select jsonb_agg(to_jsonb(session) order by session.id)::text
+                from public.inventory_count_sessions session), '[]')
+      || coalesce((select jsonb_agg(to_jsonb(line) order by line.id)::text
+                   from public.inventory_count_lines line), '[]')
+    );
+  `;
+  const historyBeforeTerminalReplay = psql(terminalHistorySnapshotSql, { tuplesOnly: true }).stdout.trim();
+  psql(readFileSync(resolveMigrationPath(PHASE9_TERMINAL_MIGRATION), 'utf8'), { singleTransaction: true });
+  const historyAfterTerminalReplay = psql(terminalHistorySnapshotSql, { tuplesOnly: true }).stdout.trim();
+  if (!historyBeforeTerminalReplay || historyBeforeTerminalReplay !== historyAfterTerminalReplay) {
+    throw new Error('Terminal Phase 9J replay modified Stock Count session or line history.');
+  }
+  console.log('PASS terminal Phase 9J replay bootstraps existing operational configuration');
+  console.log('PASS terminal Phase 9J replay preserves all Stock Count session and line rows byte-for-byte');
 
   psql(readFileSync(MILLUM_EXPORT_FIXTURE_PATH, 'utf8'), { singleTransaction: true });
   console.log('PASS disposable approved Millum export profile and session fixtures');
@@ -600,6 +636,16 @@ async function main() {
   }
   replacementPassLines.forEach((line) => console.log(line));
   console.log(`Executable PostgreSQL counter-replacement assertions: ${replacementPassLines.length}/${replacementPassLines.length} passed.`);
+  const shelfStorageGuidanceAssertions = psql(readFileSync(SHELF_STORAGE_GUIDANCE_ASSERTION_PATH, 'utf8'));
+  const shelfStorageGuidancePassLines = `${shelfStorageGuidanceAssertions.stdout}\n${shelfStorageGuidanceAssertions.stderr}`
+    .split('\n')
+    .filter((line) => line.includes('PASS '))
+    .map((line) => line.replace(/^.*PASS /, 'PASS '));
+  if (shelfStorageGuidancePassLines.length !== EXPECTED_SHELF_STORAGE_GUIDANCE_ASSERTION_PASSES) {
+    throw new Error(`Expected ${EXPECTED_SHELF_STORAGE_GUIDANCE_ASSERTION_PASSES} executable shelf/storage/guidance assertion passes, received ${shelfStorageGuidancePassLines.length}.`);
+  }
+  shelfStorageGuidancePassLines.forEach((line) => console.log(line));
+  console.log(`Executable PostgreSQL shelf/storage/guidance assertions: ${shelfStorageGuidancePassLines.length}/${shelfStorageGuidancePassLines.length} passed.`);
   reportDatabaseState();
 }
 
