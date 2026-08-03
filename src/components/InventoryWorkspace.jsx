@@ -58,6 +58,13 @@ import {
   inventorySessionSelection,
 } from '../data/inventorySessionLocations.js';
 import {
+  beginInventoryHistoryDetailRequest,
+  createInventoryHistoryDetailState,
+  inventoryHistoryDetailView,
+  selectInventoryHistoryDetail,
+  settleInventoryHistoryDetailRequest,
+} from '../data/inventoryHistoryDetail.js';
+import {
   createMillumExportActionGuard,
   createMillumExportFile,
   downloadMillumExportFile,
@@ -981,7 +988,7 @@ function AuthorizedInventoryWorkspace({ user, requestWriteAccess, onClose }) {
   const [tab, setTab] = useState('overview');
   const [data, setData] = useState({ products: [], locations: [], standards: [], sessions: [], refrigeratorTemplates: [], unresolvedMappings: [], reserves: [], storageSettings: null, referenceGuidance: [], counterProfiles: [], counterMemberships: [], assignments: [] });
   const [selectedSessionId, setSelectedSessionId] = useState('');
-  const [sessionDetail, setSessionDetail] = useState({ record: null, lines: [] });
+  const [sessionDetail, setSessionDetail] = useState(createInventoryHistoryDetailState);
   const [loading, setLoading] = useState(true);
   const [creating, setCreating] = useState(false);
   const [showCreator, setShowCreator] = useState(false);
@@ -990,6 +997,7 @@ function AuthorizedInventoryWorkspace({ user, requestWriteAccess, onClose }) {
   const [remoteNotice, setRemoteNotice] = useState(false);
   const mounted = useRef(true);
   const selectedSessionIdRef = useRef('');
+  const sessionDetailRequestRef = useRef(0);
 
   const refresh = useCallback(async (includeArchived = manager) => {
     const result = await loadInventoryWorkspace({ includeArchived });
@@ -997,25 +1005,39 @@ function AuthorizedInventoryWorkspace({ user, requestWriteAccess, onClose }) {
     if (result.ok) {
       setData(result);
       const open = result.sessions.find((session) => isInventorySessionActive(session.status));
-      if (!selectedSessionIdRef.current && open) setSelectedSessionId(open.id);
+      if (!selectedSessionIdRef.current && open) {
+        selectedSessionIdRef.current = open.id;
+        setSessionDetail((current) => selectInventoryHistoryDetail(current, open.id));
+        setSelectedSessionId(open.id);
+      }
       setStatus(null);
     } else setStatus(result);
     setLoading(false);
     return result;
   }, [manager]);
 
-  const refreshSession = useCallback(async () => {
-    const id = selectedSessionIdRef.current;
+  const refreshSession = useCallback(async (requestedSessionId = selectedSessionIdRef.current) => {
+    const id = requestedSessionId;
     if (!id) return null;
+    const requestId = ++sessionDetailRequestRef.current;
+    setSessionDetail((current) => beginInventoryHistoryDetailRequest(current, id, requestId));
     const result = await getInventoryCountSession(id);
     if (mounted.current) {
-      if (result.ok) setSessionDetail({ record: result.record, lines: result.lines });
-      else setStatus(result);
+      setSessionDetail((current) => settleInventoryHistoryDetailRequest(current, {
+        selectedSessionId: selectedSessionIdRef.current,
+        requestedSessionId: id,
+        requestId,
+        result,
+      }));
+      if (!result.ok && selectedSessionIdRef.current === id) setStatus(result);
     }
     return result;
   }, []);
 
-  useEffect(() => { selectedSessionIdRef.current = selectedSessionId; if (selectedSessionId) refreshSession(); }, [selectedSessionId, refreshSession]);
+  useEffect(() => {
+    selectedSessionIdRef.current = selectedSessionId;
+    if (selectedSessionId) refreshSession(selectedSessionId);
+  }, [selectedSessionId, refreshSession]);
   useEffect(() => { mounted.current = true; refresh(); return () => { mounted.current = false; }; }, [refresh]);
   useEffect(() => {
     const subscription = subscribeToInventoryRealtime({ organizationId, sessionId: selectedSessionId, enabled: Boolean(organizationId), onStatus: setRealtimeStatus, onRefresh: () => setRemoteNotice(true) });
@@ -1025,11 +1047,17 @@ function AuthorizedInventoryWorkspace({ user, requestWriteAccess, onClose }) {
 
   const listedActiveSession = data.sessions.find((session) => isInventorySessionActive(session.status)) || null;
   const activeSession = sessionDetail.record?.id === listedActiveSession?.id ? sessionDetail.record : listedActiveSession;
-  const selectedSession = sessionDetail.record?.id === selectedSessionId
-    ? sessionDetail.record
-    : data.sessions.find((session) => session.id === selectedSessionId) || activeSession;
-  const selectedLines = sessionDetail.record?.id === selectedSession?.id ? sessionDetail.lines : [];
-  const openSession = (id) => { setSelectedSessionId(id); setTab('count'); };
+  const selectedDetail = inventoryHistoryDetailView(sessionDetail, selectedSessionId);
+  const selectedSession = selectedDetail.record
+    || data.sessions.find((session) => session.id === selectedSessionId)
+    || activeSession;
+  const selectedLines = selectedDetail.state === 'ready' ? selectedDetail.lines : [];
+  const openSession = (id) => {
+    selectedSessionIdRef.current = id;
+    setSessionDetail((current) => selectInventoryHistoryDetail(current, id));
+    setSelectedSessionId(id);
+    setTab('count');
+  };
   const create = async (draft) => {
     if (!(await requestWriteAccess())) return;
     setCreating(true);
@@ -1049,7 +1077,7 @@ function AuthorizedInventoryWorkspace({ user, requestWriteAccess, onClose }) {
       <nav className="inventory-main-tabs" aria-label="Inventory views"><button type="button" className={tab === 'overview' ? 'active' : ''} onClick={() => setTab('overview')}>Overview</button><button type="button" className={tab === 'count' ? 'active' : ''} onClick={() => setTab('count')}>Count</button>{manager && <button type="button" className={tab === 'assignments' ? 'active' : ''} onClick={() => setTab('assignments')}>Assignments</button>}<button type="button" className={tab === 'restock' ? 'active' : ''} onClick={() => setTab('restock')}>Restock</button>{coordinator && <button type="button" className={tab === 'history' ? 'active' : ''} onClick={() => setTab('history')}>History</button>}{manager && <button type="button" className={tab === 'manage' ? 'active' : ''} onClick={() => setTab('manage')}>Manage</button>}</nav>
       <Message status={status} />
       {status?.ok === false && <button type="button" className="secondary-button inventory-retry-button" onClick={() => refresh()}>Retry inventory refresh</button>}
-      {showCreator ? <SessionCreator products={data.products} locations={data.locations} standards={data.standards} storageSettings={data.storageSettings} onCancel={() => setShowCreator(false)} onCreate={create} busy={creating} /> : tab === 'overview' ? <InventoryOverview sessions={data.sessions} activeSession={activeSession} lines={activeSession?.id === selectedSession?.id ? selectedLines : []} locations={data.locations} onOpenSession={openSession} onStart={() => setShowCreator(true)} canCoordinate={coordinator} /> : tab === 'count' ? selectedSession ? <CountSession session={selectedSession} sessions={data.sessions} lines={selectedLines} locations={data.locations} referenceGuidance={data.referenceGuidance || []} canManage={manager} canCoordinate={coordinator} requestWriteAccess={requestWriteAccess} onRefresh={async () => { const sessionResult = await refreshSession(); const workspaceResult = await refresh(); return sessionResult?.ok === false ? sessionResult : workspaceResult?.ok === false ? workspaceResult : { ok: true }; }} onOpenSession={openSession} onBack={() => setTab('overview')} setStatus={setStatus} remoteNotice={remoteNotice} clearRemoteNotice={() => setRemoteNotice(false)} /> : <section className="inventory-panel inventory-empty"><h2>No active stock count</h2>{coordinator && <button type="button" className="primary-button" onClick={() => setShowCreator(true)}>Start stock count</button>}</section> : tab === 'assignments' ? <CounterAssignmentManager data={data} activeSession={activeSession} lines={activeSession?.id === selectedSession?.id ? selectedLines : []} requestWriteAccess={requestWriteAccess} refresh={async () => { await refreshSession(); await refresh(); }} setStatus={setStatus} /> : tab === 'restock' ? <RestockView session={selectedSession} lines={selectedLines} /> : tab === 'history' ? <InventoryHistory sessions={data.sessions} locations={data.locations} onOpenSession={openSession} /> : <CatalogManager data={data} requestWriteAccess={requestWriteAccess} refresh={refresh} setStatus={setStatus} />}
+      {showCreator ? <SessionCreator products={data.products} locations={data.locations} standards={data.standards} storageSettings={data.storageSettings} onCancel={() => setShowCreator(false)} onCreate={create} busy={creating} /> : tab === 'overview' ? <InventoryOverview sessions={data.sessions} activeSession={activeSession} lines={activeSession?.id === selectedSession?.id ? selectedLines : []} locations={data.locations} onOpenSession={openSession} onStart={() => setShowCreator(true)} canCoordinate={coordinator} /> : tab === 'count' ? selectedDetail.state === 'loading' ? <section className="inventory-panel inventory-empty" role="status" aria-live="polite" aria-busy="true"><h2>Loading Stock Count detail...</h2><p className="muted">Loading the session and its snapshotted product lines together.</p></section> : selectedDetail.state === 'error' ? <section className="inventory-panel inventory-empty" role="alert"><h2>Stock Count detail unavailable</h2><p className="muted">{selectedDetail.error}</p><button type="button" className="secondary-button" onClick={() => refreshSession(selectedSessionId)}>Retry session detail</button></section> : selectedDetail.record ? <CountSession session={selectedDetail.record} sessions={data.sessions} lines={selectedDetail.lines} locations={data.locations} referenceGuidance={data.referenceGuidance || []} canManage={manager} canCoordinate={coordinator} requestWriteAccess={requestWriteAccess} onRefresh={async () => { const sessionResult = await refreshSession(); const workspaceResult = await refresh(); return sessionResult?.ok === false ? sessionResult : workspaceResult?.ok === false ? workspaceResult : { ok: true }; }} onOpenSession={openSession} onBack={() => setTab('overview')} setStatus={setStatus} remoteNotice={remoteNotice} clearRemoteNotice={() => setRemoteNotice(false)} /> : <section className="inventory-panel inventory-empty"><h2>No active stock count</h2>{coordinator && <button type="button" className="primary-button" onClick={() => setShowCreator(true)}>Start stock count</button>}</section> : tab === 'assignments' ? <CounterAssignmentManager data={data} activeSession={activeSession} lines={activeSession?.id === selectedSession?.id ? selectedLines : []} requestWriteAccess={requestWriteAccess} refresh={async () => { await refreshSession(); await refresh(); }} setStatus={setStatus} /> : tab === 'restock' ? <RestockView session={selectedSession} lines={selectedLines} /> : tab === 'history' ? <InventoryHistory sessions={data.sessions} locations={data.locations} onOpenSession={openSession} /> : <CatalogManager data={data} requestWriteAccess={requestWriteAccess} refresh={refresh} setStatus={setStatus} />}
       {data.refreshedAt && <p className="inventory-last-refresh">Last successful refresh: {formatDateTime(data.refreshedAt)}</p>}
     </main>
   );

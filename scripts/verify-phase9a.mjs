@@ -178,6 +178,7 @@ const templateReturn = locationTemplate.slice(locationTemplate.lastIndexOf('retu
 const bulkStandardsReturn = bulkStandards.slice(bulkStandards.lastIndexOf('return jsonb_build_object('));
 const phase9bTarget = phase9bFunctionBody('inventory_stock_policy_target');
 const phase9jTargetDetails = phase9jFunctionBody('inventory_stock_policy_target_details');
+const phase9jHistoryDetail = phase9jFunctionBody('get_inventory_manager_count_session_detail');
 const phase9bCreateSession = phase9bFunctionBody('create_inventory_count_session');
 const phase9bCaseCount = phase9bFunctionBody('set_inventory_count_line_case_quantity');
 const phase9bConfirmUnchanged = phase9bFunctionBody('confirm_inventory_count_line_unchanged');
@@ -290,7 +291,7 @@ const checks = [
   check('14: inventory CSV exports omit internal identifier headers', !/makeCsv\(\[[^\]]*(organization|uuid|auth user|email|metadata)/i.test(workspace)),
   check('15: count lines snapshot all three configured sort orders', /location_sort_order_snapshot integer not null default 0/i.test(sql) && /count_order_snapshot integer not null default 0/i.test(sql) && /product_sort_order_snapshot integer not null default 0/i.test(sql)),
   check('15a: session creation populates immutable sort snapshots', /category_snapshot, location_sort_order_snapshot, count_order_snapshot,[\s\S]*?product_sort_order_snapshot[\s\S]*?location\.sort_order, standard\.count_order, product\.sort_order/i.test(createSession)),
-  check('15b: client and UI use stable snapshot ordering', /order\('location_sort_order_snapshot'\)\.order\('location_name_snapshot'\)[\s\S]*?order\('count_order_snapshot'\)\.order\('product_sort_order_snapshot'\)\.order\('product_name_snapshot'\)/i.test(client) && workspace.includes('sortInventorySessionLines(lines)')),
+  check('15b: client and UI use stable snapshot ordering', /order by[\s\S]*?line\.location_sort_order_snapshot,[\s\S]*?line\.location_name_snapshot,[\s\S]*?line\.count_order_snapshot,[\s\S]*?line\.product_sort_order_snapshot,[\s\S]*?line\.product_name_snapshot/i.test(phase9jHistoryDetail) && workspace.includes('sortInventorySessionLines(lines)')),
   check('16: CSV SQL requires par only when a location is present', /if v_par is null then raise exception 'Row % requires a par quantity when a location is provided\.'/i.test(importCatalog)),
   check('17: default bulk use-par remains limited to not-counted lines', /not coalesce\(input_replace_existing, false\) and line\.count_status = 'not_counted'/i.test(bulkUsePar)),
   check('17a: replace-all skips exact target rows and preserves skipped lines', /line\.count_status <> 'skipped'[\s\S]*?line\.counted_quantity is distinct from line\.par_quantity_snapshot[\s\S]*?line\.count_method <> 'use_par'[\s\S]*?line\.count_status <> 'counted'[\s\S]*?line\.note is distinct from 'Replaced with stocking standard by manager\.'/i.test(bulkUsePar)),

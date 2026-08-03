@@ -32,6 +32,7 @@ const REPLACEMENT_ASSERTION_PATH = resolve(ROOT, 'supabase/tests/phase9/counter-
 const MOBILE_ASSERTION_PATH = resolve(ROOT, 'supabase/tests/phase9/counter-mobile-assertions.sql');
 const SESSION_LOCATION_SCOPE_ASSERTION_PATH = resolve(ROOT, 'supabase/tests/phase9/session-location-scope-assertions.sql');
 const SHELF_STORAGE_GUIDANCE_ASSERTION_PATH = resolve(ROOT, 'supabase/tests/phase9/shelf-storage-guidance-assertions.sql');
+const HISTORY_DETAIL_ASSERTION_PATH = resolve(ROOT, 'supabase/tests/phase9/history-detail-assertions.sql');
 const MILLUM_EXPORT_FIXTURE_PATH = resolve(ROOT, 'supabase/tests/phase9/millum-export-fixtures.sql');
 const MILLUM_EXPORT_ASSERTION_PATH = resolve(ROOT, 'supabase/tests/phase9/millum-export-assertions.sql');
 const EXPECTED_ASSERTION_PASSES = 70;
@@ -42,6 +43,7 @@ const EXPECTED_MAPPING_ASSERTION_PASSES = 23;
 const EXPECTED_SESSION_LOCATION_SCOPE_ASSERTION_PASSES = 10;
 const EXPECTED_SHELF_STORAGE_GUIDANCE_ASSERTION_PASSES = 31;
 const EXPECTED_MILLUM_EXPORT_ASSERTION_PASSES = 48;
+const EXPECTED_HISTORY_DETAIL_ASSERTION_PASSES = 10;
 let containerStarted = false;
 
 if (process.argv.length > 2) {
@@ -357,7 +359,7 @@ async function main() {
     throw new Error('Phase 9J is not terminal.');
   }
   entries.forEach((entry) => resolveMigrationPath(entry.path));
-  if (![FIXTURE_PATH, ASSERTION_PATH, PRE_PHASE9D_FIXTURE_PATH, INTEGRITY_ASSERTION_PATH, IDENTITY_ASSERTION_PATH, STRUCTURED_ASSERTION_PATH, OPERATIONAL_ASSERTION_PATH, MAPPING_ASSERTION_PATH, COUNTER_FIXTURE_PATH, COUNTER_ASSERTION_PATH, REPLACEMENT_FIXTURE_PATH, REPLACEMENT_ASSERTION_PATH, MOBILE_ASSERTION_PATH, SESSION_LOCATION_SCOPE_ASSERTION_PATH, SHELF_STORAGE_GUIDANCE_ASSERTION_PATH, MILLUM_EXPORT_FIXTURE_PATH, MILLUM_EXPORT_ASSERTION_PATH].every(existsSync)) {
+  if (![FIXTURE_PATH, ASSERTION_PATH, PRE_PHASE9D_FIXTURE_PATH, INTEGRITY_ASSERTION_PATH, IDENTITY_ASSERTION_PATH, STRUCTURED_ASSERTION_PATH, OPERATIONAL_ASSERTION_PATH, MAPPING_ASSERTION_PATH, COUNTER_FIXTURE_PATH, COUNTER_ASSERTION_PATH, REPLACEMENT_FIXTURE_PATH, REPLACEMENT_ASSERTION_PATH, MOBILE_ASSERTION_PATH, SESSION_LOCATION_SCOPE_ASSERTION_PATH, SHELF_STORAGE_GUIDANCE_ASSERTION_PATH, HISTORY_DETAIL_ASSERTION_PATH, MILLUM_EXPORT_FIXTURE_PATH, MILLUM_EXPORT_ASSERTION_PATH].every(existsSync)) {
     throw new Error('Phase 9 executable security SQL is missing.');
   }
 
@@ -592,6 +594,17 @@ async function main() {
   }
   integrityPassLines.forEach((line) => console.log(line));
   console.log(`Executable PostgreSQL session-integrity assertions: ${integrityPassLines.length}/${integrityPassLines.length} passed.`);
+
+  const historyDetailAssertions = psql(readFileSync(HISTORY_DETAIL_ASSERTION_PATH, 'utf8'));
+  const historyDetailPassLines = `${historyDetailAssertions.stdout}\n${historyDetailAssertions.stderr}`
+    .split('\n')
+    .filter((line) => line.includes('PASS '))
+    .map((line) => line.replace(/^.*PASS /, 'PASS '));
+  if (historyDetailPassLines.length !== EXPECTED_HISTORY_DETAIL_ASSERTION_PASSES) {
+    throw new Error(`Expected ${EXPECTED_HISTORY_DETAIL_ASSERTION_PASSES} executable history-detail assertion passes, received ${historyDetailPassLines.length}.`);
+  }
+  historyDetailPassLines.forEach((line) => console.log(line));
+  console.log(`Executable PostgreSQL history-detail assertions: ${historyDetailPassLines.length}/${historyDetailPassLines.length} passed.`);
 
   const structuredAssertions = psql(readFileSync(STRUCTURED_ASSERTION_PATH, 'utf8'));
   const structuredPassLines = `${structuredAssertions.stdout}\n${structuredAssertions.stderr}`

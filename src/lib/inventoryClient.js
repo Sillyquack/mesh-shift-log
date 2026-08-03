@@ -474,15 +474,19 @@ export async function loadInventoryCounterWorkspace() {
 export async function getInventoryCountSession(sessionId) {
   const ctx = await context();
   if (!ctx.ok) return { ...ctx, lines: [] };
-  const [sessionResult, linesResult] = await Promise.all([
-    supabaseAuthClient.rpc('get_inventory_count_session_record', { input_session_id: sessionId }),
-    supabaseAuthClient.from('inventory_count_lines').select(LINE_COLUMNS).eq('session_id', sessionId)
-      .order('location_sort_order_snapshot').order('location_name_snapshot')
-      .order('count_order_snapshot').order('product_sort_order_snapshot').order('product_name_snapshot'),
-  ]);
-  const error = sessionResult.error || linesResult.error;
+  const { data, error } = await supabaseAuthClient.rpc('get_inventory_manager_count_session_detail', {
+    input_session_id: sessionId,
+  });
   if (error) return { ...failure(error), lines: [] };
-  return output(true, { mode: 'authenticated', record: normalizeSession(sessionResult.data), lines: (linesResult.data || []).map(normalizeLine) });
+  const record = normalizeSession(data?.session);
+  if (!record?.id || record.id !== sessionId || !Array.isArray(data?.lines)) {
+    return { ...failure(new Error('The Stock Count detail response was incomplete.')), lines: [] };
+  }
+  return output(true, {
+    mode: 'authenticated',
+    record,
+    lines: data.lines.map(normalizeLine),
+  });
 }
 
 export async function getInventoryMillumExport(sessionId) {
