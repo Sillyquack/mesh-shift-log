@@ -6,6 +6,7 @@
   "scripts": {
     "dev": "vite",
     "build": "vite build",
+    "verify:auth-password-security": "node scripts/verify-auth-password-security.mjs",
     "verify:inventory-permissions": "node scripts/verify-inventory-permissions.mjs",
     "verify:phase9a": "node scripts/verify-phase9a.mjs",
     "verify:inventory-session-lifecycle": "node scripts/verify-inventory-session-lifecycle.mjs",

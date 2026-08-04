@@ -48,9 +48,21 @@ import {
   fetchUserProfiles,
   getCurrentSession,
   isSupabaseAuthConfigured,
+  onAuthStateChange,
+  requestPasswordRecoveryEmail,
   signInWithEmailPassword,
   signOutSupabase,
+  signOutPasswordRecoverySession,
+  updateCurrentUserPassword,
   } from "./lib/supabaseAuthClient.js";
+import {
+  AUTH_PASSWORD_MIN_LENGTH,
+  PASSWORD_RECOVERY_NEUTRAL_SUCCESS,
+  applicationBaseUrl,
+  inspectAuthCallback,
+  normalizeAuthEmail,
+  performPasswordUpdate,
+} from "./data/authPasswordSecurity.js";
 import {
   canAccessManagerDashboard,
   canUseInventory,
@@ -211,6 +223,7 @@ const ALERT_POLL_INTERVAL_SECONDS = 15;
 const LOG_KEY = "mesh-shift-logs-v1";
 const ROUTINE_KEY = "mesh-routines-v1";
 const SESSION_KEY = "mesh-current-user-v1";
+const PASSWORD_RECOVERY_UI_KEY = "mesh-password-recovery-ui-v1";
 const OPERATOR_KEY = "mesh-current-operator-v1";
 const EVENT_CODE_ACCESS_KEY = "mesh-event-code-access-v1";
 const ROLE_MODE_KEY = "mesh-current-role-mode-v1";
@@ -2821,8 +2834,10 @@ function Login({
   onLogin,
   staffUsers,
   onSupabaseLogin,
+  onPasswordRecoveryRequest,
   authStatus,
   onAuthSignOut,
+  loginNotice,
 }) {
   const [mode, setMode] = useState("staff_code");
   const [code, setCode] = useState("");
@@ -2831,7 +2846,9 @@ function Login({
   const [workerName, setWorkerName] = useState("");
   const [pendingUser, setPendingUser] = useState(null);
   const [error, setError] = useState("");
+  const [recoveryMessage, setRecoveryMessage] = useState("");
   const [isSubmitting, setIsSubmitting] = useState(false);
+  const submissionPendingRef = useRef(false);
 
   function finishLogin(user) {
     saveStorage(SESSION_KEY, user);
@@ -2842,14 +2859,49 @@ function Login({
     event.preventDefault();
     setError("");
 
+    if (mode === "password_recovery") {
+      const normalizedEmail = normalizeAuthEmail(email);
+      if (!normalizedEmail) {
+        setError("Add your email address.");
+        return;
+      }
+      if (submissionPendingRef.current) return;
+      submissionPendingRef.current = true;
+      setIsSubmitting(true);
+      let result = {
+        ok: false,
+        error: "A reset email could not be requested right now. Wait a minute and try again.",
+      };
+      try {
+        result = await onPasswordRecoveryRequest(normalizedEmail);
+      } finally {
+        submissionPendingRef.current = false;
+        setIsSubmitting(false);
+      }
+      if (result.ok) {
+        setRecoveryMessage(PASSWORD_RECOVERY_NEUTRAL_SUCCESS);
+      } else {
+        setError(result.error);
+      }
+      return;
+    }
+
     if (mode === "email") {
-      if (!email.trim() || !password) {
+      const normalizedEmail = normalizeAuthEmail(email);
+      if (!normalizedEmail || !password) {
         setError("Add email and password.");
         return;
       }
+      if (submissionPendingRef.current) return;
+      submissionPendingRef.current = true;
       setIsSubmitting(true);
-      const result = await onSupabaseLogin(email.trim(), password);
-      setIsSubmitting(false);
+      let result = { ok: false, error: "Email login could not be completed." };
+      try {
+        result = await onSupabaseLogin(normalizedEmail, password);
+      } finally {
+        submissionPendingRef.current = false;
+        setIsSubmitting(false);
+      }
       if (!result.ok) setError(result.error);
       return;
     }
@@ -2890,17 +2942,23 @@ function Login({
     <main className="login-shell">
       <section className="login-panel">
         <p className="eyebrow">Mesh Youngstorget</p>
-        <h1>Shift checklist</h1>
+        <h1>{mode === "password_recovery" ? "Reset password" : "Shift checklist"}</h1>
         <p className="muted">
-          {pendingUser
+          {mode === "password_recovery"
+            ? "Enter your email address. We will send a password reset link if it belongs to an account."
+            : pendingUser
             ? "Use your real first name. This is saved with completed tasks."
             : "Enter your staff code. Ask manager if you need access."}
         </p>
+        {loginNotice && mode !== "password_recovery" && (
+          <p className="status-message" role="status">{loginNotice}</p>
+        )}
         {isLocalhostRuntime() && (
           <p className="muted">
             Local testing tip: use separate browsers/profiles for Robert, Julie and Workbar Device because localhost shares one auth session.
           </p>
         )}
+        {mode !== "password_recovery" && (
         <div className="login-mode-tabs" role="tablist" aria-label="Login mode">
           <button
             type="button"
@@ -2908,6 +2966,7 @@ function Login({
             onClick={() => {
               setMode("staff_code");
               setError("");
+              setRecoveryMessage("");
             }}
           >
             Staff code login
@@ -2919,13 +2978,34 @@ function Login({
               setMode("email");
               setPendingUser(null);
               setError("");
+              setRecoveryMessage("");
             }}
           >
             Email login
           </button>
         </div>
+        )}
         <form onSubmit={submit} className="login-form">
-          {mode === "email" ? (
+          {mode === "password_recovery" ? (
+            <>
+              <label htmlFor="recovery-email">Email</label>
+              <input
+                id="recovery-email"
+                type="email"
+                autoComplete="email"
+                value={email}
+                onChange={(event) => setEmail(event.target.value)}
+                placeholder="name@example.com"
+                disabled={isSubmitting}
+              />
+              {recoveryMessage && (
+                <p className="status-message" role="status">{recoveryMessage}</p>
+              )}
+              {!isSupabaseAuthConfigured && (
+                <p className="error">Password recovery is not configured.</p>
+              )}
+            </>
+          ) : mode === "email" ? (
             <>
               <label htmlFor="auth-email">Email</label>
               <input
@@ -2945,6 +3025,18 @@ function Login({
                 onChange={(event) => setPassword(event.target.value)}
                 placeholder="Password"
               />
+              <button
+                type="button"
+                className="text-button"
+                onClick={() => {
+                  setMode("password_recovery");
+                  setPassword("");
+                  setError("");
+                  setRecoveryMessage("");
+                }}
+              >
+                Forgot password?
+              </button>
               {!isSupabaseAuthConfigured && (
                 <p className="error">
                   Supabase Auth is not configured. Use staff code login for now.
@@ -2993,12 +3085,32 @@ function Login({
               Sign out Supabase session
             </button>
           )}
+          {mode === "password_recovery" && (
+            <button
+              type="button"
+              className="ghost-button"
+              disabled={isSubmitting}
+              onClick={() => {
+                setMode("email");
+                setError("");
+                setRecoveryMessage("");
+              }}
+            >
+              Back to login
+            </button>
+          )}
           <button
             type="submit"
             className="primary-button"
-            disabled={isSubmitting}
+            disabled={isSubmitting || (mode === "password_recovery" && Boolean(recoveryMessage))}
           >
-            {mode === "email"
+            {mode === "password_recovery"
+              ? isSubmitting
+                ? "Sending reset link..."
+                : recoveryMessage
+                  ? "Reset link requested"
+                  : "Send password reset link"
+              : mode === "email"
               ? isSubmitting
                 ? "Signing in..."
                 : "Sign in with email"
@@ -3007,6 +3119,186 @@ function Login({
         </form>
       </section>
     </main>
+  );
+}
+
+function PasswordUpdateForm({
+  onUpdatePassword,
+  onCancel,
+  submitLabel = "Change password",
+  successMessage = "Password updated.",
+  onSuccess,
+}) {
+  const [newPassword, setNewPassword] = useState("");
+  const [confirmation, setConfirmation] = useState("");
+  const [showPasswords, setShowPasswords] = useState(false);
+  const [error, setError] = useState("");
+  const [message, setMessage] = useState("");
+  const [isSubmitting, setIsSubmitting] = useState(false);
+  const submissionPendingRef = useRef(false);
+
+  async function submit(event) {
+    event.preventDefault();
+    if (submissionPendingRef.current) return;
+    submissionPendingRef.current = true;
+    setError("");
+    setMessage("");
+    setIsSubmitting(true);
+    let result = { ok: false, message: "The password could not be changed." };
+    try {
+      result = await performPasswordUpdate({
+        newPassword,
+        confirmation,
+        updatePassword: onUpdatePassword,
+      });
+    } finally {
+      submissionPendingRef.current = false;
+      setIsSubmitting(false);
+    }
+    if (!result.ok) {
+      setError(result.message);
+      return;
+    }
+    setNewPassword("");
+    setConfirmation("");
+    setMessage(successMessage);
+    onSuccess?.();
+  }
+
+  return (
+    <form className="login-form password-update-form" onSubmit={submit}>
+      <label htmlFor="new-password">New password</label>
+      <div className="password-field-row">
+        <input
+          id="new-password"
+          type={showPasswords ? "text" : "password"}
+          autoComplete="new-password"
+          minLength={AUTH_PASSWORD_MIN_LENGTH}
+          value={newPassword}
+          onChange={(event) => setNewPassword(event.target.value)}
+          disabled={isSubmitting}
+        />
+        <button
+          type="button"
+          className="ghost-button compact-button"
+          aria-pressed={showPasswords}
+          onClick={() => setShowPasswords((current) => !current)}
+          disabled={isSubmitting}
+        >
+          {showPasswords ? "Hide" : "Show"}
+        </button>
+      </div>
+      <label htmlFor="confirm-new-password">Confirm new password</label>
+      <input
+        id="confirm-new-password"
+        type={showPasswords ? "text" : "password"}
+        autoComplete="new-password"
+        minLength={AUTH_PASSWORD_MIN_LENGTH}
+        value={confirmation}
+        onChange={(event) => setConfirmation(event.target.value)}
+        disabled={isSubmitting}
+      />
+      <p className="muted password-requirement">
+        Use at least {AUTH_PASSWORD_MIN_LENGTH} characters. Additional Supabase password rules also apply.
+      </p>
+      {error && <p className="error" role="alert">{error}</p>}
+      {message && <p className="status-message" role="status">{message}</p>}
+      <div className="backup-actions password-actions">
+        {onCancel && (
+          <button
+            type="button"
+            className="ghost-button"
+            onClick={onCancel}
+            disabled={isSubmitting}
+          >
+            Cancel
+          </button>
+        )}
+        <button type="submit" className="primary-button" disabled={isSubmitting}>
+          {isSubmitting ? "Updating password..." : submitLabel}
+        </button>
+      </div>
+    </form>
+  );
+}
+
+function PasswordRecoveryScreen({ state, onUpdatePassword, onReturnToLogin }) {
+  if (state.status === "checking") {
+    return (
+      <main className="login-shell auth-gate-shell">
+        <section className="login-panel" role="status" aria-busy="true">
+          <p className="eyebrow">Account security</p>
+          <h1>Checking reset link</h1>
+          <p className="muted">Please wait while the password recovery session is verified.</p>
+        </section>
+      </main>
+    );
+  }
+
+  if (state.status === "invalid") {
+    return (
+      <main className="login-shell auth-gate-shell">
+        <section className="login-panel">
+          <p className="eyebrow">Account security</p>
+          <h1>Reset link unavailable</h1>
+          <p className="error" role="alert">
+            {state.message || "This password reset link is invalid, expired, or has already been used."}
+          </p>
+          <button type="button" className="primary-button" onClick={onReturnToLogin}>
+            Return to login
+          </button>
+        </section>
+      </main>
+    );
+  }
+
+  if (state.status === "completion_error") {
+    return (
+      <main className="login-shell auth-gate-shell">
+        <section className="login-panel">
+          <p className="eyebrow">Account security</p>
+          <h1>Password updated</h1>
+          <p className="error" role="alert">{state.message}</p>
+          <button type="button" className="primary-button" onClick={onReturnToLogin}>
+            Try returning to login
+          </button>
+        </section>
+      </main>
+    );
+  }
+
+  return (
+    <main className="login-shell auth-gate-shell">
+      <section className="login-panel">
+        <p className="eyebrow">Account security</p>
+        <h1>Set new password</h1>
+        <p className="muted">
+          Choose a new password for your Mesh Shift Log account. Operational screens remain hidden until recovery is complete.
+        </p>
+        <PasswordUpdateForm
+          onUpdatePassword={onUpdatePassword}
+          onCancel={onReturnToLogin}
+          submitLabel="Set new password"
+        />
+      </section>
+    </main>
+  );
+}
+
+function AccountSecurityDialog({ onClose, onUpdatePassword }) {
+  return (
+    <div className="modal-backdrop" role="dialog" aria-modal="true" aria-labelledby="account-security-title">
+      <section className="pilot-modal account-security-modal">
+        <p className="eyebrow">Account</p>
+        <h1 id="account-security-title">Account security</h1>
+        <p>Change the password for your currently signed-in account.</p>
+        <PasswordUpdateForm
+          onUpdatePassword={onUpdatePassword}
+          onCancel={onClose}
+          successMessage="Password updated successfully."
+        />
+      </section>
+    </div>
   );
 }
 
@@ -3023,6 +3315,7 @@ function TopBar({
   isOnline,
   siteAccessStatus,
   onOpenInventory,
+  onOpenAccountSecurity,
 }) {
   const shiftLabel =
     selectedShift === "manager"
@@ -3090,6 +3383,15 @@ function TopBar({
         {selectedShift && onBack && (
           <button type="button" className="ghost-button" onClick={onBack}>
             Change shift
+          </button>
+        )}
+        {onOpenAccountSecurity && (
+          <button
+            type="button"
+            className="ghost-button"
+            onClick={onOpenAccountSecurity}
+          >
+            Account security
           </button>
         )}
         <button type="button" className="ghost-button" onClick={onLogout}>
@@ -16941,6 +17243,44 @@ function App() {
       ? { ...storedUser, authSessionVerified: false }
       : storedUser;
   });
+  const initialAuthCallbackRef = useRef(null);
+  if (!initialAuthCallbackRef.current) {
+    const callbackState =
+      typeof window === "undefined"
+        ? { status: "idle", source: "none" }
+        : inspectAuthCallback(window.location);
+    let retainedRecovery = false;
+    if (typeof window !== "undefined") {
+      try {
+        retainedRecovery = sessionStorage.getItem(PASSWORD_RECOVERY_UI_KEY) === "pending";
+        if (callbackState.source === "recovery_callback") {
+          sessionStorage.setItem(PASSWORD_RECOVERY_UI_KEY, "pending");
+          retainedRecovery = true;
+        }
+        if (callbackState.status === "invalid") {
+          sessionStorage.removeItem(PASSWORD_RECOVERY_UI_KEY);
+          retainedRecovery = false;
+        }
+      } catch {
+        retainedRecovery = false;
+      }
+    }
+    initialAuthCallbackRef.current =
+      callbackState.status === "idle" && retainedRecovery
+        ? { status: "checking", source: "retained_recovery" }
+        : callbackState;
+  }
+  const [passwordRecoveryState, setPasswordRecoveryState] = useState(() =>
+    !isSupabaseAuthConfigured && initialAuthCallbackRef.current.status === "checking"
+      ? {
+          status: "invalid",
+          message: "Password recovery is not configured for this application.",
+        }
+      : initialAuthCallbackRef.current,
+  );
+  const passwordRecoveryStateRef = useRef(passwordRecoveryState);
+  const [loginNotice, setLoginNotice] = useState("");
+  const [showAccountSecurity, setShowAccountSecurity] = useState(false);
   const [selectedShift, setSelectedShift] = useState(null);
   const [showManager, setShowManager] = useState(false);
   const [showEventFloorManager, setShowEventFloorManager] = useState(false);
@@ -17248,6 +17588,70 @@ function App() {
   const [isOnline, setIsOnline] = useState(() => navigator.onLine);
   const [waitingWorker, setWaitingWorker] = useState(null);
 
+  useEffect(() => {
+    let invalidCallbackTimer = null;
+    const subscription = onAuthStateChange((event, session) => {
+      if (event === "PASSWORD_RECOVERY") {
+        if (!session?.user?.id) {
+          setPasswordRecovery({
+            status: "invalid",
+            message: "This password reset link is invalid, expired, or has already been used.",
+          });
+          return;
+        }
+        try {
+          sessionStorage.setItem(PASSWORD_RECOVERY_UI_KEY, "pending");
+        } catch {
+          // Recovery still remains guarded in React state for this page load.
+        }
+        setPasswordRecovery({ status: "ready", source: "PASSWORD_RECOVERY" });
+        clearLocalAuthUiState();
+        return;
+      }
+
+      if (
+        event === "INITIAL_SESSION" &&
+        passwordRecoveryStateRef.current.status === "checking"
+      ) {
+        if (passwordRecoveryStateRef.current.source === "retained_recovery") {
+          if (session?.user?.id) {
+            setPasswordRecovery({ status: "ready", source: "retained_recovery" });
+            clearLocalAuthUiState();
+          } else {
+            try {
+              sessionStorage.removeItem(PASSWORD_RECOVERY_UI_KEY);
+            } catch {
+              // The invalid-link screen still prevents ordinary app routing.
+            }
+            setPasswordRecovery({
+              status: "invalid",
+              message: "This password reset link is invalid, expired, or has already been used.",
+            });
+          }
+          return;
+        }
+        invalidCallbackTimer = window.setTimeout(() => {
+          if (passwordRecoveryStateRef.current.status === "checking") {
+            try {
+              sessionStorage.removeItem(PASSWORD_RECOVERY_UI_KEY);
+            } catch {
+              // The invalid-link screen still prevents ordinary app routing.
+            }
+            setPasswordRecovery({
+              status: "invalid",
+              message: "This password reset link is invalid, expired, or has already been used.",
+            });
+          }
+        }, 0);
+      }
+    });
+
+    return () => {
+      if (invalidCallbackTimer !== null) window.clearTimeout(invalidCallbackTimer);
+      subscription.unsubscribe();
+    };
+  }, []);
+
   useEffect(() => saveStorage(LOG_KEY, logs), [logs]);
   useEffect(() => saveStorage(ROUTINE_KEY, routines), [routines]);
   useEffect(() => saveStorage(STAFF_KEY, staffUsers), [staffUsers]);
@@ -17440,6 +17844,111 @@ function App() {
     setEventTaskAlertSettings(settings);
     saveStorage(EVENT_TASK_ALERT_SETTINGS_KEY, settings);
     return settings;
+  }
+
+  function setPasswordRecovery(nextState) {
+    passwordRecoveryStateRef.current = nextState;
+    setPasswordRecoveryState(nextState);
+  }
+
+  function clearLocalAuthUiState() {
+    localStorage.removeItem(SESSION_KEY);
+    localStorage.removeItem(OPERATOR_KEY);
+    localStorage.removeItem(EVENT_CODE_ACCESS_KEY);
+    localStorage.removeItem(ROLE_MODE_KEY);
+    localStorage.removeItem(SHIFT_SCOPE_KEY);
+    setUser(null);
+    setCurrentOperator(null);
+    setCurrentShiftScope(null);
+    setEventCodeAccess(null);
+    setCurrentRoleMode(null);
+    setSelectedShift(null);
+    setShowManager(false);
+    setShowEventFloorManager(false);
+    setShowInventory(false);
+    setShowAccountSecurity(false);
+    setAuthStatus((current) => ({
+      ...current,
+      loginSource: "staff_code",
+      authUserId: "",
+      profileRole: "",
+      organizationId: "",
+      authSessionPresent: false,
+      profileFetchStatus: "not_loaded",
+      profileFetchErrorCode: "",
+      profileFetchErrorMessage: "",
+      profileFetchError: "",
+      lastProfileFetchAt: new Date().toISOString(),
+    }));
+  }
+
+  function scrubAuthCallbackUrl() {
+    if (typeof window === "undefined") return;
+    const safeUrl = applicationBaseUrl(window.location, import.meta.env.BASE_URL);
+    window.history.replaceState({}, document.title, safeUrl);
+  }
+
+  function clearPasswordRecoveryUiMarker() {
+    try {
+      sessionStorage.removeItem(PASSWORD_RECOVERY_UI_KEY);
+    } catch {
+      // The marker contains no credentials and expires with the browser tab.
+    }
+  }
+
+  async function handlePasswordRecoveryRequest(email) {
+    if (!isSupabaseAuthConfigured) {
+      return { ok: false, error: "Password recovery is not configured." };
+    }
+    try {
+      const redirectTo = applicationBaseUrl(window.location, import.meta.env.BASE_URL);
+      await requestPasswordRecoveryEmail(email, redirectTo);
+      return { ok: true };
+    } catch {
+      return {
+        ok: false,
+        error: "A reset email could not be requested right now. Wait a minute and try again.",
+      };
+    }
+  }
+
+  async function handleRecoveryPasswordUpdate(password) {
+    await updateCurrentUserPassword(password);
+    scrubAuthCallbackUrl();
+    try {
+      await signOutPasswordRecoverySession();
+    } catch (error) {
+      clearLocalAuthUiState();
+      setPasswordRecovery({
+        status: "completion_error",
+        message: "The password was updated, but this recovery session could not be closed. Try returning to login before continuing.",
+      });
+      throw error;
+    }
+    clearPasswordRecoveryUiMarker();
+    clearLocalAuthUiState();
+    setPasswordRecovery({ status: "idle", source: "completed" });
+    setLoginNotice("Password updated — log in with your new password.");
+  }
+
+  async function returnFromPasswordRecovery() {
+    try {
+      await signOutPasswordRecoverySession();
+    } catch {
+      scrubAuthCallbackUrl();
+      clearLocalAuthUiState();
+      if (passwordRecoveryStateRef.current.status !== "invalid") {
+        setPasswordRecovery({
+          status: "completion_error",
+          message: "This recovery session could not be closed safely. Close this tab or try returning to login again.",
+        });
+        return;
+      }
+    }
+    clearPasswordRecoveryUiMarker();
+    scrubAuthCallbackUrl();
+    clearLocalAuthUiState();
+    setPasswordRecovery({ status: "idle", source: "cancelled" });
   }
 
   function triggerEventTaskAlert(alertRecord) {
@@ -18999,7 +19508,9 @@ function App() {
   async function handleSupabaseLogin(email, password) {
     try {
       const session = await signInWithEmailPassword(email, password);
-      return applySupabaseSession(session);
+      const result = await applySupabaseSession(session);
+      if (result.ok) setLoginNotice("");
+      return result;
     } catch (error) {
       const message =
         error.message === "Failed to fetch"
@@ -19695,11 +20206,13 @@ function App() {
   useEffect(() => {
     let cancelled = false;
     async function restoreSupabaseUser() {
+      if (passwordRecoveryStateRef.current.status !== "idle") return;
       if (!isSupabaseAuthConfigured) {
         setAuthStatus((current) => ({ ...current, configured: false }));
         return;
       }
       const session = await getCurrentSession();
+      if (passwordRecoveryStateRef.current.status !== "idle") return;
       if (!session?.user || cancelled) {
         if (!cancelled && user?.loginSource === "supabase_auth") {
           localStorage.removeItem(SESSION_KEY);
@@ -20000,19 +20513,32 @@ function App() {
     eventTaskAlertSettings.enabled,
   ]);
 
+  if (passwordRecoveryState.status !== "idle") {
+    return (
+      <PasswordRecoveryScreen
+        state={passwordRecoveryState}
+        onUpdatePassword={handleRecoveryPasswordUpdate}
+        onReturnToLogin={returnFromPasswordRecovery}
+      />
+    );
+  }
+
   if (!user) {
     return (
       <>
         <Login
           onLogin={(nextUser) => {
+            setLoginNotice("");
             saveStorage(SESSION_KEY, nextUser);
             setUser(nextUser);
             updateAuthStatusFromUser(nextUser);
           }}
           staffUsers={staffUsers}
           onSupabaseLogin={handleSupabaseLogin}
+          onPasswordRecoveryRequest={handlePasswordRecoveryRequest}
           authStatus={authStatus}
           onAuthSignOut={clearSupabaseAuthSession}
+          loginNotice={loginNotice}
         />
         {!pilotAccepted && (
           <PilotNotice
@@ -20787,6 +21313,11 @@ function App() {
             setShowInventory(false);
             logout();
           }}
+          onOpenAccountSecurity={
+            user.loginSource === "supabase_auth"
+              ? () => setShowAccountSecurity(true)
+              : null
+          }
         />
         <Suspense fallback={<FocusedViewLoading label="Loading Stock Count..." />}>
           <InventoryWorkspace
@@ -20795,6 +21326,12 @@ function App() {
             onClose={inventoryCounterUser ? logout : () => setShowInventory(false)}
           />
         </Suspense>
+        {showAccountSecurity && (
+          <AccountSecurityDialog
+            onClose={() => setShowAccountSecurity(false)}
+            onUpdatePassword={updateCurrentUserPassword}
+          />
+        )}
       </>
     );
   }
@@ -20831,6 +21368,11 @@ function App() {
           setShowEventFloorManager(false);
         }}
         onLogout={logout}
+        onOpenAccountSecurity={
+          user.loginSource === "supabase_auth"
+            ? () => setShowAccountSecurity(true)
+            : null
+        }
       />
       {siteSettings.locationCheckEnabled &&
         !hasSiteCoordinates(siteSettings) && (
@@ -21352,6 +21894,12 @@ function App() {
             </div>
           </section>
         </div>
+      )}
+      {showAccountSecurity && (
+        <AccountSecurityDialog
+          onClose={() => setShowAccountSecurity(false)}
+          onUpdatePassword={updateCurrentUserPassword}
+        />
       )}
       <UpdateBanner waitingWorker={waitingWorker} />
     </>
