@@ -15,6 +15,20 @@ export const supabaseAuthClient = isSupabaseAuthConfigured
   })
   : null;
 
+const authStateSubscribers = new Set();
+let latestAuthState = null;
+let retainedPasswordRecoveryUserId = '';
+
+if (supabaseAuthClient) {
+  supabaseAuthClient.auth.onAuthStateChange((event, session) => {
+    const userId = session?.user?.id || '';
+    latestAuthState = { event, userId };
+    if (event === 'PASSWORD_RECOVERY') retainedPasswordRecoveryUserId = userId;
+    if (event === 'SIGNED_OUT') retainedPasswordRecoveryUserId = '';
+    authStateSubscribers.forEach((callback) => callback(event, session));
+  });
+}
+
 function authNotConfiguredError() {
   return new Error('Supabase Auth is not configured.');
 }
@@ -43,6 +57,27 @@ export async function signInWithEmailPassword(email, password) {
   return data.session;
 }
 
+export async function requestPasswordRecoveryEmail(email, redirectTo) {
+  if (!supabaseAuthClient) throw authNotConfiguredError();
+  const { error } = await supabaseAuthClient.auth.resetPasswordForEmail(email, {
+    redirectTo,
+  });
+  if (error) throw error;
+}
+
+export async function updateCurrentUserPassword(password) {
+  if (!supabaseAuthClient) throw authNotConfiguredError();
+  const { data, error } = await supabaseAuthClient.auth.updateUser({ password });
+  if (error) throw error;
+  return data.user || null;
+}
+
+export async function signOutPasswordRecoverySession() {
+  if (!supabaseAuthClient) return;
+  const { error } = await supabaseAuthClient.auth.signOut({ scope: 'local' });
+  if (error) throw error;
+}
+
 export async function signOutSupabase() {
   if (!supabaseAuthClient) return;
   await supabaseAuthClient.auth.signOut();
@@ -59,10 +94,23 @@ export function onAuthStateChange(callback) {
   if (!supabaseAuthClient) {
     return { unsubscribe: () => {} };
   }
-  const { data } = supabaseAuthClient.auth.onAuthStateChange((event, session) => {
-    callback(event, session);
-  });
-  return data.subscription;
+  authStateSubscribers.add(callback);
+  const retainedState = retainedPasswordRecoveryUserId
+    ? { event: 'PASSWORD_RECOVERY', userId: retainedPasswordRecoveryUserId }
+    : latestAuthState;
+  if (retainedState) {
+    queueMicrotask(() => {
+      if (authStateSubscribers.has(callback)) {
+        callback(
+          retainedState.event,
+          retainedState.userId ? { user: { id: retainedState.userId } } : null,
+        );
+      }
+    });
+  }
+  return {
+    unsubscribe: () => authStateSubscribers.delete(callback),
+  };
 }
 
 export async function fetchCurrentUserProfile(session = null) {

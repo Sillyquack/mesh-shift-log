@@ -244,7 +244,9 @@ Email failure does not block alert creation. Failed urgent/immediate-help email 
 
 Email/password Supabase Auth login is now supported alongside the old staff-code pilot login. Staff-code login remains available during transition, so Bobby is not locked out while Auth profiles are being set up.
 
-There is no public signup, no public password reset, and no service role key in the frontend. Users must be created in Supabase first, then matched with a profile row in `public.user_profiles`.
+There is no public signup, administrator password management, or service role key in the frontend. Existing users can request a password-recovery email from Email login and can change their own password while authenticated. Users must still be created in Supabase first, then matched with a profile row in `public.user_profiles`.
+
+Password recovery uses the runtime application base URL as Supabase's `redirectTo`; it does not hardcode localhost or production in frontend code. Supabase Auth URL Configuration must allow the deployed application root (`https://sillyquack.github.io/mesh-shift-log/`). Add the local Vite origin (normally `http://localhost:5173/`) only when testing emailed recovery links locally. Recovery routing is driven by Supabase's `PASSWORD_RECOVERY` event, and a recovery session does not load the normal profile/role interface.
 
 Setup:
 

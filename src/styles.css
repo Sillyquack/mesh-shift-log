@@ -230,6 +230,41 @@ h2 {
   margin-top: 24px;
 }
 
+.auth-gate-shell {
+  position: relative;
+  z-index: 50;
+}
+
+.password-update-form {
+  min-width: 0;
+}
+
+.password-field-row {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  align-items: center;
+  gap: 8px;
+  min-width: 0;
+}
+
+.password-field-row input {
+  min-width: 0;
+}
+
+.password-requirement {
+  margin-bottom: 0;
+  font-size: 0.82rem;
+}
+
+.password-actions > * {
+  flex: 1 1 150px;
+}
+
+.account-security-modal {
+  max-width: min(440px, calc(100vw - 20px));
+  overflow-x: hidden;
+}
+
 .login-mode-tabs {
   display: grid;
   grid-template-columns: repeat(2, minmax(0, 1fr));
