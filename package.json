@@ -29,6 +29,7 @@
     "verify:routine-foundation": "node scripts/verify-routine-foundation.mjs",
     "verify:routine-templates": "node scripts/verify-routine-templates.mjs",
     "verify:routine-reference-images": "node scripts/verify-routine-reference-images.mjs",
+    "verify:routine-runs": "node scripts/verify-routine-runs.mjs",
     "preview": "vite preview",
     "deploy": "npm run build && gh-pages -d dist"
   },
