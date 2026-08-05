@@ -26,6 +26,7 @@
     "verify:inventory-simplicity": "node scripts/verify-inventory-simplicity.mjs",
     "verify:phase9-security-db": "node scripts/verify-phase9-security-db.mjs",
     "verify:phase9-all": "node scripts/verify-phase9-all.mjs",
+    "verify:routine-foundation": "node scripts/verify-routine-foundation.mjs",
     "preview": "vite preview",
     "deploy": "npm run build && gh-pages -d dist"
   },
