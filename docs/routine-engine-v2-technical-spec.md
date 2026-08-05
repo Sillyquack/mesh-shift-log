@@ -4,16 +4,18 @@
 
 Phase 10A establishes the isolated database foundation for Routine Engine v2. Its approved local checkpoint is commit `a828531d9a0936849a05129d658d015f1b27845d` (`feat: add Routine Engine v2 foundation`).
 
+Phase 10B's approved local checkpoint is commit `9a8cf5716a3427ab65d4437b83622858f52b0713` (`feat: add versioned Routine Engine templates`).
+
 Phase 10A includes organization settings, routine locations, reusable location sets, reusable standards, immutable standard revisions, server-resolved permissions, manager mutation RPCs, organization-scoped RLS, and disposable database verification.
 
-Phase 10B adds logical templates, one active draft per template, versioned sections/tasks/structured items, task dependencies, declarative cross-run relations, bounded condition syntax, validation, SHA-256 content identity, and atomic immutable publishing. Neither phase activates the engine for an organization or seeds Mesh-specific locations, sets, standards, templates, or routine content.
+Phase 10B adds logical templates, one active draft per template, versioned sections/tasks/structured items, task dependencies, declarative cross-run relations, bounded condition syntax, validation, SHA-256 content identity, and atomic immutable publishing. Phase 10C adds stable logical image references, immutable image versions and placeholders, private organization-scoped Storage access, draft task/task-item links, and an isolated authenticated client. None of these phases activates the engine for an organization or seeds Mesh-specific locations, sets, standards, templates, routine content, or actual Mesh images.
 
 The following remain outside this phase:
 
 - employee-facing UI and operational routine runs;
 - operational run lifecycle;
 - Double Shift behavior;
-- Realtime and routine images (images are planned for Phase 10C);
+- Realtime, run snapshots, and rendering of routine images in React;
 - Event Operations changes;
 - production rollout, data migration, or organization activation.
 
@@ -33,7 +35,7 @@ The approved labels, task text, ordering, applicability rules, inputs, and locat
 
 ## Database architecture
 
-The additive migrations are `supabase/phase10a_routine_engine_foundation.sql` and `supabase/phase10b_routine_templates.sql`. Every Routine Engine v2 table is in `public`, has RLS enabled, and has a non-null organization boundary.
+The additive migrations are `supabase/phase10a_routine_engine_foundation.sql`, `supabase/phase10b_routine_templates.sql`, and `supabase/phase10c_routine_reference_images.sql`. Every Routine Engine v2 table is in `public`, has RLS enabled, and has a non-null organization boundary.
 
 | Table | Purpose | Tenant and revision guarantees |
 | --- | --- | --- |
@@ -60,6 +62,18 @@ Phase 10B adds these tables:
 | `routine_template_publication_batches` | Immutable publish audit and idempotency result | Request hash, publication group, non-empty version list, immutable stored response |
 
 All template/content foreign keys include the organization and, where applicable, the version. `routine_templates.current_published_version_id` points through `(version id, organization id, template id)`, so it cannot select another template's or tenant's version.
+
+Phase 10C adds these tables:
+
+| Table | Purpose | Primary guarantees |
+| --- | --- | --- |
+| `routine_reference_images` | Stable logical reference used by template content | Tenant-scoped key and idempotency; optimistic revision; current pointer restricted to the same logical reference |
+| `routine_reference_image_versions` | Immutable placeholder, pending, active-image, and orphan history | Monotonic number per reference; exact path/MIME/size/state constraints; only pending-to-final transitions |
+| `routine_template_task_reference_images` | Semantic task or task-item link to a logical reference | Same-tenant/version/task/item FKs; unique logical identity and deterministic task order; draft-only mutation |
+| `routine_reference_image_cleanup_queue` | Audited deletion work for failed uploads | Only non-current orphan objects; one pending entry per tenant/path; immutable acknowledgement history |
+| `routine_reference_operations` | Request-hash idempotency and mutation audit | Unique operation key per tenant/actor/type; immutable object response |
+
+`routine_reference_images.current_version_id` uses `(version id, organization id, reference id)`. A trigger additionally requires the target state to be `active_image` or `placeholder`. Historical active images are retained when a later image or placeholder becomes current.
 
 All foreign-key access paths and RLS organization predicates have supporting indexes. UUID primary keys avoid exposed sequences.
 
@@ -118,6 +132,21 @@ Phase 10B adds this manager API:
 - `validate_routine_template_version(...)`
 - `publish_routine_template_versions(...)`
 
+Phase 10C adds this manager API:
+
+- `create_routine_reference(...)`
+- `update_routine_reference_metadata(...)`
+- `set_routine_reference_active(...)`
+- `prepare_routine_reference_upload(...)`
+- `finalize_routine_reference_upload(...)`
+- `cancel_routine_reference_upload(...)`
+- `set_routine_reference_placeholder(...)`
+- `replace_routine_draft_task_reference_images(...)`
+- `list_routine_reference_cleanup_paths()`
+- `acknowledge_routine_reference_cleanup(...)`
+
+Prepare locks the logical reference, validates JPEG/PNG/WebP, the 5 MB limit, filename, caption, required alt text, and expected revision, then allocates the next immutable version and exact server path. Finalize locks the reference/version, verifies the exact `storage.objects` row and its actual size/MIME metadata, then atomically advances `pending_upload` to `active_image` and moves the logical pointer. Cancel advances only pending content to `orphaned` and queues that exact object. Selecting a placeholder creates a new immutable placeholder version; it never alters or deletes the previous active image.
+
 Task and task-item upserts accept bounded JSON objects for the large typed field sets; organization, actor, version state, row identity, and revisions remain server-resolved. Reorder RPCs require the exact complete child-ID list and defer only the relevant unique-order constraint while assigning zero-based positions.
 
 Every update path locks the target row, compares `input_expected_revision`, raises SQLSTATE `40001` for a stale write, and increments the revision in the same transaction. Create paths require a null expected revision.
@@ -142,11 +171,23 @@ The insert trigger derives `content_hash` from a canonical JSON object containin
 
 Template-version hashes use pgcrypto SHA-256. The canonical JSON includes version name/description and every active or inactive section, task, item, dependency, and relation. It uses semantic order (`sort_order`, stable keys, then UUID only as a final tie-break), represents dependency endpoints with stable task keys, and excludes timestamps and actor IDs. Published `content_hash` is server-only and can be recomputed after publication.
 
+Phase 10C extends canonical content with task key, optional task-item key, logical reference key, button label, context note, sort order, and active state. It deliberately excludes `current_version_id`, object path, image-version identity, caption, alt text, upload timestamps, and upload actor. Linking, relabeling, or reordering a logical reference changes the template hash; replacing the actual image behind that same logical reference does not. A later Phase 10D run must snapshot the concrete image-version ID used by that run.
+
 ## Conditions and publication validation
 
 `routine_validate_condition_json(...)` accepts an empty object or a bounded tree of `all`, `any`, and `not`. Leaf operators are `equals`, `not_equals`, `in`, `greater_than`, `less_than`, and `exists`; facts are `weekday`, `local_time`, `organization_flag`, `location_active`, `event_zone_active`, `booking_exists`, `asset_used_today`, `standard_value_exists`, `previous_task_status`, and `transfer_status`. Object shape, array size, value shape, total size, and nesting depth are bounded. Unknown keys, facts, operators, or executable-looking extensions are rejected. Phase 10B validates syntax only; operational fact evaluation belongs to a later phase.
 
-`validate_routine_template_version(...)` returns `valid`, `blockers`, `warnings`, `computed_content_hash`, and counts for sections, tasks, items, dependencies, and relations. It checks publish state, active structure, mandatory criteria, location binding, critical N/A policy, time and availability consistency, dependency integrity/cycles, non-empty referenced sets, current standard revisions, item sources, condition syntax, cross-run target resolution, batch tenant scope, deterministic order, JSON shape, and lifecycle metadata. Reference images are deliberately not a blocker.
+`validate_routine_template_version(...)` returns `valid`, `blockers`, `warnings`, `computed_content_hash`, and counts for sections, tasks, items, dependencies, relations, and reference images. It checks publish state, active structure, mandatory criteria, location binding, critical N/A policy, time and availability consistency, dependency integrity/cycles, non-empty referenced sets, current standard revisions, item sources, condition syntax, cross-run target resolution, batch tenant scope, deterministic order, JSON shape, lifecycle metadata, logical-reference tenant/activity, pointer validity, alt text, task-item ownership, and link uniqueness. A missing actual image or current placeholder is a warning, never a blocker; missing caption is also a warning.
+
+## Private reference-image Storage
+
+The dedicated `routine-reference-images` bucket contract is private, 5,242,880 bytes maximum, and exactly `image/jpeg`, `image/png`, or `image/webp`. Migration preflight creates the contract when absent and fails clearly instead of silently rewriting an incompatible existing bucket. It never references, reuses, or changes `inventory-location-reference-images`.
+
+Every authoritative path is generated server-side as `{organization_id}/{reference_id}/{image_version_id}/{safe_filename}`. Validation requires exactly four segments, exact UUID matches, a bounded lowercase filename, no traversal marker or extra slash, and an extension matching MIME. The ordinary authenticated client can upload only an exact pending path returned by prepare, with overwrite disabled. There is no Storage UPDATE policy. Managers may delete only an exact own-tenant path in the pending cleanup queue; every finalized active image is permanent historical material in Phase 10C.
+
+Managers can read all own-tenant image states. Active personal routine users can read only the current `active_image` for an active logical reference linked from the current published version of an active template. Pending, orphaned, historical non-current, draft-only, cross-tenant, and anonymous reads are denied. Phase 10D will extend reads to exact versions captured in visible run snapshots.
+
+The isolated client modules are `src/features/routines-v2/data/routineReferenceImages.js` and `src/features/routines-v2/api/routineReferenceClient.js`. They use the normal authenticated Supabase client, verify file size and JPEG/PNG/WebP magic bytes without network access, normalize filename/caption/alt text, upload only to the returned path, preserve the previous current image on failures, and expose download and orphan cleanup. They contain no service credential, administrative API, or authoritative path builder. React manager/editor/viewer components remain deferred.
 
 ## RLS and grants
 
@@ -160,6 +201,8 @@ Template-version hashes use pgcrypto SHA-256. The canonical JSON includes versio
 
 For Phase 10B, managers can read all own-organization templates, lifecycle states, children, and publication batches. Active personal routine users can read only active templates and the current published version and children. They cannot read drafts, discarded versions, or publication batches. Inventory counters, shared-device profiles without a future operator-session contract, inactive users, organization-less users, other organizations, and anon receive no template access. Authenticated clients have table `SELECT` only; all mutation is through the manager RPCs.
 
+Phase 10C follows the same boundary on all five new tables. Managers read own-tenant references, all versions, all template links, cleanup, and operations. Staff and shift leads read only current-published active logical references, current placeholder/active-image versions, and current-published links. Authenticated has no direct table INSERT/UPDATE/DELETE grant; mutation is limited to manager RPCs and the three narrow Storage policies. Counters, shared devices, inactive or organization-less profiles, other tenants, and anon receive no access.
+
 ## Migration order
 
 Apply the migration only after the repository's existing schema and completed Phase 9 migration chain, with Phase 9P remaining the terminal Phase 9 layer. Phase 10A is then the next additive layer:
@@ -167,9 +210,10 @@ Apply the migration only after the repository's existing schema and completed Ph
 1. existing `supabase/schema.sql` and pre-Phase 9 application migrations;
 2. the canonical Phase 9 manifest through Phase 9P;
 3. `supabase/phase10a_routine_engine_foundation.sql`;
-4. `supabase/phase10b_routine_templates.sql`.
+4. `supabase/phase10b_routine_templates.sql`;
+5. `supabase/phase10c_routine_reference_images.sql`.
 
-Both Phase 10 migrations are safe to reapply against their own completed schema. Reapplication recreates functions, policies, and triggers without changing routine data or audit timestamps. They must not be used to reorder or repair earlier migrations.
+All three Phase 10 migrations are safe to reapply against their own completed schema. Phase 10C also survives a Phase 10B function reapplication followed by Phase 10C restoration without changing data or audit timestamps. Reapplication recreates functions, policies, and triggers without repairing or reordering earlier migrations.
 
 ## Defaults and open configuration
 
@@ -181,7 +225,7 @@ The schema defines conservative defaults but does not create an organization set
 - shared-device support: disabled;
 - reopen window: 24 hours, constrained to 0–168 hours.
 
-Before a later rollout phase, product owners must approve the organization rollout mode, location catalog and hierarchy, location-set membership, the complete `O`, `C`, and `DS` content mappings, standard values/units/effective dates, source-adapter behavior, and whether shared-device operation is introduced. No value in this list is activated by Phase 10A or 10B. No `O01`–`O37`, `C01`–`C46`, or `DS01`–`DS04` content is seeded; content is deferred to Phase 10L.
+Before a later rollout phase, product owners must approve the organization rollout mode, location catalog and hierarchy, location-set membership, the complete `O`, `C`, and `DS` content mappings, standard values/units/effective dates, source-adapter behavior, approved actual Mesh reference images, and whether shared-device operation is introduced. No value in this list is activated by Phase 10A, 10B, or 10C. No `O01`–`O37`, `C01`–`C46`, `DS01`–`DS04`, random illustration, or actual Mesh image is seeded; content is deferred to Phase 10L.
 
 ## Verification and known baseline
 
@@ -189,10 +233,12 @@ Before a later rollout phase, product owners must approve the organization rollo
 
 `npm run verify:routine-templates` applies Phase 10A and 10B twice in another uniquely named, network-isolated disposable PostgreSQL 17 container. It executes 94 SQL assertions across schema, immutability, lifecycle, validation, publishing, RLS, and regression boundaries. Two real connections prove that concurrent draft creation produces at most one draft and that concurrent identical publish calls converge on one immutable publication batch. It fingerprints Inventory, legacy routine, Event Operations, and Auth objects and verifies data-stable migration reapplication.
 
+`npm run verify:routine-reference-images` applies Phase 10A, 10B, and 10C to another uniquely named, network-isolated disposable PostgreSQL 17 container. It executes 151 SQL assertions across schema, lifecycle, immutable versions/links, hashing, validation, publishing, Storage policy behavior, cleanup, paths, RLS, grants, and protected-domain regressions. Two real connections prove unique concurrent version allocation with stale rejection and convergence of identical finalize calls on one immutable operation. The runner also tests JPEG/PNG/WebP magic bytes, MIME mismatch, oversize rejection, and deterministic client normalization without network access. It fingerprints Inventory Storage and protected Inventory, legacy, Event Operations, and Auth schemas, then proves Phase 10B-plus-10C reapplication is data- and timestamp-stable.
+
 The pre-existing Phase 9L verification baseline is intentionally not repaired here. Its exact known failure is:
 
 > Phase 9L requires exactly one approved August shelf/storage source session.
 
 Only that same failure with the same fingerprint is an accepted baseline. Any new or changed Phase 9 failure is a regression.
 
-No Supabase production migration, data write, Auth configuration change, deployment, or feature activation has been performed for Phase 10A or Phase 10B. Routine reference images are deferred to Phase 10C. Operational routine runs and employee UI are deferred to Phase 10D; Double Shift runs, Realtime, and offline outbox behavior also remain outside Phase 10B.
+No Supabase production migration, bucket creation, data write, Auth configuration change, deployment, or feature activation has been performed for Phase 10A, 10B, or 10C. Operational routine runs, concrete image-version snapshots, and employee/manager React UI are deferred to Phase 10D; Double Shift runs, Realtime, and offline outbox behavior also remain outside Phase 10C.
