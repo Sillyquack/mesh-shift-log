@@ -403,6 +403,10 @@ textarea {
   flex-wrap: wrap;
 }
 
+.top-mobile-summary {
+  display: none;
+}
+
 .pilot-status {
   width: 100%;
   color: var(--muted) !important;
@@ -2603,8 +2607,43 @@ textarea {
   }
 
   .top-actions {
-    min-width: 0;
-    max-width: 185px;
+    display: none;
+    width: 100%;
+    max-width: none;
+    padding-top: 8px;
+    border-top: 1px solid var(--line);
+  }
+
+  .top-actions.mobile-open {
+    display: flex;
+  }
+
+  .top-mobile-summary {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    margin-left: auto;
+  }
+
+  .top-menu-toggle {
+    min-height: 36px;
+    border-color: var(--line);
+    padding-inline: 10px;
+  }
+
+  .top-online-dot {
+    width: 9px;
+    height: 9px;
+    border-radius: 50%;
+    background: var(--critical);
+  }
+
+  .top-online-dot.online {
+    background: var(--brand);
+  }
+
+  .top-bar:has(.top-actions.mobile-open) {
+    flex-wrap: wrap;
   }
 
   .pilot-status {

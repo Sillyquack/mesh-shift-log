@@ -2,9 +2,9 @@
 
 Mobile-first internal shift operations tool for Mesh Youngstorget hospitality staff.
 
-Current app version: `0.8.0`.
+Current app version: `0.8.1`.
 
-Release: `v0.8.0-stock-count-simplicity-hardening`.
+Release: `v0.8.1-mobile-safety-hardening`.
 
 Mesh Shift Log now supports Supabase-backed alerts, checklist/handover records, financial signoffs, event operations, and a production-backed Stock Count module with Supabase Auth email/password login. Stock Count includes immutable approved sessions, restricted counter assignments, operational refrigerator and storage scope, structured bottle/keg quantities, and manager-only Millum PDF export. The export uses one selected approved session and value-preserving conversion for the three protected wines. Staff-code login remains available as a local fallback/emergency pilot mode outside Stock Count. Routines, events, assets and several manager tools still use localStorage until later backend migration phases.
 

@@ -4,6 +4,7 @@ import test from 'node:test';
 
 const workspace = readFileSync(new URL('../src/components/InventoryWorkspace.jsx', import.meta.url), 'utf8');
 const styles = readFileSync(new URL('../src/styles.css', import.meta.url), 'utf8');
+const app = readFileSync(new URL('../src/App.jsx', import.meta.url), 'utf8');
 
 test('the normal manager path has only Home, Count, and Tools', () => {
   const nav = workspace.match(/<nav className="inventory-main-tabs"[\s\S]*?<\/nav>/)?.[0] || '';
@@ -47,4 +48,25 @@ test('the guided path remains usable on narrow mobile screens', () => {
   assert.match(styles, /\.inventory-workflow-steps\s*\{[\s\S]*?grid-template-columns:\s*repeat\(4,/);
   assert.match(styles, /@media \(max-width: 700px\)[\s\S]*?\.inventory-workflow-steps\s*\{[\s\S]*?grid-template-columns:\s*repeat\(2,/);
   assert.match(styles, /\.inventory-next-action,[\s\S]*?\.inventory-tool-grid\s*\{[\s\S]*?grid-template-columns:\s*1fr;/);
+});
+
+test('an approved monthly count replaces the unsafe second-start action', () => {
+  assert.match(workspace, /approvedMonthlySessionForDate/);
+  assert.match(workspace, /session\.countType === 'monthly'/);
+  assert.match(workspace, /This month is already approved/);
+  assert.match(workspace, /View approved count/);
+  assert.match(workspace, /A correction should be started from the approved count/);
+});
+
+test('the redundant Stock Count workspace Back button is removed', () => {
+  const topbar = workspace.match(/<header className="inventory-topbar">[\s\S]*?<\/header>/)?.[0] || '';
+  assert.doesNotMatch(topbar, />Back<\/button>/);
+});
+
+test('mobile account actions stay collapsed behind an accessible menu', () => {
+  assert.match(app, /aria-expanded=\{mobileMenuOpen\}/);
+  assert.match(app, /aria-controls="top-account-actions"/);
+  assert.match(app, /top-actions \$\{mobileMenuOpen \? "mobile-open" : ""\}/);
+  assert.match(styles, /@media \(max-width: 520px\)[\s\S]*?\.top-actions\s*\{[\s\S]*?display:\s*none;/);
+  assert.match(styles, /\.top-actions\.mobile-open\s*\{[\s\S]*?display:\s*flex;/);
 });

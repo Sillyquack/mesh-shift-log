@@ -3317,6 +3317,7 @@ function TopBar({
   onOpenInventory,
   onOpenAccountSecurity,
 }) {
+  const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
   const shiftLabel =
     selectedShift === "manager"
       ? "Manager dashboard"
@@ -3338,7 +3339,13 @@ function TopBar({
           </span>
         )}
       </div>
-      <div className="top-actions">
+      <div className="top-mobile-summary">
+        <span className={`top-online-dot ${isOnline ? "online" : "offline"}`} aria-hidden="true" />
+        <button type="button" className="ghost-button top-menu-toggle" aria-expanded={mobileMenuOpen} aria-controls="top-account-actions" onClick={() => setMobileMenuOpen((open) => !open)}>
+          {mobileMenuOpen ? "Close" : "Menu"}
+        </button>
+      </div>
+      <div id="top-account-actions" className={`top-actions ${mobileMenuOpen ? "mobile-open" : ""}`}>
         {isSharedDeviceUser(user) && (
           <button
             type="button"
