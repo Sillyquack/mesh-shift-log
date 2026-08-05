@@ -376,6 +376,8 @@ export function MillumExportView({ session, onBack, loadExport = getInventoryMil
 
   const diagnostics = exportData?.diagnostics || [];
   const mappingDiagnostics = exportData?.mappingDiagnostics || [];
+  const notices = exportData?.notices || [];
+  const sourceSessions = exportData?.sourceSessions || [];
   return (
     <div className="inventory-stack inventory-millum-export">
       <section className="inventory-session-header inventory-millum-header">
@@ -384,7 +386,7 @@ export function MillumExportView({ session, onBack, loadExport = getInventoryMil
         <Status tone={exportData.ready ? 'good' : ''}>{exportData.ready ? 'Ready' : 'Blocked'}</Status>
       </section>
       <section className="inventory-panel inventory-millum-instructions">
-        <div><h3>Manual Millum entry</h3><p>Type the prominent final value from each row into <strong>Counted break bulk</strong>. The approved Stock Count remains unchanged.</p></div>
+        <div><h3>Manual Millum entry</h3><p>Type the prominent final value from each row into <strong>Counted break bulk</strong>. The approved Stock Counts remain unchanged.</p>{sourceSessions.length > 0 && <p className="muted">Combined approved sources: {sourceSessions.map((source) => `${source.countDate} · ${source.sessionShortRef}`).join(' + ')}</p>}</div>
         <div className="inventory-action-row">
           <button type="button" className="primary-button" disabled={!exportData.ready || actionState.busy} onClick={() => runPdfAction(async ({ file, pageCount }) => { downloadMillumExportFile(file); return { message: `PDF downloaded (${pageCount} pages).` }; })}>{actionState.busy ? 'Preparing PDF…' : 'Download PDF'}</button>
           <button type="button" className="secondary-button" disabled={!exportData.ready || actionState.busy} onClick={() => runPdfAction(async ({ file }) => shareMillumExportFile(file))}>Share PDF</button>
@@ -392,7 +394,8 @@ export function MillumExportView({ session, onBack, loadExport = getInventoryMil
         {actionState.message && <p className="inventory-message success" role="status">{actionState.message}</p>}
         {actionState.error && <p className="inventory-message error" role="alert">{actionState.error}</p>}
       </section>
-      {diagnostics.length > 0 && <section className="inventory-panel inventory-millum-diagnostics" role="alert"><h3>Clean export blocked</h3><p>Resolve these manager-only mapping or source-count gaps in a future approved count/profile before generating the final PDF.</p><ul>{diagnostics.map((item, index) => <li key={`${item.code}-${item.rowKey || item.productId || index}`}><strong>{item.itemNumber ? `${item.itemNumber} · ` : ''}{item.productName}</strong><span>{item.message}</span></li>)}</ul></section>}
+      {diagnostics.length > 0 && <section className="inventory-panel inventory-millum-diagnostics" role="alert"><h3>Clean export blocked</h3><p>Resolve these manager-only mapping or source-count gaps in a future approved count/profile before generating the final PDF.</p><ul>{diagnostics.map((item, index) => <li key={`${item.code}-${item.rowKey || item.productId || index}`}><strong>{item.itemNumber ? `${item.itemNumber} · ` : ''}{item.productName || (item.locations || []).map((location) => location.locationName).join(', ') || 'Source count gap'}</strong><span>{item.message}</span></li>)}</ul></section>}
+      {notices.length > 0 && <details className="inventory-panel inventory-millum-notices"><summary>Non-blocking export notices ({notices.length})</summary><ul>{notices.map((item, index) => <li key={`${item.code}-${item.productId || index}`}><strong>{item.itemNumber ? `${item.itemNumber} · ` : ''}{item.productName}</strong><span>{item.message}</span></li>)}</ul></details>}
       <div className="inventory-millum-groups" aria-label="Millum Counted break bulk values">
         {(exportData.groups || []).map((group) => <section className="inventory-panel inventory-millum-group" key={group.name}><h3>{group.name}</h3><div className="inventory-millum-table" role="table" aria-label={group.name}><div className="inventory-millum-row inventory-millum-columns" role="row"><strong role="columnheader">Item</strong><strong role="columnheader">Product</strong><strong role="columnheader">Counted break bulk</strong></div>{(group.rows || []).map((row) => <div className={`inventory-millum-row ${row.state !== 'ready' ? 'blocked' : ''}`} role="row" key={row.rowKey}><span role="cell">{row.itemNumber}</span><span role="cell">{row.productName}</span><strong role="cell" aria-label={row.state === 'ready' ? `Final Millum value ${row.finalValue}` : 'Missing final Millum value'}>{row.state === 'ready' ? row.finalValue : 'Missing'}</strong></div>)}</div></section>)}
       </div>

@@ -15,14 +15,18 @@ const app = readFileSync(new URL('../src/App.jsx', import.meta.url), 'utf8');
 const runner = readFileSync(new URL('./verify-phase9-security-db.mjs', import.meta.url), 'utf8');
 const assertions = readFileSync(new URL('../supabase/tests/phase9/counter-workflow-assertions.sql', import.meta.url), 'utf8');
 
-test('Phase 9G-C and Phase 9G-D remain before repeatable Phase 9H, 9I and terminal Phase 9J', () => {
+test('Phase 9G-C and Phase 9G-D remain before repeatable Phase 9H through terminal Phase 9K', () => {
   const entries = validatedPhase9MigrationEntries();
-  assert.equal(PHASE9_TERMINAL_MIGRATION, 'supabase/phase9j_inventory_shelf_storage_guidance.sql');
-  assert.equal(entries.at(-2).path, 'supabase/phase9i_millum_stock_count_exports.sql');
-  assert.equal(entries.at(-3).path, 'supabase/phase9h_inventory_session_location_scope.sql');
-  assert.deepEqual(entries.filter((entry) => entry.repeatable).map((entry) => entry.path), [entries.at(-3).path, entries.at(-2).path, PHASE9_TERMINAL_MIGRATION]);
-  assert.equal(entries.at(-4).path, 'supabase/phase9gd_inventory_product_mappings.sql');
-  assert.equal(entries.at(-5).path, 'supabase/phase9gc_inventory_counter_mobile.sql');
+  assert.equal(PHASE9_TERMINAL_MIGRATION, 'supabase/20260804200000_phase9o_millum_wine_value_conversion.sql');
+  assert.equal(entries.at(-2).path, 'supabase/20260804180000_phase9n_millum_single_authoritative_session.sql');
+  assert.equal(entries.at(-3).path, 'supabase/20260804151500_phase9m_millum_snapshot_supplement.sql');
+  assert.equal(entries.at(-4).path, 'supabase/20260804123921_phase9l_millum_august_carry_forward_and_future_scope.sql');
+  assert.equal(entries.at(-5).path, 'supabase/phase9k_millum_complete_count_export.sql');
+  assert.equal(entries.at(-6).path, 'supabase/phase9j_inventory_shelf_storage_guidance.sql');
+  assert.equal(entries.at(-7).path, 'supabase/phase9i_millum_stock_count_exports.sql');
+  assert.deepEqual(entries.filter((entry) => entry.repeatable).map((entry) => entry.path), [entries.at(-8).path, entries.at(-7).path, entries.at(-6).path, entries.at(-5).path]);
+  assert.equal(entries.at(-8).path, 'supabase/phase9h_inventory_session_location_scope.sql');
+  assert.equal(entries.at(-9).path, 'supabase/phase9gd_inventory_product_mappings.sql');
 });
 
 test('counter role requires verified Supabase identity and never inherits manager permissions', () => {

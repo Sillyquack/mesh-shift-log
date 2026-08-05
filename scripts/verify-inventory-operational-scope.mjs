@@ -148,17 +148,21 @@ test('Phase 9G never rewrites completed or approved session history', () => {
   assert.doesNotMatch(migration, /drop trigger if exists inventory_count_lines_integrity/i);
 });
 
-test('Phase 9G-D remains immediately before repeatable Phase 9H through terminal Phase 9J', () => {
+test('Phase 9G-D remains before repeatable Phase 9H-9K and audited Phase 9L-9O', () => {
   const manifest = readPhase9MigrationManifest();
   const entries = validatedPhase9MigrationEntries(manifest);
-  assert.equal(PHASE9_TERMINAL_MIGRATION, 'supabase/phase9j_inventory_shelf_storage_guidance.sql');
+  assert.equal(PHASE9_TERMINAL_MIGRATION, 'supabase/20260804200000_phase9o_millum_wine_value_conversion.sql');
   assert.equal(entries.at(-1).path, PHASE9_TERMINAL_MIGRATION);
-  assert.equal(entries.at(-2).path, 'supabase/phase9i_millum_stock_count_exports.sql');
-  assert.equal(entries.at(-3).path, 'supabase/phase9h_inventory_session_location_scope.sql');
-  assert.deepEqual(entries.filter((entry) => entry.repeatable).map((entry) => entry.path), [entries.at(-3).path, entries.at(-2).path, PHASE9_TERMINAL_MIGRATION]);
+  assert.equal(entries.at(-2).path, 'supabase/20260804180000_phase9n_millum_single_authoritative_session.sql');
+  assert.equal(entries.at(-3).path, 'supabase/20260804151500_phase9m_millum_snapshot_supplement.sql');
+  assert.equal(entries.at(-4).path, 'supabase/20260804123921_phase9l_millum_august_carry_forward_and_future_scope.sql');
+  assert.equal(entries.at(-5).path, 'supabase/phase9k_millum_complete_count_export.sql');
+  assert.equal(entries.at(-6).path, 'supabase/phase9j_inventory_shelf_storage_guidance.sql');
+  assert.equal(entries.at(-7).path, 'supabase/phase9i_millum_stock_count_exports.sql');
+  assert.deepEqual(entries.filter((entry) => entry.repeatable).map((entry) => entry.path), [entries.at(-8).path, entries.at(-7).path, entries.at(-6).path, entries.at(-5).path]);
   assert.ok(entries.findIndex((entry) => entry.path.includes('phase9f_')) < entries.findIndex((entry) => entry.path.includes('phase9g_inventory_')));
-  assert.equal(entries.at(-4).path, 'supabase/phase9gd_inventory_product_mappings.sql');
-  assert.equal(entries.at(-5).path, 'supabase/phase9gc_inventory_counter_mobile.sql');
+  assert.equal(entries.at(-8).path, 'supabase/phase9h_inventory_session_location_scope.sql');
+  assert.equal(entries.at(-9).path, 'supabase/phase9gd_inventory_product_mappings.sql');
 });
 
 test('client loads category, alias, unresolved, template, and reserve records without text-derived identities', () => {

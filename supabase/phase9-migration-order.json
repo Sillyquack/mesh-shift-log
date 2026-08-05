@@ -86,7 +86,32 @@
       "id": "phase9j-shelf-storage-guidance",
       "path": "supabase/phase9j_inventory_shelf_storage_guidance.sql",
       "repeatable": true
+    },
+    {
+      "id": "phase9k-millum-complete-count-export",
+      "path": "supabase/phase9k_millum_complete_count_export.sql",
+      "repeatable": true
+    },
+    {
+      "id": "phase9l-millum-august-carry-forward-and-future-scope",
+      "path": "supabase/20260804123921_phase9l_millum_august_carry_forward_and_future_scope.sql",
+      "repeatable": false
+    },
+    {
+      "id": "phase9m-millum-snapshot-supplement",
+      "path": "supabase/20260804151500_phase9m_millum_snapshot_supplement.sql",
+      "repeatable": false
+    },
+    {
+      "id": "phase9n-millum-single-authoritative-session",
+      "path": "supabase/20260804180000_phase9n_millum_single_authoritative_session.sql",
+      "repeatable": false
+    },
+    {
+      "id": "phase9o-millum-wine-value-conversion",
+      "path": "supabase/20260804200000_phase9o_millum_wine_value_conversion.sql",
+      "repeatable": false
     }
   ],
-  "terminalMigration": "supabase/phase9j_inventory_shelf_storage_guidance.sql"
+  "terminalMigration": "supabase/20260804200000_phase9o_millum_wine_value_conversion.sql"
 }

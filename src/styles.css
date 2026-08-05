@@ -2706,6 +2706,14 @@ textarea {
   margin-top: 0;
 }
 
+.inventory-millum-instructions button:disabled {
+  cursor: not-allowed;
+  border: 1px solid var(--line);
+  background: var(--surface-strong);
+  color: var(--text-muted);
+  opacity: 0.72;
+}
+
 .inventory-millum-groups {
   display: grid;
   gap: 16px;
@@ -2772,6 +2780,7 @@ textarea {
 }
 
 .inventory-millum-diagnostics ul,
+.inventory-millum-notices ul,
 .inventory-millum-profile-diagnostics ul {
   display: grid;
   gap: 10px;
@@ -2780,6 +2789,7 @@ textarea {
 }
 
 .inventory-millum-diagnostics li span,
+.inventory-millum-notices li span,
 .inventory-millum-profile-diagnostics li span {
   display: block;
   margin-top: 2px;

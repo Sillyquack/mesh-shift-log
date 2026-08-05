@@ -143,8 +143,11 @@ select phase9i_test.assert_true(
 );
 
 select phase9i_test.assert_true(
-  (select count(*) = 3 from inventory_private.inventory_millum_export_transforms),
-  'DB-9I-15: exactly three protected transformation records belong to profile v1'
+  (select count(*) = 6 from inventory_private.inventory_millum_export_transforms)
+  and (select count(*) = 3 from inventory_private.inventory_millum_export_transforms transform
+       join public.inventory_millum_export_profiles profile on profile.id = transform.profile_id
+       where profile.profile_version = 2),
+  'DB-9I-15: profiles v1 and v2 each retain exactly three protected transformation records'
 );
 
 select phase9i_test.assert_true(
@@ -321,11 +324,11 @@ select phase9i_test.assert_sqlstate(
 reset role;
 
 select phase9i_test.assert_true(
-  (select count(*) = 4 from public.inventory_millum_export_snapshots
+  (select count(*) = 2 from public.inventory_millum_export_snapshots
    where organization_id = 'aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaa1')
   and (select count(*) = count(distinct session_id) from public.inventory_millum_export_snapshots
        where organization_id = 'aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaa1'),
-  'DB-9I-43: each approved session and profile association creates at most one immutable snapshot'
+  'DB-9I-43: only clean exports persist one immutable snapshot while blocked previews remain retryable'
 );
 
 select set_config('request.jwt.claim.sub', '10000000-0000-4000-8000-000000000001', false);
@@ -341,8 +344,12 @@ select phase9i_test.assert_true(
   (select snapshot.source_digest = source.current_digest
    from public.inventory_millum_export_snapshots snapshot
    cross join lateral (
-     select md5(coalesce(jsonb_agg(to_jsonb(line) order by line.id)::text, '[]')) as current_digest
-     from public.inventory_count_lines line where line.session_id = snapshot.session_id
+     select md5(jsonb_build_object(
+       'sessions', (select jsonb_agg(to_jsonb(source_session) order by source_session.id)
+         from public.inventory_count_sessions source_session where source_session.id = snapshot.session_id),
+       'lines', (select jsonb_agg(to_jsonb(line) order by line.session_id, line.id)
+         from public.inventory_count_lines line where line.session_id = snapshot.session_id)
+     )::text) as current_digest
    ) source
    where snapshot.session_id = '9a100000-0000-4000-8000-000000000001'),
   'DB-9I-45: export view and snapshot generation leave approved source lines byte-logically unchanged'

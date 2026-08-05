@@ -6,7 +6,7 @@ Current app version: `0.7.0`.
 
 Release: `v0.7.0-phase-5a-financial-signoffs`.
 
-Mesh Shift Log now supports Supabase-backed alerts, checklist/handover records and financial signoffs with Supabase Auth email/password login. Staff-code login remains available as a local fallback/emergency pilot mode. Routines, events, assets and several manager tools still use localStorage until later backend migration phases.
+Mesh Shift Log now supports Supabase-backed alerts, checklist/handover records, financial signoffs, event operations, and a production-backed Stock Count module with Supabase Auth email/password login. Stock Count includes immutable approved sessions, restricted counter assignments, operational refrigerator and storage scope, structured bottle/keg quantities, and manager-only Millum PDF export. The export uses one selected approved session and value-preserving conversion for the three protected wines. Staff-code login remains available as a local fallback/emergency pilot mode outside Stock Count. Routines, events, assets and several manager tools still use localStorage until later backend migration phases.
 
 ## Pilot Use
 
@@ -31,6 +31,8 @@ Mesh Shift Log now supports Supabase-backed alerts, checklist/handover records a
 - Supabase Edge Functions for urgent alert email notification
 - Resend email delivery
 - localStorage fallback/cache for local app data and non-migrated modules
+
+The Stock Count authorization, lifecycle, migration order, and Millum export guarantees are documented in [docs/stock-count-security.md](docs/stock-count-security.md).
 
 ## Install / Offline
 

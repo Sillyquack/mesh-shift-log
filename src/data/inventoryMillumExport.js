@@ -69,6 +69,12 @@ function pdfTimestamp(exportData) {
   return Number.isNaN(date.getTime()) ? new Date(`${exportData.countDate}T00:00:00Z`) : date;
 }
 
+function sourceSummary(exportData) {
+  const sources = Array.isArray(exportData?.sourceSessions) ? exportData.sourceSessions : [];
+  if (!sources.length) return `Source count ${exportData.sessionShortRef}`;
+  return `Source counts ${sources.map((source) => `${source.countDate} ${source.sessionShortRef}`).join(' + ')}`;
+}
+
 export async function createMillumExportPdf(exportData) {
   validateMillumExportData(exportData);
   const { PDFDocument, StandardFonts, rgb } = await import('pdf-lib');
@@ -99,6 +105,7 @@ export async function createMillumExportPdf(exportData) {
     page.drawText('Millum Stock Count', { x: MARGIN, y: 774, size: 11, font: bold, color: rgb(0.15, 0.2, 0.28) });
     page.drawText(`Count date ${exportData.countDate}  |  Approved ${new Date(exportData.approvedAt).toLocaleString('nb-NO', { timeZone: 'Europe/Oslo' })}`, { x: MARGIN, y: 757, size: 8.5, font: regular, color: rgb(0.28, 0.32, 0.38) });
     page.drawText(`Session ${exportData.sessionShortRef}  |  Export profile v${exportData.profileVersion}`, { x: MARGIN, y: 743, size: 8.5, font: regular, color: rgb(0.28, 0.32, 0.38) });
+    page.drawText(sourceSummary(exportData), { x: MARGIN, y: 730, size: 8, font: regular, color: rgb(0.28, 0.32, 0.38) });
     page.drawRectangle({ x: MARGIN, y: BODY_TOP + 1, width: contentWidth, height: 22, color: rgb(0.9, 0.92, 0.95) });
     page.drawText('Item', { x: MARGIN + 5, y: BODY_TOP + 8, size: 8.5, font: bold });
     page.drawText('Product', { x: MARGIN + TABLE_COLUMNS.item + 5, y: BODY_TOP + 8, size: 8.5, font: bold });
@@ -155,7 +162,7 @@ export async function createMillumExportFile(exportData) {
   return { file, bytes, pageCount };
 }
 
-export function downloadMillumExportFile(file, documentApi = globalThis.document, urlApi = globalThis.URL) {
+export function downloadMillumExportFile(file, documentApi = globalThis.document, urlApi = globalThis.URL, schedule = globalThis.setTimeout) {
   if (!file || !documentApi?.createElement || !urlApi?.createObjectURL) throw new Error('PDF download is unavailable in this browser.');
   const href = urlApi.createObjectURL(file);
   const anchor = documentApi.createElement('a');
@@ -165,7 +172,7 @@ export function downloadMillumExportFile(file, documentApi = globalThis.document
   documentApi.body.appendChild(anchor);
   anchor.click();
   anchor.remove();
-  globalThis.setTimeout(() => urlApi.revokeObjectURL(href), 0);
+  schedule(() => urlApi.revokeObjectURL(href), 60_000);
   return file.name;
 }
 

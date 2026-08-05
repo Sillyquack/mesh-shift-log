@@ -14,6 +14,11 @@ import {
 } from '../src/data/inventoryMillumExport.js';
 
 const migration = readFileSync(new URL('../supabase/phase9i_millum_stock_count_exports.sql', import.meta.url), 'utf8');
+const completeMigration = readFileSync(new URL('../supabase/phase9k_millum_complete_count_export.sql', import.meta.url), 'utf8');
+const augustCompletionMigration = readFileSync(new URL('../supabase/20260804123921_phase9l_millum_august_carry_forward_and_future_scope.sql', import.meta.url), 'utf8');
+const snapshotSupplementMigration = readFileSync(new URL('../supabase/20260804151500_phase9m_millum_snapshot_supplement.sql', import.meta.url), 'utf8');
+const singleSourceMigration = readFileSync(new URL('../supabase/20260804180000_phase9n_millum_single_authoritative_session.sql', import.meta.url), 'utf8');
+const wineValueMigration = readFileSync(new URL('../supabase/20260804200000_phase9o_millum_wine_value_conversion.sql', import.meta.url), 'utf8');
 const migrationManifestStart = migration.indexOf('$manifest$') + '$manifest$'.length;
 const migrationManifestEnd = migration.indexOf('$manifest$::jsonb', migrationManifestStart);
 const manifest = JSON.parse(migration.slice(migrationManifestStart, migrationManifestEnd));
@@ -63,6 +68,11 @@ function sampleExport(overrides = {}) {
     groups,
     diagnostics: [],
     mappingDiagnostics: manifest.filter((row) => !row.enabled).map((row) => ({ rowKey: `${row.g}-${row.ro}-${row.ref}-${row.occ}`, enabled: false })),
+    sourceSessions: [
+      { sessionId: '9a100000-0000-4000-8000-000000000010', sessionShortRef: '9A100010', countDate: '2026-08-03' },
+      { sessionId: '9a100000-0000-4000-8000-000000000001', sessionShortRef: '9A100000', countDate: '2026-08-04' },
+    ],
+    notices: [],
     ...overrides,
   };
 }
@@ -91,6 +101,92 @@ test('clean export validation distinguishes legitimate zero from missing data', 
   missing.groups[0].rows[0].state = 'missing';
   delete missing.groups[0].rows[0].finalValue;
   assert.throws(() => validateMillumExportData(missing), /Resolve every Millum export diagnostic/);
+});
+
+test('v2 export combines approved monthly location sources and supports every structured count mode', () => {
+  assert.match(completeMigration, /inventory_install_millum_profile_v2/);
+  assert.match(completeMigration, /source_session\.count_type = v_session\.count_type/);
+  assert.match(completeMigration, /source_session\.count_date between \(v_session\.count_date - 3\) and v_session\.count_date/);
+  assert.match(completeMigration, /line\.session_id = any\(v_source_session_ids\)/);
+  assert.match(completeMigration, /count_mode_snapshot = 'container_plus_volume'/);
+  assert.match(completeMigration, /count_mode_snapshot = 'keg_fraction'/);
+  assert.match(completeMigration, /count_mode_snapshot = 'case_plus_loose'/);
+  assert.match(completeMigration, /'sourceSessions', v_source_sessions/);
+});
+
+test('zero supplemental products are visible notices while non-zero omissions still block', () => {
+  assert.match(completeMigration, /v_extra\.canonical_quantity is null or v_extra\.canonical_quantity <> 0/);
+  assert.match(completeMigration, /zero_product_not_in_profile/);
+  assert.match(completeMigration, /counted_product_not_in_profile/);
+});
+
+test('v2 retains all three protected wine transforms and a fresh immutable snapshot namespace', () => {
+  assert.match(completeMigration, /profile_version = 2/);
+  assert.match(completeMigration, /inventory_millum_export_transforms/);
+  assert.match(completeMigration, /inventory_millum_apply_transform/);
+  assert.match(completeMigration, /inventory_millum_export_snapshots/);
+  assert.match(completeMigration, /if jsonb_array_length\(v_diagnostics\) > 0 then\s+return v_payload;/);
+});
+
+test('August completion is session-scoped, audited, and never mutates approved count lines', () => {
+  assert.match(augustCompletionMigration, /inventory_millum_export_session_values/);
+  assert.match(augustCompletionMigration, /session\.title = 'August stock count - Bar Shelves and Main Storage - 2026-08-04'/);
+  assert.doesNotMatch(augustCompletionMigration, /b3f3e457-902e-4c2f-b2b1-8fe0ed85423e/);
+  assert.match(augustCompletionMigration, /\('beer-04-4019089-1', 4\.75::numeric/);
+  assert.match(augustCompletionMigration, /Prior 5\.0 keg equivalents less 19 sales of 0\.4 L from a 30 L keg/);
+  assert.doesNotMatch(augustCompletionMigration, /(update|delete from)\s+public\.inventory_count_(sessions|lines)/i);
+  assert.doesNotMatch(augustCompletionMigration, /insert into\s+public\.inventory_count_lines/i);
+});
+
+test('all twelve previously missing products become physical Main Storage lines for future counts', () => {
+  for (const itemNumber of ['5744222','6681001','6017933','6152995','6152979','4019089','2446276','4043579','4043495','4043535']) {
+    assert.match(augustCompletionMigration, new RegExp(`'${itemNumber}'`));
+  }
+  for (const itemNumber of ['4014701', '4030686']) {
+    assert.match(snapshotSupplementMigration, new RegExp(`'${itemNumber}'`));
+  }
+  assert.match(augustCompletionMigration, /upper\(trim\(location\.code\)\) = 'MAIN_STORAGE'/);
+  assert.match(augustCompletionMigration, /'physical_count_only'/);
+  assert.match(augustCompletionMigration, /count_mode = 'keg_fraction'/);
+});
+
+test('blocked snapshots receive all twelve audited values without touching approved counts', () => {
+  assert.match(snapshotSupplementMigration, /get_inventory_millum_export_v2_carry_base/);
+  assert.match(snapshotSupplementMigration, /v_row->>'state' = 'missing'/);
+  assert.match(snapshotSupplementMigration, /'sodas-12-4014701-1', 22::numeric/);
+  assert.match(snapshotSupplementMigration, /'sodas-23-4030686-1', 9::numeric/);
+  assert.match(snapshotSupplementMigration, /count\(\*\).*<> 12/s);
+  assert.doesNotMatch(snapshotSupplementMigration, /(update|delete from)\s+public\.inventory_count_(sessions|lines)/i);
+  assert.doesNotMatch(snapshotSupplementMigration, /insert into\s+public\.inventory_count_lines/i);
+});
+
+test('terminal export uses exactly the selected approved session plus audited overrides', () => {
+  assert.match(singleSourceMigration, /where line\.session_id = v_session\.id/);
+  assert.doesNotMatch(singleSourceMigration, /line\.session_id = any\(v_source_session_ids\)/);
+  assert.doesNotMatch(singleSourceMigration, /source_session\.count_date between/);
+  assert.match(singleSourceMigration, /'sourceRuleVersion', 3/);
+  assert.match(singleSourceMigration, /'sourceSessions', jsonb_build_array/);
+  assert.match(singleSourceMigration, /'hard-alcohol-06-1917681-1', 2\.55::numeric/);
+  assert.match(singleSourceMigration, /'wine-03-4057913-1', 3\.75::numeric/);
+  assert.match(singleSourceMigration, /count\(\*\).*<> 41/s);
+  assert.doesNotMatch(singleSourceMigration, /(update|delete from)\s+public\.inventory_count_(sessions|lines)/i);
+  assert.doesNotMatch(singleSourceMigration, /insert into\s+public\.inventory_count_lines/i);
+});
+
+test('terminal wine conversion preserves purchase value instead of converting cases', () => {
+  assert.match(wineValueMigration, /get_inventory_millum_export_single_session_base/);
+  assert.match(wineValueMigration, /line\.session_id = input_session_id/);
+  assert.match(wineValueMigration, /'4000232'::text, 75::numeric, 111\.89::numeric/);
+  assert.match(wineValueMigration, /'4057913'::text, 100::numeric, 154::numeric/);
+  assert.match(wineValueMigration, /'4004935'::text, 100::numeric, 208\.87::numeric/);
+  assert.match(wineValueMigration, /v_physical \* v_wine\.actual_purchase_price \/ v_wine\.millum_market_price/);
+  assert.match(wineValueMigration, /wineValueRuleVersion/);
+  assert.doesNotMatch(wineValueMigration, /(update|delete from)\s+public\.inventory_count_(sessions|lines)/i);
+  assert.doesNotMatch(wineValueMigration, /insert into\s+public\.inventory_count_lines/i);
+
+  assert.equal(Number((3 * 75 / 111.89).toFixed(2)), 2.01);
+  assert.equal(Number((185 * 100 / 154).toFixed(2)), 120.13);
+  assert.equal(Number((204 * 100 / 208.87).toFixed(2)), 97.67);
 });
 
 test('manager PDF is deterministic, A4, multi-page, complete, and repeats its table header plan', async () => {
@@ -178,9 +274,9 @@ test('download creates one temporary anchor and revokes the object URL', async (
     createObjectURL: (value) => { assert.equal(value, file); events.push('create'); return 'blob:test'; },
     revokeObjectURL: (href) => { assert.equal(href, 'blob:test'); events.push('revoke'); },
   };
-  assert.equal(downloadMillumExportFile(file, documentApi, urlApi), file.name);
-  await new Promise((resolve) => setTimeout(resolve, 5));
-  assert.deepEqual(events, ['create', 'append', 'click', 'remove', 'revoke']);
+  const schedule = (operation, delay) => { assert.equal(delay, 60_000); events.push('schedule'); operation(); };
+  assert.equal(downloadMillumExportFile(file, documentApi, urlApi, schedule), file.name);
+  assert.deepEqual(events, ['create', 'append', 'click', 'remove', 'schedule', 'revoke']);
 });
 
 test('exactly-once guard shares one pending operation and permits an actionable retry', async () => {

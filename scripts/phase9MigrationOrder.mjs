@@ -23,15 +23,21 @@ export const EXPECTED_PHASE9_MIGRATION_ORDER = [
   'supabase/phase9h_inventory_session_location_scope.sql',
   'supabase/phase9i_millum_stock_count_exports.sql',
   'supabase/phase9j_inventory_shelf_storage_guidance.sql',
+  'supabase/phase9k_millum_complete_count_export.sql',
+  'supabase/20260804123921_phase9l_millum_august_carry_forward_and_future_scope.sql',
+  'supabase/20260804151500_phase9m_millum_snapshot_supplement.sql',
+  'supabase/20260804180000_phase9n_millum_single_authoritative_session.sql',
+  'supabase/20260804200000_phase9o_millum_wine_value_conversion.sql',
 ];
 
 export const PHASE9_TERMINAL_MIGRATION =
-  'supabase/phase9j_inventory_shelf_storage_guidance.sql';
+  'supabase/20260804200000_phase9o_millum_wine_value_conversion.sql';
 
 export const PHASE9_REPEATABLE_MIGRATIONS = new Set([
   'supabase/phase9h_inventory_session_location_scope.sql',
   'supabase/phase9i_millum_stock_count_exports.sql',
-  PHASE9_TERMINAL_MIGRATION,
+  'supabase/phase9j_inventory_shelf_storage_guidance.sql',
+  'supabase/phase9k_millum_complete_count_export.sql',
 ]);
 
 export const PHASE9_PRODUCT_MAPPING_MIGRATION =
@@ -55,7 +61,7 @@ export function validatePhase9MigrationOrder(paths) {
     }
   }
   if (paths.at(-1) !== PHASE9_TERMINAL_MIGRATION) {
-    throw new Error('Phase 9J shelf, storage, and reference guidance must be the terminal migration.');
+    throw new Error('Phase 9O wine value conversion must be the terminal migration.');
   }
   return paths;
 }

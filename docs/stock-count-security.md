@@ -33,7 +33,7 @@ Authenticated receives execution only for the sanitized session reader and the e
 
 Inventory tables remain directly read-only to authenticated clients. RLS exposes rows only to the active non-shared manager whose non-null profile organization equals the row organization. Null organization values deny access; they never broaden it.
 
-Phase 9C is additive and must be applied after Phase 9B. It overrides authorization helpers, policies, and grants without replacing Phase 9B stock-policy calculations or modifying inventory data. Phase 9D retains that manager-only boundary while adding session-integrity invariants. Phase 9E explicitly exposes stable product identity to the existing safe count-line read surface. Phase 9F is the terminal layer and extends only the same manager-only RPC/read surfaces with structured quantity snapshots and components.
+Phase 9C is additive and must be applied after Phase 9B. It overrides authorization helpers, policies, and grants without replacing Phase 9B stock-policy calculations or modifying inventory data. Phase 9D retains that manager-only boundary while adding session-integrity invariants. Phase 9E explicitly exposes stable product identity to the existing safe count-line read surface. Phase 9F extends the same manager-only RPC/read surfaces with structured quantity snapshots and components. Phases 9G–9J add operational refrigerator scope, restricted counter assignments, stable product mappings, explicit session locations, Millum exports, and shelf/storage guidance without weakening the Phase 9C authority boundary. Phases 9K–9O complete and correct the manager-only Millum export path described below.
 
 ## Stock Count lifecycle integrity
 
@@ -103,6 +103,14 @@ Column order is fixed per export:
 3. Product catalog: `Product name`, `Product ID`, `SKU`, `Barcode`, `Category`, `Configured unit`, `Count mode`, `Container capacity L`, `Active`, `Supplier`.
 4. Location standards: `Location`, `Product`, `Product ID`, `SKU`, `Stock policy`, `Target mode`, `Configured target`, `Multiplier`, `Case size`, `Target cases`, `Loose target`, `Recount interval`, `Count order`.
 
+## Millum PDF source and valuation rules
+
+Millum PDF generation is manager-only and accepts only an approved session in the manager's organization. The terminal Phase 9N implementation reads exactly the selected approved session; older counts, test counts, and other sessions are never summed into it. Session-scoped audited carry-forward values remain separate from immutable count lines and exist only for explicitly reviewed historical exceptions.
+
+The export profile has 89 enabled Millum rows. A non-zero counted product missing from the profile blocks a clean export; a zero-count product outside the profile is a visible non-blocking notice. The PDF button remains disabled while blocking diagnostics exist. The payload records the selected source session and the PDF prints that source reference on every page.
+
+Phase 9O applies value-preserving conversion to exactly three protected wines. It derives the physical bottle quantity from the selected session and calculates `physical quantity × actual purchase price ÷ Millum market price`, rounded to two decimals. This is inventory-value conversion, not case or bulk conversion. For the August 2026 approved count, the verified examples are Abbazia `3 → 2.01`, Ca' di Rajo `185 → 120.13`, and Ca'n Verdura `204 → 97.67`. The public wrapper delegates authorization, organization ownership, approved-state validation, single-session sourcing, and diagnostics to the private terminal base function. `PUBLIC` and `anon` execution are revoked; only `authenticated` can invoke the guarded wrapper.
+
 ## Canonical local migration order
 
 The Phase 9 inventory verification order is recorded in `supabase/phase9-migration-order.json`:
@@ -115,13 +123,16 @@ The Phase 9 inventory verification order is recorded in `supabase/phase9-migrati
 6. `supabase/phase9c_inventory_security_hardening.sql` — manager-only security boundary;
 7. `supabase/phase9d_inventory_session_integrity.sql` — session lifecycle and immutable-history boundary;
 8. `supabase/phase9e_inventory_product_identity_csv.sql` — stable product-identity read and grant boundary;
-9. `supabase/phase9f_inventory_structured_quantities.sql` — terminal exact structured-quantity, snapshot, RPC, and grant boundary.
+9. `supabase/phase9f_inventory_structured_quantities.sql` — exact structured-quantity, snapshot, RPC, and grant boundary;
+10. `supabase/phase9g_inventory_operational_scope.sql` through `supabase/phase9gd_inventory_product_mappings.sql` — operational scope, counter workflow, replacement/mobile safeguards, and stable mappings;
+11. `supabase/phase9h_inventory_session_location_scope.sql` through `supabase/phase9k_millum_complete_count_export.sql` — repeatable session scope, Millum profile/export, guidance, and complete-count export layers;
+12. `supabase/20260804123921_phase9l_millum_august_carry_forward_and_future_scope.sql` through `supabase/20260804200000_phase9o_millum_wine_value_conversion.sql` — one-time audited August completion, single-authoritative-session enforcement, and value-preserving wine conversion.
 
 `schema.sql` is not treated as a complete production migration history. It is a historical accumulation file and the minimum fresh-database prerequisite for these Phase 9 tests. The malformed manager-review `DO` delimiter has been corrected so this baseline parses on a fresh database.
 
-Phase 9A.4 and Phase 9B replace earlier functions, Phase 9C replaces authorization helpers, policies, and grants, Phase 9D replaces lifecycle RPCs and grants, Phase 9E replaces the sanitized count-line record and explicit count-line read grant, and Phase 9F replaces the safe product/line shapes plus quantity mutations. Reapplying an older phase after Phase 9F can downgrade the installed boundary. The runner rejects missing, reordered, duplicated, or post-Phase 9F files before executing SQL. Future inventory migrations must be added after Phase 9F, preserve authorization, lifecycle, exact-quantity, component, snapshot, and product-identity guarantees, and update the manifest and validator intentionally.
+Phase 9A.4 and Phase 9B replace earlier functions, Phase 9C replaces authorization helpers, policies, and grants, Phase 9D replaces lifecycle RPCs and grants, Phase 9E replaces the sanitized count-line record and explicit count-line read grant, and later phases intentionally supersede selected safe product/line and export functions. Reapplying an older phase after terminal Phase 9O can downgrade the installed boundary. The runner rejects missing, reordered, duplicated, or post-terminal files before executing SQL. Future inventory migrations must be added after Phase 9O, preserve authorization, lifecycle, exact-quantity, component, snapshot, product-identity, single-source export, and wine-value guarantees, and update the manifest and validator intentionally.
 
-The accumulated baseline through Phase 9E is not repeatable. Phase 9F is the only current entry declared repeatable, and the executable runner reapplies it in the disposable database before running the assertions.
+The migration manifest explicitly marks the repeatable Phase 9H–9K layers. The one-time Phase 9L–9O audit and conversion migrations follow them and may not be replayed as generic setup.
 
 ## Disposable database verification
 
