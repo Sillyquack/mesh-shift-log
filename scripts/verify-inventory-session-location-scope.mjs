@@ -199,7 +199,7 @@ test('selection sanitizes duplicates and ineligible or foreign-looking identifie
 test('session creator renders only derived eligibility and a live selected/default summary', () => {
   assert.match(workspace, /eligibleInventorySessionLocations\(\{[\s\S]*?locations,[\s\S]*?standards,[\s\S]*?products/);
   assert.match(workspace, /inventorySessionSelection\(\{[\s\S]*?selectedLocationIds: draft\.locationIds/);
-  assert.match(workspace, /Countable locations with active standards/);
+  assert.match(workspace, /eligible location\{selection\.locationCount === 1 \? '' : 's'\} selected/);
   assert.match(workspace, /role="status" aria-live="polite"/);
   assert.match(workspace, /selection\.locationCount[\s\S]*?selection\.defaultLineCount/);
   assert.match(workspace, /onCreate\(\{ \.\.\.draft, locationIds: selection\.locationIds \}\)/);

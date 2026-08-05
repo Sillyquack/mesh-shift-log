@@ -19,6 +19,7 @@ const augustCompletionMigration = readFileSync(new URL('../supabase/202608041239
 const snapshotSupplementMigration = readFileSync(new URL('../supabase/20260804151500_phase9m_millum_snapshot_supplement.sql', import.meta.url), 'utf8');
 const singleSourceMigration = readFileSync(new URL('../supabase/20260804180000_phase9n_millum_single_authoritative_session.sql', import.meta.url), 'utf8');
 const wineValueMigration = readFileSync(new URL('../supabase/20260804200000_phase9o_millum_wine_value_conversion.sql', import.meta.url), 'utf8');
+const exportExplanationMigration = readFileSync(new URL('../supabase/20260805035957_phase9p_millum_export_explanations.sql', import.meta.url), 'utf8');
 const migrationManifestStart = migration.indexOf('$manifest$') + '$manifest$'.length;
 const migrationManifestEnd = migration.indexOf('$manifest$::jsonb', migrationManifestStart);
 const manifest = JSON.parse(migration.slice(migrationManifestStart, migrationManifestEnd));
@@ -51,6 +52,11 @@ function sampleExport(overrides = {}) {
       state: 'ready',
       finalValue,
       finalValueNumeric,
+      sourceKind: 'selected_session',
+      sourceLabel: 'Physical count from selected approved session',
+      physicalValue: finalValue,
+      physicalValueNumeric: finalValueNumeric,
+      calculation: `Physical count ${finalValue} is used directly as the Millum value.`,
     });
   }
   return {
@@ -189,6 +195,26 @@ test('terminal wine conversion preserves purchase value instead of converting ca
   assert.equal(Number((204 * 100 / 208.87).toFixed(2)), 97.67);
 });
 
+test('export explanations expose one sanitized review trail without mutating approved counts', () => {
+  assert.match(exportExplanationMigration, /get_inventory_millum_export_value_base/);
+  assert.match(exportExplanationMigration, /v_payload := inventory_private\.get_inventory_millum_export_value_base\(input_session_id\)/);
+  assert.match(exportExplanationMigration, /where line\.session_id = input_session_id/);
+  assert.match(exportExplanationMigration, /'sourceKind'/);
+  assert.match(exportExplanationMigration, /'physicalValueNumeric'/);
+  assert.match(exportExplanationMigration, /'calculation'/);
+  assert.match(exportExplanationMigration, /exportAuditRuleVersion/);
+  assert.match(exportExplanationMigration, /revoke all on function public\.get_inventory_millum_export\(uuid\)[\s\S]*?grant execute on function public\.get_inventory_millum_export\(uuid\) to authenticated/);
+  assert.doesNotMatch(exportExplanationMigration, /(update|delete from)\s+public\.inventory_count_(sessions|lines)/i);
+  assert.doesNotMatch(exportExplanationMigration, /insert into\s+public\.inventory_count_lines/i);
+});
+
+test('manager review shows the physical source and calculation before PDF generation', () => {
+  assert.match(workspace, /One approved count · every value explained/);
+  assert.match(workspace, /Physical count: \{row\.physicalValue\}/);
+  assert.match(workspace, /\{row\.calculation\}/);
+  assert.match(workspace, /Enter in Millum/);
+});
+
 test('manager PDF is deterministic, A4, multi-page, complete, and repeats its table header plan', async () => {
   const data = sampleExport();
   const first = await createMillumExportPdf(data);
@@ -301,7 +327,7 @@ test('counter-facing source and manager PDF source contain no protected rules or
   const counterSurface = `${counterWorkspace}\n${client.slice(client.indexOf('export async function loadInventoryCounterWorkspace'), client.indexOf('export async function getInventoryCountSession'))}`;
   assert.doesNotMatch(counterSurface, /get_inventory_millum_export|inventory_millum_export_(profiles|rows|snapshots)|divide_round_2|divisor|finalValueNumeric/i);
   assert.doesNotMatch(`${workspace}\n${exportModule}`, /divide_round_2|\bdivisor\b|canonical_quantity|counted_whole_units\s*\+/i);
-  assert.match(workspace, /canManage && session\.status === 'approved'[\s\S]*?Millum view \/ Export count/);
+  assert.match(workspace, /session\.status === 'approved'[\s\S]*?Review and download Millum PDF/);
   assert.match(client, /getInventoryMillumExport[\s\S]*?get_inventory_millum_export/);
 });
 

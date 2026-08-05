@@ -111,7 +111,12 @@
       "id": "phase9o-millum-wine-value-conversion",
       "path": "supabase/20260804200000_phase9o_millum_wine_value_conversion.sql",
       "repeatable": false
+    },
+    {
+      "id": "phase9p-millum-export-explanations",
+      "path": "supabase/20260805035957_phase9p_millum_export_explanations.sql",
+      "repeatable": false
     }
   ],
-  "terminalMigration": "supabase/20260804200000_phase9o_millum_wine_value_conversion.sql"
+  "terminalMigration": "supabase/20260805035957_phase9p_millum_export_explanations.sql"
 }

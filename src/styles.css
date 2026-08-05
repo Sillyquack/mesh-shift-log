@@ -2720,6 +2720,18 @@ textarea {
   min-width: 0;
 }
 
+.inventory-export-proof {
+  grid-template-columns: minmax(0, 1fr) auto;
+  align-items: center;
+  border-color: color-mix(in srgb, var(--brand) 48%, var(--line));
+  background: color-mix(in srgb, var(--brand) 6%, var(--surface));
+}
+
+.inventory-export-proof h3,
+.inventory-export-proof p {
+  margin-block: 0 5px;
+}
+
 .inventory-millum-group {
   padding: 0;
   overflow: hidden;
@@ -2760,6 +2772,21 @@ textarea {
   text-align: right;
 }
 
+.inventory-millum-source {
+  display: grid;
+  gap: 3px;
+}
+
+.inventory-millum-source > small {
+  color: var(--text-muted);
+  line-height: 1.35;
+}
+
+.inventory-millum-source > small.conversion {
+  color: var(--brand-strong);
+  font-weight: 800;
+}
+
 .inventory-millum-columns {
   border-top: 0;
   background: var(--surface-strong);
@@ -2798,6 +2825,10 @@ textarea {
 
 @media (max-width: 640px) {
   .inventory-millum-instructions {
+    grid-template-columns: 1fr;
+  }
+
+  .inventory-export-proof {
     grid-template-columns: 1fr;
   }
 
@@ -3430,6 +3461,109 @@ label.inventory-danger-option {
   gap: 8px 18px;
   padding: 12px;
   background: var(--surface-strong);
+}
+
+.inventory-simple-date {
+  max-width: 320px;
+}
+
+.inventory-advanced-options {
+  border-top: 1px solid var(--line);
+  padding-top: 12px;
+}
+
+.inventory-advanced-options summary {
+  min-height: 44px;
+  color: var(--muted);
+  font-weight: 800;
+  cursor: pointer;
+}
+
+.inventory-advanced-options[open] summary {
+  margin-bottom: 12px;
+}
+
+.inventory-workflow-steps {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: 8px;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.inventory-workflow-steps li {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  min-width: 0;
+  padding: 10px;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  background: var(--surface);
+  color: var(--muted);
+}
+
+.inventory-workflow-steps li > span {
+  display: grid;
+  width: 28px;
+  height: 28px;
+  flex: 0 0 28px;
+  place-items: center;
+  border-radius: 50%;
+  background: var(--surface-strong);
+  font-weight: 900;
+}
+
+.inventory-workflow-steps li.current {
+  border-color: var(--brand);
+  color: var(--brand-strong);
+}
+
+.inventory-workflow-steps li.complete > span,
+.inventory-workflow-steps li.current > span {
+  background: var(--brand);
+  color: #fff;
+}
+
+.inventory-next-action {
+  grid-template-columns: minmax(0, 1fr) auto;
+  align-items: center;
+  border-color: color-mix(in srgb, var(--brand) 55%, var(--line));
+  background: color-mix(in srgb, var(--brand) 7%, var(--surface));
+}
+
+.inventory-tool-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 10px;
+}
+
+.inventory-tool-grid button {
+  display: grid;
+  gap: 5px;
+  min-height: 88px;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  background: var(--surface);
+  color: var(--text);
+  padding: 14px;
+  text-align: left;
+  cursor: pointer;
+}
+
+.inventory-tool-grid button:hover,
+.inventory-tool-grid button:focus-visible {
+  border-color: var(--brand);
+  background: color-mix(in srgb, var(--brand) 7%, var(--surface));
+}
+
+.inventory-tool-grid span {
+  color: var(--muted);
+}
+
+.inventory-tools-back {
+  width: max-content;
 }
 
 .inventory-full-button {
@@ -4158,6 +4292,20 @@ label.inventory-danger-option {
   .inventory-standard-row,
   .inventory-fridge-product {
     grid-template-columns: 1fr;
+  }
+
+  .inventory-workflow-steps {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+
+  .inventory-next-action,
+  .inventory-tool-grid {
+    grid-template-columns: 1fr;
+  }
+
+  .inventory-next-action > button,
+  .inventory-tools-back {
+    width: 100%;
   }
 
   .inventory-summary-grid {

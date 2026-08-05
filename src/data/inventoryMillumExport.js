@@ -72,7 +72,7 @@ function pdfTimestamp(exportData) {
 function sourceSummary(exportData) {
   const sources = Array.isArray(exportData?.sourceSessions) ? exportData.sourceSessions : [];
   if (!sources.length) return `Source count ${exportData.sessionShortRef}`;
-  return `Source counts ${sources.map((source) => `${source.countDate} ${source.sessionShortRef}`).join(' + ')}`;
+  return `${sources.length === 1 ? 'Source count' : 'Source counts'} ${sources.map((source) => `${source.countDate} ${source.sessionShortRef}`).join(' + ')}`;
 }
 
 export async function createMillumExportPdf(exportData) {

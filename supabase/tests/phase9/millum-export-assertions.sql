@@ -207,7 +207,7 @@ select phase9i_test.assert_true(
   (select row->>'finalValue' = '4' and (row->>'finalValueNumeric')::numeric = 4 from phase9_millum_anchor_rows where row->>'itemNumber' = '4000232')
   and (select row->>'finalValue' = '2,67' from phase9_millum_anchor_rows where row->>'itemNumber' = '4057913')
   and (select row->>'finalValue' = '3,87' from phase9_millum_anchor_rows where row->>'itemNumber' = '4004935'),
-  'DB-9I-25: manager JSON exposes only the final formatted authoritative wine values'
+  'DB-9I-25: manager JSON preserves the final formatted authoritative wine values'
 );
 
 select phase9i_test.assert_true(
@@ -233,16 +233,17 @@ select phase9i_test.assert_true(
 );
 
 select phase9i_test.assert_true(
-  (select payload::text !~* 'divisor|divide_round|canonical_quantity|counted_quantity|counted_whole|counted_open|source_digest|formula|factor'
+  (select payload::text !~* 'divisor|divide_round|canonical_quantity|counted_quantity|counted_whole|counted_open|source_digest|auth_user_id'
    from phase9_millum_results where fixture = 'anchor'),
-  'DB-9I-29: manager payload omits transformation configuration and canonical source comparisons'
+  'DB-9I-29: manager payload omits protected transformation configuration and private source fields'
 );
 
 select phase9i_test.assert_true(
-  (select bool_and((select array_agg(key order by key) from jsonb_object_keys(row) key)
-    = array['finalValue','finalValueNumeric','itemNumber','productName','rowKey','rowOrder','state'])
+  (select bool_and(row ?& array['finalValue','finalValueNumeric','itemNumber','productName','rowKey','rowOrder','state','sourceKind','sourceLabel','calculation'])
+   from phase9_millum_anchor_rows)
+  and (select bool_and(not (row ?| array['divisor','operation','authUserId','sourceDigest']))
    from phase9_millum_anchor_rows),
-  'DB-9I-30: every clean row is sanitized to identity, state, and final value only'
+  'DB-9I-30: every clean row explains its sanitized source and calculation without protected configuration'
 );
 
 select phase9i_test.assert_true(

@@ -205,13 +205,14 @@ function InventoryOverview({ sessions, activeSession, lines, locations, onOpenSe
             <div><strong>{summary.dormantPhysicalRecountDue}</strong><span>dormant physical recounts due</span></div>
           </div>
           <div className="inventory-progress" aria-label={`${summary.progressPercent}% counted`}><span style={{ width: `${summary.progressPercent}%` }} /></div>
-          <button type="button" className="primary-button inventory-full-button" onClick={() => onOpenSession(activeSession.id)}>{activeSession.status === 'completed' ? 'Review and approve stock count' : 'Continue stock count'}</button>
+          <button type="button" className="primary-button inventory-full-button" onClick={() => onOpenSession(activeSession.id)}>{activeSession.status === 'completed' ? 'Review and approve' : 'Continue where you left off'}</button>
         </section>
       ) : (
         <section className="inventory-panel inventory-empty">
-          <h2>No count in progress</h2>
-          <p className="muted">Start a count when the team is ready. Opening this module never creates one automatically.</p>
-          {canCoordinate && <button type="button" className="primary-button" onClick={onStart}>Start stock count</button>}
+          <p className="eyebrow">Monthly workflow</p>
+          <h2>Ready for the next stock count</h2>
+          <p className="muted">All active counting locations are selected for you. Nothing is created until you confirm.</p>
+          {canCoordinate && <button type="button" className="primary-button" onClick={onStart}>Start monthly stock count</button>}
         </section>
       )}
       <section className="inventory-panel">
@@ -229,8 +230,8 @@ function SessionCreator({ products, locations, standards, storageSettings, onCan
     products,
   }), [locations, standards, products]);
   const [draft, setDraft] = useState(() => ({
-    title: `Daily stock count - ${osloDate()}`,
-    countType: 'daily',
+    title: `Monthly stock count - ${osloDate()}`,
+    countType: 'monthly',
     countDate: osloDate(),
     locationIds: eligibleInventorySessionLocations({ locations, standards, products }).map((item) => item.id),
     note: '',
@@ -254,33 +255,36 @@ function SessionCreator({ products, locations, standards, storageSettings, onCan
   }));
   return (
     <section className="inventory-panel">
-      <div className="inventory-panel-heading"><div><p className="eyebrow">New session</p><h2>Start stock count</h2></div><button type="button" className="secondary-button" onClick={onCancel}>Cancel</button></div>
-      <div className="inventory-form-grid">
-        <label>Title<input value={draft.title} onChange={(event) => setDraft({ ...draft, title: event.target.value })} /></label>
-        <label>Count type<select value={draft.countType} onChange={(event) => setDraft({ ...draft, countType: event.target.value })}><option value="opening">Opening</option><option value="closing">Closing</option><option value="daily">Daily</option><option value="weekly">Weekly</option><option value="monthly">Monthly</option><option value="ad_hoc">Ad hoc</option><option value="event">Event</option><option value="other">Other</option></select></label>
-        <label>Count date<input type="date" value={draft.countDate} onChange={(event) => setDraft({ ...draft, countDate: event.target.value })} /></label>
-        <label className="inventory-wide">Optional note<textarea rows="2" value={draft.note} onChange={(event) => setDraft({ ...draft, note: event.target.value })} /></label>
-      </div>
-      <fieldset className="inventory-location-picker">
-        <legend>Countable locations with active standards</legend>
-        {locationGroups.map((group) => (
-          <div className="inventory-location-choice-group" key={group.key}>
-            <strong>{group.label}</strong>
-            {group.locations.map((location) => {
-              const checked = selection.locationIds.includes(location.id);
-              return (
-                <label className={`inventory-location-option ${checked ? 'selected' : ''}`} key={location.id}>
-                  <input type="checkbox" checked={checked} onChange={(event) => toggleLocation(location.id, event.target.checked)} />
-                  <span>{contextualLocationName(location, locations)}</span>
-                </label>
-              );
-            })}
-          </div>
-        ))}
-      </fieldset>
+      <div className="inventory-panel-heading"><div><p className="eyebrow">Step 1 of 4</p><h2>Start monthly stock count</h2></div><button type="button" className="secondary-button" onClick={onCancel}>Cancel</button></div>
+      <label className="inventory-simple-date">Count date<input type="date" value={draft.countDate} onChange={(event) => setDraft({ ...draft, countDate: event.target.value, title: draft.countType === 'monthly' ? `Monthly stock count - ${event.target.value}` : draft.title })} /></label>
       <div className="inventory-preview" role="status" aria-live="polite"><strong>{selection.locationCount} eligible location{selection.locationCount === 1 ? '' : 's'} selected</strong><span>{selection.defaultLineCount} active standard line{selection.defaultLineCount === 1 ? '' : 's'} represented</span><span>{selection.representedDefaults.filter((item) => calculateStandardPolicyTarget(item, { standards, locations, products, storageSettings }).effectiveTarget > 0).length} configured targets above zero</span></div>
       {selection.representedDefaults.some((item) => !['verify_unchanged', 'physical_count_only'].includes(item.stockPolicy) && calculateStandardPolicyTarget(item, { standards, locations, products, storageSettings }).effectiveTarget === 0) && <p className="inventory-warning">Some target-based products have a target of zero. Review those standards if that is not intentional.</p>}
-      <button type="button" className="primary-button inventory-full-button" disabled={busy || !draft.title.trim() || !selection.locationCount || !selection.defaultLineCount} onClick={() => onCreate({ ...draft, locationIds: selection.locationIds })}>{busy ? 'Starting count...' : 'Confirm and start count'}</button>
+      <details className="inventory-advanced-options">
+        <summary>Advanced options</summary>
+        <div className="inventory-form-grid">
+          <label>Title<input value={draft.title} onChange={(event) => setDraft({ ...draft, title: event.target.value })} /></label>
+          <label>Count type<select value={draft.countType} onChange={(event) => setDraft({ ...draft, countType: event.target.value })}><option value="opening">Opening</option><option value="closing">Closing</option><option value="daily">Daily</option><option value="weekly">Weekly</option><option value="monthly">Monthly</option><option value="ad_hoc">Ad hoc</option><option value="event">Event</option><option value="other">Other</option></select></label>
+          <label className="inventory-wide">Optional note<textarea rows="2" value={draft.note} onChange={(event) => setDraft({ ...draft, note: event.target.value })} /></label>
+        </div>
+        <fieldset className="inventory-location-picker">
+          <legend>Locations included</legend>
+          {locationGroups.map((group) => (
+            <div className="inventory-location-choice-group" key={group.key}>
+              <strong>{group.label}</strong>
+              {group.locations.map((location) => {
+                const checked = selection.locationIds.includes(location.id);
+                return (
+                  <label className={`inventory-location-option ${checked ? 'selected' : ''}`} key={location.id}>
+                    <input type="checkbox" checked={checked} onChange={(event) => toggleLocation(location.id, event.target.checked)} />
+                    <span>{contextualLocationName(location, locations)}</span>
+                  </label>
+                );
+              })}
+            </div>
+          ))}
+        </fieldset>
+      </details>
+      <button type="button" className="primary-button inventory-full-button" disabled={busy || !draft.title.trim() || !selection.locationCount || !selection.defaultLineCount} onClick={() => onCreate({ ...draft, locationIds: selection.locationIds })}>{busy ? 'Starting count...' : `Start with ${selection.locationCount} locations`}</button>
     </section>
   );
 }
@@ -378,6 +382,9 @@ export function MillumExportView({ session, onBack, loadExport = getInventoryMil
   const mappingDiagnostics = exportData?.mappingDiagnostics || [];
   const notices = exportData?.notices || [];
   const sourceSessions = exportData?.sourceSessions || [];
+  const explainedRows = (exportData?.groups || []).flatMap((group) => group.rows || []);
+  const convertedRows = explainedRows.filter((row) => row.sourceKind === 'value_conversion');
+  const carryForwardRows = explainedRows.filter((row) => row.sourceKind === 'audited_carry_forward');
   return (
     <div className="inventory-stack inventory-millum-export">
       <section className="inventory-session-header inventory-millum-header">
@@ -386,7 +393,7 @@ export function MillumExportView({ session, onBack, loadExport = getInventoryMil
         <Status tone={exportData.ready ? 'good' : ''}>{exportData.ready ? 'Ready' : 'Blocked'}</Status>
       </section>
       <section className="inventory-panel inventory-millum-instructions">
-        <div><h3>Manual Millum entry</h3><p>Type the prominent final value from each row into <strong>Counted break bulk</strong>. The approved Stock Counts remain unchanged.</p>{sourceSessions.length > 0 && <p className="muted">Combined approved sources: {sourceSessions.map((source) => `${source.countDate} · ${source.sessionShortRef}`).join(' + ')}</p>}</div>
+        <div><h3>Manual Millum entry</h3><p>Type the prominent final value from each row into <strong>Counted break bulk</strong>. The approved Stock Count remains unchanged.</p>{sourceSessions.length > 0 && <p className="muted">Approved source: {sourceSessions.map((source) => `${source.countDate} · ${source.sessionShortRef}`).join(' + ')}</p>}</div>
         <div className="inventory-action-row">
           <button type="button" className="primary-button" disabled={!exportData.ready || actionState.busy} onClick={() => runPdfAction(async ({ file, pageCount }) => { downloadMillumExportFile(file); return { message: `PDF downloaded (${pageCount} pages).` }; })}>{actionState.busy ? 'Preparing PDF…' : 'Download PDF'}</button>
           <button type="button" className="secondary-button" disabled={!exportData.ready || actionState.busy} onClick={() => runPdfAction(async ({ file }) => shareMillumExportFile(file))}>Share PDF</button>
@@ -394,10 +401,11 @@ export function MillumExportView({ session, onBack, loadExport = getInventoryMil
         {actionState.message && <p className="inventory-message success" role="status">{actionState.message}</p>}
         {actionState.error && <p className="inventory-message error" role="alert">{actionState.error}</p>}
       </section>
+      {exportData.ready && <section className="inventory-panel inventory-export-proof"><div><p className="eyebrow">Source check</p><h3>One approved count · every value explained</h3><p>{convertedRows.length} value conversion{convertedRows.length === 1 ? '' : 's'} · {carryForwardRows.length} audited carry-forward{carryForwardRows.length === 1 ? '' : 's'} · {explainedRows.length} final Millum rows</p></div><Status tone="good">Ready</Status></section>}
       {diagnostics.length > 0 && <section className="inventory-panel inventory-millum-diagnostics" role="alert"><h3>Clean export blocked</h3><p>Resolve these manager-only mapping or source-count gaps in a future approved count/profile before generating the final PDF.</p><ul>{diagnostics.map((item, index) => <li key={`${item.code}-${item.rowKey || item.productId || index}`}><strong>{item.itemNumber ? `${item.itemNumber} · ` : ''}{item.productName || (item.locations || []).map((location) => location.locationName).join(', ') || 'Source count gap'}</strong><span>{item.message}</span></li>)}</ul></section>}
       {notices.length > 0 && <details className="inventory-panel inventory-millum-notices"><summary>Non-blocking export notices ({notices.length})</summary><ul>{notices.map((item, index) => <li key={`${item.code}-${item.productId || index}`}><strong>{item.itemNumber ? `${item.itemNumber} · ` : ''}{item.productName}</strong><span>{item.message}</span></li>)}</ul></details>}
       <div className="inventory-millum-groups" aria-label="Millum Counted break bulk values">
-        {(exportData.groups || []).map((group) => <section className="inventory-panel inventory-millum-group" key={group.name}><h3>{group.name}</h3><div className="inventory-millum-table" role="table" aria-label={group.name}><div className="inventory-millum-row inventory-millum-columns" role="row"><strong role="columnheader">Item</strong><strong role="columnheader">Product</strong><strong role="columnheader">Counted break bulk</strong></div>{(group.rows || []).map((row) => <div className={`inventory-millum-row ${row.state !== 'ready' ? 'blocked' : ''}`} role="row" key={row.rowKey}><span role="cell">{row.itemNumber}</span><span role="cell">{row.productName}</span><strong role="cell" aria-label={row.state === 'ready' ? `Final Millum value ${row.finalValue}` : 'Missing final Millum value'}>{row.state === 'ready' ? row.finalValue : 'Missing'}</strong></div>)}</div></section>)}
+        {(exportData.groups || []).map((group) => <section className="inventory-panel inventory-millum-group" key={group.name}><h3>{group.name}</h3><div className="inventory-millum-table" role="table" aria-label={group.name}><div className="inventory-millum-row inventory-millum-columns" role="row"><strong role="columnheader">Item</strong><strong role="columnheader">Product and source</strong><strong role="columnheader">Enter in Millum</strong></div>{(group.rows || []).map((row) => <div className={`inventory-millum-row ${row.state !== 'ready' ? 'blocked' : ''}`} role="row" key={row.rowKey}><span role="cell">{row.itemNumber}</span><span className="inventory-millum-source" role="cell"><strong>{row.productName}</strong>{row.physicalValue != null && <small>Physical count: {row.physicalValue}</small>}{row.sourceLabel && <small>{row.sourceLabel}</small>}{row.calculation && <small className={row.sourceKind === 'value_conversion' ? 'conversion' : ''}>{row.calculation}</small>}</span><strong role="cell" aria-label={row.state === 'ready' ? `Final Millum value ${row.finalValue}` : 'Missing final Millum value'}>{row.state === 'ready' ? row.finalValue : 'Missing'}</strong></div>)}</div></section>)}
       </div>
       <details className="inventory-panel inventory-millum-profile-diagnostics"><summary>Profile mapping diagnostics ({mappingDiagnostics.length})</summary><p className="muted">Disabled manifest positions stay preserved in profile v{exportData.profileVersion} but never receive copied values or appear in the clean PDF.</p><ul>{mappingDiagnostics.map((item) => <li key={item.rowKey}><strong>{item.group} row {item.rowOrder} · {item.itemNumber}</strong><span>{item.officialName} · {item.message}</span></li>)}</ul></details>
     </div>
@@ -433,6 +441,7 @@ function CountSession({ session, sessions, lines, locations, referenceGuidance, 
   const exceptionSummary = inventorySessionExceptionSummary(session);
   const originalSession = session.originalSessionId ? sessions.find((item) => item.id === session.originalSessionId) : null;
   const correctionSessions = sessions.filter((item) => item.originalSessionId === session.id);
+  const workflowStep = session.status === 'approved' ? 4 : session.status === 'completed' ? 3 : sessionSummary.completedLocations === sessionSummary.locations && sessionSummary.locations > 0 ? 2 : 1;
   const isDirty = lines.some((line) => {
     const draft = lineDrafts[line.id];
     return draft && (inventoryManagerLineDraftHasChanges(line, draft)
@@ -607,6 +616,12 @@ function CountSession({ session, sessions, lines, locations, referenceGuidance, 
     setBulkReview(null);
     runWrite('bulk', () => markInventoryLocationUsePar({ sessionId: session.id, locationId, replaceExisting: replace, expectedSessionUpdatedAt: session.updatedAt }));
   };
+  const completeCurrentLocation = async () => {
+    const nextLocationId = locationIds.find((id) => id !== locationId && !completionMap[id]);
+    const result = await runWrite(`complete-${locationId}`, () => completeInventoryCountLocation({ sessionId: session.id, locationId }));
+    if (result?.ok && nextLocationId) setLocationId(nextLocationId);
+    return result;
+  };
   const exportSession = () => downloadCsv(`mesh-stock-count-${session.countDate}.csv`, makeCsv(['Date', 'Session', 'Status', 'Location', 'Product', 'Product ID', 'Count mode', 'Base unit', 'Container capacity L', 'Whole / sealed', 'Open liters', 'Full kegs', 'Partial keg fraction', 'Stock policy', 'Target', 'Counted', 'Gap', 'Count method', 'Components', 'Note', 'Counted by', 'Counted at'], orderedLines.map((line) => { const calculated = calculateInventoryLine(line); const numeric = (value) => inventoryCsvNumeric(value); return [session.countDate, session.title, session.status, line.locationName, line.productName, line.productId, line.countMode, line.unitLabel, numeric(line.containerCapacityLiters), numeric(line.countedWholeUnitsExact), numeric(line.countedOpenVolumeLitersExact), numeric(line.countedFullKegsExact), numeric(line.countedPartialKegFractionExact), line.stockPolicy, numeric(calculated.effectiveTargetExact), numeric(line.countedQuantityExact), numeric(calculated.restockQuantityExact), line.countMethod, inventoryStructuredComponentLabel(line), line.note, line.countedByName, line.countedAt]; })));
   if (millumOpen) return <MillumExportView session={session} onBack={() => setMillumOpen(false)} />;
   return (
@@ -616,12 +631,16 @@ function CountSession({ session, sessions, lines, locations, referenceGuidance, 
         <div><p className="eyebrow">{session.countDate} · {inventorySessionKindLabel(session)}</p><h2>{session.title}</h2><p>{sessionSummary.counted} of {sessionSummary.total} recorded · {sessionSummary.shortages} shortages</p>{lockLabel && <p className="inventory-audit"><strong>{lockLabel}</strong></p>}</div>
         <Status tone={session.status === 'approved' ? 'good' : 'active'}>{session.status}</Status>
       </section>
+      <ol className="inventory-workflow-steps" aria-label={`Stock Count step ${workflowStep} of 4`}>
+        {[['Count locations', 1], ['Review', 2], ['Approve', 3], ['Millum PDF', 4]].map(([label, step]) => <li className={step < workflowStep ? 'complete' : step === workflowStep ? 'current' : ''} key={step}><span>{step < workflowStep ? '✓' : step}</span><strong>{label}</strong></li>)}
+      </ol>
+      {session.status === 'approved' && <section className="inventory-panel inventory-next-action"><div><p className="eyebrow">Final step</p><h2>Approved and ready for Millum</h2><p>The PDF uses only this approved count and shows the final values for entry.</p></div><button type="button" className="primary-button" onClick={() => setMillumOpen(true)}>Review and download Millum PDF</button></section>}
       {remoteNotice && <div className="inventory-remote-notice" role="status"><span>{isDirty ? 'Stock count changed elsewhere. Your unsaved entry is preserved.' : 'Stock count changed elsewhere.'}</span><button type="button" className="secondary-button" onClick={() => { clearRemoteNotice(); if (!isDirty) onRefresh(); }}>Review</button></div>}
       {(originalSession || correctionSessions.length > 0) && <section className="inventory-panel"><h2>Correction history</h2>{originalSession && <button type="button" className="text-button" onClick={() => onOpenSession(originalSession.id)}>Original approved count: {originalSession.title}</button>}{correctionSessions.map((correction) => <button type="button" className="text-button" key={correction.id} onClick={() => onOpenSession(correction.id)}>Correction: {correction.title} · {correction.status.replace('_', ' ')}</button>)}</section>}
       <nav className="inventory-location-tabs" aria-label="Count locations">{locationIds.map((id) => { const location = locations.find((item) => item.id === id); const summary = summarizeInventoryLocation(lines.filter((line) => line.locationId === id), completionMap[id]); return <button type="button" key={id} className={id === locationId ? 'active' : ''} onClick={() => setLocationId(id)}><span>{location ? contextualLocationName(location, locations) : lines.find((line) => line.locationId === id)?.locationName}</span><small>{summary.counted}/{summary.total} · {inventoryStatusLabel(summary.status)}</small></button>; })}</nav>
       <section className="inventory-location-header">
         <div><h2>{currentLocationLabel}</h2><p>{locationSummary.counted} of {locationSummary.total} recorded · {locationSummary.shortages} restock {locationSummary.shortages === 1 ? 'need' : 'needs'} · {locationSummary.needsReview} need review</p><p className="inventory-policy-note">Restock needs mean the physical quantity is below its target. Notes document context but do not change the target or replenishment quantity.</p></div>
-        <div className="inventory-location-controls"><button ref={bulkTriggerRef} type="button" className="secondary-button" disabled={readOnly || !exactUncounted} onClick={() => setBulkReview({ replace: false, acknowledged: false })}>Mark exact-par lines fully stocked</button><button type="button" className="primary-button" disabled={readOnly || inventoryLocationCompletionBlocked(locationSummary)} onClick={() => runWrite(`complete-${locationId}`, () => completeInventoryCountLocation({ sessionId: session.id, locationId }))}>{completionMap[locationId] ? 'Location complete' : 'Complete location'}</button></div>
+        <div className="inventory-location-controls"><button ref={bulkTriggerRef} type="button" className="secondary-button" disabled={readOnly || !exactUncounted} onClick={() => setBulkReview({ replace: false, acknowledged: false })}>Confirm fully stocked products</button><button type="button" className="primary-button" disabled={readOnly || inventoryLocationCompletionBlocked(locationSummary)} onClick={completeCurrentLocation}>{completionMap[locationId] ? 'Location complete' : 'Finish location and continue'}</button></div>
       </section>
       {isInventorySessionEditable(session.status) && <LocationReferenceViewer locationName={currentLocationLabel} guidance={referenceGuidance.find((item) => item.locationId === locationId) || { locationId }} />}
       <div className="inventory-line-list">{locationLines.map((line) => <CountLineCard key={line.id} line={line} identityReference={inventoryProductIdentityReference(line, locationLines)} draft={lineDrafts[line.id] || createInventoryManagerLineDraft(line)} onDraft={(changes) => updateLineDraft(line, changes)} onSave={() => saveLine(line)} onReview={() => reviewLine(line)} action={(kind) => lineAction(line, kind)} busy={busyId === line.id} readOnly={readOnly} canManage={canManage} />)}</div>
@@ -631,7 +650,7 @@ function CountSession({ session, sessions, lines, locations, referenceGuidance, 
         <label>Review note<textarea rows="2" value={completionNote} disabled={session.status === 'approved' || session.status === 'cancelled'} onChange={(event) => setCompletionNote(event.target.value)} /></label>
         {canCoordinate && !readOnly && <div className="inventory-reopen"><label className="inventory-danger-option"><input type="checkbox" checked={allowExceptions} onChange={(event) => setAllowExceptions(event.target.checked)} /><span>Finalize with documented exceptions</span></label>{allowExceptions && <label>Required exception reason<textarea rows="2" value={exceptionReason} onChange={(event) => setExceptionReason(event.target.value)} /></label>}</div>}
         {exceptionSummary.hasExceptions && <div className="inventory-warning"><strong>Finalized with exceptions</strong><p>{exceptionSummary.reason}</p><p>{exceptionSummary.counts.skipped} skipped · {exceptionSummary.counts.uncounted} uncounted · {exceptionSummary.counts.needsReview} needs review · {exceptionSummary.counts.incompleteLocations} incomplete locations</p><p>Finalized by {session.finalizedByName || session.completedByName}{session.finalizedAt ? ` · ${formatDateTime(session.finalizedAt)}` : ''}</p></div>}
-        <div className="inventory-action-row"><button type="button" className="secondary-button" onClick={exportSession}>Export session CSV</button>{canManage && session.status === 'approved' && <button type="button" className="primary-button" onClick={() => setMillumOpen(true)}>Millum view / Export count</button>}{canCoordinate && !readOnly && <button type="button" className="primary-button" disabled={allowExceptions && !exceptionReason.trim()} onClick={() => runWrite('complete-session', () => completeInventoryCountSession({ sessionId: session.id, note: completionNote, allowExceptions, exceptionReason }))}>Complete session</button>}{canManage && session.status === 'completed' && <button type="button" className="primary-button" onClick={() => runWrite('approve', () => approveInventoryCountSession({ sessionId: session.id, note: completionNote }))}>Approve stock count</button>}</div>
+        <div className="inventory-action-row"><button type="button" className="secondary-button" onClick={exportSession}>Export detailed CSV</button>{canCoordinate && !readOnly && <button type="button" className="primary-button" disabled={allowExceptions && !exceptionReason.trim()} onClick={() => runWrite('complete-session', () => completeInventoryCountSession({ sessionId: session.id, note: completionNote, allowExceptions, exceptionReason }))}>Send for manager approval</button>}{canManage && session.status === 'completed' && <button type="button" className="primary-button" onClick={() => runWrite('approve', () => approveInventoryCountSession({ sessionId: session.id, note: completionNote }))}>Approve and continue to Millum</button>}</div>
         {canManage && session.status === 'approved' && <div className="inventory-reopen"><label>Reason for correction<input value={actionReason} onChange={(event) => setActionReason(event.target.value)} /></label><button type="button" className="secondary-button" disabled={!actionReason.trim()} onClick={async () => { const result = await runWrite('correction', () => createInventoryCorrectionSession({ originalSessionId: session.id, reason: actionReason, idempotencyKey: correctionIdempotencyKey })); const correctionId = result?.data?.session?.id; if (result?.ok && correctionId) onOpenSession(correctionId); }}>Create correction count</button><p className="muted">The approved count remains permanently locked. Corrections are recorded in a new linked session.</p></div>}
         {canManage && !['approved', 'cancelled'].includes(session.status) && <div className="inventory-reopen"><label>Cancellation reason<input value={actionReason} onChange={(event) => setActionReason(event.target.value)} /></label><button type="button" className="text-button danger-text" disabled={!actionReason.trim()} onClick={() => runWrite('cancel', () => cancelInventoryCountSession({ sessionId: session.id, reason: actionReason }))}>Cancel session</button></div>}
       </section>
@@ -984,6 +1003,16 @@ function InventoryHistory({ sessions, locations, onOpenSession }) {
   return <div className="inventory-stack"><section className="inventory-panel"><h2>Count history</h2><p className="muted">Historical sessions use the product labels and stocking standards captured when each count started. Approved counts are permanent; corrections appear as linked sessions.</p><div className="inventory-form-grid"><label>From<input type="date" value={dateFrom} onChange={(event) => setDateFrom(event.target.value)} /></label><label>To<input type="date" value={dateTo} onChange={(event) => setDateTo(event.target.value)} /></label><label>Status<select value={statusFilter} onChange={(event) => setStatusFilter(event.target.value)}><option value="all">All statuses</option><option value="in_progress">In progress</option><option value="completed">Completed</option><option value="approved">Approved</option><option value="cancelled">Cancelled</option></select></label><label>Count type<select value={typeFilter} onChange={(event) => setTypeFilter(event.target.value)}><option value="all">All types</option>{[...new Set(sessions.map((session) => session.countType))].map((type) => <option key={type} value={type}>{type.replace('_', ' ')}</option>)}</select></label><label className="inventory-wide">Search title or completion actor<input type="search" value={search} onChange={(event) => setSearch(event.target.value)} /></label></div><div className="inventory-history-list">{visible.map((session) => <button type="button" key={session.id} onClick={() => onOpenSession(session.id)}><span><strong>{session.title}</strong><small>{session.countDate} · {inventorySessionKindLabel(session)} · {session.countType.replace('_', ' ')}{session.completedByName ? ` · completed by ${session.completedByName}` : ''}{session.finalizedWithExceptions ? ' · exceptions documented' : ''}</small></span><Status tone={session.status === 'approved' ? 'good' : ''}>{session.status}</Status></button>)}</div>{!visible.length && <p className="muted">No count sessions match these filters.</p>}</section><section className="inventory-panel"><h2>Latest approved vs previous approved</h2>{approved.length < 2 ? <p className="muted">Two approved sessions are needed for comparison.</p> : comparison.length ? <div className="inventory-comparison-list">{comparison.map((item) => <article key={`${item.locationId}-${item.productId}`}><div><strong>{item.productName}</strong><span>{item.locationName}{inventoryProductIdentityReference(item, comparison) ? ` · ${inventoryProductIdentityReference(item, comparison)}` : ''}</span></div><p>Latest {quantity(item.latestExact)} · Previous {quantity(item.previousExact)} · <strong>{Number(item.changeExact) > 0 ? '+' : ''}{quantity(item.changeExact)} {item.unitLabel}</strong></p>{item.countMode !== INVENTORY_COUNT_MODES.UNIT && <small>Latest: {inventoryStructuredComponentLabel(item.latestComponents)} · Previous: {inventoryStructuredComponentLabel(item.previousComponents)}</small>}</article>)}</div> : <p className="muted">No matching manually stored quantities were available to compare.</p>}</section></div>;
 }
 
+function InventoryTools({ manager, coordinator, onOpen }) {
+  const tools = [
+    ...(manager ? [['assignments', 'Counters', 'Assign a helper to one counting location.']] : []),
+    ['restock', 'Restock', 'See shortages from the selected count.'],
+    ...(coordinator ? [['history', 'History', 'Open approved counts and corrections.']] : []),
+    ...(manager ? [['manage', 'Setup', 'Edit fridge defaults, products, locations and mappings.']] : []),
+  ];
+  return <section className="inventory-panel"><div><p className="eyebrow">Manager tools</p><h2>Open only when you need them</h2><p className="muted">The normal monthly flow stays in Home and Count.</p></div><div className="inventory-tool-grid">{tools.map(([id, title, description]) => <button type="button" key={id} onClick={() => onOpen(id)}><strong>{title}</strong><span>{description}</span></button>)}</div></section>;
+}
+
 function AuthorizedInventoryWorkspace({ user, requestWriteAccess, onClose }) {
   const manager = canManageInventory(user);
   const coordinator = canCoordinateInventory(user);
@@ -1077,10 +1106,10 @@ function AuthorizedInventoryWorkspace({ user, requestWriteAccess, onClose }) {
   return (
     <main className="page inventory-workspace">
       <header className="inventory-topbar"><button type="button" className="secondary-button" onClick={onClose}>Back</button><div><p className="eyebrow">Mesh Youngstorget</p><h1>Stock Count</h1></div><Status tone={realtimeStatus.state === 'connected' ? 'good' : ''}>{realtimeStatus.state === 'connected' ? 'Live' : 'Polling backup'}</Status></header>
-      <nav className="inventory-main-tabs" aria-label="Inventory views"><button type="button" className={tab === 'overview' ? 'active' : ''} onClick={() => setTab('overview')}>Overview</button><button type="button" className={tab === 'count' ? 'active' : ''} onClick={() => setTab('count')}>Count</button>{manager && <button type="button" className={tab === 'assignments' ? 'active' : ''} onClick={() => setTab('assignments')}>Assignments</button>}<button type="button" className={tab === 'restock' ? 'active' : ''} onClick={() => setTab('restock')}>Restock</button>{coordinator && <button type="button" className={tab === 'history' ? 'active' : ''} onClick={() => setTab('history')}>History</button>}{manager && <button type="button" className={tab === 'manage' ? 'active' : ''} onClick={() => setTab('manage')}>Manage</button>}</nav>
+      <nav className="inventory-main-tabs" aria-label="Stock Count main views"><button type="button" className={tab === 'overview' ? 'active' : ''} onClick={() => setTab('overview')}>Home</button><button type="button" className={tab === 'count' ? 'active' : ''} onClick={() => setTab('count')}>Count</button><button type="button" className={!['overview', 'count'].includes(tab) ? 'active' : ''} onClick={() => setTab('tools')}>Tools</button></nav>
       <Message status={status} />
       {status?.ok === false && <button type="button" className="secondary-button inventory-retry-button" onClick={() => refresh()}>Retry inventory refresh</button>}
-      {showCreator ? <SessionCreator products={data.products} locations={data.locations} standards={data.standards} storageSettings={data.storageSettings} onCancel={() => setShowCreator(false)} onCreate={create} busy={creating} /> : tab === 'overview' ? <InventoryOverview sessions={data.sessions} activeSession={activeSession} lines={activeSession?.id === selectedSession?.id ? selectedLines : []} locations={data.locations} onOpenSession={openSession} onStart={() => setShowCreator(true)} canCoordinate={coordinator} /> : tab === 'count' ? selectedDetail.state === 'loading' ? <section className="inventory-panel inventory-empty" role="status" aria-live="polite" aria-busy="true"><h2>Loading Stock Count detail...</h2><p className="muted">Loading the session and its snapshotted product lines together.</p></section> : selectedDetail.state === 'error' ? <section className="inventory-panel inventory-empty" role="alert"><h2>Stock Count detail unavailable</h2><p className="muted">{selectedDetail.error}</p><button type="button" className="secondary-button" onClick={() => refreshSession(selectedSessionId)}>Retry session detail</button></section> : selectedDetail.record ? <CountSession session={selectedDetail.record} sessions={data.sessions} lines={selectedDetail.lines} locations={data.locations} referenceGuidance={data.referenceGuidance || []} canManage={manager} canCoordinate={coordinator} requestWriteAccess={requestWriteAccess} onRefresh={async () => { const sessionResult = await refreshSession(); const workspaceResult = await refresh(); return sessionResult?.ok === false ? sessionResult : workspaceResult?.ok === false ? workspaceResult : { ok: true }; }} onOpenSession={openSession} onBack={() => setTab('overview')} setStatus={setStatus} remoteNotice={remoteNotice} clearRemoteNotice={() => setRemoteNotice(false)} /> : <section className="inventory-panel inventory-empty"><h2>No active stock count</h2>{coordinator && <button type="button" className="primary-button" onClick={() => setShowCreator(true)}>Start stock count</button>}</section> : tab === 'assignments' ? <CounterAssignmentManager data={data} activeSession={activeSession} lines={activeSession?.id === selectedSession?.id ? selectedLines : []} requestWriteAccess={requestWriteAccess} refresh={async () => { await refreshSession(); await refresh(); }} setStatus={setStatus} /> : tab === 'restock' ? <RestockView session={selectedSession} lines={selectedLines} /> : tab === 'history' ? <InventoryHistory sessions={data.sessions} locations={data.locations} onOpenSession={openSession} /> : <CatalogManager data={data} requestWriteAccess={requestWriteAccess} refresh={refresh} setStatus={setStatus} />}
+      {showCreator ? <SessionCreator products={data.products} locations={data.locations} standards={data.standards} storageSettings={data.storageSettings} onCancel={() => setShowCreator(false)} onCreate={create} busy={creating} /> : tab === 'overview' ? <InventoryOverview sessions={data.sessions} activeSession={activeSession} lines={activeSession?.id === selectedSession?.id ? selectedLines : []} locations={data.locations} onOpenSession={openSession} onStart={() => setShowCreator(true)} canCoordinate={coordinator} /> : tab === 'count' ? selectedDetail.state === 'loading' ? <section className="inventory-panel inventory-empty" role="status" aria-live="polite" aria-busy="true"><h2>Loading Stock Count detail...</h2><p className="muted">Loading the count and its product lines together.</p></section> : selectedDetail.state === 'error' ? <section className="inventory-panel inventory-empty" role="alert"><h2>Stock Count detail unavailable</h2><p className="muted">{selectedDetail.error}</p><button type="button" className="secondary-button" onClick={() => refreshSession(selectedSessionId)}>Retry session detail</button></section> : selectedDetail.record ? <CountSession session={selectedDetail.record} sessions={data.sessions} lines={selectedDetail.lines} locations={data.locations} referenceGuidance={data.referenceGuidance || []} canManage={manager} canCoordinate={coordinator} requestWriteAccess={requestWriteAccess} onRefresh={async () => { const sessionResult = await refreshSession(); const workspaceResult = await refresh(); return sessionResult?.ok === false ? sessionResult : workspaceResult?.ok === false ? workspaceResult : { ok: true }; }} onOpenSession={openSession} onBack={() => setTab('overview')} setStatus={setStatus} remoteNotice={remoteNotice} clearRemoteNotice={() => setRemoteNotice(false)} /> : <section className="inventory-panel inventory-empty"><h2>No active stock count</h2>{coordinator && <button type="button" className="primary-button" onClick={() => setShowCreator(true)}>Start monthly stock count</button>}</section> : tab === 'tools' ? <InventoryTools manager={manager} coordinator={coordinator} onOpen={setTab} /> : tab === 'assignments' ? <div className="inventory-stack"><button type="button" className="secondary-button inventory-tools-back" onClick={() => setTab('tools')}>Back to tools</button><CounterAssignmentManager data={data} activeSession={activeSession} lines={activeSession?.id === selectedSession?.id ? selectedLines : []} requestWriteAccess={requestWriteAccess} refresh={async () => { await refreshSession(); await refresh(); }} setStatus={setStatus} /></div> : tab === 'restock' ? <div className="inventory-stack"><button type="button" className="secondary-button inventory-tools-back" onClick={() => setTab('tools')}>Back to tools</button><RestockView session={selectedSession} lines={selectedLines} /></div> : tab === 'history' ? <div className="inventory-stack"><button type="button" className="secondary-button inventory-tools-back" onClick={() => setTab('tools')}>Back to tools</button><InventoryHistory sessions={data.sessions} locations={data.locations} onOpenSession={openSession} /></div> : <div className="inventory-stack"><button type="button" className="secondary-button inventory-tools-back" onClick={() => setTab('tools')}>Back to tools</button><CatalogManager data={data} requestWriteAccess={requestWriteAccess} refresh={refresh} setStatus={setStatus} /></div>}
       {data.refreshedAt && <p className="inventory-last-refresh">Last successful refresh: {formatDateTime(data.refreshedAt)}</p>}
     </main>
   );

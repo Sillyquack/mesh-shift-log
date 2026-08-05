@@ -203,9 +203,9 @@ function fallbackReviewStatusForHistoryDate(historyDate) {
   return buildReviewStatusForHistoryDate(historyDate, globalThis.__meshManagerReviewHistoryByDate || {});
 }
 
-const APP_VERSION = "0.7.0";
-const RELEASE_LABEL = "v0.7.0-phase-5a-financial-signoffs";
-const RELEASE_SUMMARY = "financial signoff backend foundation";
+const APP_VERSION = "0.8.0";
+const RELEASE_LABEL = "v0.8.0-stock-count-simplicity-hardening";
+const RELEASE_SUMMARY = "guided Stock Count and transparent Millum export";
 const ALERT_SYNC_BUILD = "v0.7.0-auth-backend";
 const ALERT_POLL_INTERVAL_SECONDS = 15;
 const LOG_KEY = "mesh-shift-logs-v1";

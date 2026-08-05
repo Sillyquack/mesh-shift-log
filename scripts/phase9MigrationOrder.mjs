@@ -28,10 +28,11 @@ export const EXPECTED_PHASE9_MIGRATION_ORDER = [
   'supabase/20260804151500_phase9m_millum_snapshot_supplement.sql',
   'supabase/20260804180000_phase9n_millum_single_authoritative_session.sql',
   'supabase/20260804200000_phase9o_millum_wine_value_conversion.sql',
+  'supabase/20260805035957_phase9p_millum_export_explanations.sql',
 ];
 
 export const PHASE9_TERMINAL_MIGRATION =
-  'supabase/20260804200000_phase9o_millum_wine_value_conversion.sql';
+  'supabase/20260805035957_phase9p_millum_export_explanations.sql';
 
 export const PHASE9_REPEATABLE_MIGRATIONS = new Set([
   'supabase/phase9h_inventory_session_location_scope.sql',
@@ -61,7 +62,7 @@ export function validatePhase9MigrationOrder(paths) {
     }
   }
   if (paths.at(-1) !== PHASE9_TERMINAL_MIGRATION) {
-    throw new Error('Phase 9O wine value conversion must be the terminal migration.');
+    throw new Error('Phase 9P export explanations must be the terminal migration.');
   }
   return paths;
 }

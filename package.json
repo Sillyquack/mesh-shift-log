@@ -1,7 +1,7 @@
 {
   "name": "mesh-shift-log",
   "private": true,
-  "version": "0.7.0",
+  "version": "0.8.0",
   "type": "module",
   "scripts": {
     "dev": "vite",
@@ -22,6 +22,7 @@
     "verify:inventory-millum-export": "node scripts/verify-inventory-millum-export.mjs",
     "verify:inventory-shelf-storage-guidance": "node scripts/verify-inventory-shelf-storage-guidance.mjs",
     "verify:inventory-history-detail": "node scripts/verify-inventory-history-detail.mjs",
+    "verify:inventory-simplicity": "node scripts/verify-inventory-simplicity.mjs",
     "verify:phase9-security-db": "node scripts/verify-phase9-security-db.mjs",
     "verify:phase9-all": "node scripts/verify-phase9-all.mjs",
     "preview": "vite preview",

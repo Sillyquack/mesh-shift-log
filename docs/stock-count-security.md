@@ -111,6 +111,8 @@ The export profile has 89 enabled Millum rows. A non-zero counted product missin
 
 Phase 9O applies value-preserving conversion to exactly three protected wines. It derives the physical bottle quantity from the selected session and calculates `physical quantity × actual purchase price ÷ Millum market price`, rounded to two decimals. This is inventory-value conversion, not case or bulk conversion. For the August 2026 approved count, the verified examples are Abbazia `3 → 2.01`, Ca' di Rajo `185 → 120.13`, and Ca'n Verdura `204 → 97.67`. The public wrapper delegates authorization, organization ownership, approved-state validation, single-session sourcing, and diagnostics to the private terminal base function. `PUBLIC` and `anon` execution are revoked; only `authenticated` can invoke the guarded wrapper.
 
+Phase 9P adds a sanitized review trail after the Phase 9O value builder has completed all authorization and calculations. Every enabled row identifies whether its value came directly from the selected session, a reviewed historical carry-forward, or one of the three value conversions. Where a physical quantity exists, the manager sees it together with a plain-language calculation and the final Millum value. Protected transform configuration, private audit identities, count-line internals, notes, and location-level detail are not exposed. The wrapper is read-only and does not insert, update, or delete count sessions or lines.
+
 ## Canonical local migration order
 
 The Phase 9 inventory verification order is recorded in `supabase/phase9-migration-order.json`:
@@ -126,13 +128,13 @@ The Phase 9 inventory verification order is recorded in `supabase/phase9-migrati
 9. `supabase/phase9f_inventory_structured_quantities.sql` — exact structured-quantity, snapshot, RPC, and grant boundary;
 10. `supabase/phase9g_inventory_operational_scope.sql` through `supabase/phase9gd_inventory_product_mappings.sql` — operational scope, counter workflow, replacement/mobile safeguards, and stable mappings;
 11. `supabase/phase9h_inventory_session_location_scope.sql` through `supabase/phase9k_millum_complete_count_export.sql` — repeatable session scope, Millum profile/export, guidance, and complete-count export layers;
-12. `supabase/20260804123921_phase9l_millum_august_carry_forward_and_future_scope.sql` through `supabase/20260804200000_phase9o_millum_wine_value_conversion.sql` — one-time audited August completion, single-authoritative-session enforcement, and value-preserving wine conversion.
+12. `supabase/20260804123921_phase9l_millum_august_carry_forward_and_future_scope.sql` through `supabase/20260805035957_phase9p_millum_export_explanations.sql` — one-time audited August completion, single-authoritative-session enforcement, value-preserving wine conversion, and sanitized source explanations.
 
 `schema.sql` is not treated as a complete production migration history. It is a historical accumulation file and the minimum fresh-database prerequisite for these Phase 9 tests. The malformed manager-review `DO` delimiter has been corrected so this baseline parses on a fresh database.
 
-Phase 9A.4 and Phase 9B replace earlier functions, Phase 9C replaces authorization helpers, policies, and grants, Phase 9D replaces lifecycle RPCs and grants, Phase 9E replaces the sanitized count-line record and explicit count-line read grant, and later phases intentionally supersede selected safe product/line and export functions. Reapplying an older phase after terminal Phase 9O can downgrade the installed boundary. The runner rejects missing, reordered, duplicated, or post-terminal files before executing SQL. Future inventory migrations must be added after Phase 9O, preserve authorization, lifecycle, exact-quantity, component, snapshot, product-identity, single-source export, and wine-value guarantees, and update the manifest and validator intentionally.
+Phase 9A.4 and Phase 9B replace earlier functions, Phase 9C replaces authorization helpers, policies, and grants, Phase 9D replaces lifecycle RPCs and grants, Phase 9E replaces the sanitized count-line record and explicit count-line read grant, and later phases intentionally supersede selected safe product/line and export functions. Reapplying an older phase after terminal Phase 9P can downgrade the installed boundary. The runner rejects missing, reordered, duplicated, or post-terminal files before executing SQL. Future inventory migrations must be added after Phase 9P, preserve authorization, lifecycle, exact-quantity, component, snapshot, product-identity, single-source export, wine-value, and explanation guarantees, and update the manifest and validator intentionally.
 
-The migration manifest explicitly marks the repeatable Phase 9H–9K layers. The one-time Phase 9L–9O audit and conversion migrations follow them and may not be replayed as generic setup.
+The migration manifest explicitly marks the repeatable Phase 9H–9K layers. Each repeatable layer is replay-tested before the one-time Phase 9L–9P audit, conversion, and explanation migrations are applied. The one-time layers may not be replayed as generic setup.
 
 ## Disposable database verification
 

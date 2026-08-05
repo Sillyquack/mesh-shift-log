@@ -17,12 +17,12 @@ const textRule = styles.match(/\.inventory-danger-option > span\s*\{([\s\S]*?)\n
 const modalRule = styles.match(/\.inventory-modal\s*\{([\s\S]*?)\n\}/)?.[1] || '';
 
 test('bulk confirmation opens from the exact-par location action', () => {
-  assert.match(workspace, /Mark exact-par lines fully stocked<\/button>/);
+  assert.match(workspace, /Confirm fully stocked products<\/button>/);
   assert.match(workspace, /onClick=\{\(\) => setBulkReview\(\{ replace: false, acknowledged: false \}\)\}/);
 });
 
 test('opening the dialog changes only local review state', () => {
-  const trigger = workspace.match(/<button ref=\{bulkTriggerRef\}[\s\S]*?Mark exact-par lines fully stocked<\/button>/)?.[0] || '';
+  const trigger = workspace.match(/<button ref=\{bulkTriggerRef\}[\s\S]*?Confirm fully stocked products<\/button>/)?.[0] || '';
   assert.match(trigger, /setBulkReview/);
   assert.doesNotMatch(trigger, /runWrite|markInventoryLocationUsePar/);
 });

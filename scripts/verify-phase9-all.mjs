@@ -17,6 +17,7 @@ const commands = [
   ['npm', ['run', 'verify:inventory-millum-export']],
   ['npm', ['run', 'verify:inventory-shelf-storage-guidance']],
   ['npm', ['run', 'verify:inventory-history-detail']],
+  ['npm', ['run', 'verify:inventory-simplicity']],
   ['npm', ['run', 'verify:phase9-security-db']],
   ['npm', ['run', 'build']],
 ];
