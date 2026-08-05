@@ -2600,29 +2600,54 @@ textarea {
 
 @media (max-width: 520px) {
   .top-bar {
-    align-items: flex-start;
+    align-items: center;
     gap: 8px;
+    min-height: 58px;
     max-width: 100vw;
-    overflow: hidden;
+    overflow: visible;
   }
 
   .top-actions {
     display: none;
-    width: 100%;
-    max-width: none;
-    padding-top: 8px;
-    border-top: 1px solid var(--line);
   }
 
   .top-actions.mobile-open {
-    display: flex;
+    position: absolute;
+    top: calc(100% + 6px);
+    right: 10px;
+    display: grid;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    gap: 8px;
+    width: min(340px, calc(100vw - 20px));
+    max-width: none;
+    max-height: calc(100dvh - 78px);
+    overflow-y: auto;
+    border: 1px solid var(--line);
+    border-radius: 12px;
+    background: color-mix(in srgb, var(--surface) 97%, transparent);
+    box-shadow: 0 18px 48px rgba(22, 32, 29, 0.18);
+    padding: 12px;
+    backdrop-filter: blur(18px);
   }
 
   .top-mobile-summary {
     display: flex;
     align-items: center;
-    gap: 6px;
+    gap: 8px;
     margin-left: auto;
+  }
+
+  .top-connection {
+    display: inline-flex !important;
+    align-items: center;
+    gap: 5px;
+    color: var(--brand-strong) !important;
+    font-size: 0.72rem !important;
+    font-weight: 900;
+  }
+
+  .top-connection.offline {
+    color: var(--critical) !important;
   }
 
   .top-menu-toggle {
@@ -2634,19 +2659,32 @@ textarea {
   .top-online-dot {
     width: 9px;
     height: 9px;
+    flex: 0 0 auto;
     border-radius: 50%;
     background: var(--critical);
   }
 
-  .top-online-dot.online {
+  .top-connection.online .top-online-dot {
     background: var(--brand);
   }
 
-  .top-bar:has(.top-actions.mobile-open) {
-    flex-wrap: wrap;
+  .top-actions .ghost-button {
+    width: 100%;
+    min-height: 44px;
+    border-color: var(--line);
+    background: var(--surface-strong);
+    padding-inline: 10px;
+    line-height: 1.2;
+    white-space: normal;
   }
 
-  .pilot-status {
+  .top-actions .pilot-status {
+    grid-column: 1 / -1;
+    width: 100%;
+    border: 1px solid color-mix(in srgb, var(--brand) 36%, var(--line));
+    border-radius: 8px;
+    background: color-mix(in srgb, var(--brand) 8%, var(--surface));
+    padding: 8px 10px;
     text-align: left;
   }
 
@@ -2656,14 +2694,50 @@ textarea {
     padding-inline: 6px;
   }
 
-  .shift-pill {
-    order: -1;
+  .top-actions .shift-pill {
     width: 100%;
-    max-width: 185px;
+    max-width: none;
+    min-height: 32px;
+    display: grid;
+    place-items: center;
+    padding-inline: 8px;
+    text-align: center;
   }
 
   .page {
     padding-inline: 12px;
+  }
+
+  .shift-grid {
+    gap: 10px;
+  }
+
+  .shift-card {
+    display: grid;
+    grid-template-columns: minmax(0, 1fr);
+    gap: 6px;
+    min-height: 74px;
+    align-content: center;
+    align-items: start;
+    padding: 15px 16px;
+  }
+
+  .shift-card span,
+  .shift-card small {
+    width: 100%;
+    min-width: 0;
+  }
+
+  .shift-card span {
+    font-size: 1rem;
+    line-height: 1.25;
+  }
+
+  .shift-card small {
+    display: block;
+    font-size: 0.78rem;
+    line-height: 1.45;
+    overflow-wrap: anywhere;
   }
 
   .task-main {
@@ -4794,8 +4868,10 @@ label.inventory-danger-option {
     justify-self: start;
   }
 
-  .top-actions {
-    max-width: 160px;
+  .top-actions.mobile-open {
+    right: 8px;
+    width: calc(100vw - 16px);
+    max-width: none;
   }
 }
 

@@ -66,7 +66,18 @@ test('the redundant Stock Count workspace Back button is removed', () => {
 test('mobile account actions stay collapsed behind an accessible menu', () => {
   assert.match(app, /aria-expanded=\{mobileMenuOpen\}/);
   assert.match(app, /aria-controls="top-account-actions"/);
+  assert.match(app, /aria-label=\{`\$\{mobileMenuOpen \? "Close" : "Open"\} account menu`\}/);
+  assert.match(app, /document\.addEventListener\("pointerdown", closeOnOutsidePress\)/);
+  assert.match(app, /document\.addEventListener\("keydown", closeOnEscape\)/);
+  assert.match(app, /\{isOnline \? "Live" : "Offline"\}/);
   assert.match(app, /top-actions \$\{mobileMenuOpen \? "mobile-open" : ""\}/);
   assert.match(styles, /@media \(max-width: 520px\)[\s\S]*?\.top-actions\s*\{[\s\S]*?display:\s*none;/);
-  assert.match(styles, /\.top-actions\.mobile-open\s*\{[\s\S]*?display:\s*flex;/);
+  assert.match(styles, /\.top-actions\.mobile-open\s*\{[\s\S]*?position:\s*absolute;[\s\S]*?display:\s*grid;/);
+  assert.match(styles, /\.top-actions \.ghost-button\s*\{[\s\S]*?min-height:\s*44px;/);
+});
+
+test('mobile routine status text uses the full card width', () => {
+  assert.match(styles, /@media \(max-width: 520px\)[\s\S]*?\.shift-card\s*\{[\s\S]*?grid-template-columns:\s*minmax\(0, 1fr\);/);
+  assert.match(styles, /\.shift-card span,[\s\S]*?\.shift-card small\s*\{[\s\S]*?width:\s*100%;/);
+  assert.match(styles, /\.shift-card small\s*\{[\s\S]*?line-height:\s*1\.45;/);
 });

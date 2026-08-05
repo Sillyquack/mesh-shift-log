@@ -3318,6 +3318,29 @@ function TopBar({
   onOpenAccountSecurity,
 }) {
   const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
+  const topBarRef = useRef(null);
+  useEffect(() => {
+    if (!mobileMenuOpen) return undefined;
+
+    const closeOnEscape = (event) => {
+      if (event.key === "Escape") setMobileMenuOpen(false);
+    };
+    const closeOnOutsidePress = (event) => {
+      if (!topBarRef.current?.contains(event.target)) setMobileMenuOpen(false);
+    };
+
+    document.addEventListener("keydown", closeOnEscape);
+    document.addEventListener("pointerdown", closeOnOutsidePress);
+    return () => {
+      document.removeEventListener("keydown", closeOnEscape);
+      document.removeEventListener("pointerdown", closeOnOutsidePress);
+    };
+  }, [mobileMenuOpen]);
+
+  const runMenuAction = (action) => {
+    setMobileMenuOpen(false);
+    action?.();
+  };
   const shiftLabel =
     selectedShift === "manager"
       ? "Manager dashboard"
@@ -3326,7 +3349,7 @@ function TopBar({
       : shiftOptions.find((shift) => shift.id === selectedShift)?.label ||
         "Select shift";
   return (
-    <header className="top-bar">
+    <header className="top-bar" ref={topBarRef}>
       <div className="top-user">
         <strong>{user.name}</strong>
         <span>{user.role}</span>
@@ -3340,8 +3363,11 @@ function TopBar({
         )}
       </div>
       <div className="top-mobile-summary">
-        <span className={`top-online-dot ${isOnline ? "online" : "offline"}`} aria-hidden="true" />
-        <button type="button" className="ghost-button top-menu-toggle" aria-expanded={mobileMenuOpen} aria-controls="top-account-actions" onClick={() => setMobileMenuOpen((open) => !open)}>
+        <span className={`top-connection ${isOnline ? "online" : "offline"}`}>
+          <span className="top-online-dot" aria-hidden="true" />
+          {isOnline ? "Live" : "Offline"}
+        </span>
+        <button type="button" className="ghost-button top-menu-toggle" aria-label={`${mobileMenuOpen ? "Close" : "Open"} account menu`} aria-expanded={mobileMenuOpen} aria-controls="top-account-actions" onClick={() => setMobileMenuOpen((open) => !open)}>
           {mobileMenuOpen ? "Close" : "Menu"}
         </button>
       </div>
@@ -3350,7 +3376,7 @@ function TopBar({
           <button
             type="button"
             className="ghost-button"
-            onClick={onChangeOperator}
+            onClick={() => runMenuAction(onChangeOperator)}
           >
             Change operator
           </button>
@@ -3359,7 +3385,7 @@ function TopBar({
           <button
             type="button"
             className="ghost-button"
-            onClick={onChangeRole}
+            onClick={() => runMenuAction(onChangeRole)}
           >
             Change role
           </button>
@@ -3381,14 +3407,14 @@ function TopBar({
             type="button"
             className="ghost-button"
             disabled={isSharedDeviceUser(user) && !currentOperator?.name}
-            onClick={onOpenInventory}
+            onClick={() => runMenuAction(onOpenInventory)}
           >
             Stock Count
           </button>
         )}
         {selectedShift && <span className="shift-pill">{shiftLabel}</span>}
         {selectedShift && onBack && (
-          <button type="button" className="ghost-button" onClick={onBack}>
+          <button type="button" className="ghost-button" onClick={() => runMenuAction(onBack)}>
             Change shift
           </button>
         )}
@@ -3396,12 +3422,12 @@ function TopBar({
           <button
             type="button"
             className="ghost-button"
-            onClick={onOpenAccountSecurity}
+            onClick={() => runMenuAction(onOpenAccountSecurity)}
           >
             Account security
           </button>
         )}
-        <button type="button" className="ghost-button" onClick={onLogout}>
+        <button type="button" className="ghost-button" onClick={() => runMenuAction(onLogout)}>
           Log out
         </button>
       </div>
