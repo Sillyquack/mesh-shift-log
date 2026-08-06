@@ -8,7 +8,7 @@ Phase 10B's approved local checkpoint is commit `9a8cf5716a3427ab65d4437b8362285
 
 Phase 10C's approved local checkpoint is commit `c4666ee0c2cb5547812b0455288e4f8a8cb15e16` (`feat: add versioned routine reference images`).
 
-Phase 10D's approved local checkpoint is commit `6164df74d443c80e02885f804ac1f6084d96131a` (`feat: add authoritative routine run snapshots`). Phase 10E's approved local checkpoint is commit `48b80dc4b11f11b22d24d28f414d643652b8aa11` (`feat: add routine lifecycle and immutable audit`). Phase 10F's approved local checkpoint is commit `ea3ac0a39ef11ff7e491642d157747b3845cb5e8` (`feat: add routine operational time engine`). Phase 10G's approved local checkpoint is commit `dd37231d7d58c1ec867c7abf1213aa9db6487e29` (`feat: add routine closing delivery evidence`). Phase 10H's approved local checkpoint is commit `4c189222b6dca2fb94acfe28d8b812e3d4e4e688` (`feat: add double shift continuity and event transfers`). Phase 10I's approved local checkpoint is commit `009f979433ca0b2d49fe60bb470af5734396e7ab` (`feat: add routine realtime and offline sync`). Phase 10J is implemented and verified in the working tree but deliberately remains uncommitted pending review.
+Phase 10D's approved local checkpoint is commit `6164df74d443c80e02885f804ac1f6084d96131a` (`feat: add authoritative routine run snapshots`). Phase 10E's approved local checkpoint is commit `48b80dc4b11f11b22d24d28f414d643652b8aa11` (`feat: add routine lifecycle and immutable audit`). Phase 10F's approved local checkpoint is commit `ea3ac0a39ef11ff7e491642d157747b3845cb5e8` (`feat: add routine operational time engine`). Phase 10G's approved local checkpoint is commit `dd37231d7d58c1ec867c7abf1213aa9db6487e29` (`feat: add routine closing delivery evidence`). Phase 10H's approved local checkpoint is commit `4c189222b6dca2fb94acfe28d8b812e3d4e4e688` (`feat: add double shift continuity and event transfers`). Phase 10I's approved local checkpoint is commit `009f979433ca0b2d49fe60bb470af5734396e7ab` (`feat: add routine realtime and offline sync`). Phase 10J's approved local checkpoint is commit `5f893a3b12ed4bc0d167e0b97079737d29301848` (`feat: add secure shared-device routine identity`). Phase 10K1 is implemented and verified in the working tree but deliberately remains uncommitted pending review.
 
 Phase 10A includes organization settings, routine locations, reusable location sets, reusable standards, immutable standard revisions, server-resolved permissions, manager mutation RPCs, organization-scoped RLS, and disposable database verification.
 
@@ -16,8 +16,10 @@ Phase 10B adds logical templates, one active draft per template, versioned secti
 
 The following remain outside this phase:
 
-- employee-facing React UI;
-- rendering of routine images and shared-device management/workflow UI in React;
+- the full manager template/image editor, which belongs to Phase 10K2;
+- the operational employee checklist, which belongs to Phase 10K3;
+- the legacy-history adapter, which belongs to Phase 10K4;
+- shared-device administration UI beyond the K1 operator-login gate;
 - Event Operations mutation from Routine Engine;
 - production rollout, data migration, or organization activation.
 
@@ -456,6 +458,38 @@ Personal actors continue to use the Phase 10I `routine_events` Postgres Changes 
 
 Phase 10J adds no React manager or employee surface; that work remains Phase 10K. It seeds no device, operator, credential/PIN, session, `O01`–`O37`, `C01`–`C46`, or `DS01`–`DS04` data. Verification uses runtime-only disposable secrets and a network-isolated PostgreSQL container. No production migration, Auth change, production data write, device enrollment, operator, credential, session, deployment, push, or feature activation was performed. The accepted Phase 9L baseline remains exactly: `Phase 9L requires exactly one approved August shelf/storage source session.`
 
+## Phase 10K1 application shell and server-enforced pilot gate
+
+Phase 10K is deliberately split so rollout authority, UI breadth, and historical compatibility are reviewed independently. Phase 10K1 supplies only the lazy-loaded application shell, release/pilot gate, read-only preview, and shared-device operator login. Phase 10K2 will supply the complete manager template/reference editor; Phase 10K3 will supply the operational employee checklist; Phase 10K4 will supply the legacy-history adapter. K1 therefore exposes no task/run/delivery/Double Shift mutation button and contains no template editor or history adapter.
+
+`routine_organization_settings` gains deployment-controlled `ui_release_stage` and `ui_contract_version`. The contract version is `phase10k1-v1`. The closed release stages are:
+
+| Stage | K1 meaning |
+| --- | --- |
+| `foundation` | Schema/client contract installed; mode may remain legacy or be explicitly set to shadow |
+| `manager_preview` | Reserved explicit manager-preview rollout stage |
+| `staff_preview` | Reserved read-only staff-preview rollout stage |
+| `pilot_ready` | Minimum later stage for pilot mode; K1 cannot set this stage |
+| `production_ready` | Required later stage for active mode; K1 cannot set this stage |
+
+The mode gate remains server authoritative. `legacy` returns a minimal hidden state, no launcher, no operator login and no operational access. `shadow` permits a personal manager preview/configuration foundation and an explicit pilot member's read-only preview, but all run/task/delivery/bundle/transfer mutations remain blocked by permission helpers and table guards. `pilot` requires at least `pilot_ready`, and `active` requires exactly `production_ready`; the K1 manager mode RPC rejects those transitions with `routine_ui_not_pilot_ready` and `routine_ui_not_production_ready`. It permits only revision-checked, reasoned, request-hash-idempotent transitions between `legacy` and `shadow`, records immutable UI operations/events, and never rewrites an existing run.
+
+`routine_pilot_memberships` records either one same-organization personal profile or one same-organization shared operator, never both. Identity shape, access level (`preview`, `participant`, `coordinator`), validity, positive revision, creation idempotency and request hash are constrained. The manager RPC validates active/non-shared staff or shift-lead profiles, active/valid operators and underlying Phase 10J capabilities; manager, counter, shared-device profile, inactive, cross-organization and over-privileged assignments are rejected. Replacement is a complete deterministic desired state with optimistic settings revision and deactivation instead of deletion. Identity and creation audit fields cannot be rewritten.
+
+`routine_ui_operations` is an immutable, tenant-bound request-hash/idempotency ledger for the two personal-manager UI mutations. Secret-shaped response payloads are rejected. Authenticated clients have only RLS-filtered `SELECT` on the two new tables and no direct `INSERT`, `UPDATE` or `DELETE`; anon has no access. Managers can read own-organization membership/operation administration, a personal or shared member can read only its own membership, and a shared operator can neither see the UI ledger nor invoke manager work. Private helpers and triggers have no application-role execute grant.
+
+`get_routine_application_bootstrap()` is the only UI authority. Its sanitized `phase10k1-v1` response includes release/mode/access decisions, identity and safe linked-profile/device/session summaries, deny-by-default capabilities, authoritative Europe/Oslo server clock and operational date, sync mode, visible counts, backend version and empty-state reason. Draft count is manager-only. Legacy receives no operational summary; a registered shared device without a valid operator session receives only safe mode/release/device context plus `operator_required`, while the dedicated Phase 10J auth RPC returns its allowed operator list. No PIN, credential/session secret or token, ledger, raw receipt, or unauthorized manager payload is returned.
+
+The React integration adds one isolated `showRoutineEngine` state to `App.jsx`. Launcher, workspace and error boundary are dynamic imports; legacy remains the initial and back-button view, and existing Inventory and Event Operations dynamic imports remain intact. The launcher fetches bootstrap only after Supabase Auth, is absent in legacy, says `Routine Engine v2 Preview` in shadow, and degrades to a retry/legacy-available state if the backend or network is unavailable. The read-only preview shows the actual personal/shared identity, server date/clock, sync status, safe zero-content state and K2 deferral notice, with no operational controls.
+
+The shared-device gate uses the Phase 10J header/session module, a server-provided device/operator list, disabled lockout state, a labelled masked numeric PIN input, generic errors, double-submit protection, arrow/Home/End and native keyboard control, server session expiry/freshness, explicit switch/end actions, and no fallback to Workbar Device identity. PIN state is cleared after every attempt and never enters browser persistence. Invalid/expired sessions stop sync, clear the dedicated session token and return focus to the operator gate while operator-scoped quarantined drafts remain available for the same principal after reauthentication.
+
+Sync starts only while the workspace is open and bootstrap proves a valid preview principal. A personal actor uses the existing Postgres Changes signal plus authoritative cursor catch-up. A shared operator creates no Postgres Changes channel and uses cursor polling. Workspace exit, logout, principal change, invalidation, switch and session end unsubscribe/stop before the old identity can continue. K1 exposes no outbox mutation control.
+
+The shell reuses global design variables and focus treatment. It has no global reset or font, uses safe-area padding, `min-width: 0`, text status in addition to color, live regions, 48-pixel controls, and responsive layouts verified without horizontal overflow at 320, 375, 390 and 430 pixels, in dark mode and with 200% root text. A separate `routine-ui-harness.html` exists only as an unreferenced local Vite entry for disposable browser verification; `index.html`, `src/main.jsx`, `App.jsx`, and the production build do not import it.
+
+Phase 10K1 does not activate an organization, install SQL in production, seed content, or create any production device, operator, PIN, credential, session, run or bundle. Opening, Closing, Event Operations, Stock Count, Inventory Storage, Auth, legacy routine data/client code and `public/sw.js` remain unchanged. No `O01`–`O37`, `C01`–`C46`, or `DS01`–`DS04` content is seeded. The accepted Phase 9L baseline remains exactly `Phase 9L requires exactly one approved August shelf/storage source session.`
+
 ## Migration order
 
 Apply the migration only after the repository's existing schema and completed Phase 9 migration chain, with Phase 9P remaining the terminal Phase 9 layer. Phase 10A is then the next additive layer:
@@ -472,8 +506,9 @@ Apply the migration only after the repository's existing schema and completed Ph
 10. `supabase/phase10h_routine_double_shift.sql`.
 11. `supabase/phase10i_routine_realtime_offline_sync.sql`.
 12. `supabase/phase10j_routine_shared_device_identity.sql`.
+13. `supabase/phase10k1_routine_ui_pilot_gate.sql`.
 
-All ten Phase 10 migrations are safe to reapply against their own completed schema. Phase 10I preserves instance/receipt/reconciliation rows and timestamps, adds `routine_events` publication membership only once, and recreates functions, policies, and triggers without repairing or reordering earlier migrations. Phase 10J preserves all existing hashes and historical rows, and its own reapplication preserves device/operator/session/audit rows and timestamps.
+All eleven Phase 10 migrations through K1 are safe to reapply against their own completed schema. Phase 10I preserves instance/receipt/reconciliation rows and timestamps, adds `routine_events` publication membership only once, and recreates functions, policies, and triggers without repairing or reordering earlier migrations. Phase 10J preserves all existing hashes and historical rows, and its own reapplication preserves device/operator/session/audit rows and timestamps. Phase 10K1 preserves pilot/settings/operation rows and timestamps and leaves earlier hashes and protected-domain fingerprints stable.
 
 ## Defaults and open configuration
 
@@ -483,6 +518,8 @@ The schema defines conservative defaults but does not create an organization set
 - timezone: `Europe/Oslo` only;
 - operational-day cutoff: `04:00`;
 - shared-device support: disabled;
+- UI release stage: `foundation`;
+- UI contract: `phase10k1-v1`;
 - reopen window: 24 hours, constrained to 0–168 hours.
 
 Before a later rollout phase, product owners must approve the organization rollout mode, location catalog and hierarchy, location-set membership, the complete `O`, `C`, and `DS` content mappings, standard values/units/effective dates, source-adapter behavior, approved actual Mesh reference images, and whether shared-device operation is introduced. No value in this list is activated by Phase 10A, 10B, 10C, or 10D. No `O01`–`O37`, `C01`–`C46`, `DS01`–`DS04`, random illustration, actual Mesh image, production run, or production snapshot is seeded; content is deferred to Phase 10L.
@@ -509,10 +546,12 @@ Before a later rollout phase, product owners must approve the organization rollo
 
 `npm run verify:routine-shared-device` applies Phase 10A through 10J in a uniquely named PostgreSQL 17 container with `--network none` and no image pull. It executes 382 meaningful contract checks across the 80 SQL fixtures/assertions, schema and RLS catalog, secret/grant/static boundaries, token parsing, private-helper privileges, effective actor and hash markers, Web Crypto, sessionStorage metadata, IndexedDB schema/principal isolation, offline policy, sync-engine operator switch, personal Realtime versus shared cursor polling, protected-domain fingerprints, historical hashes, and data-stable 10J reapplication. Runtime PINs and session secrets are generated in memory and never printed or stored in source. Independent PostgreSQL connections prove lockout under parallel failures, one active session per client, serialized reauthentication freshness, and one shared-operator participant under concurrent joins. The disposable container is removed in `finally` cleanup.
 
+`npm run verify:routine-ui-foundation` applies the complete Phase 10A–10K1 chain and fixtures in a uniquely named PostgreSQL 17 container with `--network none`. Its 180 checks include 90 SQL access/constraint/RLS/RPC assertions, protected schema/data/history fingerprints, data-stable K1 reapplication, deterministic client/model normalization, absence of direct DML/local authority, PIN/token persistence boundaries, App lazy integration, responsive/accessibility source guards, server-rendered read-only states, and personal Realtime versus shared cursor-polling behavior. Disposable browser verification separately covers 22 light/dark/mobile/error/operator/keyboard/zoom scenarios with screenshots outside the repository, no console error or overlay, 48-pixel controls and no horizontal overflow.
+
 The pre-existing Phase 9L verification baseline is intentionally not repaired here. Its exact known failure is:
 
 > Phase 9L requires exactly one approved August shelf/storage source session.
 
 Only that same failure with the same fingerprint is an accepted baseline. Any new or changed Phase 9 failure is a regression.
 
-No Supabase production migration, publication change, receipt/reconciliation creation, bucket creation, data write, Auth configuration change, deployment, or feature activation has been performed for Phase 10A through 10J. Phase 10I is the committed checkpoint named above; Phase 10J remains an uncommitted working-tree implementation. UI/pilot belongs to 10K; seeded content remains deferred to 10L.
+No Supabase production migration, publication change, receipt/reconciliation creation, bucket creation, data write, Auth configuration change, deployment, or feature activation has been performed for Phase 10A through 10K1. Phase 10J is the committed checkpoint named above; Phase 10K1 remains an uncommitted working-tree implementation. The full manager editor, operational employee UI and legacy-history adapter remain deferred to K2, K3 and K4; seeded content remains deferred to 10L.
