@@ -22,7 +22,15 @@ async function context() {
 
 function failure(error) {
   const raw = String(error?.message || 'The routine lifecycle request failed.');
-  const fields = /stale|revision|changed elsewhere|refresh/i.test(raw)
+  const fields = /routine_task_too_early/i.test(raw)
+    ? { mode: 'too_early', message: 'This task is not available yet.' }
+    : /routine_task_hidden/i.test(raw)
+      ? { mode: 'hidden', message: 'This task is still hidden.' }
+      : /routine_task_condition_pending/i.test(raw)
+        ? { mode: 'condition_pending', message: 'This task is waiting for a server condition.' }
+        : /timing_snapshot_(invalid|not_ready)|routine_task_timing_unavailable/i.test(raw)
+          ? { mode: 'timing_invalid', message: 'Authoritative timing is unavailable or invalid.' }
+          : /stale|revision|changed elsewhere|refresh/i.test(raw)
     ? { mode: 'stale_write', message: 'This routine changed elsewhere. Refresh before retrying.' }
     : /jwt expired|invalid jwt|not authenticated|auth session/i.test(raw)
       ? { mode: 'auth_required', message: 'Your sign-in expired. Sign in again.' }

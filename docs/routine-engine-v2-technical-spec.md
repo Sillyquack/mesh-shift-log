@@ -8,7 +8,7 @@ Phase 10B's approved local checkpoint is commit `9a8cf5716a3427ab65d4437b8362285
 
 Phase 10C's approved local checkpoint is commit `c4666ee0c2cb5547812b0455288e4f8a8cb15e16` (`feat: add versioned routine reference images`).
 
-Phase 10D's approved local checkpoint is commit `6164df74d443c80e02885f804ac1f6084d96131a` (`feat: add authoritative routine run snapshots`). Phase 10E is implemented and verified in the working tree but deliberately remains uncommitted pending review.
+Phase 10D's approved local checkpoint is commit `6164df74d443c80e02885f804ac1f6084d96131a` (`feat: add authoritative routine run snapshots`). Phase 10E's approved local checkpoint is commit `48b80dc4b11f11b22d24d28f414d643652b8aa11` (`feat: add routine lifecycle and immutable audit`). Phase 10F is implemented and verified in the working tree but deliberately remains uncommitted pending review.
 
 Phase 10A includes organization settings, routine locations, reusable location sets, reusable standards, immutable standard revisions, server-resolved permissions, manager mutation RPCs, organization-scoped RLS, and disposable database verification.
 
@@ -17,9 +17,8 @@ Phase 10B adds logical templates, one active draft per template, versioned secti
 The following remain outside this phase:
 
 - employee-facing React UI;
-- operational date/time-window/checkpoint/DST evaluation (Phase 10F), closing delivery comparison (10G), and Event Operations acceptance (10H);
+- closing delivery comparison (10G) and Event Operations acceptance (10H);
 - Double Shift behavior;
-- Europe/Oslo operational-date derivation, checkpoints, and DST behavior;
 - Realtime, offline outbox, and rendering of routine images in React;
 - Event Operations mutation or completion integration;
 - production rollout, data migration, or organization activation.
@@ -283,6 +282,40 @@ The isolated client files are `routineTaskLifecycle.js` and `routineLifecycleCli
 
 No Opening (`O01`–`O37`), Closing (`C01`–`C46`), or Double Shift (`DS01`–`DS04`) content is seeded. No production migration, production run, bucket, Auth change, deployment, or protected-domain mutation was performed.
 
+## Phase 10F operational date and timing engine
+
+Phase 10F adds `supabase/phase10f_routine_operational_time.sql` as a separate additive layer. The server is the sole time authority. Public mutations capture one `clock_timestamp()` value per operation; no public RPC accepts `effective_now`, and the client neither derives an operational date nor uses `Date` for an action gate. Private helpers that accept a test instant have no `authenticated` execute grant.
+
+Organization settings retain the locked `Europe/Oslo` timezone and default `04:00` operational-day cutoff, and add a bounded flat scalar `flags` object plus `time_engine_version`. At or after 04:00 local time, the operational date is the local calendar date; before 04:00 it is the prior date. Consequently, a Closing run created at 00:30 belongs to the previous workday. `replace_routine_organization_flags(...)` is manager-only, request-hash-idempotent, and revision checked. Settings changes affect only future contexts.
+
+Every run gets one immutable `routine_run_operational_contexts` row containing the operational date and source (`derived`, `explicit`, `superseded_copy`, or `legacy_backfill`), timezone/cutoff, server resolution instant and local projection, ISO weekday, settings revision, organization flags, time-engine version, and a SHA-256 context hash. The root run points back through a same-run/same-organization composite foreign key. Ready timing identity is immutable.
+
+`routine_run_task_timings` stores a separate immutable schedule snapshot and mutable timing projection. Local task boundaries are converted once to UTC instants and included in a dedicated timing snapshot hash; normal phase, crossing, condition, completion, and lateness changes are deliberately outside that hash. Phase 10D's core snapshot SHA-256 remains byte-stable. A run becomes timing-ready only after its context and every task timing row are built in the same transaction; an error rolls back the entire new run.
+
+The local-to-UTC resolver round-trips candidates in a bounded deterministic window. Ordinary times resolve exactly. In the autumn overlap, `visible` and `start` choose the earliest valid instant, while `target`, `overdue`, and `hard_deadline` choose the latest. During the spring gap, the resolver shifts forward minute by minute, for no more than 180 minutes, preserving seconds and recording candidate count, shift, requested local timestamp, resolved local timestamp, and round-trip validity.
+
+The timing projection is `hidden`, `upcoming`, `available`, `due`, `overdue`, or `hard_deadline_passed`, with `unscheduled`, `pending_condition`, `excluded`, `handled`, and `cancelled` terminal/special states. Read models compute the next boundary, seconds until it, server-side lateness, action hints, and a stable reason code. These hints are display information; lifecycle RPCs repeat all checks using server time.
+
+`refresh_routine_run_timing(...)` serializes on the run, evaluates conditions and task phases, writes first-crossing timestamps once, and emits immutable system events only for new crossings. Ordinary visible/due/overdue refresh does not increment the run revision. Crossing a hard deadline creates one nonblocking `timing_issue` deviation whose severity follows task criticality and increments the material run projection. Corrective completion remains allowed, stores a separate completion phase/lateness, resolves that deviation with a system note, and preserves the missed-deadline event.
+
+Phase 10F replaces the Phase 10E `timing_engine_pending` stubs. Claim, start, block, N/A, completion, and verification use timing-ready, inclusion, condition, visibility, and start-boundary gates. A manager/shift lead may still block future work with a substantive operational reason. A participant cannot claim hidden work, start upcoming work, or choose N/A/complete before the start boundary. Hard-deadline work can still start and complete after its timing deviation is recorded.
+
+`must_reach_time` dependencies use metadata boundary `visible`, `start`, `target`, `overdue`, or `hard_deadline`, defaulting to `start`. Publication requires that the predecessor has the selected boundary. Runtime evaluation compares the server instant with the predecessor's immutable UTC boundary and exposes structured dependency state in the workspace.
+
+The condition evaluator implements bounded `all`/`any`/`not` trees without JavaScript, `eval`, free code, or dynamic SQL. `weekday`, `local_time`, organization flags, location activity, concrete standard revision presence, previous task status, and transfer status come from the run/context projections. Event-zone and booking facts remain `pending_external` until Phase 10H; an ambiguous asset fact does the same. Matched work is included, unmatched unstarted work is excluded, and inclusion is monotonic after work begins. Facts and evaluator version are stored, while the original core snapshot fields remain immutable for hash verification.
+
+The new `complete_predecessor_on_successor` dependency is limited to a continuous predecessor and checkpoint/gate successor, with one automatic successor per predecessor and the existing cycle rejection. Eligible continuous work can be system-started after its boundary with a system actor event. Successful successor completion can system-complete an open predecessor with `system_completed`; blocked work or work with unresolved required items/blocking deviations remains open.
+
+Operational-date correction never edits run identity. `supersede_routine_run_operational_date(...)` is manager-only and limited to untouched scheduled runs. It creates a distinct run with new core/timing snapshots, copies active participation/role history, marks the old run superseded, and records an immutable `routine_run_date_supersessions` link plus events. A started or historically active run returns `started_run_date_correction_requires_history_correction` and must use the Phase 10E additive correction model.
+
+The full time completion hook reports blockers, warnings, timing counts, next required boundary, overdue/hard-deadline IDs, and pending-condition IDs. It detects non-ready or tampered timing, missing timing rows/results, early completion, pending/error conditions, future mandatory windows, unreached time dependencies, and open continuous work. Closing delivery remains a no-op and is deferred to Phase 10G.
+
+Public read RPCs are `get_routine_operational_clock`, `get_routine_run_timing_state`, `verify_routine_run_timing_snapshot`, `list_current_routine_runs`, and `get_routine_task_timing`. Workspace, core snapshot verification, and completion validation include timing/condition information. The operation ledger remains manager-only. The three Phase 10F tables grant `authenticated` only `SELECT`, narrowed by personal active profile, exact organization, and visible-run RLS; all mutation is through RPCs. Counter-only, shared-device, inactive, organization-less, cross-organization, and anonymous access is denied.
+
+The isolated client modules are `routineOperationalTime.js` and `routineTimeClient.js`. They normalize server responses, format display-only durations/lateness, expose server-provided action hints, retain idempotency keys on retry, and normalize timing/stale/auth/RLS/network failures. They contain no direct table DML, service credential, local operational-date algorithm, DST resolver, client-authoritative clock, offline outbox, Realtime, or React component.
+
+Closing delivery is deferred to Phase 10G. Authoritative Event Operations facts and acceptance are deferred to Phase 10H. Realtime and offline behavior are deferred to Phase 10I. No `O01`–`O37`, `C01`–`C46`, or `DS01`–`DS04` content is seeded, and no production migration or production run has been created.
+
 ## Migration order
 
 Apply the migration only after the repository's existing schema and completed Phase 9 migration chain, with Phase 9P remaining the terminal Phase 9 layer. Phase 10A is then the next additive layer:
@@ -294,8 +327,9 @@ Apply the migration only after the repository's existing schema and completed Ph
 5. `supabase/phase10c_routine_reference_images.sql`;
 6. `supabase/phase10d_routine_runs_and_snapshots.sql`.
 7. `supabase/phase10e_routine_task_lifecycle.sql`.
+8. `supabase/phase10f_routine_operational_time.sql`.
 
-All four Phase 10 migrations are safe to reapply against their own completed schema. Phase 10D also survives Phase 10B, 10C, and 10D function/policy restoration without changing run data, hashes, audit timestamps, or protected-domain fingerprints. Reapplication recreates functions, policies, and triggers without repairing or reordering earlier migrations.
+All six Phase 10 migrations are safe to reapply against their own completed schema. Phase 10F preserves completed core hashes and operational timing data/timestamps while recreating functions, policies, and triggers without repairing or reordering earlier migrations.
 
 ## Defaults and open configuration
 
@@ -321,10 +355,12 @@ Before a later rollout phase, product owners must approve the organization rollo
 
 `npm run verify:routine-lifecycle` applies Phase 10A through 10E to a uniquely named PostgreSQL 17 container with `--network none` and no image pull. It reapplies 10E, executes 255 SQL assertions over schema/RLS/RPC/audit/read-model behavior, fingerprints Inventory, Inventory Storage, Asset, Event Operations, Auth, and legacy domains, and verifies data-stable migration reapplication plus published-template/run-snapshot hashes. Seven pairs of real database connections prove single-winner protection for task claim, initial assessment, typed item write, task completion, deviation resolution, final-verification request, and run finish. Client normalization and sync-safe request builders run without network access, and the container is removed in `finally` cleanup.
 
+`npm run verify:routine-operational-time` applies Phase 10A through 10F in a uniquely named PostgreSQL 17 container with `--network none` and no image pull. It executes 249 named SQL assertions spanning schema/tenant constraints, the 04:00 operational date, DST overlap/gap policies, core/timing hashes, phase transitions, lifecycle gates, deviations, time dependencies, conditions, continuous tasks, completion, supersession, RLS, read models, and regressions. It reapplies 10F without changing timing data/timestamps/hashes and compares protected-domain fingerprints. Real concurrent connections exercise auto-date creation, refresh crossings, hard-deadline deviation uniqueness, condition convergence, continuous system start/completion, and date supersession. Client normalization and authority scans run without network access.
+
 The pre-existing Phase 9L verification baseline is intentionally not repaired here. Its exact known failure is:
 
 > Phase 9L requires exactly one approved August shelf/storage source session.
 
 Only that same failure with the same fingerprint is an accepted baseline. Any new or changed Phase 9 failure is a regression.
 
-No Supabase production migration, bucket creation, data write, Auth configuration change, deployment, or feature activation has been performed for Phase 10A through 10E. Phase 10D is the committed checkpoint named above; Phase 10E remains an uncommitted working-tree implementation. Europe/Oslo operational-date derivation, checkpoints, time windows, and DST handling belong to Phase 10F. Closing delivery comparison belongs to 10G, Event Operations acceptance to 10H, and Double Shift runs, Realtime, IndexedDB/offline outbox behavior, shared-device operation, seeded content, and React UI remain deferred.
+No Supabase production migration, bucket creation, data write, Auth configuration change, deployment, or feature activation has been performed for Phase 10A through 10F. Phase 10E is the committed checkpoint named above; Phase 10F remains an uncommitted working-tree implementation. Closing delivery comparison belongs to 10G, Event Operations context/acceptance and Double Shift bundles belong to 10H, and Realtime/IndexedDB/offline-outbox behavior belongs to 10I. Shared-device operation, seeded content, and React UI remain deferred.

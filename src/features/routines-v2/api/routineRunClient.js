@@ -73,7 +73,7 @@ export async function createOrGetRoutineRun(payload) {
   const response = await rpc('create_or_get_routine_run', {
     input_routine_key: payload.routineKey,
     input_scope_key: payload.scopeKey || 'default',
-    input_operational_date: payload.operationalDate,
+    input_operational_date: payload.operationalDate ?? null,
     input_idempotency_key: payload.idempotencyKey,
   });
   if (!response.ok) return response;
