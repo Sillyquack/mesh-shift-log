@@ -232,7 +232,7 @@ function sourceChecks() {
   check("session end disables sync before its RPC", bootstrapGate.includes("setEndingSession(true)") && bootstrapGate.includes("open: open && !endingSession"));
   check("preview exposes no task lifecycle controls", !/Start Opening|Complete task|Finish run|Start task/.test(preview));
   check("preview states legacy remains active", preview.includes("legacy shift log remains active"));
-  check("preview states template editor is deferred", preview.includes("Phase 10K2"));
+  check("preview keeps the K2 manager entry server-gated and non-operative", preview.includes("bootstrap.managerPreviewAllowed") && preview.includes("Manager Control Center") && preview.includes("Operative run and task controls remain unavailable"));
   check("launcher label is preview-specific in shadow", launcher.includes("routineLauncherLabel"));
   check("launcher backend failure preserves legacy", launcher.includes("current shift log remains available"));
   check("sync hook selects both transports from bootstrap", syncHook.includes("CURSOR_POLLING") && syncHook.includes("POSTGRES_REALTIME"));

@@ -1,0 +1,4 @@
+import RoutineLocationsManager from "./RoutineLocationsManager.jsx";
+import RoutineLocationSetsManager from "./RoutineLocationSetsManager.jsx";
+import RoutineStandardsManager from "./RoutineStandardsManager.jsx";
+export default function RoutineFoundationManager({data,onRefresh}){return <div className="rm-stack"><header className="rm-section-heading"><div><p className="eyebrow">Foundation configuration</p><h2>Locations, routes and standards</h2></div></header>{data.foundationWarnings?.length?<ul className="rm-issues rm-blockers">{data.foundationWarnings.map(w=><li key={`${w.category}-${w.key}`}>{w.message}</li>)}</ul>:null}<RoutineLocationsManager locations={data.locations} onRefresh={onRefresh}/><RoutineLocationSetsManager sets={data.locationSets} locations={data.locations} onRefresh={onRefresh}/><RoutineStandardsManager standards={data.standards} onRefresh={onRefresh}/></div>}

@@ -7,7 +7,7 @@ function CountCard({ label, value }) {
   return <div className="routine-count-card"><strong>{value}</strong><span>{label}</span></div>;
 }
 
-export default function RoutineEnginePreviewHome({ bootstrap, syncStatus, onEndSession, onSwitchOperator }) {
+export default function RoutineEnginePreviewHome({ bootstrap, syncStatus, onEndSession, onSwitchOperator, onOpenManager }) {
   const summaries = bootstrap.summaries;
   const empty = summaries.publishedTemplateCount === 0 && summaries.visibleRunCount === 0;
   return (
@@ -67,7 +67,7 @@ export default function RoutineEnginePreviewHome({ bootstrap, syncStatus, onEndS
       )}
 
       {bootstrap.managerPreviewAllowed && (
-        <section className="routine-manager-note"><p className="eyebrow">Manager preview</p><h2>Configuration foundation is ready</h2><p>The complete template editor arrives in Phase 10K2. This shell does not expose configuration or operational mutations.</p></section>
+        <section className="routine-manager-note"><p className="eyebrow">Manager preview</p><h2>Manager Control Center</h2><p>Configure foundations, versioned templates, references, operators, pilot access and release readiness. Operative run and task controls remain unavailable.</p><button type="button" className="primary-button" onClick={onOpenManager}>Open Manager Control Center</button></section>
       )}
     </main>
   );

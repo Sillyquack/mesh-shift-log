@@ -7,7 +7,7 @@ import { clearRoutineOperatorSession } from "../auth/routineOperatorSession.js";
 import RoutineEnginePreviewHome from "./RoutineEnginePreviewHome.jsx";
 import SharedDeviceOperatorGate from "./SharedDeviceOperatorGate.jsx";
 
-export default function RoutineEngineBootstrapGate({ user, open = true, loader, operatorApi, subscribe, onBack }) {
+export default function RoutineEngineBootstrapGate({ user, open = true, loader, operatorApi, subscribe, onBack, onOpenManager }) {
   const bootstrap = useRoutineApplicationBootstrap({ enabled: open, loader });
   const [endingSession, setEndingSession] = useState(false);
   const refresh = useCallback(() => bootstrap.refresh(), [bootstrap.refresh]);
@@ -51,7 +51,7 @@ export default function RoutineEngineBootstrapGate({ user, open = true, loader, 
       <h1>Preview access is not available</h1><p>Your server-controlled pilot membership does not currently allow this preview.</p>
       <button type="button" className="primary-button" onClick={onBack}>Back to shift log</button></section></main>
   );
-  return <RoutineEnginePreviewHome bootstrap={bootstrap.data} syncStatus={syncStatus}
+  return <RoutineEnginePreviewHome bootstrap={bootstrap.data} syncStatus={syncStatus} onOpenManager={onOpenManager}
     onEndSession={() => endSharedSession("Operator ended the Routine Engine session.")}
     onSwitchOperator={() => endSharedSession("Operator switched in the Routine Engine UI.")} />;
 }

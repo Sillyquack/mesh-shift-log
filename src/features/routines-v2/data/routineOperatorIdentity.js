@@ -36,6 +36,14 @@ export function normalizeRoutineSharedDevice(value) {
     deviceKey: value.device_key ?? value.deviceKey ?? "",
     active: value.active === true,
     revision: Number(value.revision ?? 0),
+    userProfileId: value.user_profile_id ?? value.userProfileId ?? null,
+    absoluteSessionMinutes: Number(value.absolute_session_minutes ?? value.absoluteSessionMinutes ?? 960),
+    idleTimeoutMinutes: Number(value.idle_timeout_minutes ?? value.idleTimeoutMinutes ?? 30),
+    criticalReauthMinutes: Number(value.critical_reauth_minutes ?? value.criticalReauthMinutes ?? 5),
+    maxFailedAttempts: Number(value.max_failed_attempts ?? value.maxFailedAttempts ?? 5),
+    failureWindowMinutes: Number(value.failure_window_minutes ?? value.failureWindowMinutes ?? 15),
+    lockoutMinutes: Number(value.lockout_minutes ?? value.lockoutMinutes ?? 15),
+    allowOfflineNoncriticalDrafts: value.allow_offline_noncritical_drafts ?? value.allowOfflineNoncriticalDrafts ?? true,
     sessionPolicy: Object.freeze({ ...(value.sessionPolicy ?? value.session_policy ?? {}) }),
   });
 }
@@ -53,6 +61,8 @@ export function normalizeRoutineOperator(value) {
     capabilities: Object.freeze({ ...(value.capabilities ?? {}) }),
     locked: value.locked === true,
     validUntil: value.valid_until ?? value.validUntil ?? null,
+    validFrom: value.valid_from ?? value.validFrom ?? null,
+    revision: Number(value.revision ?? 0),
   });
 }
 

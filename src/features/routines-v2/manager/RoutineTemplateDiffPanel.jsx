@@ -1,0 +1,2 @@
+import { diffSummary } from "../data/routineTemplateEditorModel.js";
+export default function RoutineTemplateDiffPanel({diff}){if(!diff)return <section className="rm-card"><h3>Diff</h3><p>No published version exists to compare.</p></section>;return <section className="rm-card"><h3>Human-readable diff</h3><ul className="rm-diff-summary">{diffSummary(diff).map((line)=><li key={line}>{line}</li>)}</ul><details><summary>Structured detail</summary><pre className="rm-json">{JSON.stringify(diff,null,2)}</pre></details></section>}

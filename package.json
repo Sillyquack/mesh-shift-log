@@ -37,6 +37,7 @@
     "verify:routine-sync-offline": "node scripts/verify-routine-sync-offline.mjs",
     "verify:routine-shared-device": "node scripts/verify-routine-shared-device.mjs",
     "verify:routine-ui-foundation": "node scripts/verify-routine-ui-foundation.mjs",
+    "verify:routine-manager-ui": "node scripts/verify-routine-manager-ui.mjs",
     "preview": "vite preview",
     "deploy": "npm run build && gh-pages -d dist"
   },
