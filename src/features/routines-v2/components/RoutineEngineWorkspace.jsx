@@ -1,5 +1,6 @@
 import { lazy, Suspense, useState } from "react";
 import RoutineEngineBootstrapGate from "./RoutineEngineBootstrapGate.jsx";
+import RoutineChunkErrorBoundary from "./RoutineChunkErrorBoundary.jsx";
 import "./RoutineEngineShell.css";
 
 const RoutineManagerWorkspace = lazy(() => import("../manager/RoutineManagerWorkspace.jsx"));
@@ -19,15 +20,15 @@ export default function RoutineEngineWorkspace({ user, onBack, onLogout, bootstr
       </header>
       {managerOpen ? (
         <Suspense fallback={<main className="routine-shell-centered"><section className="routine-state-card" role="status">Loading Manager Control Center…</section></main>}>
-          <RoutineManagerErrorBoundary onBack={() => setManagerOpen(false)}>
+          <RoutineManagerErrorBoundary onBack={() => setManagerOpen(false)}><RoutineChunkErrorBoundary onBack={() => setManagerOpen(false)}>
             <RoutineManagerWorkspace loader={managerLoader} onBack={() => setManagerOpen(false)} />
-          </RoutineManagerErrorBoundary>
+          </RoutineChunkErrorBoundary></RoutineManagerErrorBoundary>
         </Suspense>
       ) : employeeOpen ? (
         <Suspense fallback={<main className="routine-shell-centered"><section className="routine-state-card" role="status">Loading Operations Preview…</section></main>}>
-          <RoutineEmployeeErrorBoundary onBack={() => setEmployeeOpen(false)}>
+          <RoutineEmployeeErrorBoundary onBack={() => setEmployeeOpen(false)}><RoutineChunkErrorBoundary onBack={() => setEmployeeOpen(false)}>
             <RoutineEmployeeWorkspace loader={employeeLoader} subscribe={subscribe} onBack={() => setEmployeeOpen(false)} />
-          </RoutineEmployeeErrorBoundary>
+          </RoutineChunkErrorBoundary></RoutineEmployeeErrorBoundary>
         </Suspense>
       ) : (
         <RoutineEngineBootstrapGate user={user} open loader={bootstrapLoader} operatorApi={operatorApi} subscribe={subscribe}

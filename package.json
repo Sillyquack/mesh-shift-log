@@ -39,6 +39,8 @@
     "verify:routine-ui-foundation": "node scripts/verify-routine-ui-foundation.mjs",
     "verify:routine-manager-ui": "node scripts/verify-routine-manager-ui.mjs",
     "verify:routine-employee-ui": "node scripts/verify-routine-employee-ui.mjs",
+    "verify:routine-history-pilot": "node scripts/verify-routine-history-pilot.mjs",
+    "verify:routine-e2e-pilot": "node scripts/verify-routine-e2e-pilot.mjs",
     "preview": "vite preview",
     "deploy": "npm run build && gh-pages -d dist"
   },

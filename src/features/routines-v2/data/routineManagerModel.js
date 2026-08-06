@@ -5,7 +5,9 @@ export const MANAGER_TABS = Object.freeze([
   { id: "references", label: "References" },
   { id: "operators", label: "Operators" },
   { id: "pilot", label: "Pilot access" },
-  { id: "readiness", label: "Release readiness" },
+  { id: "history", label: "History" },
+  { id: "review", label: "Review" },
+  { id: "release", label: "Release gate" },
 ]);
 
 export const READINESS_LABELS = Object.freeze({ ready: "Ready", warning: "Warning", blocked: "Blocked" });

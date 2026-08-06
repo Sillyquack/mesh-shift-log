@@ -1,4 +1,4 @@
-import { useCallback, useMemo, useState } from "react";
+import { lazy, Suspense, useCallback, useMemo, useState } from "react";
 import { useRoutineEmployeeHome } from "../hooks/useRoutineEmployeeHome.js";
 import RoutineEmployeeHome from "./RoutineEmployeeHome.jsx";
 import RoutineRunWorkspace from "./RoutineRunWorkspace.jsx";
@@ -8,6 +8,8 @@ import RoutineTransferPanel from "./RoutineTransferPanel.jsx";
 import { useRoutinePendingOverlay } from "../hooks/useRoutinePendingOverlay.js";
 import { useRoutineEngineSync } from "../hooks/useRoutineEngineSync.js";
 import "./RoutineEmployee.css";
+
+const RoutineHistoryWorkspace = lazy(() => import("../history/RoutineHistoryWorkspace.jsx"));
 
 export default function RoutineEmployeeWorkspace({ onBack, loader, runLoader, taskLoader, bundleLoader, runApi, taskApi, doubleShiftApi, reauthApi, subscribe }) {
   const [route, setRoute] = useState({ name: "home", id: null }); const [syncRevision, setSyncRevision] = useState(0);
@@ -25,10 +27,11 @@ export default function RoutineEmployeeWorkspace({ onBack, loader, runLoader, ta
   if (route.name === "bundle") return <RoutineDoubleShiftWorkspace bundleId={route.id} onBack={() => setRoute({ name: "home", id: null })} onOpenRun={(id) => setRoute({ name: "run", id })} loader={bundleLoader} api={doubleShiftApi} refreshSignal={syncRevision} />;
   if (route.name === "handover") return <main className="employee-workspace"><header className="employee-page-header"><button type="button" onClick={() => setRoute({ name: "home", id: null })}>← Operations</button><h1>Handover</h1></header><RoutineHandoverPanel handoverId={route.id} /></main>;
   if (route.name === "transfer") return <main className="employee-workspace"><header className="employee-page-header"><button type="button" onClick={() => setRoute({ name: "home", id: null })}>← Operations</button><h1>Transfer</h1></header><RoutineTransferPanel transferId={route.id} reauthApi={reauthApi} /></main>;
+  if (route.name === "history") return <main className="employee-workspace"><header className="employee-page-header"><button type="button" onClick={() => setRoute({ name: "home", id: null })}>← Operations</button><h1>My history</h1></header><Suspense fallback={<section role="status">Loading your history…</section>}><RoutineHistoryWorkspace /></Suspense></main>;
   if (!home.data && ["loading", "idle"].includes(home.status)) return <main className="employee-workspace employee-loading" role="status">Loading employee operations…</main>;
   if (!home.data) return <main className="employee-workspace employee-loading"><section role="alert"><h1>Operations Preview unavailable</h1><p>{home.error?.message ?? "The server context could not be loaded."}</p><button type="button" onClick={home.refresh}>Try again</button><button type="button" onClick={onBack}>Preview Home</button></section></main>;
   const employeeHome = { ...home.data, sync: { ...home.data.sync, status: liveSync.status, transport: liveSync.mode ?? home.data.sync?.transport } };
-  return <RoutineEmployeeHome home={employeeHome} onBack={onBack} onRefresh={home.refresh} runApi={runApi} doubleShiftApi={doubleShiftApi}
+  return <><nav className="employee-history-nav" aria-label="Employee history"><button type="button" onClick={() => setRoute({ name: "history", id: null })}>My history</button></nav><RoutineEmployeeHome home={employeeHome} onBack={onBack} onRefresh={home.refresh} runApi={runApi} doubleShiftApi={doubleShiftApi}
     pendingOverlay={overlay} onOpenRun={(id) => setRoute({ name: "run", id })} onOpenBundle={(id) => setRoute({ name: "bundle", id })}
-    onOpenHandover={(id) => setRoute({ name: "handover", id })} onOpenTransfer={(id) => setRoute({ name: "transfer", id })} />;
+    onOpenHandover={(id) => setRoute({ name: "handover", id })} onOpenTransfer={(id) => setRoute({ name: "transfer", id })} /></>;
 }

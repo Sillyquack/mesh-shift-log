@@ -1,4 +1,4 @@
-import { useRef, useState } from "react";
+import { lazy, Suspense, useRef, useState } from "react";
 import { MANAGER_TABS } from "../data/routineManagerModel.js";
 import { useRoutineManagerWorkspace } from "../hooks/useRoutineManagerWorkspace.js";
 import RoutineManagerOverview from "./RoutineManagerOverview.jsx";
@@ -7,8 +7,11 @@ import RoutineTemplatesManager from "./RoutineTemplatesManager.jsx";
 import RoutineReferenceManager from "./RoutineReferenceManager.jsx";
 import RoutineOperatorAdmin from "./RoutineOperatorAdmin.jsx";
 import RoutinePilotAccessManager from "./RoutinePilotAccessManager.jsx";
-import RoutineReleaseReadiness from "./RoutineReleaseReadiness.jsx";
 import "./RoutineManager.css";
+
+const RoutineHistoryWorkspace = lazy(() => import("../history/RoutineHistoryWorkspace.jsx"));
+const RoutineManagerReviewDashboard = lazy(() => import("../history/RoutineManagerReviewDashboard.jsx"));
+const RoutineReleaseGate = lazy(() => import("../history/RoutineReleaseGate.jsx"));
 
 export default function RoutineManagerWorkspace({ onBack, loader, initialTab = "overview", referenceLoader, referenceUploader, operatorLoader, operatorApi }) {
   const workspace = useRoutineManagerWorkspace({ loader });
@@ -29,7 +32,9 @@ export default function RoutineManagerWorkspace({ onBack, loader, initialTab = "
     references: <RoutineReferenceManager loader={referenceLoader} uploader={referenceUploader} />,
     operators: <RoutineOperatorAdmin loader={operatorLoader} api={operatorApi} profileChoices={data.profileChoices || []} />,
     pilot: <RoutinePilotAccessManager pilot={data.pilotAccess} settings={data.settings} onRefresh={workspace.refresh} />,
-    readiness: <RoutineReleaseReadiness readiness={data.readiness} />,
+    history: <RoutineHistoryWorkspace manager />,
+    review: <RoutineManagerReviewDashboard />,
+    release: <RoutineReleaseGate />,
   };
-  return <main className="rm-workspace"><header className="rm-topbar"><div><p className="eyebrow">Personal manager auth only</p><h1>Manager Control Center</h1></div><button type="button" className="ghost-button" onClick={onBack}>Back to preview home</button></header><nav className="rm-tabs" role="tablist" aria-label="Manager Control Center sections">{MANAGER_TABS.map((item,index)=><button ref={(node)=>{tabs.current[index]=node;}} role="tab" type="button" key={item.id} aria-selected={tab===item.id} tabIndex={tab===item.id?0:-1} onClick={()=>setTab(item.id)} onKeyDown={(event)=>{if(["ArrowRight","ArrowDown"].includes(event.key)){event.preventDefault();changeTab(index+1);}if(["ArrowLeft","ArrowUp"].includes(event.key)){event.preventDefault();changeTab(index-1);}if(event.key==="Home"){event.preventDefault();changeTab(0);}if(event.key==="End"){event.preventDefault();changeTab(MANAGER_TABS.length-1);}}}>{item.label}</button>)}</nav><section className="rm-panel" role="tabpanel" tabIndex="0">{panels[tab]}</section></main>;
+  return <main className="rm-workspace"><header className="rm-topbar"><div><p className="eyebrow">Personal manager auth only</p><h1>Manager Control Center</h1></div><button type="button" className="ghost-button" onClick={onBack}>Back to preview home</button></header><nav className="rm-tabs" role="tablist" aria-label="Manager Control Center sections">{MANAGER_TABS.map((item,index)=><button ref={(node)=>{tabs.current[index]=node;}} role="tab" type="button" key={item.id} aria-selected={tab===item.id} tabIndex={tab===item.id?0:-1} onClick={()=>setTab(item.id)} onKeyDown={(event)=>{if(["ArrowRight","ArrowDown"].includes(event.key)){event.preventDefault();changeTab(index+1);}if(["ArrowLeft","ArrowUp"].includes(event.key)){event.preventDefault();changeTab(index-1);}if(event.key==="Home"){event.preventDefault();changeTab(0);}if(event.key==="End"){event.preventDefault();changeTab(MANAGER_TABS.length-1);}}}>{item.label}</button>)}</nav><section className="rm-panel" role="tabpanel" tabIndex="0"><Suspense fallback={<div className="routine-state-card" role="status">Loading secure manager section…</div>}>{panels[tab]}</Suspense></section></main>;
 }
