@@ -32,6 +32,7 @@
     "verify:routine-runs": "node scripts/verify-routine-runs.mjs",
     "verify:routine-lifecycle": "node scripts/verify-routine-lifecycle.mjs",
     "verify:routine-operational-time": "node scripts/verify-routine-operational-time.mjs",
+    "verify:routine-delivery": "node scripts/verify-routine-delivery.mjs",
     "preview": "vite preview",
     "deploy": "npm run build && gh-pages -d dist"
   },

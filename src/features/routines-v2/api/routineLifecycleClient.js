@@ -5,6 +5,10 @@ import {
   normalizeRoutineLifecycleRecord,
   normalizeRoutineTimeline,
 } from '../data/routineTaskLifecycle.js';
+import {
+  normalizeRoutineDeliveryComparison,
+  normalizeRoutineDeliverySummary,
+} from '../data/routineDelivery.js';
 
 function result(ok, fields = {}) { return { ok, ...fields }; }
 function compact(payload) {
@@ -62,7 +66,17 @@ export const claimRoutineTask = mutation('claim_routine_task', taskRevision);
 export const releaseRoutineTask = mutation('release_routine_task', taskRevision);
 export const startRoutineTask = mutation('start_routine_task', taskRevision);
 export const pauseRoutineTask = mutation('pause_routine_task', (p) => ({ ...taskRevision(p), input_reason: p.reason }));
-export const recordRoutineInitialAssessment = mutation('record_routine_initial_assessment', (p) => ({ ...taskRevision(p), input_assessment: p.assessment, input_reason_code: p.reasonCode, input_details: p.details }));
+export async function recordRoutineInitialAssessment(payload) {
+  return rpc('record_routine_initial_assessment', {
+    ...taskRevision(payload),
+    input_assessment: payload.assessment,
+    input_reason_code: payload.reasonCode,
+    input_details: payload.details,
+  }, (value) => ({
+    ...value,
+    comparison: normalizeRoutineDeliveryComparison(value?.comparison),
+  }));
+}
 export const updateRoutineTaskItem = mutation('update_routine_task_item', (p) => ({ input_task_item_id: p.taskItemId, input_status: p.status, input_value_json: p.value || {}, input_result_code: p.resultCode, input_reason: p.reason, input_expected_revision: p.expectedRevision, input_idempotency_key: p.idempotencyKey }));
 export const addRoutineTaskComment = mutation('add_routine_task_comment', (p) => ({ input_task_id: p.taskId, input_comment: p.comment, input_idempotency_key: p.idempotencyKey }));
 export const blockRoutineTask = mutation('block_routine_task', (p) => ({ ...taskRevision(p), input_category: p.category, input_reason_code: p.reasonCode, input_details: p.details, input_severity: p.severity, input_due_at: p.dueAt }));
@@ -98,7 +112,16 @@ export const cancelRoutineTransfer = transferAction('cancel_routine_transfer', '
 export async function validateRoutineRunCompletion(runId) {
   return rpc('validate_routine_run_completion', { input_run_id: runId }, normalizeRoutineCompletionValidation);
 }
-export const finishRoutineRun = mutation('finish_routine_run', (p) => ({ input_run_id: p.runId, input_expected_run_revision: p.expectedRevision, input_idempotency_key: p.idempotencyKey }));
+export async function finishRoutineRun(payload) {
+  return rpc('finish_routine_run', {
+    input_run_id: payload.runId,
+    input_expected_run_revision: payload.expectedRevision,
+    input_idempotency_key: payload.idempotencyKey,
+  }, (value) => ({
+    ...value,
+    delivery: normalizeRoutineDeliverySummary(value?.delivery),
+  }));
+}
 export const reopenRoutineRun = mutation('reopen_routine_run', (p) => ({ input_run_id: p.runId, input_reason: p.reason, input_expected_run_revision: p.expectedRevision, input_idempotency_key: p.idempotencyKey }));
 export const cancelRoutineRun = mutation('cancel_routine_run', (p) => ({ input_run_id: p.runId, input_reason: p.reason, input_expected_run_revision: p.expectedRevision, input_idempotency_key: p.idempotencyKey }));
 export const recordRoutineHistoryCorrection = mutation('record_routine_history_correction', (p) => ({ input_run_id: p.runId, input_entity_type: p.entityType, input_entity_id: p.entityId, input_field_or_claim: p.fieldOrClaim, input_original_value: p.originalValue, input_corrected_value: p.correctedValue, input_reason: p.reason, input_idempotency_key: p.idempotencyKey }));

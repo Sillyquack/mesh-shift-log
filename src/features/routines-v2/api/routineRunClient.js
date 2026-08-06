@@ -1,6 +1,7 @@
 import { getCurrentSession, supabaseAuthClient } from '../../../lib/supabaseAuthClient.js';
 import { isSupabaseConfigured } from '../../../lib/supabaseClient.js';
 import { ROUTINE_REFERENCE_BUCKET } from '../data/routineReferenceImages.js';
+import { normalizeRoutineDeliveryWorkspace } from '../data/routineDelivery.js';
 import {
   inspectRoutineSnapshotIntegrity,
   normalizeRoutineRunRecord,
@@ -134,7 +135,13 @@ export async function getRoutineRunWorkspace(runId) {
     input_run_id: runId,
   });
   if (!response.ok) return response;
-  return { ...response, data: normalizeRoutineRunWorkspace(response.data) };
+  return {
+    ...response,
+    data: {
+      ...normalizeRoutineRunWorkspace(response.data),
+      ...normalizeRoutineDeliveryWorkspace(response.data),
+    },
+  };
 }
 
 export async function listRoutineRunsForDate(operationalDate) {
