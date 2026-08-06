@@ -8,6 +8,8 @@ Phase 10B's approved local checkpoint is commit `9a8cf5716a3427ab65d4437b8362285
 
 Phase 10C's approved local checkpoint is commit `c4666ee0c2cb5547812b0455288e4f8a8cb15e16` (`feat: add versioned routine reference images`).
 
+Phase 10D's approved local checkpoint is commit `6164df74d443c80e02885f804ac1f6084d96131a` (`feat: add authoritative routine run snapshots`). Phase 10E is implemented and verified in the working tree but deliberately remains uncommitted pending review.
+
 Phase 10A includes organization settings, routine locations, reusable location sets, reusable standards, immutable standard revisions, server-resolved permissions, manager mutation RPCs, organization-scoped RLS, and disposable database verification.
 
 Phase 10B adds logical templates, one active draft per template, versioned sections/tasks/structured items, task dependencies, declarative cross-run relations, bounded condition syntax, validation, SHA-256 content identity, and atomic immutable publishing. Phase 10C adds stable logical image references, immutable image versions and placeholders, private organization-scoped Storage access, draft task/task-item links, and an isolated authenticated client. Phase 10D adds authoritative operational run identity, atomic immutable snapshots of the exact published version and all resolved sources, pending condition facts, participant membership, coordinator role assignments, and an isolated authenticated run client. None of these phases activates the engine for an organization or seeds Mesh-specific locations, sets, standards, templates, routine content, actual Mesh images, or production runs.
@@ -15,7 +17,7 @@ Phase 10B adds logical templates, one active draft per template, versioned secti
 The following remain outside this phase:
 
 - employee-facing React UI;
-- task completion and operational run lifecycle beyond initial `scheduled` creation;
+- operational date/time-window/checkpoint/DST evaluation (Phase 10F), closing delivery comparison (10G), and Event Operations acceptance (10H);
 - Double Shift behavior;
 - Europe/Oslo operational-date derivation, checkpoints, and DST behavior;
 - Realtime, offline outbox, and rendering of routine images in React;
@@ -242,6 +244,45 @@ Phase 10C follows the same boundary on all five new tables. Managers read own-te
 
 Phase 10D grants authenticated users `SELECT` only on run tables, narrowed by the server-resolved organization and ready-run visibility contract. Run creation requires manager or shift lead; ordinary active routine staff can join and read visible ready runs. Coordinator role assignment requires manager or shift lead and an exact expected run revision. There are no direct table DML grants or permissive write policies. The snapshot builder, source adapters, hash helpers, and internal mutation flag are private; every exposed RPC is `SECURITY DEFINER`, resolves the actor from `auth.uid()`, and uses a catalog-only search path.
 
+## Phase 10E lifecycle and immutable audit
+
+Phase 10E adds the server-authoritative operational layer in `supabase/phase10e_routine_task_lifecycle.sql`. It extends `routine_run_tasks` with current deviation/override pointers, N/A and waiting reasons, claim/status metadata, and extends task items with N/A/block reasons and status-change metadata. Snapshot identity remains immutable; only RPC-owned projections may change.
+
+The ten lifecycle tables are:
+
+| Table | Purpose |
+| --- | --- |
+| `routine_deviations` | Detected condition, severity, assignment, mitigation/resolution, and immutable detection identity |
+| `routine_manager_overrides` | Immutable manager decision with reason, remaining risk, temporary measure, owner, due time, expiry, and supersession |
+| `routine_task_verifications` | Immutable verification of one exact task revision |
+| `routine_run_verifications` | Immutable final verification of one exact run revision |
+| `routine_run_verification_items` | Per-task revision snapshot inside a run verification |
+| `routine_handovers` | Revisioned draft followed by frozen submitted/accepted handover |
+| `routine_handover_items` | Manual and server-regenerated deviation/transfer handover entries |
+| `routine_run_transfers` | Proposed, accepted/rejected, completed/cancelled responsibility transfer |
+| `routine_corrections` | Additive historical correction that never rewrites the original entity or event |
+| `routine_events` | Append-only operational event stream linked to the idempotent operation |
+
+Task transitions are server controlled: `not_started → in_progress`; `in_progress ↔ waiting`; active work may become `blocked` or, when the snapshot policy permits it, `not_applicable`; valid work becomes `completed`; an accepted transfer projects `transferred`. Resolving the final blocker returns work to `in_progress`. A coordinator can reopen `completed`/`not_applicable` work with a substantive reason. Claim and release change assignment/claim projections without inventing a completion state.
+
+Run transitions are `scheduled → in_progress → awaiting_final_verification|waiting_for_transfers|finished`, with a coordinator cancellation path from active states. Failed verification returns the run to work. Only a manager may change `finished → reopened`, and only inside the configured reopen window; starting a reopened run returns it to `in_progress`. Cancelled and superseded runs are terminal.
+
+Initial assessment is write-once. The snapshot policy determines whether `ready`, `correction_required`, or `control_issue_found` is legal; issue assessments create an auditable deviation. Task-item values are type-checked in PostgreSQL for check, count, quantity/measurement, text, choice/status, and read-only location/asset/product result shapes. Required, blocked, and N/A policies feed the server completion validator. The client never supplies the authoritative task outcome: PostgreSQL derives `ready_on_arrival`, `standard_met`, `completed_after_correction`, control outcomes, or `completed_with_manager_override` from stored facts.
+
+Every mutation requires a stable idempotency key. The canonical request hash is stored in `routine_run_operations`; an exact replay returns the stored response, while key reuse with a changed request is rejected. Events use the operation ID plus a sequence number for deduplication. Event payloads must be objects and reject secret/payment field names. Comments are events and intentionally do not increment task or run revisions. All other contested projections use expected revisions, row locks in run-before-task-before-child order, and SQLSTATE `40001` for stale writers.
+
+Deviations preserve detection facts while their controlled status/assignment projection advances. Overrides and verifications are immutable rows. Independent/second-person/manager/closing-responsible verification policies are checked against the effective actor and active role assignment. A passed verification is valid only for its recorded task/run revision; later material work makes it stale without deleting history. Failed verification creates a deviation and returns work to a blocked/in-progress state.
+
+Handover drafts may replace manual items and regenerate server-owned items from open deviations and active transfers. Submit regenerates once more and freezes the handover and items; only the valid target can accept it. Transfers do not complete a source task when proposed. Acceptance projects the task as `transferred`; completion is a later explicit action with a note. Event-operation handover/transfer acceptance returns a Phase 10H deferral error.
+
+Run completion is composed from `routine_validate_run_completion_core`, `routine_validate_run_completion_time`, and `routine_validate_run_completion_delivery`, followed by `routine_finalize_run_extension`. The core checks snapshot readiness, conditions, mandatory/critical work, required items, overrides, deviations, stale/missing verification, transfers, and required handover. The time hook does not simulate a clock engine: any `time_window` or `must_reach_time` dependency returns `timing_engine_pending` until Phase 10F. The delivery hook and finalize extension are no-ops until Phase 10G. Accepted incomplete transfers produce `waiting_for_transfers`; a clean validation permits `finished` and increments the finish sequence.
+
+All ten tables have organization/run composite foreign keys, supporting indexes, RLS, and authenticated `SELECT` only. Manager/coordinator/participant visibility derives from the normal personal-profile and visible-run contract. The operation ledger remains manager-only. Target participants can see/respond to explicit transfers. Anon, inactive, organization-less, cross-organization, counter-only, and shared-device profiles receive no automatic access. Mutation is RPC-only; internal helpers, guards, completion hooks, and the renamed Phase 10D implementations have no application-role execute grant.
+
+The isolated client files are `routineTaskLifecycle.js` and `routineLifecycleClient.js`. They normalize lifecycle/read-model data, expose display-only action hints, retain the caller's idempotency key for retry, and map stale/auth/RLS/network failures. They contain no direct DML, service credential, organization authority, outcome authority, date/checkpoint logic, Realtime, IndexedDB, offline outbox, or React component.
+
+No Opening (`O01`–`O37`), Closing (`C01`–`C46`), or Double Shift (`DS01`–`DS04`) content is seeded. No production migration, production run, bucket, Auth change, deployment, or protected-domain mutation was performed.
+
 ## Migration order
 
 Apply the migration only after the repository's existing schema and completed Phase 9 migration chain, with Phase 9P remaining the terminal Phase 9 layer. Phase 10A is then the next additive layer:
@@ -252,6 +293,7 @@ Apply the migration only after the repository's existing schema and completed Ph
 4. `supabase/phase10b_routine_templates.sql`;
 5. `supabase/phase10c_routine_reference_images.sql`;
 6. `supabase/phase10d_routine_runs_and_snapshots.sql`.
+7. `supabase/phase10e_routine_task_lifecycle.sql`.
 
 All four Phase 10 migrations are safe to reapply against their own completed schema. Phase 10D also survives Phase 10B, 10C, and 10D function/policy restoration without changing run data, hashes, audit timestamps, or protected-domain fingerprints. Reapplication recreates functions, policies, and triggers without repairing or reordering earlier migrations.
 
@@ -277,10 +319,12 @@ Before a later rollout phase, product owners must approve the organization rollo
 
 `npm run verify:routine-runs` applies Phase 10A through 10D twice to a fresh uniquely named, network-isolated PostgreSQL 17 container. It executes 142 SQL assertions covering the 12-table schema, authoritative identity, atomic snapshot construction, every read-only source adapter, pending conditions, concrete images, immutable hashes, participants, role assignments, RLS, grants, historical Storage reads, rollback, tenant isolation, tamper detection, and protected-domain regressions. Separate real database connections prove convergence of concurrent run creation, idempotent concurrent participant joins, and single-winner optimistic role assignment. The runner then reapplies the dependent migration chain and verifies data-, hash-, timestamp-, template-hash-, and protected-domain stability. Offline model tests cover client normalization and snapshot-integrity diagnostics.
 
+`npm run verify:routine-lifecycle` applies Phase 10A through 10E to a uniquely named PostgreSQL 17 container with `--network none` and no image pull. It reapplies 10E, executes 255 SQL assertions over schema/RLS/RPC/audit/read-model behavior, fingerprints Inventory, Inventory Storage, Asset, Event Operations, Auth, and legacy domains, and verifies data-stable migration reapplication plus published-template/run-snapshot hashes. Seven pairs of real database connections prove single-winner protection for task claim, initial assessment, typed item write, task completion, deviation resolution, final-verification request, and run finish. Client normalization and sync-safe request builders run without network access, and the container is removed in `finally` cleanup.
+
 The pre-existing Phase 9L verification baseline is intentionally not repaired here. Its exact known failure is:
 
 > Phase 9L requires exactly one approved August shelf/storage source session.
 
 Only that same failure with the same fingerprint is an accepted baseline. Any new or changed Phase 9 failure is a regression.
 
-No Supabase production migration, bucket creation, data write, Auth configuration change, deployment, or feature activation has been performed for Phase 10A, 10B, 10C, or 10D. Phase 10D exists only as an uncommitted local migration, isolated client/model modules, fixtures, assertions, runner, and specification update. Task completion, deviations, overrides, final verification, and event stream belong to Phase 10E. Europe/Oslo operational-date derivation, checkpoints, and DST handling belong to Phase 10F. Double Shift runs, Realtime, IndexedDB/offline outbox behavior, and React UI remain outside Phase 10D.
+No Supabase production migration, bucket creation, data write, Auth configuration change, deployment, or feature activation has been performed for Phase 10A through 10E. Phase 10D is the committed checkpoint named above; Phase 10E remains an uncommitted working-tree implementation. Europe/Oslo operational-date derivation, checkpoints, time windows, and DST handling belong to Phase 10F. Closing delivery comparison belongs to 10G, Event Operations acceptance to 10H, and Double Shift runs, Realtime, IndexedDB/offline outbox behavior, shared-device operation, seeded content, and React UI remain deferred.
