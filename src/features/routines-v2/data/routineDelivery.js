@@ -81,6 +81,11 @@ export function normalizeRoutineDeliveryItem(row = {}) {
     referenceImageSnapshot: object(
       row.reference_image_snapshot || row.referenceImageSnapshot,
     ),
+    itemSchemaVersion:
+      row.item_schema_version || row.itemSchemaVersion || 'phase10g-v1',
+    transferEvidenceSnapshot: object(
+      row.transfer_evidence_snapshot || row.transferEvidenceSnapshot,
+    ),
     itemHash: row.item_hash || row.itemHash || null,
   });
 }
@@ -107,6 +112,8 @@ export function normalizeRoutineDeliveryRecord(row = {}) {
       row.run_verification_snapshot || row.runVerificationSnapshot,
     ),
     recordHash: row.record_hash || row.recordHash || null,
+    deliverySchemaVersion:
+      row.delivery_schema_version || row.deliverySchemaVersion || 'phase10g-v1',
     generatedAt: row.generated_at || row.generatedAt || null,
     generatedByName:
       row.generated_by_name_snapshot || row.generatedByName || null,

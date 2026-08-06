@@ -8,7 +8,7 @@ Phase 10B's approved local checkpoint is commit `9a8cf5716a3427ab65d4437b8362285
 
 Phase 10C's approved local checkpoint is commit `c4666ee0c2cb5547812b0455288e4f8a8cb15e16` (`feat: add versioned routine reference images`).
 
-Phase 10D's approved local checkpoint is commit `6164df74d443c80e02885f804ac1f6084d96131a` (`feat: add authoritative routine run snapshots`). Phase 10E's approved local checkpoint is commit `48b80dc4b11f11b22d24d28f414d643652b8aa11` (`feat: add routine lifecycle and immutable audit`). Phase 10F's approved local checkpoint is commit `ea3ac0a39ef11ff7e491642d157747b3845cb5e8` (`feat: add routine operational time engine`). Phase 10G is implemented and verified in the working tree but deliberately remains uncommitted pending review.
+Phase 10D's approved local checkpoint is commit `6164df74d443c80e02885f804ac1f6084d96131a` (`feat: add authoritative routine run snapshots`). Phase 10E's approved local checkpoint is commit `48b80dc4b11f11b22d24d28f414d643652b8aa11` (`feat: add routine lifecycle and immutable audit`). Phase 10F's approved local checkpoint is commit `ea3ac0a39ef11ff7e491642d157747b3845cb5e8` (`feat: add routine operational time engine`). Phase 10G's approved local checkpoint is commit `dd37231d7d58c1ec867c7abf1213aa9db6487e29` (`feat: add routine closing delivery evidence`). Phase 10H is implemented and verified in the working tree but deliberately remains uncommitted pending review.
 
 Phase 10A includes organization settings, routine locations, reusable location sets, reusable standards, immutable standard revisions, server-resolved permissions, manager mutation RPCs, organization-scoped RLS, and disposable database verification.
 
@@ -17,9 +17,8 @@ Phase 10B adds logical templates, one active draft per template, versioned secti
 The following remain outside this phase:
 
 - employee-facing React UI;
-- Event Operations delivery acceptance and Double Shift bundles (10H);
 - Realtime, offline outbox, and rendering of routine images in React;
-- Event Operations mutation or completion integration;
+- Event Operations mutation from Routine Engine;
 - production rollout, data migration, or organization activation.
 
 Stock Count remains an isolated, read-only future source. Routine Engine v2 must never mutate Inventory tables, RPCs, policies, Storage, or count history. The `inventory_readonly` source kind describes this boundary; it does not grant access or connect an adapter in Phase 10A.
@@ -32,13 +31,13 @@ The product content registry reserves these stable identifier ranges for later p
 | --- | ---: | --- | --- |
 | `O01`–`O37` | 37 | Opening routine content | Identifier range documented; no content rows seeded |
 | `C01`–`C46` | 46 | Closing routine content | Identifier range documented; no content rows seeded |
-| `DS01`–`DS04` | 4 | Double Shift content | Reserved only; Double Shift is not implemented |
+| `DS01`–`DS04` | 4 | Double Shift content | Workflow semantics implemented in 10H; no task/content rows seeded |
 
 The approved labels, task text, ordering, applicability rules, inputs, and location bindings for these IDs must be supplied by the later content/template phase. Phase 10A does not infer or duplicate that content in SQL.
 
 ## Database architecture
 
-The additive migrations are `supabase/phase10a_routine_engine_foundation.sql`, `supabase/phase10b_routine_templates.sql`, `supabase/phase10c_routine_reference_images.sql`, and `supabase/phase10d_routine_runs_and_snapshots.sql`. Every Routine Engine v2 table is in `public`, has RLS enabled, and has a non-null organization boundary.
+The additive migrations are `supabase/phase10a_routine_engine_foundation.sql` through `supabase/phase10h_routine_double_shift.sql`. Every Routine Engine v2 table is in `public`, has RLS enabled, and has a non-null organization boundary.
 
 | Table | Purpose | Tenant and revision guarantees |
 | --- | --- | --- |
@@ -347,6 +346,51 @@ All three tables have RLS and explicit authenticated `SELECT` only. Managers see
 
 The isolated client modules are `routineDelivery.js` and `routineDeliveryClient.js`; the run/lifecycle clients only normalize delivery summaries returned by existing RPCs. They contain no direct table DML, local clock/date logic, previous-delivery selection, authoritative status/comparison algorithm, service credential, Realtime, IndexedDB, offline outbox, or React UI. Event-transfer evidence remains Phase 10H, and late-sync comparison reconciliation remains Phase 10I.
 
+## Phase 10H Double Shift and Event continuity
+
+Phase 10H adds `supabase/phase10h_routine_double_shift.sql`. A Double Shift is a coordinating bundle around one authoritative Opening run and one authoritative Closing run; it is not a third routine and does not copy their tasks. The active identity is organization, operational date, `double_shift`, scope, Opening routine key, and Closing routine key. Creation holds an advisory lock, delegates run creation to `create_or_get_routine_run`, and pins both run IDs, template-version IDs, template hashes, core snapshot hashes, and timing hashes. Different request keys for the same logical identity converge on the same bundle and run pair.
+
+The bundle layer consists of six tables:
+
+| Table | Purpose | Main guarantees |
+| --- | --- | --- |
+| `routine_bundles` | Logical Double Shift identity and server-derived status projection | One active identity, Europe/Oslo, revisioned RPC-only status, cancellation consistency |
+| `routine_bundle_runs` | Opening and Closing links | Exactly one link per phase, same-organization/date/scope validation, pinned immutable run/template hashes |
+| `routine_bundle_participants` | One person's assignment across the linked runs | Same-organization profile/run links, immutable name/role, expected/actual return, personal revision/status |
+| `routine_bundle_steps` | DS01–DS03 per participant and one global DS04 | Completed payload and SHA-256 are immutable; DS04 is system-only and participant-null |
+| `routine_bundle_reassignments` | Additive Closing responsibility history | One operation, two distinct same-bundle people, the existing Closing run, immutable reason/actor |
+| `routine_bundle_operations` | Request-hash idempotency ledger | Same key/request replays the response; changed request is rejected; manager-only visibility |
+
+DS01 (`confirm_double_shift_plan`) snapshots the operational date, both pinned runs, expected Closing start, active role assignments, current event context, and missing critical roles. An optional local return time is resolved to an authoritative Europe/Oslo instant through the Phase 10F resolver; no critical role is assigned implicitly. DS02 (`complete_double_shift_opening_transition`) requires finished Opening and completed DS01. It records whether the participant stays, leaves temporarily, hands interim operation to another same-organization performer, or cannot perform Closing. The server builds counts and summaries for tasks, deviations, corrections, overrides, transfers, stock/serviceware/event/technical concerns, and creates or reuses exactly one `opening_transition` handover between the pinned runs. It regenerates the handover items and submits the handover in the same transaction.
+
+The deterministic between-shift feed begins at DS02's server completion instant and is ordered by immutable Routine events. Entries expose stable IDs, server timestamps, source/category, summarized actor, phase/run/entity references, severity, and whether action remains. Operation-ledger contents, secrets, and customer detail are excluded. `routine_compute_double_shift_change_feed_hash` hashes only the ordered semantic entries, not the read time. DS03 (`return_to_double_shift`) refreshes external context, conditions, and timing, recomputes the feed, and rejects an older expected hash with `double_shift_changes_updated`. A valid review snapshots the hash/review boundary, records actual return from the server clock, joins through the already pinned Closing assignment, accepts the shared Opening-transition handover when applicable, and advances participant and bundle projections.
+
+`reassign_double_shift_closing` is manager/shift-lead only. It joins an active personal same-organization target to the existing Closing run, creates or reuses the target bundle participant, marks the original assignment `closing_reassigned`, and appends one immutable reassignment. Opening contribution and completed DS steps remain attached to the original person; no Closing run or task completion is recreated. Concurrent attempts serialize on the bundle revision and yield one winner or a stale conflict.
+
+`routine_reconcile_double_shift_bundle` derives bundle status from both run states, DS02, participant return state, and Event-transfer state. Start/finish/reopen/cancel wrappers preserve the established public signatures and reconcile linked bundles in the same transaction. An accepted incomplete Event transfer projects `waiting_for_transferred_event_close`; finished Opening and Closing with valid transfer evidence complete the bundle. DS04 is generated once by the server, with pinned run summaries, participant contributions/personal outcomes, reassignments, deviation/override counts, Event-transfer hashes, final delivery record, physical completion time, and server state. Its payload hash is immutable. A reassigned original participant retains `opening_completed_closing_reassigned` instead of being rewritten as a full-shift completer.
+
+`routine_events.bundle_id` links the existing immutable stream to the bundle without changing earlier events. Bundle creation/run-link/participant, DS01–DS04, departure/return/feed review, reassignment, status, external-context, and Event-transfer acceptance/completion events preserve the true user or system actor. Deterministic event IDs prevent replay duplicates without exposing the bundle operation ledger as a run operation.
+
+### Read-only Event context and condition facts
+
+External resolution uses `routine_run_external_context_states` for the current per-snapshot-source projection and immutable `routine_run_external_context_resolutions` for each distinct semantic payload. The closed source configuration supports only `mode: active_events`, unique known zones, `includeBookings`, and `includeResponsibilities`. Unknown keys/modes/zones, duplicate zones, free filters, and malformed types fail publication. Each resolution contains only operational Event ID/title/status/venue/times, active responsibilities by role/zone, minimal booking/provider identifiers, activity/Closing impact, and source version signals. Calendar title, description, raw payload, and other customer-sensitive fields are not copied.
+
+The private Event bridge reads the actual `event_operations`, `event_role_assignments`, `event_responsibility_handovers`, `external_calendar_events`, and `event_operation_calendar_links` model with exact organization equality. It performs SELECT only: no Event table FK, trigger, grant, or write exists. `refresh_routine_run_external_context` creates a resolution only when the canonical payload hash changes, advances the state pointer, reevaluates conditions and timing, writes Routine events, and changes the run revision only for a material task projection change.
+
+`event_zone_active` and `booking_exists` read only the latest resolved snapshot. Pending/error context remains pending/error and cannot be replaced by client facts. `asset_used_today` delegates to existing authoritative run evidence when unambiguous and otherwise remains pending. Phase 10F monotonicity still prevents started/handled work from disappearing after a later condition refresh.
+
+### Event-transfer authority, evidence, and delivery v2
+
+An Event transfer remains a Routine Engine row. Proposal verifies an active same-organization Event Operation present in the latest resolved context. Acceptance checks the actor's actual active Event role assignment, active responsible identity, latest responsibility handover, or permitted Event-manager profile and snapshots the exact event, resolution, assignment, role, scope, status, actor, authorization source, and SHA-256 in `routine_event_transfer_acceptances`. Completion rechecks authority, requires a physical confirmation (and critical confirmation for critical work), validates a closed item-evidence object against the source run snapshot and existing typed item validator, and appends `routine_event_transfer_completions`. Correction/deviation results require a note; override result requires a current manager override. Acceptance/completion never writes Event Operations.
+
+Completed result mapping is `standard_met → delivered_to_standard`, `completed_after_correction → delivered_after_correction`, `control_completed_with_deviation → delivered_with_deviation`, and `completed_with_manager_override → delivered_with_override`. Rejection by an authorized Event recipient requires a reason, keeps history, creates no acceptance/completion, and restores the source task's valid pre-transfer work state. A completed transfer keeps the source task `transferred`; its immutable evidence, rather than a fabricated local completion, satisfies finish and delivery.
+
+Delivery records/items gain `delivery_schema_version`, `item_schema_version`, and `transfer_evidence_snapshot`. Existing rows remain `phase10g-v1` and use the unchanged Phase 10G canonical hash. A record containing Event-transfer evidence is `phase10h-v2`; its item canonical form includes schema version and the acceptance/completion actor, role, Event identity, evidence, and hashes, and the record hash includes the version and ordered v2 item hashes. Preview blocks proposed, unaccepted, incomplete, or unverifiable transfers and permits only a completed validated Event transfer. Generation remains atomic with finish.
+
+The read API adds `get_double_shift_workspace`, date listing, participant summary, change feed, Event-transfer workspace, and read-only bundle verification. Existing run workspace/timelines, task timeline, delivery preview, and delivery record add bundle or transfer evidence without exposing `routine_bundle_operations` to staff. The isolated `routineDoubleShift.js` and `routineDoubleShiftClient.js` modules normalize these projections and map stale, feed-changed, Event-authority, RLS/auth, and network failures. They use only the normal authenticated RPC client, preserve caller idempotency keys, and contain no direct table DML, organization/status/role/result authority, local operational-date logic, client-clock gating, offline outbox, or React UI.
+
+All ten new tables have RLS. Authenticated receives SELECT only through exact own-organization manager/coordinator, bundle/run participant, or narrow Event-recipient visibility; mutation is RPC-only. The operation ledger is manager-only. Counters, shared devices, inactive/org-less/cross-organization profiles, and anon receive no automatic access. Realtime, IndexedDB, offline outbox, and late-sync reconciliation remain Phase 10I; shared-device operator identity remains Phase 10J. Phase 10H seeds no `O01`–`O37`, `C01`–`C46`, or `DS01`–`DS04` content and creates no production run, bundle, transfer, delivery, bucket, or configuration.
+
 ## Migration order
 
 Apply the migration only after the repository's existing schema and completed Phase 9 migration chain, with Phase 9P remaining the terminal Phase 9 layer. Phase 10A is then the next additive layer:
@@ -360,8 +404,9 @@ Apply the migration only after the repository's existing schema and completed Ph
 7. `supabase/phase10e_routine_task_lifecycle.sql`.
 8. `supabase/phase10f_routine_operational_time.sql`.
 9. `supabase/phase10g_routine_closing_delivery.sql`.
+10. `supabase/phase10h_routine_double_shift.sql`.
 
-All seven Phase 10 migrations are safe to reapply against their own completed schema. Phase 10G preserves delivery/comparison rows, hashes, and timestamps while recreating functions, policies, and triggers without repairing or reordering earlier migrations.
+All eight Phase 10 migrations are safe to reapply against their own completed schema. Phase 10H preserves bundle/evidence/delivery rows, hashes, and timestamps while recreating functions, policies, and triggers without repairing or reordering earlier migrations.
 
 ## Defaults and open configuration
 
@@ -391,10 +436,12 @@ Before a later rollout phase, product owners must approve the organization rollo
 
 `npm run verify:routine-delivery` applies Phase 10A through 10G to a uniquely named PostgreSQL 17 container with `--network none` and no image pull. It executes 228 named SQL assertions covering schema/tenant integrity, closed metadata validation, publishing, preview, reported statuses, atomic finish generation, evidence/hash verification, reopen/supersession, previous selection, comparison/assessment integration, immutable corrections, RLS/grants, read models, and regressions. It compares protected Inventory, Inventory Storage, Asset, Event Operations, Auth, and legacy fingerprints and reapplies 10G without changing delivery rows, hashes, or timestamps. Independent connections race a first finish, replay, first assessment, assessment replay, and refinish; only one record/comparison/superseding record results. Client/model normalization and authority scans run without network access.
 
+`npm run verify:routine-double-shift` applies Phase 10A through 10H after the actual Event Operations role/calendar migrations and all earlier Phase 10 fixtures in a uniquely named PostgreSQL 17 container with `--network none` and no image pull. It executes 249 numbered SQL contract assertions covering schema/tenant integrity, bundle creation, DS01–DS04, feed, reassignment, external context/conditions, Event-transfer authority/evidence, delivery v1/v2, RLS, read models, immutability, and regression boundaries. Protected Inventory, Inventory Storage, Asset, Event Operations, Auth, and legacy schema/function/policy/data fingerprints are compared before and after 10H. Event/calendar rows are byte- and row-stable across the complete acceptance/completion flow. Independent connections exercise convergent bundle creation, simultaneous DS01/DS02/DS03 retries, context refresh, Event acceptance/completion, DS04 reconciliation, and single-winner Closing reassignment. Reapply preserves all 10H rows, timestamps, hashes, and protected objects; client normalization runs without network access.
+
 The pre-existing Phase 9L verification baseline is intentionally not repaired here. Its exact known failure is:
 
 > Phase 9L requires exactly one approved August shelf/storage source session.
 
 Only that same failure with the same fingerprint is an accepted baseline. Any new or changed Phase 9 failure is a regression.
 
-No Supabase production migration, bucket creation, data write, Auth configuration change, deployment, or feature activation has been performed for Phase 10A through 10G. Phase 10F is the committed checkpoint named above; Phase 10G remains an uncommitted working-tree implementation. Event Operations context/acceptance and Double Shift bundles belong to 10H, while late-sync reconciliation, Realtime, IndexedDB, and offline-outbox behavior belong to 10I. Shared-device operation, seeded content, and React UI remain deferred.
+No Supabase production migration, bucket creation, data write, Auth configuration change, deployment, or feature activation has been performed for Phase 10A through 10H. Phase 10G is the committed checkpoint named above; Phase 10H remains an uncommitted working-tree implementation. Late-sync reconciliation, Realtime, IndexedDB, and offline-outbox behavior belong to 10I. Shared-device operator identity belongs to 10J; seeded content and React UI remain deferred.
