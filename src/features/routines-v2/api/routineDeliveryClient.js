@@ -79,6 +79,7 @@ export function getRoutineDeliveryComparison(openingTaskId) {
     history: Array.isArray(value?.history)
       ? value.history.map(normalizeRoutineDeliveryComparison)
       : [],
+    reconciliationHistory: value?.reconciliationHistory ?? null,
   }));
 }
 

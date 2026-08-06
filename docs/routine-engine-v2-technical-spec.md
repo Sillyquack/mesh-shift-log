@@ -391,6 +391,47 @@ The read API adds `get_double_shift_workspace`, date listing, participant summar
 
 All ten new tables have RLS. Authenticated receives SELECT only through exact own-organization manager/coordinator, bundle/run participant, or narrow Event-recipient visibility; mutation is RPC-only. The operation ledger is manager-only. Counters, shared devices, inactive/org-less/cross-organization profiles, and anon receive no automatic access. Realtime, IndexedDB, offline outbox, and late-sync reconciliation remain Phase 10I; shared-device operator identity remains Phase 10J. Phase 10H seeds no `O01`–`O37`, `C01`–`C46`, or `DS01`–`DS04` content and creates no production run, bundle, transfer, delivery, bucket, or configuration.
 
+The approved Phase 10H checkpoint is local commit `4c189222b6dca2fb94acfe28d8b812e3d4e4e688` (`feat: add double shift continuity and event transfers`). Phase 10I is deliberately kept outside that commit.
+
+## Phase 10I Realtime and authenticated offline synchronization
+
+Phase 10I adds `supabase/phase10i_routine_realtime_offline_sync.sql` as the only database layer for Realtime, offline receipts, and late delivery reconciliation. `routine_events` is the only operational Routine Engine table added to `supabase_realtime`. Its three cursor indexes cover organization, run, and bundle scope ordered by the stable `(server_created_at, id)` tuple. Publication membership is added only when the publication exists and the table is not already a member. Realtime is a refresh signal, never state authority: every signal is followed by an authenticated workspace refresh, and reconnect/SUBSCRIBED status begins with cursor catch-up. A null cursor has a documented 14-day lookback, a page is capped at 500 rows, run/bundle filters only narrow visibility, and the cursor advances only after all affected workspaces refresh successfully.
+
+Three new RLS tables hold server audit state:
+
+| Table | Purpose | Main guarantees |
+| --- | --- | --- |
+| `routine_client_instances` | Personal client installation diagnostics | Exact organization/auth/profile identity, stable app/offline-schema versions, bounded platform label, idempotent registration/revocation, throttled touch, no fingerprint/IP/token, no DELETE |
+| `routine_offline_operation_receipts` | Immutable server outcome for one typed client operation | Actor-owned client instance, SHA-256 request identity, `applied`/`conflict`/`rejected`, bounded sanitized objects, client time permanently non-authoritative, no direct DML |
+| `routine_delivery_reconciliations` | Immutable explanation of comparison supersession | Same-organization source/Opening/comparison/deviation links, one semantic row per new comparison, SHA-256 reason identity, no UPDATE/DELETE |
+
+Registration, touch, revocation, receipt lookup, stable event cursor, and bounded manager sync-health RPCs resolve active personal actors on the server. A client instance is diagnostic and never grants run access. Users can read their own instances and receipts; managers can read own-organization instance metadata and sanitized aggregate health, but not broad raw receipt payloads or a person's IndexedDB. Shared devices remain blocked until Phase 10J.
+
+The only automatic offline mutation types are `task_bundle` and `run_finish_intent`. The task bundle has a closed top-level schema, maximum 100 typed item updates, maximum 20 comments, 256 KiB byte limit, consistent final-action fields, recursive forbidden-key scanning, and the existing task-item value validator. The server recomputes a canonical SHA-256, locks the run/task/items, requires the exact caller-recorded base revisions, and invokes existing claim/start, assessment, item, comment, pause/block/N/A/completion RPCs with deterministic substep idempotency keys. The PL/pgSQL exception block rolls back every substep together. A classified stale write creates a sanitized immutable conflict receipt; it never stores the submitted prose/evidence, changes an expected revision, or performs last-write-wins. Unknown database failures are rethrown without a false receipt.
+
+Concrete time-window, checkpoint, or timing-boundary completion/N/A cannot be applied from an offline bundle. It returns `offline_timed_action_requires_online_confirmation`, changes no server status, and requires a fresh online action. A critical, non-timed completion still requires critical confirmation. On success the server completion timestamp is authoritative and one deterministic, nonblocking `offline_evidence` deviation records that the optional client timestamp is unverified metadata. Its category/reason are `sync` / `offline_action_time_unverified`; it does not change the computed task outcome and appears as a completion/workspace warning. It can later follow the ordinary additive deviation resolution/annotation history.
+
+The run-finish intent similarly requires an owned non-revoked client instance and exact run revision, then calls the existing `finish_routine_run`. Delivery generation and Double Shift hooks run unchanged. The client cannot show finished/confirmed until an applied receipt exists. An unknown transport outcome first probes the immutable receipt and, only when absent, retries the identical operation and key.
+
+Late Closing delivery correctness is transaction-local, not a background job. The finalization hook reconciles newly generated/refinished records before commit; the reopen hook recomputes affected Openings before commit. Each assessed Opening task uses an advisory transaction lock, re-runs the server's previous-delivery selector and comparison function, and compares the resulting semantic hash with the latest immutable comparison. An unchanged result is a no-op. A changed selection/item/result creates sequence `n + 1`, points `supersedes_comparison_id` to the old row, appends one reconciliation row, and emits system events. Reopen makes the old current delivery ineligible and can fall back to an older record or `no_previous_delivery`; refinish can select the new current record. The initial assessment, old comparisons, Closing deliveries, delivery hashes, deviation detection history, and resolved deviation state are never rewritten. Issue assessments reuse the deviation ID stored by their original assessment operation; ready assessments never invent a deviation.
+
+`get_routine_delivery_reconciliation_history` returns latest/history, reconciliation reasons, previous/current source evidence, linked deviation, events, and additive corrections. Delivery comparison, run workspace, task/run timeline, and mismatch reads expose the same history without collapsing older rows. New event types cover instance lifecycle, applied offline operations/evidence, conflicts, reconciliation, late links, and invalidated previous delivery. Organization-level instance events are the only permitted run-null event shape; existing run-event visibility and RLS remain intact.
+
+The isolated client modules are:
+
+- `routineSyncModel.js`: closed constants, canonical hashing, forbidden-key/size validation, receipt/cursor/health normalization, retry classification, and separate pending overlay;
+- `routineSyncClient.js`: authenticated RPC-only API and receipt-first recovery for unknown outcomes;
+- `routineRealtime.js`: organization-filtered `routine_events` subscription, run/bundle client filter, duplicate suppression, debounce, catch-up status, and cleanup;
+- `routineOfflineDb.js`: native IndexedDB schema version 2, principal partitioning, TTL/retention, purge/quarantine, diagnostics, cursors, and fallback leases;
+- `routineOutbox.js`: closed operation registry, pre-send coalescing, dependencies, resource serialization, immutable sending identity, and explicit post-conflict new IDs;
+- `routineSyncEngine.js`: caller-owned lifecycle, authoritative refresh, Web Locks leader, expiring IndexedDB lease fallback, BroadcastChannel wake/status, deterministic processing, receipt mapping, and bounded retry/backoff.
+
+IndexedDB partitions every store by `organizationId:authUserId`. `workspace_cache` contains only server-confirmed snapshots; `drafts` and `outbox` are separate and survive refresh, network errors, auth expiry, and conflict. `sync_cursors`, `leases`, and `meta` have independent key spaces. Queued completion never changes cached status to completed, and queued finish never changes it to finished. Conflict overlays present server state and local draft side by side without automatically merging prose/evidence. Logout callers explicitly purge or quarantine the prior principal; the next principal cannot read it. Confirmed outbox rows can be pruned after 30 days and cache/drafts by TTL; conflict/rejected rows require explicit handling. No image Blob, session, token, sensitive code, or payment data is stored. `fake-indexeddb` is an exact-pinned development-only dependency so the Node verifier can exercise the same native API without a network or runtime bundle dependency.
+
+`public/sw.js` remains unchanged. It currently provides app-shell GET caching only; it does not execute background sync or critical authenticated mutations after the application closes. Phase 10I therefore depends on no background-open window and makes no service-worker authority expansion. Full PWA/asset-cache verification remains Phase 10K.
+
+Phase 10I adds no React component, manager/staff surface, shared-device identity, production content, or O/C/DS seed. Shared-device operator identity remains Phase 10J, UI/pilot remains Phase 10K, and the actual `O01`–`O37`, `C01`–`C46`, and `DS01`–`DS04` content remains Phase 10L. No production migration, publication change, receipt, reconciliation, run, bundle, transfer, or delivery was created while implementing or verifying this phase.
+
 ## Migration order
 
 Apply the migration only after the repository's existing schema and completed Phase 9 migration chain, with Phase 9P remaining the terminal Phase 9 layer. Phase 10A is then the next additive layer:
@@ -405,8 +446,9 @@ Apply the migration only after the repository's existing schema and completed Ph
 8. `supabase/phase10f_routine_operational_time.sql`.
 9. `supabase/phase10g_routine_closing_delivery.sql`.
 10. `supabase/phase10h_routine_double_shift.sql`.
+11. `supabase/phase10i_routine_realtime_offline_sync.sql`.
 
-All eight Phase 10 migrations are safe to reapply against their own completed schema. Phase 10H preserves bundle/evidence/delivery rows, hashes, and timestamps while recreating functions, policies, and triggers without repairing or reordering earlier migrations.
+All nine Phase 10 migrations are safe to reapply against their own completed schema. Phase 10I preserves instance/receipt/reconciliation rows and timestamps, adds `routine_events` publication membership only once, and recreates functions, policies, and triggers without repairing or reordering earlier migrations.
 
 ## Defaults and open configuration
 
@@ -438,10 +480,12 @@ Before a later rollout phase, product owners must approve the organization rollo
 
 `npm run verify:routine-double-shift` applies Phase 10A through 10H after the actual Event Operations role/calendar migrations and all earlier Phase 10 fixtures in a uniquely named PostgreSQL 17 container with `--network none` and no image pull. It executes 249 numbered SQL contract assertions covering schema/tenant integrity, bundle creation, DS01–DS04, feed, reassignment, external context/conditions, Event-transfer authority/evidence, delivery v1/v2, RLS, read models, immutability, and regression boundaries. Protected Inventory, Inventory Storage, Asset, Event Operations, Auth, and legacy schema/function/policy/data fingerprints are compared before and after 10H. Event/calendar rows are byte- and row-stable across the complete acceptance/completion flow. Independent connections exercise convergent bundle creation, simultaneous DS01/DS02/DS03 retries, context refresh, Event acceptance/completion, DS04 reconciliation, and single-winner Closing reassignment. Reapply preserves all 10H rows, timestamps, hashes, and protected objects; client normalization runs without network access.
 
+`npm run verify:routine-sync-offline` applies Phase 10A through 10I in a uniquely named PostgreSQL 17 container with `--network none` and no image pull. It creates an empty disposable `supabase_realtime` publication, executes 148 server assertions, 96 native IndexedDB/outbox/engine/Realtime checks, and 21 regression/reapply checks: 265 named checks total. The harness verifies exact publication membership, RLS/DML boundaries, strict bundle and receipt contracts, timing/evidence policy, immutable reconciliation hooks/read models, all stores and indexes, schema upgrade, malformed isolation, principal separation, retention, the closed registry, coalescing/dependencies, Web Locks/fallback lease/BroadcastChannel logic, receipt-first unknown outcome, cursor-after-refresh ordering, stable registration replay after an unknown outcome, preservation of an applied receipt across a later refresh failure, and separate cache/pending overlays. Protected-domain schema/data fingerprints are stable. Two real PostgreSQL connections replay registration concurrently and converge on one immutable instance/event. Reapply preserves Phase 10I rows and timestamps, and the disposable container is always removed.
+
 The pre-existing Phase 9L verification baseline is intentionally not repaired here. Its exact known failure is:
 
 > Phase 9L requires exactly one approved August shelf/storage source session.
 
 Only that same failure with the same fingerprint is an accepted baseline. Any new or changed Phase 9 failure is a regression.
 
-No Supabase production migration, bucket creation, data write, Auth configuration change, deployment, or feature activation has been performed for Phase 10A through 10H. Phase 10G is the committed checkpoint named above; Phase 10H remains an uncommitted working-tree implementation. Late-sync reconciliation, Realtime, IndexedDB, and offline-outbox behavior belong to 10I. Shared-device operator identity belongs to 10J; seeded content and React UI remain deferred.
+No Supabase production migration, publication change, receipt/reconciliation creation, bucket creation, data write, Auth configuration change, deployment, or feature activation has been performed for Phase 10A through 10I. Phase 10H is the committed checkpoint named above; Phase 10I remains an uncommitted working-tree implementation. Shared-device operator identity belongs to 10J; UI/pilot belongs to 10K; seeded content remains deferred to 10L.
