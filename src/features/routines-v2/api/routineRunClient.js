@@ -1,5 +1,6 @@
 import { getCurrentSession, supabaseAuthClient } from '../../../lib/supabaseAuthClient.js';
 import { isSupabaseConfigured } from '../../../lib/supabaseClient.js';
+import { routineRpcClient } from './routineRpcClient.js';
 import { ROUTINE_REFERENCE_BUCKET } from '../data/routineReferenceImages.js';
 import { normalizeRoutineDeliveryWorkspace } from '../data/routineDelivery.js';
 import {
@@ -65,7 +66,7 @@ function failure(error, fallback = 'The routine run request failed.') {
 async function rpc(name, payload = {}) {
   const ctx = await context();
   if (!ctx.ok) return ctx;
-  const { data, error } = await supabaseAuthClient.rpc(name, compact(payload));
+  const { data, error } = await routineRpcClient.request(name, compact(payload));
   if (error) return failure(error);
   return result(true, { mode: 'authenticated', data });
 }

@@ -94,15 +94,26 @@ export async function enqueueRoutineOperation(db, {
   now = Date.now(),
   cryptoImpl = globalThis.crypto,
   timed = false,
+  actorSource = "personal_auth",
+  effectiveOperatorId = null,
+  critical = false,
 }) {
   const definition = ROUTINE_OUTBOX_REGISTRY[operationType];
   if (!definition) throw new RoutineSyncValidationError("outbox_operation_not_registered", operationType);
   if (definition.policy !== OPERATION_POLICY.QUEUEABLE) throw new RoutineSyncValidationError("outbox_operation_not_queueable");
   if (!isUuid(clientInstanceId)) throw new RoutineSyncValidationError("client_instance_id_invalid");
+  const sharedOperator = actorSource === "shared_device_operator";
+  if (sharedOperator && !isUuid(effectiveOperatorId)) throw new RoutineSyncValidationError("operator_identity_required");
+  if (sharedOperator && operationType === "run_finish_intent") {
+    throw new RoutineSyncValidationError("shared_device_run_finish_requires_online_reauthentication");
+  }
   if (operationType === "task_bundle") validateRoutineTaskBundlePayload(payload);
   else validateFinishIntentPayload(payload);
   if (operationType === "task_bundle" && timed && new Set(["complete", "not_applicable"]).has(payload.finalAction)) {
     throw new RoutineSyncValidationError("offline_timed_action_requires_online_confirmation");
+  }
+  if (sharedOperator && critical && new Set(["complete", "not_applicable"]).has(payload.finalAction)) {
+    throw new RoutineSyncValidationError("shared_device_critical_action_requires_online_reauthentication");
   }
   if (!cryptoImpl?.randomUUID) throw new RoutineSyncValidationError("crypto_unavailable");
   const resourceId = operationType === "task_bundle" ? payload.taskId : payload.runId;
@@ -123,6 +134,8 @@ export async function enqueueRoutineOperation(db, {
         },
         dependencies: [...new Set([...existing.dependencies, ...dependencies])],
         updatedAt: now,
+        actorSource,
+        effectiveOperatorId,
       });
     }
   }
@@ -139,6 +152,8 @@ export async function enqueueRoutineOperation(db, {
     runId,
     taskId: operationType === "task_bundle" ? payload.taskId : null,
     payload,
+    actorSource,
+    effectiveOperatorId,
     requestHash,
     baseRevisions: operationType === "task_bundle"
       ? { task: payload.baseTaskRevision, items: Object.fromEntries(payload.itemUpdates.map((item) => [item.taskItemId, item.baseRevision])) }

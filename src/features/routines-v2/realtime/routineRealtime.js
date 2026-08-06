@@ -1,3 +1,14 @@
+export const ROUTINE_REALTIME_MODE = Object.freeze({
+  POSTGRES_REALTIME: "postgres_realtime",
+  CURSOR_POLLING: "cursor_polling",
+  DISABLED: "disabled",
+});
+
+function safeStatusDetail(detail) {
+  const { error, ...rest } = detail ?? {};
+  return error ? { ...rest, error: { kind: error?.kind ?? "unknown", code: error?.code ?? null } } : rest;
+}
+
 export function subscribeRoutineRealtime({
   organizationId,
   visibleRunIds = [],
@@ -10,8 +21,11 @@ export function subscribeRoutineRealtime({
   BroadcastChannelImpl = globalThis.BroadcastChannel,
   setTimer = globalThis.setTimeout,
   clearTimer = globalThis.clearTimeout,
+  mode = ROUTINE_REALTIME_MODE.POSTGRES_REALTIME,
+  pollIntervalMs = 15_000,
+  windowImpl = globalThis.window,
 } = {}) {
-  if (!enabled || !client || !organizationId) return { unsubscribe() {}, channel: null };
+  if (!enabled || mode === ROUTINE_REALTIME_MODE.DISABLED || !organizationId) return { unsubscribe() {}, channel: null, mode: ROUTINE_REALTIME_MODE.DISABLED };
   const runIds = new Set(visibleRunIds);
   const bundleIds = new Set(visibleBundleIds);
   const seen = new Set();
@@ -26,8 +40,9 @@ export function subscribeRoutineRealtime({
 
   const emitStatus = (status, detail = {}) => {
     if (closed) return;
-    onStatus({ status, ...detail });
-    broadcast?.postMessage({ kind: "routine_sync_status", status, ...detail });
+    const safeDetail = safeStatusDetail(detail);
+    onStatus({ status, ...safeDetail });
+    broadcast?.postMessage({ kind: "routine_sync_status", status, ...safeDetail });
   };
 
   const catchUp = async (reason) => {
@@ -39,6 +54,31 @@ export function subscribeRoutineRealtime({
       emitStatus("catch_up_failed", { reason, error });
     }
   };
+
+  if (mode === ROUTINE_REALTIME_MODE.CURSOR_POLLING) {
+    let pollTimer = null;
+    const schedule = () => {
+      if (!closed) pollTimer = setTimer(async () => { await catchUp("interval"); schedule(); }, Math.max(5_000, pollIntervalMs));
+    };
+    const focus = () => { if (!closed) void catchUp("focus"); };
+    const online = () => { if (!closed) void catchUp("reconnect"); };
+    windowImpl?.addEventListener?.("focus", focus);
+    windowImpl?.addEventListener?.("online", online);
+    void catchUp("session_start").finally(schedule);
+    return {
+      channel: null,
+      mode,
+      unsubscribe() {
+        if (closed) return;
+        closed = true;
+        if (pollTimer !== null) clearTimer(pollTimer);
+        windowImpl?.removeEventListener?.("focus", focus);
+        windowImpl?.removeEventListener?.("online", online);
+        broadcast?.close();
+      },
+    };
+  }
+  if (!client) return { unsubscribe() {}, channel: null, mode: ROUTINE_REALTIME_MODE.DISABLED };
 
   const flush = () => {
     timer = null;
@@ -86,6 +126,7 @@ export function subscribeRoutineRealtime({
 
   return {
     channel,
+    mode,
     unsubscribe() {
       if (closed) return;
       closed = true;

@@ -5,6 +5,7 @@ import {
   createRoutinePrincipalKey,
   retryDelayMs,
 } from "../data/routineSyncModel.js";
+import { createSharedDeviceOperatorPrincipalKey } from "../data/routineOperatorIdentity.js";
 import {
   acquireRoutineFallbackLease,
   getRoutineMeta,
@@ -14,6 +15,7 @@ import {
   putRoutineMeta,
   putRoutineSyncCursor,
   releaseRoutineFallbackLease,
+  quarantineRoutineOfflineDataForPrincipal,
   restoreRoutineOfflineDataForPrincipal,
   updateRoutineOutboxRecord,
 } from "./routineOfflineDb.js";
@@ -21,6 +23,11 @@ import { listReadyRoutineOperations } from "./routineOutbox.js";
 
 function receiptStatus(result) {
   return result?.receipt?.receipt_status ?? result?.receipt?.receiptStatus ?? null;
+}
+
+function safeStatusDetail(detail) {
+  const { error, ...rest } = detail ?? {};
+  return error ? { ...rest, error: { kind: error?.kind ?? "unknown", code: error?.code ?? null } } : rest;
 }
 
 export function createRoutineSyncEngine({
@@ -46,9 +53,10 @@ export function createRoutineSyncEngine({
   let running = null;
   let broadcast = null;
   let db = null;
+  let activePrincipalKey = null;
 
   const publish = (status, detail = {}) => {
-    const value = { status, ...detail };
+    const value = { status, ...safeStatusDetail(detail) };
     onStatus(value);
     broadcast?.postMessage({ kind: "routine_sync_status", ...value });
   };
@@ -56,17 +64,26 @@ export function createRoutineSyncEngine({
   async function resolveContext() {
     const principal = await resolvePrincipal();
     if (!principal?.organizationId || !principal?.authUserId) throw Object.assign(new Error("auth_required"), { kind: "auth_required" });
-    const principalKey = createRoutinePrincipalKey(principal.organizationId, principal.authUserId);
+    const sharedOperator = principal.actorSource === "shared_device_operator";
+    if (sharedOperator && !principal.operatorId) throw Object.assign(new Error("operator_auth_required"), { kind: "operator_auth_required" });
+    const principalKey = sharedOperator
+      ? createSharedDeviceOperatorPrincipalKey(principal.organizationId, principal.authUserId, principal.operatorId)
+      : createRoutinePrincipalKey(principal.organizationId, principal.authUserId);
+    const clientPrincipalKey = createRoutinePrincipalKey(principal.organizationId, principal.authUserId);
     db ??= await openDb();
+    if (activePrincipalKey && activePrincipalKey !== principalKey) {
+      await quarantineRoutineOfflineDataForPrincipal(db, activePrincipalKey, "operator_switch");
+    }
+    activePrincipalKey = principalKey;
     await restoreRoutineOfflineDataForPrincipal(db, principalKey);
-    let identity = await getRoutineMeta(db, principalKey, "client_instance");
+    let identity = await getRoutineMeta(db, clientPrincipalKey, "client_instance");
     if (!identity?.clientInstanceId) {
       identity = {
         clientInstanceId: cryptoImpl.randomUUID(),
         registrationIdempotencyKey: cryptoImpl.randomUUID(),
         createdAt: now(),
       };
-      await putRoutineMeta(db, principalKey, "client_instance", identity);
+      await putRoutineMeta(db, clientPrincipalKey, "client_instance", identity);
     }
     if (!identity.registered) {
       await syncClient.registerClientInstance({
@@ -77,7 +94,7 @@ export function createRoutineSyncEngine({
         idempotencyKey: identity.registrationIdempotencyKey,
       });
       identity = { ...identity, registered: true, registeredAt: now() };
-      await putRoutineMeta(db, principalKey, "client_instance", identity);
+      await putRoutineMeta(db, clientPrincipalKey, "client_instance", identity);
     } else {
       await syncClient.touchClientInstance({
         clientInstanceId: identity.clientInstanceId,
@@ -85,7 +102,8 @@ export function createRoutineSyncEngine({
         offlineSchemaVersion: ROUTINE_OFFLINE_SCHEMA_LABEL,
       });
     }
-    return { principal, principalKey, clientInstanceId: identity.clientInstanceId };
+    return { principal, principalKey, clientPrincipalKey, clientInstanceId: identity.clientInstanceId,
+      transportMode: sharedOperator ? "cursor_polling" : "postgres_realtime" };
   }
 
   async function catchUp(context, renewLease = async () => true) {
@@ -135,6 +153,23 @@ export function createRoutineSyncEngine({
       if (!ready.length) break;
       for (const original of ready) {
       if (stopped || !(await renewLease())) return;
+      const livePrincipal = await resolvePrincipal().catch(() => null);
+      if (!livePrincipal || livePrincipal.authUserId !== context.principal.authUserId
+          || livePrincipal.operatorId !== context.principal.operatorId
+          || livePrincipal.actorSource !== context.principal.actorSource) {
+        publish(SYNC_ENGINE_STATUS.PAUSED_AUTH, { operatorId: context.principal.operatorId ?? null });
+        return;
+      }
+      if (context.principal.actorSource === "shared_device_operator"
+          && (original.actorSource !== "shared_device_operator"
+            || original.effectiveOperatorId !== context.principal.operatorId)) {
+        await updateRoutineOutboxRecord(db, context.principalKey, original.clientOperationId, {
+          ...original, status: OUTBOX_STATUS.PAUSED_OPERATOR_AUTH, nextRetryAt: Number.MAX_SAFE_INTEGER,
+          lastError: { kind: "operator_auth_required", message: "operator_identity_mismatch" }, updatedAt: now(),
+        });
+        publish(SYNC_ENGINE_STATUS.PAUSED_AUTH, { operatorId: context.principal.operatorId });
+        return;
+      }
       publish(SYNC_ENGINE_STATUS.SENDING, { clientOperationId: original.clientOperationId });
       const sending = await updateRoutineOutboxRecord(db, context.principalKey, original.clientOperationId, (record) => ({
         ...record,
@@ -175,7 +210,8 @@ export function createRoutineSyncEngine({
         }
       } catch (error) {
         const kind = error?.kind ?? "unknown_outcome";
-        const nextStatus = kind === "auth_required" ? OUTBOX_STATUS.PAUSED_AUTH
+        const nextStatus = kind === "operator_auth_required" ? OUTBOX_STATUS.PAUSED_OPERATOR_AUTH
+          : kind === "auth_required" ? OUTBOX_STATUS.PAUSED_AUTH
           : kind === "stale_conflict" || kind === "timed_action_requires_online_confirmation" ? OUTBOX_STATUS.CONFLICT
             : kind === "server_rejected" ? OUTBOX_STATUS.REJECTED
               : OUTBOX_STATUS.RETRY_WAIT;
@@ -189,8 +225,8 @@ export function createRoutineSyncEngine({
           updatedAt: now(),
           sendingStartedAt: null,
         });
-        if (nextStatus === OUTBOX_STATUS.PAUSED_AUTH) {
-          publish(SYNC_ENGINE_STATUS.PAUSED_AUTH);
+        if ([OUTBOX_STATUS.PAUSED_AUTH, OUTBOX_STATUS.PAUSED_OPERATOR_AUTH].includes(nextStatus)) {
+          publish(SYNC_ENGINE_STATUS.PAUSED_AUTH, { operatorId: context.principal.operatorId ?? null });
           return;
         }
       }
@@ -201,7 +237,8 @@ export function createRoutineSyncEngine({
   async function synchronizedWork(context, renewLease) {
     if (!(await catchUp(context, renewLease))) return;
     if (!stopped) await processOutbox(context, renewLease);
-    if (!stopped) publish(SYNC_ENGINE_STATUS.CURRENT);
+    if (!stopped) publish(SYNC_ENGINE_STATUS.CURRENT, { transportMode: context.transportMode,
+      operatorId: context.principal.operatorId ?? null });
   }
 
   async function runCycle() {
@@ -212,7 +249,8 @@ export function createRoutineSyncEngine({
       try {
         context = await resolveContext();
       } catch (error) {
-        publish(error?.kind === "auth_required" ? SYNC_ENGINE_STATUS.PAUSED_AUTH : SYNC_ENGINE_STATUS.OFFLINE, { error });
+        publish(["auth_required", "operator_auth_required"].includes(error?.kind)
+          ? SYNC_ENGINE_STATUS.PAUSED_AUTH : SYNC_ENGINE_STATUS.OFFLINE, { error });
         return false;
       }
       const lockName = `mesh-routine-sync:${context.principalKey}`;
@@ -256,8 +294,11 @@ export function createRoutineSyncEngine({
       broadcast?.postMessage({ kind: "routine_sync_wake" });
       void runCycle();
     },
-    stop() {
+    stop({ quarantine = false } = {}) {
       stopped = true;
+      if (quarantine && db && activePrincipalKey) {
+        void quarantineRoutineOfflineDataForPrincipal(db, activePrincipalKey, "operator_session_end");
+      }
       broadcast?.close();
       broadcast = null;
       publish(SYNC_ENGINE_STATUS.STOPPED);

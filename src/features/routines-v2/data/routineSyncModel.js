@@ -1,5 +1,5 @@
-export const ROUTINE_OFFLINE_SCHEMA_VERSION = 2;
-export const ROUTINE_OFFLINE_SCHEMA_LABEL = "phase10i-v1";
+export const ROUTINE_OFFLINE_SCHEMA_VERSION = 3;
+export const ROUTINE_OFFLINE_SCHEMA_LABEL = "phase10j-v1";
 export const ROUTINE_SYNC_EVENT_LOOKBACK_DAYS = 14;
 export const ROUTINE_CONFIRMED_RETENTION_DAYS = 30;
 export const ROUTINE_MAX_LOCAL_PAYLOAD_BYTES = 256 * 1024;
@@ -15,6 +15,7 @@ export const OUTBOX_STATUS = Object.freeze({
   SENDING: "sending",
   RETRY_WAIT: "retry_wait",
   PAUSED_AUTH: "paused_auth",
+  PAUSED_OPERATOR_AUTH: "paused_operator_auth",
   CONFLICT: "conflict",
   REJECTED: "rejected",
   CONFIRMED: "confirmed",
@@ -50,6 +51,13 @@ export const CONFLICT_CODE = Object.freeze({
 
 export const FORBIDDEN_LOCAL_KEYS = Object.freeze([
   "password",
+  "pin",
+  "pin_hash",
+  "credential_hash",
+  "session_secret",
+  "session_secret_hash",
+  "session_token",
+  "x-mesh-routine-operator-session",
   "token",
   "access_token",
   "refresh_token",
@@ -149,6 +157,7 @@ export function normalizeSyncHealth(value) {
 export function classifyRoutineSyncError(error) {
   const message = String(error?.message ?? error ?? "");
   const code = String(error?.code ?? "");
+  if (/operator.*auth|operator.*session|shared.*device/i.test(message)) return "operator_auth_required";
   if (/auth|jwt|session/i.test(message) || code === "PGRST301") return "auth_required";
   if (/offline_timed_action_requires_online_confirmation/i.test(message)) return "timed_action_requires_online_confirmation";
   if (code === "40001" || /stale|revision conflict/i.test(message)) return "stale_conflict";

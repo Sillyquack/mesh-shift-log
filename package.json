@@ -35,6 +35,7 @@
     "verify:routine-delivery": "node scripts/verify-routine-delivery.mjs",
     "verify:routine-double-shift": "node scripts/verify-routine-double-shift.mjs",
     "verify:routine-sync-offline": "node scripts/verify-routine-sync-offline.mjs",
+    "verify:routine-shared-device": "node scripts/verify-routine-shared-device.mjs",
     "preview": "vite preview",
     "deploy": "npm run build && gh-pages -d dist"
   },

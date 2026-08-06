@@ -1,5 +1,6 @@
 import { getCurrentSession, supabaseAuthClient } from "../../../lib/supabaseAuthClient.js";
 import { isSupabaseConfigured } from "../../../lib/supabaseClient.js";
+import { routineRpcClient } from "./routineRpcClient.js";
 import {
   classifyRoutineSyncError,
   normalizeEventCursor,
@@ -36,7 +37,9 @@ export function createRoutineSyncClient({
     await assertContext();
     let result;
     try {
-      result = await client.rpc(name, compact(payload));
+      result = client === supabaseAuthClient
+        ? await routineRpcClient.request(name, compact(payload))
+        : await client.rpc(name, compact(payload));
     } catch (error) {
       throw new RoutineSyncClientError(classifyRoutineSyncError(error), String(error?.message ?? error), error);
     }

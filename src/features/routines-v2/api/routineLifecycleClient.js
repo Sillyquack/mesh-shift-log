@@ -1,5 +1,6 @@
 import { getCurrentSession, supabaseAuthClient } from '../../../lib/supabaseAuthClient.js';
 import { isSupabaseConfigured } from '../../../lib/supabaseClient.js';
+import { routineRpcClient } from './routineRpcClient.js';
 import {
   normalizeRoutineCompletionValidation,
   normalizeRoutineLifecycleRecord,
@@ -49,7 +50,7 @@ function failure(error) {
 async function rpc(name, payload = {}, normalize = (value) => value) {
   const ctx = await context();
   if (!ctx.ok) return ctx;
-  const { data, error } = await supabaseAuthClient.rpc(name, compact(payload));
+  const { data, error } = await routineRpcClient.request(name, compact(payload));
   if (error) return failure(error);
   return result(true, { mode: 'authenticated', data: normalize(data) });
 }
