@@ -7,7 +7,7 @@ export function useRoutineEngineSync({ open, bootstrap, onRefresh, subscribe = s
   useEffect(() => {
     const personalPrincipal = bootstrap?.identity?.actorSource === "personal_auth";
     const sharedPrincipal = bootstrap?.identity?.actorSource === "shared_device_operator"
-      && Boolean(bootstrap?.identity?.effectiveOperatorId && bootstrap?.identity?.session?.id);
+      && Boolean(bootstrap?.identity?.effectiveOperatorId && (bootstrap?.identity?.session?.id || bootstrap?.identity?.operatorSessionId));
     if (!open || !bootstrap?.previewAllowed || !bootstrap.organizationId || (!personalPrincipal && !sharedPrincipal)) {
       setStatus({ status: "disabled", mode: "disabled" });
       return undefined;
@@ -25,7 +25,7 @@ export function useRoutineEngineSync({ open, bootstrap, onRefresh, subscribe = s
       onSignal: async () => { await onRefresh?.(); },
       onStatus: (next) => setStatus({ ...next, mode }),
     });
-    return () => { subscription.unsubscribe(); setStatus({ status: "stopped", mode }); };
+    return () => { subscription.unsubscribe(); };
   }, [bootstrap, onRefresh, open, subscribe]);
   return status;
 }

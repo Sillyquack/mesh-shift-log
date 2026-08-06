@@ -180,6 +180,17 @@ export async function updateRoutineOutboxRecord(db, principalKey, clientOperatio
   });
 }
 
+export async function deleteRoutineOutboxRecord(db, principalKey, clientOperationId) {
+  if (!principalKey || !clientOperationId) throw new Error("Outbox identity is required.");
+  return runRoutineOfflineTransaction(db, [ROUTINE_OFFLINE_STORES.OUTBOX], "readwrite", async (tx) => {
+    const store = tx.objectStore(ROUTINE_OFFLINE_STORES.OUTBOX);
+    const current = await requestResult(store.get([principalKey, clientOperationId]));
+    if (!isBasicRecord(current, principalKey)) throw new Error("Outbox record was not found for this principal.");
+    await requestResult(store.delete([principalKey, clientOperationId]));
+    return true;
+  });
+}
+
 export async function listRoutineOutbox(db, principalKey) {
   await assertPrincipalAvailable(db, principalKey);
   const tx = db.transaction(ROUTINE_OFFLINE_STORES.OUTBOX, "readonly");

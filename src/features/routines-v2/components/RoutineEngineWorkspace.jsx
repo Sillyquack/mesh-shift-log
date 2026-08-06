@@ -4,9 +4,12 @@ import "./RoutineEngineShell.css";
 
 const RoutineManagerWorkspace = lazy(() => import("../manager/RoutineManagerWorkspace.jsx"));
 const RoutineManagerErrorBoundary = lazy(() => import("../manager/RoutineManagerErrorBoundary.jsx"));
+const RoutineEmployeeWorkspace = lazy(() => import("../employee/RoutineEmployeeWorkspace.jsx"));
+const RoutineEmployeeErrorBoundary = lazy(() => import("../employee/RoutineEmployeeErrorBoundary.jsx"));
 
-export default function RoutineEngineWorkspace({ user, onBack, onLogout, bootstrapLoader, managerLoader, operatorApi, subscribe }) {
+export default function RoutineEngineWorkspace({ user, onBack, onLogout, bootstrapLoader, managerLoader, employeeLoader, operatorApi, subscribe }) {
   const [managerOpen, setManagerOpen] = useState(false);
+  const [employeeOpen, setEmployeeOpen] = useState(false);
   return (
     <div className="routine-shell">
       <header className="routine-shell-header">
@@ -20,9 +23,15 @@ export default function RoutineEngineWorkspace({ user, onBack, onLogout, bootstr
             <RoutineManagerWorkspace loader={managerLoader} onBack={() => setManagerOpen(false)} />
           </RoutineManagerErrorBoundary>
         </Suspense>
+      ) : employeeOpen ? (
+        <Suspense fallback={<main className="routine-shell-centered"><section className="routine-state-card" role="status">Loading Operations Preview…</section></main>}>
+          <RoutineEmployeeErrorBoundary onBack={() => setEmployeeOpen(false)}>
+            <RoutineEmployeeWorkspace loader={employeeLoader} subscribe={subscribe} onBack={() => setEmployeeOpen(false)} />
+          </RoutineEmployeeErrorBoundary>
+        </Suspense>
       ) : (
         <RoutineEngineBootstrapGate user={user} open loader={bootstrapLoader} operatorApi={operatorApi} subscribe={subscribe}
-          onBack={onBack} onOpenManager={() => setManagerOpen(true)} />
+          onBack={onBack} onOpenEmployee={() => setEmployeeOpen(true)} onOpenManager={() => setManagerOpen(true)} />
       )}
     </div>
   );
