@@ -2439,4 +2439,16 @@ grant execute on function public.complete_routine_task(uuid,text,boolean,bigint,
   public.apply_routine_offline_task_bundle(uuid,uuid,jsonb,text),public.apply_routine_offline_run_finish_intent(uuid,uuid,uuid,bigint,timestamptz,text),
   public.preview_routine_run_delivery(uuid),public.complete_routine_event_transfer(uuid,text,jsonb,boolean,boolean,text,bigint,uuid) to authenticated;
 
+-- These canonical hash helpers are owner-chain implementation details, not Data API entry points.
+revoke all on function public.routine_delivery_item_canonical_json(uuid),
+  public.routine_delivery_record_canonical_json(uuid),public.routine_current_authenticated_profile_id(),
+  public.routine_current_effective_profile_id(),public.routine_current_effective_operator_id(),
+  public.routine_current_shared_device_id(),public.routine_current_operator_session_id(),
+  public.routine_current_actor_source(),public.routine_current_actor_display_name()
+  from public,anon,authenticated;
+grant execute on function public.routine_current_authenticated_profile_id(),
+  public.routine_current_effective_profile_id(),public.routine_current_effective_operator_id(),
+  public.routine_current_shared_device_id(),public.routine_current_operator_session_id(),
+  public.routine_current_actor_source(),public.routine_current_actor_display_name() to authenticated;
+
 notify pgrst,'reload schema';

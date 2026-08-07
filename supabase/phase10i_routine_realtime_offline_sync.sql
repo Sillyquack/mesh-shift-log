@@ -1316,6 +1316,18 @@ grant execute on function public.register_routine_client_instance(uuid,text,text
   public.apply_routine_offline_run_finish_intent(uuid,uuid,uuid,bigint,timestamptz,text),
   public.get_routine_delivery_reconciliation_history(uuid) to authenticated;
 
+-- Recreated lifecycle/read wrappers must match the established public/helper boundary immediately.
+revoke all on function public.routine_phase10i_immutable_guard(),public.routine_validate_run_completion(uuid),
+  public.routine_finalize_run_extension(uuid),
+  public.reopen_routine_run(uuid,text,bigint,uuid),public.get_routine_delivery_comparison(uuid),
+  public.get_routine_run_workspace(uuid),public.get_routine_task_timeline(uuid),
+  public.get_routine_run_timeline(uuid),public.list_routine_delivery_mismatches(date,date,text)
+  from public,anon,authenticated;
+grant execute on function public.reopen_routine_run(uuid,text,bigint,uuid),
+  public.get_routine_delivery_comparison(uuid),public.get_routine_run_workspace(uuid),
+  public.get_routine_task_timeline(uuid),public.get_routine_run_timeline(uuid),
+  public.list_routine_delivery_mismatches(date,date,text) to authenticated;
+
 do $phase10i_reload$
 begin perform pg_notify('pgrst','reload schema'); exception when others then null; end;
 $phase10i_reload$;

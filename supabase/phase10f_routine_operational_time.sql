@@ -1296,7 +1296,7 @@ $phase10f_template_validator_rename$;
 
 create or replace function public.validate_routine_template_version(
   input_version_id uuid,
-  input_batch_version_ids uuid[] default null
+  input_publication_version_ids uuid[] default null
 )
 returns jsonb
 language plpgsql
@@ -1306,7 +1306,7 @@ set search_path=pg_catalog
 as $$
 declare v_result jsonb; v_blockers jsonb; v_warnings jsonb;
 begin
-  v_result := public.validate_routine_template_version_phase10e(input_version_id,input_batch_version_ids);
+  v_result := public.validate_routine_template_version_phase10e(input_version_id,input_publication_version_ids);
   v_blockers := coalesce(v_result->'blockers','[]'::jsonb);
   v_warnings := coalesce(v_result->'warnings','[]'::jsonb);
 

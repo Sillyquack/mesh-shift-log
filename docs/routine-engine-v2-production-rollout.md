@@ -42,6 +42,8 @@ Verify that `routine_events`, and only approved tables, are members of `supabase
 
 Compare RLS enablement, policies, function owners, fixed search paths and exact authenticated `EXECUTE` grants with the disposable catalog fingerprint. Confirm anon has no Routine Engine access, authenticated clients have no direct mutation DML, and release/E2E attestation tables expose no client DML. Scan the build and repository for service-role keys, secrets, PINs, bearer/session tokens and production URLs.
 
+Before any production migration, run `npm run verify:routine-full-migration-reapply`. Its network-isolated PostgreSQL 17.6 rehearsal must complete three exact Phase 10A–10L sequences with identical Routine schema (`7665b5ebc3eb24f239888188601c4e5b4a1e47b77fbad69ddef23cc58af759d4`), raw function ACL (`ac86a7505043d1db53b1b9bd8d9b43561b520a7bf1c8d5a99e8d09f55e17a2ad`) and effective function ACL (`2ef51b540d59b3288f508993ce0d6b6f824fa2e4300cf219f11f23e3956fa9c4`) fingerprints. The validator parameters must remain `input_version_id` and `input_publication_version_ids`. Recreated wrappers must revoke default `PUBLIC`/`anon` execution in the phase that creates them and explicitly grant only the authenticated public/RLS accessors. Do not substitute broad default-privilege changes, an all-functions revoke, or drop/recreate behavior. Stop if any first-install or reapply ACL differs from these reviewed fingerprints.
+
 ## Shadow and manager preview
 
 Keep the installed preview stage and explicitly select `shadow` only after migration verification. Shadow remains read-only for operational mutations. Verify legacy Opening/Closing operation, Stock Count, Inventory Storage and Event Operations. Never move directly from legacy to pilot.

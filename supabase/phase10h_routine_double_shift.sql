@@ -972,13 +972,13 @@ end;
 $phase10h_template_validator_rename$;
 
 create or replace function public.validate_routine_template_version(
-  input_version_id uuid,input_batch_version_ids uuid[] default null
+  input_version_id uuid,input_publication_version_ids uuid[] default null
 )
 returns jsonb language plpgsql stable security definer set search_path=pg_catalog
 as $$
 declare v_result jsonb; v_blockers jsonb; v_validation jsonb;
 begin
-  v_result:=public.validate_routine_template_version_phase10g(input_version_id,input_batch_version_ids);
+  v_result:=public.validate_routine_template_version_phase10g(input_version_id,input_publication_version_ids);
   v_blockers:=coalesce(v_result->'blockers','[]'::jsonb);
   for v_validation in
     select public.routine_validate_event_context_source_config(item.source_config)
@@ -3261,6 +3261,24 @@ grant execute on function public.create_or_get_double_shift_bundle(text,text,tex
   public.verify_double_shift_bundle(uuid) to authenticated;
 grant execute on function public.routine_bundle_is_visible(uuid,uuid),
   public.routine_event_transfer_is_visible(uuid,uuid) to authenticated;
+
+-- Recreated public wrappers must establish their final ACL on first install.
+revoke all on function public.validate_routine_template_version(uuid,uuid[]),
+  public.routine_bundle_guard(),public.routine_bundle_step_guard(),public.routine_bundle_run_validate(),
+  public.routine_external_state_guard(),public.routine_phase10h_immutable_guard(),
+  public.routine_resolve_condition_fact(uuid,jsonb,timestamptz),
+  public.propose_routine_transfer(uuid,text,text,uuid,uuid,text,text,timestamptz,bigint,uuid),
+  public.routine_delivery_item_canonical_json(uuid),public.routine_delivery_record_canonical_json(uuid),
+  public.routine_preview_delivery_item_canonical(jsonb),public.routine_preview_run_delivery(uuid),
+  public.routine_finalize_run_extension(uuid),public.reopen_routine_run(uuid,text,bigint,uuid),
+  public.cancel_routine_run(uuid,text,bigint,uuid),public.get_routine_run_workspace(uuid),
+  public.get_routine_run_timeline(uuid),public.get_routine_task_timeline(uuid),
+  public.get_routine_delivery_record(uuid) from public,anon,authenticated;
+grant execute on function public.validate_routine_template_version(uuid,uuid[]),
+  public.propose_routine_transfer(uuid,text,text,uuid,uuid,text,text,timestamptz,bigint,uuid),
+  public.reopen_routine_run(uuid,text,bigint,uuid),public.cancel_routine_run(uuid,text,bigint,uuid),
+  public.get_routine_run_workspace(uuid),public.get_routine_run_timeline(uuid),
+  public.get_routine_task_timeline(uuid),public.get_routine_delivery_record(uuid) to authenticated;
 
 do $phase10h_reload$
 begin perform pg_notify('pgrst','reload schema'); exception when others then null; end;

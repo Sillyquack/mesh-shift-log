@@ -591,7 +591,7 @@ $phase10g_template_validator_rename$;
 
 create or replace function public.validate_routine_template_version(
   input_version_id uuid,
-  input_batch_version_ids uuid[] default null
+  input_publication_version_ids uuid[] default null
 )
 returns jsonb
 language plpgsql
@@ -612,9 +612,9 @@ declare
   v_target_version_id uuid;
   v_target_count integer;
   v_target_task public.routine_template_tasks%rowtype;
-  v_batch uuid[] := coalesce(input_batch_version_ids, array[input_version_id]::uuid[]);
+  v_batch uuid[] := coalesce(input_publication_version_ids, array[input_version_id]::uuid[]);
 begin
-  v_result := public.validate_routine_template_version_phase10f(input_version_id, input_batch_version_ids);
+  v_result := public.validate_routine_template_version_phase10f(input_version_id, input_publication_version_ids);
   v_blockers := coalesce(v_result->'blockers', '[]'::jsonb);
   v_warnings := coalesce(v_result->'warnings', '[]'::jsonb);
   select version.* into v_version from public.routine_template_versions version where version.id = input_version_id;
@@ -2837,6 +2837,9 @@ begin
   end loop;
 end;
 $phase10g_function_privileges$;
+
+revoke all on function public.routine_select_current_valid_task_verification(uuid),
+  public.routine_select_current_valid_run_verification(uuid) from public,anon,authenticated;
 
 grant execute on function public.validate_routine_template_version(uuid, uuid[]) to authenticated;
 grant execute on function public.finish_routine_run(uuid, bigint, uuid) to authenticated;

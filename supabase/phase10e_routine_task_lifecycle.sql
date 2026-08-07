@@ -3178,7 +3178,7 @@ $phase10e_template_validator_rename$;
 
 create or replace function public.validate_routine_template_version(
   input_version_id uuid,
-  input_batch_version_ids uuid[] default null
+  input_publication_version_ids uuid[] default null
 )
 returns jsonb
 language plpgsql
@@ -3190,7 +3190,7 @@ declare
   v_result jsonb;
   v_blockers jsonb;
 begin
-  v_result := public.validate_routine_template_version_phase10d(input_version_id, input_batch_version_ids);
+  v_result := public.validate_routine_template_version_phase10d(input_version_id, input_publication_version_ids);
   v_blockers := coalesce(v_result->'blockers', '[]'::jsonb);
   if exists (
     select 1 from public.routine_template_tasks task
