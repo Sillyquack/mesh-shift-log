@@ -162,6 +162,9 @@ import {
 
 const EventOperationsCockpit = lazy(() => import("./components/EventOperationsCockpit.jsx"));
 const InventoryWorkspace = lazy(() => import("./components/InventoryWorkspace.jsx"));
+const RoutineEngineLauncher = lazy(() => import("./features/routines-v2/components/RoutineEngineLauncher.jsx"));
+const RoutineEngineWorkspace = lazy(() => import("./features/routines-v2/components/RoutineEngineWorkspace.jsx"));
+const RoutineEngineErrorBoundary = lazy(() => import("./features/routines-v2/components/RoutineEngineErrorBoundary.jsx"));
 const EventCockpitSummaryCard = lazy(() =>
   import("./components/EventOperationsCockpit.jsx").then((module) => ({
     default: module.EventCockpitSummaryCard,
@@ -17318,6 +17321,7 @@ function App() {
   const [showManager, setShowManager] = useState(false);
   const [showEventFloorManager, setShowEventFloorManager] = useState(false);
   const [showInventory, setShowInventory] = useState(false);
+  const [showRoutineEngine, setShowRoutineEngine] = useState(false);
   const [currentRoleMode, setCurrentRoleMode] = useState(() =>
     normalizeRoleMode(readStorage(ROLE_MODE_KEY, null), readStorage(SESSION_KEY, null)),
   );
@@ -17898,6 +17902,7 @@ function App() {
     setSelectedShift(null);
     setShowManager(false);
     setShowEventFloorManager(false);
+    setShowRoutineEngine(false);
     setShowInventory(false);
     setShowAccountSecurity(false);
     setAuthStatus((current) => ({
@@ -19566,6 +19571,8 @@ function App() {
 
   async function clearSupabaseAuthSession() {
     await signOutSupabase();
+    const { clearRoutineOperatorSession } = await import("./features/routines-v2/auth/routineOperatorSession.js");
+    clearRoutineOperatorSession();
     localStorage.removeItem(SESSION_KEY);
     localStorage.removeItem(OPERATOR_KEY);
     localStorage.removeItem(EVENT_CODE_ACCESS_KEY);
@@ -19578,6 +19585,7 @@ function App() {
     setCurrentRoleMode(null);
     setSelectedShift(null);
     setShowManager(false);
+    setShowRoutineEngine(false);
     setShowEventFloorManager(false);
     setAuthStatus((current) => ({
       ...current,
@@ -20590,6 +20598,8 @@ function App() {
     if (user?.loginSource === "supabase_auth") {
       await signOutSupabase();
     }
+    const { clearRoutineOperatorSession } = await import("./features/routines-v2/auth/routineOperatorSession.js");
+    clearRoutineOperatorSession();
     localStorage.removeItem(SESSION_KEY);
     localStorage.removeItem(OPERATOR_KEY);
     localStorage.removeItem(EVENT_CODE_ACCESS_KEY);
@@ -20598,6 +20608,7 @@ function App() {
     setEventCodeAccess(null);
     setSelectedShift(null);
     setShowManager(false);
+    setShowRoutineEngine(false);
     setAuthStatus((current) => ({
       ...current,
       loginSource: "staff_code",
@@ -21323,6 +21334,23 @@ function App() {
 
   const inventoryCounterUser = isInventoryCounter(effectiveUser);
 
+  if (showRoutineEngine) {
+    return (
+      <Suspense fallback={<FocusedViewLoading label="Loading Routine Engine preview..." />}>
+        <RoutineEngineErrorBoundary onBack={() => setShowRoutineEngine(false)}>
+          <RoutineEngineWorkspace
+            user={user}
+            onBack={() => setShowRoutineEngine(false)}
+            onLogout={() => {
+              setShowRoutineEngine(false);
+              logout();
+            }}
+          />
+        </RoutineEngineErrorBoundary>
+      </Suspense>
+    );
+  }
+
   if (showInventory || inventoryCounterUser) {
     return (
       <>
@@ -21407,6 +21435,11 @@ function App() {
             : null
         }
       />
+      <Suspense fallback={null}>
+        <RoutineEngineErrorBoundary compact onBack={() => setShowRoutineEngine(false)}>
+          <RoutineEngineLauncher user={user} onOpen={() => setShowRoutineEngine(true)} />
+        </RoutineEngineErrorBoundary>
+      </Suspense>
       {siteSettings.locationCheckEnabled &&
         !hasSiteCoordinates(siteSettings) && (
           <p className="status-message page-status">

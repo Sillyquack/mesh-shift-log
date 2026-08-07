@@ -1,0 +1,18 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width,initial-scale=1.0" />
+    <meta name="color-scheme" content="light dark" />
+    <title>Routine Employee visual harness</title>
+    <script>
+      const scenario = new URLSearchParams(location.search).get("scenario");
+      if (scenario === "dark-mode") document.documentElement.dataset.theme = "dark";
+      if (scenario === "zoom-200") document.documentElement.style.fontSize = "200%";
+    </script>
+  </head>
+  <body>
+    <div id="root"></div>
+    <script type="module" src="/src/features/routines-v2/testing/routineEmployeeHarnessEntry.jsx"></script>
+  </body>
+</html>

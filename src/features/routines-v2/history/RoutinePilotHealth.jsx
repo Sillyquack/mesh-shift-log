@@ -1,0 +1,5 @@
+export default function RoutinePilotHealth({ readiness }) {
+  return <section className="rh-pilot-health"><div className={`rh-readiness-summary ${readiness.ready ? "ready" : "blocked"}`} role="status"><strong>{readiness.ready ? "Pilot readiness is green" : "Pilot readiness is blocked"}</strong><span>{readiness.blockers.length} blocker(s) · {readiness.warnings.length} warning(s)</span><code>{readiness.readinessHash}</code></div>
+    <div className="rh-readiness-grid">{Object.entries(readiness.categories).map(([key, category]) => <article key={key} className={category.ready ? "ready" : "blocked"}><header><h3>{key.replace(/([A-Z])/g, " $1")}</h3><span>{category.ready ? "Ready" : "Blocked"}</span></header>{category.blockers.map((item) => <p key={item} className="blocker">{item}</p>)}{category.warnings.map((item) => <p key={item} className="warning">{item}</p>)}<details><summary>Evidence</summary><pre>{JSON.stringify(category.evidence, null, 2)}</pre><code>{category.evidenceHash}</code></details></article>)}</div>
+  </section>;
+}

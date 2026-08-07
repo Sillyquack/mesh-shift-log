@@ -26,6 +26,24 @@
     "verify:inventory-simplicity": "node scripts/verify-inventory-simplicity.mjs",
     "verify:phase9-security-db": "node scripts/verify-phase9-security-db.mjs",
     "verify:phase9-all": "node scripts/verify-phase9-all.mjs",
+    "verify:routine-full-migration-reapply": "node scripts/verify-routine-full-migration-reapply.mjs",
+    "verify:routine-foundation": "node scripts/verify-routine-foundation.mjs",
+    "verify:routine-templates": "node scripts/verify-routine-templates.mjs",
+    "verify:routine-reference-images": "node scripts/verify-routine-reference-images.mjs",
+    "verify:routine-runs": "node scripts/verify-routine-runs.mjs",
+    "verify:routine-lifecycle": "node scripts/verify-routine-lifecycle.mjs",
+    "verify:routine-operational-time": "node scripts/verify-routine-operational-time.mjs",
+    "verify:routine-delivery": "node scripts/verify-routine-delivery.mjs",
+    "verify:routine-double-shift": "node scripts/verify-routine-double-shift.mjs",
+    "verify:routine-sync-offline": "node scripts/verify-routine-sync-offline.mjs",
+    "verify:routine-shared-device": "node scripts/verify-routine-shared-device.mjs",
+    "verify:routine-ui-foundation": "node scripts/verify-routine-ui-foundation.mjs",
+    "verify:routine-manager-ui": "node scripts/verify-routine-manager-ui.mjs",
+    "verify:routine-employee-ui": "node scripts/verify-routine-employee-ui.mjs",
+    "verify:routine-history-pilot": "node scripts/verify-routine-history-pilot.mjs",
+    "verify:routine-content-pack": "node scripts/verify-routine-content-pack.mjs",
+    "verify:routine-content-visual": "node scripts/verify-routine-content-visual.mjs",
+    "verify:routine-e2e-pilot": "node scripts/verify-routine-e2e-pilot.mjs",
     "preview": "vite preview",
     "deploy": "npm run build && gh-pages -d dist"
   },
@@ -37,6 +55,7 @@
   },
   "devDependencies": {
     "@vitejs/plugin-react": "^4.3.4",
+    "fake-indexeddb": "6.2.5",
     "gh-pages": "^6.2.0",
     "vite": "^6.0.5"
   }
