@@ -55,6 +55,11 @@ function ReferenceCards({ keys = contentPack.references.map((reference) => refer
   return frame(<><header className="rm-section-heading"><div><p className="eyebrow">Logical references</p><h2>Immutable placeholder versions</h2></div><StatusPill state="warning">Image optional</StatusPill></header><div className="rm-readiness-grid">{contentPack.references.filter((reference) => keys.includes(reference.key)).map((reference) => <article className="rm-card" key={reference.key}><h3>{reference.label}</h3><div className="rm-placeholder">{reference.placeholderText}</div><p><code>{reference.key}</code></p><button type="button" className="ghost-button">{reference.buttonLabel}</button></article>)}</div></>);
 }
 
+function StandardCard({ standardKey, title, referenceKeys = [] }) {
+  const standard = contentPack.standards.find((entry) => entry.key === standardKey);
+  return frame(<><header className="rm-section-heading"><div><p className="eyebrow">Manager standard editor preview</p><h2>{title || standard.label}</h2></div><StatusPill state="ready">Current revision</StatusPill></header><section className="rm-card rm-form"><dl className="rm-evidence"><div><dt>Stable key</dt><dd>{standard.key}</dd></div><div><dt>Value type</dt><dd>{standard.valueType}</dd></div><div><dt>Source</dt><dd>Approved amendment · server authoritative</dd></div></dl><h3>Structured value</h3><pre className="rm-json">{JSON.stringify(standard.currentRevision.value, null, 2)}</pre>{referenceKeys.length ? <><h3>Logical references</h3><div className="rm-readiness-grid">{contentPack.references.filter((entry) => referenceKeys.includes(entry.key)).map((entry) => <article className="rm-card" key={entry.key}><h4>{entry.label}</h4><div className="rm-placeholder">{entry.placeholderText}</div><button type="button" className="ghost-button">{entry.buttonLabel}</button></article>)}</div></> : null}</section></>);
+}
+
 function Relations({ dependencies = false }) {
   const entries = dependencies ? [...contentPack.opening.dependencies, ...contentPack.closing.dependencies].filter((entry) => entry.dependencyType === "complete_predecessor_on_successor") : [...contentPack.opening.relations, ...contentPack.closing.relations];
   return frame(<section className="rm-card"><header><h2>{dependencies ? "Continuous completion dependencies" : "Cross-run and delivery relations"}</h2><StatusPill state="ready">{entries.length} declarative</StatusPill></header><div className="rm-table-wrap"><table><thead><tr><th>Source</th><th>Type</th><th>Target</th><th>Evidence</th></tr></thead><tbody>{entries.map((entry, index) => <tr key={index}><td>{entry.sourceTaskId || entry.predecessorTaskId}</td><td>{entry.relationType || entry.dependencyType}</td><td>{entry.targetTaskId || entry.successorTaskId}</td><td>{entry.metadata?.evidenceItemKeys?.join(", ") || "Server state"}</td></tr>)}</tbody></table></div></section>);
@@ -65,9 +70,29 @@ function NoInstaller({ shared = false }) { return frame(<section className="rout
 function ProjectRooms() { const set = contentPack.locationSets.find((entry) => entry.key === "opening-project-rooms"); return frame(<section className="rm-card"><header><h2>Project-room route</h2><StatusPill state="ready">6 exact rooms</StatusPill></header><ol>{set.members.map((key) => <li key={key}>{contentPack.locations.find((location) => location.key === key).name}</li>)}</ol><p className="rm-note">Room 005 is not generated.</p></section>); }
 function DoubleShift() { return frame(<section className="rm-card"><header><h2>Double Shift bundle copy</h2><StatusPill state="ready">4/4 system steps</StatusPill></header><ol>{contentPack.doubleShiftSteps.map((step) => <li key={step.id}><strong>{step.id} — {step.title}</strong><p>{step.stepKey}{step.systemGenerated ? " · system-generated" : ""}</p></li>)}</ol><p className="rm-note">No third template and no copied Opening or Closing tasks.</p></section>); }
 
-const taskScenarios = { "o13-task": "O13", "o15-blocker": "O15", "o29-timing": "O29", "o35-deadline": "O35", "c27-serviceware": "C27", "c28-fridge-delivery": "C28", "c32-overnight": "C32", "c42-door-items": "C42", "c45-verification": "C45", "c46-final-gate": "C46" };
+const taskScenarios = { "o13-task": "O13", "o15-blocker": "O15", "o29-timing": "O29", "o35-deadline": "O35", "c27-serviceware": "C27", "c28-fridge-delivery": "C28", "c32-overnight": "C32", "c42-door-items": "C42", "c45-verification": "C45", "c46-final-gate": "C46", "coffee-service-0945": "O29", "coffee-service-1045": "O35", "cornerbar-event-transfer": "C33" };
+const standardScenarios = {
+  "coffee-cups-full-standard": ["coffee-cups-full-target", "Coffee cups · full visual layout", ["ordinary-coffee-cup-layout", "cappuccino-cup-shelf-layout", "cappuccino-and-espresso-machine-top-layout"]],
+  "cappuccino-shelf-layout": ["coffee-cups-full-target", "Cappuccino shelf layout", ["cappuccino-cup-shelf-layout"]],
+  "cappuccino-espresso-machine-top": ["coffee-cups-full-target", "Cappuccino and espresso machine-top layout", ["cappuccino-and-espresso-machine-top-layout"]],
+  "wine-glass-layout": ["wine-glasses-full-target", "Wine-glass visual layout", ["wine-glass-layout"]],
+  "workbar-coffee-canisters": ["workbar-coffee-canister-assigned-target", "Workbar Coffee Canisters · 4 assigned", ["coffee-canister-lunch-reserve", "coffee-canister-rinsed-storage"]],
+  "tea-names-order": ["self-service-tea-slot-names", "Six tea positions · approved order", ["self-service-opening-standard", "self-service-overnight-standard"]],
+  "door-rule-editor": ["door-and-lock-rules", "Door and lock rules", ["closing-door-check", "cornerbar-street-door", "cornerbar-upper-security-lock"]],
+  "front-door-schedule": ["door-and-lock-rules", "Front door · weekday 08:00–18:00", ["closing-door-check"]],
+  "cornerbar-double-lock": ["door-and-lock-rules", "Cornerbar street door · double lock", ["cornerbar-street-door", "cornerbar-upper-security-lock"]],
+  "fridge-rule-editor": ["fridge-closing-rules", "Fridge rules", ["workbar-bar-left-fridge", "workbar-bar-right-fridge"]],
+  "workbar-bar-fridge-rules": ["fridge-closing-rules", "Workbar Left and Right bar fridges", ["workbar-bar-left-fridge", "workbar-bar-right-fridge"]],
+  "nonalcoholic-grille-rule": ["fridge-closing-rules", "Non-alcoholic fridge · unlocked and grille", ["workbar-food-non-alcoholic-fridge"]],
+  "milk-fridge-rule": ["fridge-closing-rules", "Milk fridge · 2 + 2 and opened wine", ["workbar-milk-fridge"]],
+  "cornerbar-left-rule": ["fridge-closing-rules", "Cornerbar Left fridge", ["cornerbar-left-fridge"]],
+  "cornerbar-middle-rule": ["fridge-closing-rules", "Cornerbar Middle fridge", ["cornerbar-middle-fridge"]],
+  "cornerbar-right-rule": ["fridge-closing-rules", "Cornerbar Right fridge", ["cornerbar-right-fridge"]],
+  "cornerbar-operating-standard": ["cornerbar-operating-standard", "Cornerbar Operating Standard", ["cornerbar-glass-layout", "cornerbar-bar-equipment-storage", "beer-tap-parts", "beer-drip-trays", "cornerbar-final-reset", "cornerbar-closed-lighting-standard"]],
+};
 function App() {
   if (taskScenarios[scenario]) return <TaskCard id={taskScenarios[scenario]} />;
+  if (standardScenarios[scenario]) return <StandardCard standardKey={standardScenarios[scenario][0]} title={standardScenarios[scenario][1]} referenceKeys={standardScenarios[scenario][2]} />;
   if (scenario === "opening-draft-overview") return <TemplateOverview routineKey="opening" />;
   if (scenario === "closing-draft-overview") return <TemplateOverview routineKey="closing" />;
   if (scenario === "double-shift-steps") return <DoubleShift />;
@@ -77,7 +102,7 @@ function App() {
   if (scenario === "project-rooms") return <ProjectRooms />;
   if (scenario === "delivery-relations") return <Relations />;
   if (scenario === "continuous-dependencies") return <Relations dependencies />;
-  if (scenario === "readiness-blocked" || scenario === "drafts-unpublished") return <Readiness />;
+  if (scenario === "readiness-blocked" || scenario === "drafts-unpublished" || scenario === "readiness-one-blocker") return <Readiness />;
   if (scenario === "staff-no-installer") return <NoInstaller />;
   if (scenario === "shared-no-installer") return <NoInstaller shared />;
   if (scenario === "stale-preserved") return <ContentManager failure="stale" />;

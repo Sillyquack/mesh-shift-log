@@ -167,9 +167,14 @@ function sourceChecks() {
   const hook = readFileSync(absolute("src/features/routines-v2/hooks/useRoutineTemplateEditor.js"), "utf8");
   const harness = readFileSync(absolute("src/features/routines-v2/testing/routineManagerHarnessEntry.jsx"), "utf8");
   const main = readFileSync(absolute("src/main.jsx"), "utf8");
+  const contentPack = JSON.parse(readFileSync(absolute("content/routine-engine/mesh-routine-content-v1.json"), "utf8"));
+  const contentStandards = Object.fromEntries(contentPack.standards.map((entry) => [entry.key, entry]));
   const combined = `${managerSql}\n${clientFiles}\n${allManager}\n${harness}`;
 
   check("manager verifier registered", packageJson.scripts["verify:routine-manager-ui"] === "node scripts/verify-routine-manager-ui.mjs");
+  check("manager preview consumes the 1.1R content contract", contentPack.packVersion === "1.1R" && contentPack.unresolvedRequirements.length === 1 && contentPack.unresolvedRequirements[0].standardKey === "serviceware-office-recovery-route-confirmation");
+  check("manager standards remain structured server-owned revisions", ["coffee-cups-full-target", "coffee-cups-service-ready-target", "wine-glasses-full-target", "wine-glasses-service-ready-target", "door-and-lock-rules", "fridge-closing-rules", "cornerbar-operating-standard"].every((key) => contentStandards[key]?.valueType === "object" && contentStandards[key]?.currentRevision?.value));
+  check("manager content references remain optional placeholders", contentPack.references.every((entry) => entry.placeholderText === "Referansebilde kommer" && entry.buttonLabel === "Vis hvordan det skal se ut") && !contentPack.unresolvedRequirements.some((entry) => /image|reference/i.test(entry.standardKey)));
   check("K2 migration names manager_preview", managerSql.includes("'manager_preview'"));
   check("release transition is foundation-only", /where settings\.ui_release_stage = 'foundation'/.test(managerSql));
   check("release transition never assigns mode", !/set\s+[\s\S]{0,100}\bmode\s*=/.test(managerSql));

@@ -14,11 +14,12 @@ const MANAGER_ID = "aa100000-0000-4000-8000-000000000001";
 const STAFF_ID = "aa100000-0000-4000-8000-000000000002";
 const SHARED_DEVICE_ID = "aa100000-0000-4000-8000-000000000003";
 const ORGANIZATION_ID = "aa000000-0000-4000-8000-000000000001";
-const EXPECTED_PACK_HASH = "d8daf5e8c887c59023a99b741bc5f13ba46b4e74f23b4b003583eafc9f17c574";
+const EXPECTED_PACK_HASH = "c149a8416a867dcb7d87224f3ae8e2a214e5ca4954613b118521ebe5ae3aff2a";
 const EXPECTED_SOURCE_HASHES = [
   "ea00e80bde6c17ea1d3f1095949363d79d606dcee16f05f742426c1c5248e079",
   "27698f86716a141268546c623609f8b956213e53f20d00c03935cad01bd9244c",
   "f4fce4d5a3dcafecd7dfca2a5bf780f7c3652634da2cb0f068daa5d4f506a0eb",
+  "8ebedb39be888dfa118a429fa2046ba2b7b5dc49c868d9d5b811f2aa89b45351",
 ];
 const EXPECTED_ARGUMENT_NAMES = ["input_version_id", "input_publication_version_ids"];
 const REPRODUCED_ACL_EXPECTATIONS = Object.freeze({
@@ -250,8 +251,10 @@ function sourceChecks() {
   check("Supabase RPC payload uses the canonical validator key", client.includes("input_publication_version_ids") && !client.includes("input_batch_version_ids"));
   const pack = JSON.parse(readFileSync(absolute("content/routine-engine/mesh-routine-content-v1.json"), "utf8"));
   check("content pack hash remains canonical", pack.packHash === EXPECTED_PACK_HASH);
+  check("content pack minor version is 1.1R", pack.packVersion === "1.1R");
   check("authoritative content source hashes remain canonical", JSON.stringify(pack.sourceDocuments.map((entry) => entry.sha256)) === JSON.stringify(EXPECTED_SOURCE_HASHES));
   check("content pack shape remains 37 Opening, 46 Closing, and four system steps", pack.opening.tasks.length === 37 && pack.closing.tasks.length === 46 && pack.doubleShiftSteps.length === 4);
+  check("only the serviceware office route remains unresolved", pack.unresolvedRequirements.length === 1 && pack.unresolvedRequirements[0].standardKey === "serviceware-office-recovery-route-confirmation");
 }
 
 const storageBootstrapSql = String.raw`
@@ -815,11 +818,12 @@ function assertEndState(label, state, protectedBaseline) {
   check(`${label}: content preview keeps the canonical pack and source hashes`,
     state.contentPack.preview.packMetadata.packHash === EXPECTED_PACK_HASH
       && JSON.stringify(state.contentPack.sourceDocuments.map((entry) => entry.sha256)) === JSON.stringify(EXPECTED_SOURCE_HASHES));
-  check(`${label}: content preview keeps 37/46 tasks, four DS steps, and nine unresolved blockers`,
+  check(`${label}: content preview keeps 37/46 tasks, four DS steps, and one unresolved blocker`,
     state.contentPack.preview.counts.openingTasks === 37
       && state.contentPack.preview.counts.closingTasks === 46
       && state.contentPack.preview.counts.doubleShiftSteps === 4
-      && state.contentPack.preview.unresolvedRequirements.length === 9);
+      && state.contentPack.preview.unresolvedRequirements.length === 1
+      && state.contentPack.preview.unresolvedRequirements[0].standardKey === "serviceware-office-recovery-route-confirmation");
   check(`${label}: content audit confirms no installation or operations`,
     state.contentPack.audit.installation === null && state.contentPack.audit.operations.length === 0
       && state.contentPack.audit.currentPreview.packMetadata.packHash === EXPECTED_PACK_HASH);

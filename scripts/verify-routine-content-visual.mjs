@@ -56,6 +56,36 @@ const SCENARIOS=Object.freeze([
   [38,"Mobile 320 px","chromium","mobile-320",320,720],
   [39,"Mobile 390 px","webkit","mobile-390",390,844],
   [40,"Legacy back-navigation","chromium","legacy-back-navigation",900,760],
+  [41,"Coffee cups full visual standard","chromium","coffee-cups-full-standard",1180,950],
+  [42,"Coffee cups service-ready 09:45","webkit","coffee-service-0945",1100,950],
+  [43,"Coffee cups service-ready 10:45","chromium","coffee-service-1045",1100,950],
+  [44,"Cappuccino shelf layout","webkit","cappuccino-shelf-layout",1000,900],
+  [45,"Cappuccino and espresso machine-top layout","chromium","cappuccino-espresso-machine-top",1000,900],
+  [46,"Wine-glass layout","webkit","wine-glass-layout",1000,900],
+  [47,"Workbar Coffee Canisters 4 with 1 plus 3","chromium","workbar-coffee-canisters",1100,900],
+  [48,"Tea names and exact order","webkit","tea-names-order",1000,900],
+  [49,"Door-rule manager editor Chromium","chromium","door-rule-editor",1180,950],
+  [50,"Door-rule manager editor WebKit","webkit","door-rule-editor",1180,950],
+  [51,"Front-door weekday schedule","chromium","front-door-schedule",1050,900],
+  [52,"Cornerbar street double-lock rule","webkit","cornerbar-double-lock",1050,900],
+  [53,"Fridge-rule manager editor Chromium","chromium","fridge-rule-editor",1180,1000],
+  [54,"Fridge-rule manager editor WebKit","webkit","fridge-rule-editor",1180,1000],
+  [55,"Workbar bar-fridge rules","webkit","workbar-bar-fridge-rules",1050,900],
+  [56,"Non-alcoholic grille rule","chromium","nonalcoholic-grille-rule",1050,900],
+  [57,"Milk-fridge 2 plus 2 and opened-wine rule","webkit","milk-fridge-rule",1050,900],
+  [58,"Cornerbar Left fridge rule","chromium","cornerbar-left-rule",1000,900],
+  [59,"Cornerbar Middle fridge rule","webkit","cornerbar-middle-rule",1000,900],
+  [60,"Cornerbar Right fridge rule","chromium","cornerbar-right-rule",1000,900],
+  [61,"Cornerbar Operating Standard","webkit","cornerbar-operating-standard",1180,1000],
+  [62,"Cornerbar event transfer","chromium","cornerbar-event-transfer",1100,1000],
+  [63,"Operational reference placeholders","webkit","reference-placeholders",1180,1000],
+  [64,"Readiness with one original blocker","chromium","readiness-one-blocker",1050,850],
+  [65,"Manager standard mobile 390 Chromium","chromium","door-rule-editor",390,844],
+  [66,"Manager standard mobile 390 WebKit","webkit","fridge-rule-editor",390,844],
+  [67,"Operational standards dark mode","webkit","cornerbar-operating-standard",1180,950],
+  [68,"Operational standards keyboard-only","chromium","coffee-cups-full-standard",1000,900],
+  [69,"Manager standard 200 percent zoom","chromium","door-rule-editor",1440,1000],
+  [70,"Reference placeholders mobile 390","webkit","reference-placeholders",390,844],
 ]);
 
 async function loadPlaywright(){const path=PLAYWRIGHT_CANDIDATES.find(existsSync);if(!path)throw new Error("Playwright is not available in the bundled local runtime.");return import(pathToFileURL(path).href);}
@@ -74,12 +104,12 @@ async function exercise(page,id){
 async function main(){
   for(const path of ["routine-content-pack-harness.html","src/features/routines-v2/testing/routineContentPackHarnessEntry.jsx","src/features/routines-v2/manager/RoutineContentPackManager.jsx"])check(`visual artifact exists: ${path}`,existsSync(resolve(ROOT,path)));
   const harness=readFileSync(resolve(ROOT,"src/features/routines-v2/testing/routineContentPackHarnessEntry.jsx"),"utf8");check("all visual scenario tokens are covered",SCENARIOS.every(([, , ,token])=>harness.includes(token)||["content-preview-390","install-confirmation","install-note-required","dark-mode","zoom-200","keyboard-install","mobile-320","mobile-390"].includes(token)));
-  check("visual matrix includes all 40 required Phase 10L states",SCENARIOS.length===40&&new Set(SCENARIOS.map(([id])=>id)).size===40);
+  check("visual matrix includes 40 Phase 10L and 30 Phase 10M states",SCENARIOS.length===70&&new Set(SCENARIOS.map(([id])=>id)).size===70);
   const {chromium,webkit}=await loadPlaywright();mkdirSync(SCREENSHOTS,{recursive:true});await startServer();
   const browsers={chromium:await chromium.launch({headless:true}),webkit:await webkit.launch({headless:true})};const contexts={chromium:await browsers.chromium.newContext(),webkit:await browsers.webkit.newContext()};const results=[];
   try{
-    for(const[id,name,engine,scenarioName,width,height]of SCENARIOS){const page=await contexts[engine].newPage();const consoleErrors=[],pageErrors=[];page.on("console",(message)=>{if(message.type()==="error")consoleErrors.push(message.text());});page.on("pageerror",(error)=>pageErrors.push(error.message));await page.setViewportSize({width,height});await page.emulateMedia({colorScheme:id===35?"dark":"light",reducedMotion:"reduce"});await page.goto(`${BASE_URL}/routine-content-pack-harness.html?scenario=${encodeURIComponent(scenarioName)}`,{waitUntil:"networkidle"});await page.locator("body").waitFor({state:"visible"});await exercise(page,id);const audit=await auditPage(page);const overlay=await page.locator("vite-error-overlay").count();const screenshotPath=`${SCREENSHOTS}/${String(id).padStart(2,"0")}-${scenarioName}-${engine}.png`;await page.screenshot({path:screenshotPath,fullPage:true});check(`scenario ${id} ${name}: no console errors`,consoleErrors.length===0&&pageErrors.length===0);check(`scenario ${id} ${name}: no Vite overlay`,overlay===0);check(`scenario ${id} ${name}: no horizontal overflow`,audit.overflow<=1);check(`scenario ${id} ${name}: accessibility names and IDs`,audit.unnamed===0&&audit.unlabeled===0&&audit.duplicateIds===0);check(`scenario ${id} ${name}: minimum touch target${audit.small.length?` (${audit.small.join(", ")})`:""}`,audit.small.length===0);results.push({id,name,engine,viewport:`${width}x${height}`,result:"PASS",consoleErrors:0,viteOverlay:overlay,horizontalOverflow:audit.overflow,accessibilityViolations:0,minimumTouchTarget:">=48px",screenshotPath});console.log(`VISUAL ${String(id).padStart(2,"0")} ${engine} ${width}x${height} PASS ${screenshotPath}`);await page.close();}
-    check("all 40 Phase 10L browser scenarios passed",results.length===40&&results.every((entry)=>entry.result==="PASS"));console.log(`Visual evidence directory: ${SCREENSHOTS}`);console.log(`PASS ${passCount} Phase 10L browser checks across ${results.length} scenarios`);
+    for(const[id,name,engine,scenarioName,width,height]of SCENARIOS){const page=await contexts[engine].newPage();const consoleErrors=[],pageErrors=[];page.on("console",(message)=>{if(message.type()==="error")consoleErrors.push(message.text());});page.on("pageerror",(error)=>pageErrors.push(error.message));await page.setViewportSize({width,height});await page.emulateMedia({colorScheme:[35,67].includes(id)?"dark":"light",reducedMotion:"reduce"});await page.goto(`${BASE_URL}/routine-content-pack-harness.html?scenario=${encodeURIComponent(scenarioName)}`,{waitUntil:"networkidle"});await page.locator("body").waitFor({state:"visible"});if([36,69].includes(id))await page.evaluate(()=>{document.documentElement.style.fontSize="200%";});await exercise(page,id);const audit=await auditPage(page);const overlay=await page.locator("vite-error-overlay").count();const screenshotPath=`${SCREENSHOTS}/${String(id).padStart(2,"0")}-${scenarioName}-${engine}.png`;await page.screenshot({path:screenshotPath,fullPage:true});check(`scenario ${id} ${name}: no console errors`,consoleErrors.length===0&&pageErrors.length===0);check(`scenario ${id} ${name}: no Vite overlay`,overlay===0);check(`scenario ${id} ${name}: no horizontal overflow`,audit.overflow<=1);check(`scenario ${id} ${name}: accessibility names and IDs`,audit.unnamed===0&&audit.unlabeled===0&&audit.duplicateIds===0);check(`scenario ${id} ${name}: minimum touch target${audit.small.length?` (${audit.small.join(", ")})`:""}`,audit.small.length===0);results.push({id,name,engine,viewport:`${width}x${height}`,result:"PASS",consoleErrors:0,viteOverlay:overlay,horizontalOverflow:audit.overflow,accessibilityViolations:0,minimumTouchTarget:">=48px",screenshotPath});console.log(`VISUAL ${String(id).padStart(2,"0")} ${engine} ${width}x${height} PASS ${screenshotPath}`);await page.close();}
+    check("all 70 Phase 10L/10M browser scenarios passed",results.length===70&&results.every((entry)=>entry.result==="PASS"));console.log(`Visual evidence directory: ${SCREENSHOTS}`);console.log(`PASS ${passCount} Phase 10L/10M browser checks across ${results.length} scenarios`);
   }finally{await contexts.chromium.close().catch(()=>{});await contexts.webkit.close().catch(()=>{});await browsers.chromium.close().catch(()=>{});await browsers.webkit.close().catch(()=>{});}
 }
 
