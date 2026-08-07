@@ -1,6 +1,6 @@
 # Routine Engine v2 production rollout runbook
 
-Status: plan only. Phase 10L does not execute this runbook, connect to a production project, install content, publish, promote a release stage, change mode, pause work, or create an operational record.
+Status: plan only. Phase 10M updates reviewed local content but does not execute this runbook, connect to a production project, install content, publish, promote a release stage, change mode, pause work, or create an operational record.
 
 ## Required approval and exact migration order
 
@@ -42,7 +42,20 @@ Verify that `routine_events`, and only approved tables, are members of `supabase
 
 Compare RLS enablement, policies, function owners, fixed search paths and exact authenticated `EXECUTE` grants with the disposable catalog fingerprint. Confirm anon has no Routine Engine access, authenticated clients have no direct mutation DML, and release/E2E attestation tables expose no client DML. Scan the build and repository for service-role keys, secrets, PINs, bearer/session tokens and production URLs.
 
-Before any production migration, run `npm run verify:routine-full-migration-reapply`. Its network-isolated PostgreSQL 17.6 rehearsal must complete three exact Phase 10A–10L sequences with identical Routine schema (`7665b5ebc3eb24f239888188601c4e5b4a1e47b77fbad69ddef23cc58af759d4`), raw function ACL (`ac86a7505043d1db53b1b9bd8d9b43561b520a7bf1c8d5a99e8d09f55e17a2ad`) and effective function ACL (`2ef51b540d59b3288f508993ce0d6b6f824fa2e4300cf219f11f23e3956fa9c4`) fingerprints. The validator parameters must remain `input_version_id` and `input_publication_version_ids`. Recreated wrappers must revoke default `PUBLIC`/`anon` execution in the phase that creates them and explicitly grant only the authenticated public/RLS accessors. Do not substitute broad default-privilege changes, an all-functions revoke, or drop/recreate behavior. Stop if any first-install or reapply ACL differs from these reviewed fingerprints.
+Before any production migration, run `npm run verify:routine-full-migration-reapply`. Its network-isolated PostgreSQL 17.6 rehearsal must complete three exact Phase 10A–10L sequences with identical Routine schema (`f44dc34640c684d2dc1cbb072f88f7d111c49f13a9b5a934905a07c73733c33a` for the reviewed 1.1R payload), raw function ACL (`ac86a7505043d1db53b1b9bd8d9b43561b520a7bf1c8d5a99e8d09f55e17a2ad`) and effective function ACL (`2ef51b540d59b3288f508993ce0d6b6f824fa2e4300cf219f11f23e3956fa9c4`) fingerprints. The validator parameters must remain `input_version_id` and `input_publication_version_ids`. Recreated wrappers must revoke default `PUBLIC`/`anon` execution in the phase that creates them and explicitly grant only the authenticated public/RLS accessors. Do not substitute broad default-privilege changes, an all-functions revoke, or drop/recreate behavior. Stop if any first-install or reapply ACL differs from these reviewed fingerprints.
+
+## Phase 10M migration-manifest checkpoint
+
+The affected generated artifacts for the uncommitted 1.1R review tree are pinned below. These hashes are local-review evidence, not migration approval:
+
+| Artifact | SHA-256 |
+|---|---|
+| `content/routine-engine/mesh-routine-content-v1.json` | `fc2e639d692a3850200f73738946f40d8cde16ffc8cae7f65ab38fd077a56a3c` |
+| `supabase/phase10l_mesh_routine_content_pack.sql` | `f91b0479bffc9456954c5f1de388b5713039aa9ad8cc72042aab4da7f213a1fa` |
+| `docs/routine-engine-v2-mesh-content-v1.md` | `dd0483555368f2cd9f3ad2774e211157dc3774d87e0f3785e3d1798f4488cc20` |
+| `docs/routine-engine-v2-mesh-operational-standards-amendment-2026-08-07.md` | `aed94b69e98e7f7ed6ace5a37d84cf50770ea6fd3337b536898179f9c4f8c2a8` |
+
+Gate 0 and Gate 1 must be rerun against the eventual new commit before any production migration. A later edit requires regenerating these affected hashes; never rely on this uncommitted-tree table as production authorization.
 
 ## Shadow and manager preview
 
@@ -52,9 +65,11 @@ Managers review foundation, locations/routes, standards, reference images, devic
 
 ## Phase 10L content installation and publication
 
-Keep the organization in `legacy` for migration verification. A manager explicitly chooses `shadow`, opens Operational content, verifies `mesh-routine-content@1.0R` and hash `d8daf5e8c887c59023a99b741bc5f13ba46b4e74f23b4b003583eafc9f17c574`, reviews create/reuse/conflict analysis, and explicitly installs editable Opening and Closing drafts. Re-preview after installation and compare the content audit, IDs, draft hashes and divergence state. Installation must not publish, create a run or bundle, or change mode/stage.
+Keep the organization in `legacy` for migration verification. After fresh Gate 0/Gate 1 approval, a manager may explicitly choose `shadow`, open Operational content, verify `mesh-routine-content@1.1R` and hash `c149a8416a867dcb7d87224f3ae8e2a214e5ca4954613b118521ebe5ae3aff2a`, review create/reuse/conflict analysis, and explicitly install editable Opening and Closing drafts. Re-preview after installation and compare the content audit, IDs, draft hashes and divergence state. Installation must not publish, create a run or bundle, or change mode/stage.
 
-Resolve all nine locked blockers through the existing manager standard/location-set mutations using approved values only: full and service-ready cup/glass targets, total Coffee Canister inventory, six tea-slot names, office-floor recovery points, door/lock rules and fridge-closing rules. Room 005 must not be created. Managers upload actual approved reference images gradually using prepare → upload → finalize and never construct Storage paths. Validate and compare both drafts; any change from the installed pack remains visible in the audit. Publish Opening and Closing atomically with the existing batch-publish RPC, including when publishing only one version. Recompute readiness after publication. DS01–DS04 remain bundle system steps and no `double_shift` template is created.
+The 1.1R pack resolves the cup/glass layouts, four Workbar-assigned Coffee Canisters, six tea names, door/lock rules and fridge rules through approved structured revisions. Full and service-ready cup/glass standards are visually identical, not numeric; O29/O35 recheck independently. Cornerbar has a separate structured operating standard but no third routine. Event-active scope uses formal transfer/evidence and never N/A. The sole remaining original blocker is **Exact serviceware recovery route through the relevant office floors**; resolve it later only through the existing manager standard/location-set mutations using an approved complete route. Never guess office-floor points or create room 005.
+
+Managers may upload actual approved reference images gradually through Manager Control Center using prepare → upload → finalize and must never construct Storage paths. Placeholders remain warnings and are not required for draft installation. Validate and compare both drafts; any change from the installed pack remains visible in the audit. Publish Opening and Closing atomically with the existing batch-publish RPC, including when publishing only one version. Recompute readiness after publication. DS01–DS04 remain bundle system steps and no `double_shift` template is created.
 
 Only after all content, reference, security, Chromium/WebKit and disposable E2E evidence is green may a separate explicit approval authorize `pilot_ready` attestation and later pilot activation. Content installation itself is never such approval and this runbook contains no production activation authorization.
 
