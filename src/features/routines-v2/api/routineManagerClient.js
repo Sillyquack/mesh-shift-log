@@ -14,3 +14,10 @@ export const getRoutineTemplateVersionDiff = (fromVersionId, toVersionId) => man
 export const previewRoutineTemplatePublicationBatch = (versionIds) => managerRpc("preview_routine_template_publication_batch", { input_version_ids: versionIds });
 export const getRoutineReferenceManagerWorkspace = () => managerRpc("get_routine_reference_manager_workspace");
 export const getRoutineReleaseReadiness = () => managerRpc("get_routine_release_readiness");
+export const previewMeshRoutineContentPack = () => managerRpc("preview_mesh_routine_content_pack_v1");
+export const installMeshRoutineContentPack = (payload) => managerRpc("install_mesh_routine_content_pack_v1", {
+  input_expected_organization_state_hash: payload.expectedOrganizationStateHash,
+  input_install_note: payload.installNote,
+  input_idempotency_key: payload.idempotencyKey,
+});
+export const getMeshRoutineContentPackAudit = () => managerRpc("get_mesh_routine_content_pack_audit");

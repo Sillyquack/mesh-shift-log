@@ -1,6 +1,6 @@
 # Routine Engine v2 production rollout runbook
 
-Status: plan only. Phase 10K4 does not execute this runbook, connect to a production project, seed content, promote a release stage, change mode, pause work, or create an operational record.
+Status: plan only. Phase 10L does not execute this runbook, connect to a production project, install content, publish, promote a release stage, change mode, pause work, or create an operational record.
 
 ## Required approval and exact migration order
 
@@ -20,8 +20,9 @@ Obtain explicit production-change approval and record the approved Supabase proj
 12. `phase10k2_routine_manager_control_center.sql`
 13. `phase10k3_routine_employee_workflow.sql`
 14. `phase10k4_routine_history_pilot_hardening.sql`
+15. `phase10l_mesh_routine_content_pack.sql`
 
-Phase 10L content follows only after K4 verification and separate content approval. Never reorder, squash, or edit an already-applied phase migration.
+The 10L migration installs the reviewed content-pack mechanism but does not install organization content. Never reorder, squash, or edit an already-applied phase migration.
 
 ## Project-ref preflight
 
@@ -47,9 +48,13 @@ Keep the installed preview stage and explicitly select `shadow` only after migra
 
 Managers review foundation, locations/routes, standards, reference images, devices/operators, pilot membership candidates, history sources and the legacy unscoped aggregate. Shared-device identities must not open manager surfaces. Resolve blockers with existing manager RPCs; do not edit tables directly.
 
-## Phase 10L content and publication
+## Phase 10L content installation and publication
 
-Seed approved Opening, Closing and DS01–DS04 content only through the separately reviewed 10L artifact. Managers review drafts, validation and human-readable diffs, then use the existing atomic batch-publish RPC—even for one template. Reference images use prepare → upload → finalize. No K4 migration or rollout step invents task keys or content.
+Keep the organization in `legacy` for migration verification. A manager explicitly chooses `shadow`, opens Operational content, verifies `mesh-routine-content@1.0R` and hash `d8daf5e8c887c59023a99b741bc5f13ba46b4e74f23b4b003583eafc9f17c574`, reviews create/reuse/conflict analysis, and explicitly installs editable Opening and Closing drafts. Re-preview after installation and compare the content audit, IDs, draft hashes and divergence state. Installation must not publish, create a run or bundle, or change mode/stage.
+
+Resolve all nine locked blockers through the existing manager standard/location-set mutations using approved values only: full and service-ready cup/glass targets, total Coffee Canister inventory, six tea-slot names, office-floor recovery points, door/lock rules and fridge-closing rules. Room 005 must not be created. Managers upload actual approved reference images gradually using prepare → upload → finalize and never construct Storage paths. Validate and compare both drafts; any change from the installed pack remains visible in the audit. Publish Opening and Closing atomically with the existing batch-publish RPC, including when publishing only one version. Recompute readiness after publication. DS01–DS04 remain bundle system steps and no `double_shift` template is created.
+
+Only after all content, reference, security, Chromium/WebKit and disposable E2E evidence is green may a separate explicit approval authorize `pilot_ready` attestation and later pilot activation. Content installation itself is never such approval and this runbook contains no production activation authorization.
 
 ## Pilot membership, E2E evidence and readiness
 

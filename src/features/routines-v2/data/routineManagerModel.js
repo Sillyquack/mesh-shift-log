@@ -1,6 +1,7 @@
 export const MANAGER_TABS = Object.freeze([
   { id: "overview", label: "Overview" },
   { id: "foundation", label: "Foundation" },
+  { id: "content", label: "Operational content" },
   { id: "templates", label: "Templates" },
   { id: "references", label: "References" },
   { id: "operators", label: "Operators" },

@@ -40,6 +40,8 @@
     "verify:routine-manager-ui": "node scripts/verify-routine-manager-ui.mjs",
     "verify:routine-employee-ui": "node scripts/verify-routine-employee-ui.mjs",
     "verify:routine-history-pilot": "node scripts/verify-routine-history-pilot.mjs",
+    "verify:routine-content-pack": "node scripts/verify-routine-content-pack.mjs",
+    "verify:routine-content-visual": "node scripts/verify-routine-content-visual.mjs",
     "verify:routine-e2e-pilot": "node scripts/verify-routine-e2e-pilot.mjs",
     "preview": "vite preview",
     "deploy": "npm run build && gh-pages -d dist"

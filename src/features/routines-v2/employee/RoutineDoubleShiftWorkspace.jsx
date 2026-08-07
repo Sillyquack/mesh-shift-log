@@ -21,6 +21,6 @@ export default function RoutineDoubleShiftWorkspace({ bundleId, onBack, onOpenRu
     <RoutineDoubleShiftReassignment context={context} pending={workspace.pending} onReassign={(values) => workspace.execute("reassignClosing", { bundleId,
       fromBundleParticipantId: context.reassignmentState?.closingParticipantId, expectedBundleRevision: bundle.revision, ...values })} />
     {workspace.error && <p className="employee-warning" role="alert">{workspace.error.message ?? "The request failed. Local selections are preserved."}</p>}
-    <section className="employee-ds-card"><p className="eyebrow">DS04 · System summary</p><h2>Contribution and outcome</h2><pre className="employee-json-summary">{JSON.stringify(context.ds04Summary, null, 2)}</pre>
+    <section className="employee-ds-card"><p className="eyebrow">DS04 · System summary</p><h2>Finalize the Double Shift assignment</h2><pre className="employee-json-summary">{JSON.stringify(context.ds04Summary, null, 2)}</pre>
       <p>Opening contribution remains attributed after reassignment. Closing contribution, deviations, overrides, event transfers and delivery are server generated.</p></section></main>;
 }

@@ -12,6 +12,7 @@ import "./RoutineManager.css";
 const RoutineHistoryWorkspace = lazy(() => import("../history/RoutineHistoryWorkspace.jsx"));
 const RoutineManagerReviewDashboard = lazy(() => import("../history/RoutineManagerReviewDashboard.jsx"));
 const RoutineReleaseGate = lazy(() => import("../history/RoutineReleaseGate.jsx"));
+const RoutineContentPackManager = lazy(() => import("./RoutineContentPackManager.jsx"));
 
 export default function RoutineManagerWorkspace({ onBack, loader, initialTab = "overview", referenceLoader, referenceUploader, operatorLoader, operatorApi }) {
   const workspace = useRoutineManagerWorkspace({ loader });
@@ -28,6 +29,7 @@ export default function RoutineManagerWorkspace({ onBack, loader, initialTab = "
   const panels = {
     overview: <RoutineManagerOverview data={data} onRefresh={workspace.refresh} />,
     foundation: <RoutineFoundationManager data={data} onRefresh={workspace.refresh} />,
+    content: <RoutineContentPackManager onOpenTemplates={() => setTab("templates")} />,
     templates: <RoutineTemplatesManager templates={data.templates} onRefresh={workspace.refresh} />,
     references: <RoutineReferenceManager loader={referenceLoader} uploader={referenceUploader} />,
     operators: <RoutineOperatorAdmin loader={operatorLoader} api={operatorApi} profileChoices={data.profileChoices || []} />,

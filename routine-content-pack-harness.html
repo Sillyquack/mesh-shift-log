@@ -1,0 +1,26 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width,initial-scale=1.0" />
+    <meta name="color-scheme" content="light dark" />
+    <title>Routine content pack visual harness</title>
+    <script>
+      const scenario = new URLSearchParams(location.search).get("scenario");
+      if (scenario === "dark-mode") {
+        document.documentElement.style.setProperty("--bg", "#101412");
+        document.documentElement.style.setProperty("--surface", "#1a211e");
+        document.documentElement.style.setProperty("--surface-strong", "#222b27");
+        document.documentElement.style.setProperty("--text", "#f4f1ea");
+        document.documentElement.style.setProperty("--muted", "#abb6b1");
+        document.documentElement.style.setProperty("--line", "rgba(244,241,234,.14)");
+        document.documentElement.style.setProperty("--brand", "#47c2a9");
+      }
+      if (scenario === "zoom-200") document.documentElement.style.fontSize = "200%";
+    </script>
+  </head>
+  <body>
+    <div id="root"></div>
+    <script type="module" src="/src/features/routines-v2/testing/routineContentPackHarnessEntry.jsx"></script>
+  </body>
+</html>

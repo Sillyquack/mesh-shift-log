@@ -5,7 +5,7 @@ export default function RoutineDoubleShiftTransition({ context, pending, onSubmi
   const [interimOwnerProfileId, setInterimOwnerProfileId] = useState(""); const [reason, setReason] = useState("");
   const returnRequired = choice === "temporarily_away"; const interimRequired = choice === "handing_operation_to_another";
   const reasonRequired = choice === "unable_to_complete_closing" || interimRequired;
-  return <section className="employee-ds-card"><p className="eyebrow">DS02 · Opening complete</p><h2>Transition between shifts</h2>
+  return <section className="employee-ds-card"><p className="eyebrow">DS02 · Opening complete</p><h2>Complete the Opening-to-Closing transition</h2>
     <div className="employee-summary-cards"><article><strong>Corrections</strong><span>{context.openingSummary?.corrections ?? 0}</span></article><article><strong>Open deviations</strong><span>{context.openingSummary?.openDeviations ?? 0}</span></article>
       <article><strong>Rooms and serviceware</strong><span>{context.openingSummary?.rooms ?? "Server summary"}</span></article><article><strong>Events and technical</strong><span>{context.openingSummary?.technicalIssues ?? 0}</span></article></div>
     <fieldset><legend>What happens next?</legend>{[["continuing_on_site", "Continuing on site"], ["temporarily_away", "Temporarily away"], ["handing_operation_to_another", "Handing operation to another"], ["unable_to_complete_closing", "Unable to complete Closing"]].map(([value, label]) => <label key={value}><input type="radio" name="transition" value={value} checked={choice === value} onChange={(event) => setChoice(event.target.value)} />{label}</label>)}</fieldset>
