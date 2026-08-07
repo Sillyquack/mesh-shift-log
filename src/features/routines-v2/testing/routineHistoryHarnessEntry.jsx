@@ -16,6 +16,7 @@ import RoutineOfflineState from "../employee/RoutineOfflineState.jsx";
 import { getRoutineLegacyHistorySummary, getUnifiedRoutineHistory, listRoutineV2History } from "../api/routineHistoryClient.js";
 import { getRoutinePilotReadiness, setRoutinePilotNewWorkPaused } from "../api/routineReleaseClient.js";
 import { setRoutineEngineMode } from "../api/routineApplicationClient.js";
+import { ROUTINE_E2E_HISTORY_FIXTURE as HISTORY_FIXTURE } from "./routineE2EFixtureContract.js";
 
 const search = new URLSearchParams(location.search);
 const scenario = search.get("scenario") || "manager-history-desktop";
@@ -53,17 +54,17 @@ function Milestones({ rollback = false }) { const labels = rollback ? ["New work
 function ThrowChunk() { throw new TypeError("Failed to fetch dynamically imported module: history-new-hash.js"); }
 
 function LiveHistory({ manager }) {
-  const [probe, setProbe] = React.useState({ status: "loading", count: 0 });
+  const [probe, setProbe] = React.useState({ status: "loading", count: 0, runIds: [] });
   React.useEffect(() => {
     let active = true;
-    listRoutineV2History({ dateFrom: "2025-08-06", dateTo: "2026-08-06", limit: 100 })
-      .then((value) => { if (active) setProbe({ status: "ready", count: value.items.length }); })
-      .catch((error) => { if (active) setProbe({ status: "error", count: 0, message: String(error?.message || error) }); });
+    listRoutineV2History({ dateFrom: HISTORY_FIXTURE.dateFrom, dateTo: HISTORY_FIXTURE.dateTo, limit: 100 })
+      .then((value) => { if (active) setProbe({ status: "ready", count: value.items.length, runIds: value.items.map((item) => item.id) }); })
+      .catch((error) => { if (active) setProbe({ status: "error", count: 0, runIds: [], message: String(error?.message || error) }); });
     return () => { active = false; };
   }, []);
   if (probe.status === "loading") return <Shell title={manager ? "Manager History" : "My history"}><p role="status">Connecting to disposable RPC backend…</p></Shell>;
   if (probe.status === "error") return <Shell title={manager ? "Manager History" : "My history"}><p role="alert">Disposable backend round-trip failed: {probe.message}</p></Shell>;
-  return <Shell title={manager ? "Manager History" : "My history"}><p role="status" data-live-backend="passed" data-live-count={probe.count}>Disposable backend round-trip passed · {probe.count} scoped run records.</p><RoutineHistoryWorkspace manager={manager} /></Shell>;
+  return <Shell title={manager ? "Manager History" : "My history"}><p role="status" data-live-backend="passed" data-live-count={probe.count} data-live-run-ids={probe.runIds.join(",")} data-live-date-from={HISTORY_FIXTURE.dateFrom} data-live-date-to={HISTORY_FIXTURE.dateTo}>Disposable backend round-trip passed · {probe.count} scoped run records.</p><RoutineHistoryWorkspace manager={manager} /></Shell>;
 }
 
 function LivePilotEvidence({ rollback = false }) {
@@ -77,8 +78,8 @@ function LivePilotEvidence({ rollback = false }) {
         : await setRoutineEngineMode({ mode: "pilot", expectedRevision: readiness.settingsRevision - 4, reason: "Disposable pilot activation only.", idempotencyKey: "4f100000-0000-4000-8000-000000000007" });
       if (!replay.idempotentReplay) throw new Error("Disposable mutation replay was not idempotent.");
       const [history, unified, legacy] = await Promise.all([
-        listRoutineV2History({ dateFrom: "2025-08-06", dateTo: "2026-08-06", limit: 100 }),
-        getUnifiedRoutineHistory({ dateFrom: "2025-08-06", dateTo: "2026-08-06", limit: 100 }),
+        listRoutineV2History({ dateFrom: HISTORY_FIXTURE.managerDateFrom, dateTo: HISTORY_FIXTURE.managerDateTo, limit: 100 }),
+        getUnifiedRoutineHistory({ dateFrom: HISTORY_FIXTURE.managerDateFrom, dateTo: HISTORY_FIXTURE.managerDateTo, limit: 100 }),
         getRoutineLegacyHistorySummary(),
       ]);
       if (active) setEvidence({ status: "ready", value: { readiness, history, unified, legacy, replay } });

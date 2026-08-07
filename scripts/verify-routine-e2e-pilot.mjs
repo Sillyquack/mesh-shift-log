@@ -4,6 +4,7 @@ import { pathToFileURL, fileURLToPath } from "node:url";
 import { spawn, spawnSync } from "node:child_process";
 import { randomUUID } from "node:crypto";
 import { startRoutineE2EDisposableBackend, stopRoutineE2EDisposableBackend } from "./routine-e2e-disposable-backend.mjs";
+import { ROUTINE_E2E_HISTORY_FIXTURE as HISTORY_FIXTURE } from "../src/features/routines-v2/testing/routineE2EFixtureContract.js";
 
 const ROOT = resolve(dirname(fileURLToPath(import.meta.url)), "..");
 const PORT = 43127;
@@ -72,7 +73,7 @@ const SCENARIOS = Object.freeze([
 ]);
 
 function sourceChecks() {
-  for (const path of ["routine-history-harness.html", "src/features/routines-v2/testing/routineHistoryHarnessEntry.jsx", "public/sw.js", "docs/routine-engine-v2-production-rollout.md"]) check(`required E2E artifact exists: ${path}`, existsSync(resolve(ROOT, path)));
+  for (const path of ["routine-history-harness.html", "src/features/routines-v2/testing/routineHistoryHarnessEntry.jsx", "src/features/routines-v2/testing/routineE2EFixtureContract.js", "public/sw.js", "docs/routine-engine-v2-production-rollout.md"]) check(`required E2E artifact exists: ${path}`, existsSync(resolve(ROOT, path)));
   const sw = source("public/sw.js");
   check("service worker uses deterministic K4 cache version", sw.includes("mesh-shift-log-v0.8.2-phase10k4-shell-v1"));
   check("service worker is network-first for navigation", /request\.mode === 'navigate'[\s\S]+fetch\(event\.request\)/.test(sw));
@@ -81,6 +82,8 @@ function sourceChecks() {
   check("service worker sends no mutation", !/method:\s*['\"](?:POST|PATCH|PUT|DELETE)['\"]/.test(sw));
   check("chunk recovery gives controlled reload", source("src/features/routines-v2/components/RoutineChunkErrorBoundary.jsx").includes("Reload current version"));
   check("history harness is not imported by production source", !source("src/App.jsx").includes("routineHistoryHarness") && !source("src/main.jsx").includes("routineHistoryHarness"));
+  check("history fixture uses one fixed wall-clock-independent date contract", HISTORY_FIXTURE.operationalDate === "2026-08-06" && HISTORY_FIXTURE.dateFrom === HISTORY_FIXTURE.operationalDate && HISTORY_FIXTURE.dateTo === HISTORY_FIXTURE.operationalDate);
+  check("history fixture contract is test-only", !source("src/App.jsx").includes("routineE2EFixtureContract") && !source("src/main.jsx").includes("routineE2EFixtureContract"));
   check("all 36 scenarios are declared exactly once", SCENARIOS.length === 36 && new Set(SCENARIOS.map(([id]) => id)).size === 36);
 }
 
@@ -133,7 +136,14 @@ async function exerciseScenario(page, id, rpcStatuses = []) {
       throw new Error(`Disposable browser RPC did not render: ${JSON.stringify({ ...diagnostic, rpcStatuses })}`);
     }
     check(`scenario ${id} uses production clients against disposable PostgREST`, true);
-    if ([3, 4].includes(id)) check(`scenario ${id} returns positively scoped history`, Number(await page.locator('[data-live-backend="passed"]').getAttribute("data-live-count")) > 0);
+    if ([3, 4].includes(id)) {
+      const liveEvidence = page.locator('[data-live-backend="passed"]');
+      const runIds = (await liveEvidence.getAttribute("data-live-run-ids") || "").split(",").filter(Boolean);
+      check(`scenario ${id} returns positively scoped history`, Number(await liveEvidence.getAttribute("data-live-count")) > 0);
+      check(`scenario ${id} uses the deterministic bounded history range`, await liveEvidence.getAttribute("data-live-date-from") === HISTORY_FIXTURE.dateFrom && await liveEvidence.getAttribute("data-live-date-to") === HISTORY_FIXTURE.dateTo);
+      check(`scenario ${id} contains the expected fixture run`, runIds.includes(HISTORY_FIXTURE.expectedSharedRunId));
+      if (id === 4) check("scenario 4 returns no unauthorized shared-operator run", runIds.every((runId) => disposableBackend.historyFixture.authorizedSharedRunIds.includes(runId)));
+    }
     if ([35, 36].includes(id)) check(`scenario ${id} replays a production mutation client without changing state`, await page.locator('[data-live-write-replay="passed"]').isVisible());
   }
   if (id === 11) await page.getByRole("button", { name: "Open manager override dialog" }).click();
@@ -217,8 +227,25 @@ async function main() {
   check("production build emits history chunk", readdirSync(resolve(ROOT, "dist/assets")).some((name) => name.startsWith("RoutineHistoryWorkspace-") && name.endsWith(".js")));
   disposableBackend = await startRoutineE2EDisposableBackend();
   check("isolated disposable database and loopback PostgREST browser backend start", Boolean(disposableBackend.baseUrl));
+  const history = disposableBackend.historyFixture;
+  console.log(`HISTORY FIXTURE ${JSON.stringify({ operationalDate: history.operationalDate, dateFrom: history.dateFrom, dateTo: history.dateTo,
+    expectedSharedRunId: history.expectedSharedRunId, sharedHistoryCount: history.sharedHistoryCount,
+    unauthorizedSharedRunCount: history.unauthorizedSharedRunCount, crossOrganizationTargetRunCount: history.crossOrganizationTargetRunCount,
+    managerHistoryCount: history.managerHistoryCount, staffHistoryCount: history.staffHistoryCount })}`);
+  check("shared operator is a participant in the expected fixture run", history.sharedParticipantCount === 1);
+  check("fixture operational date is inside the bounded scenario range", history.expectedRunDate === history.operationalDate && history.expectedRunDate >= history.dateFrom && history.expectedRunDate <= history.dateTo);
+  check("shared operator history returns at least one row", history.sharedHistoryCount >= 1);
+  check("shared operator history contains the expected run ID", history.sharedRunIds.includes(history.expectedSharedRunId));
+  check("shared operator history contains no unauthorized run", history.unauthorizedSharedRunCount === 0);
+  check("cross-organization history contains no target-organization run", history.crossOrganizationTargetRunCount === 0);
+  check("manager broader history scope still contains the fixture run", history.managerHistoryCount > 0 && history.managerContainsExpectedRun);
+  check("personal staff history scope still contains the fixture run", history.staffHistoryCount > 0 && history.staffContainsExpectedRun);
   await startServer(); const results = await runVisuals();
   console.log(`Visual evidence directory: ${SCREENSHOTS}`);
+  stopServer();
+  await stopRoutineE2EDisposableBackend();
+  disposableBackend = null;
+  check("disposable backend cleanup completes", true);
   console.log(`PASS ${passCount} Phase 10K4 E2E/browser checks across ${results.length} scenarios`);
 }
 

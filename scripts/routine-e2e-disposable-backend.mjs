@@ -4,6 +4,7 @@ import { createServer } from "node:http";
 import { dirname, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 import { spawnSync } from "node:child_process";
+import { ROUTINE_E2E_HISTORY_FIXTURE as HISTORY_FIXTURE } from "../src/features/routines-v2/testing/routineE2EFixtureContract.js";
 
 const ROOT = resolve(dirname(fileURLToPath(import.meta.url)), "..");
 const POSTGRES_IMAGE = "public.ecr.aws/supabase/postgres:17.6.1.141";
@@ -65,6 +66,7 @@ function psql(sql, { tuplesOnly = false, transaction = false } = {}) {
   return docker(args, { input: sql });
 }
 const scalar = (sql) => psql(sql, { tuplesOnly: true }).stdout.trim();
+const lastScalar = (sql) => psql(sql, { tuplesOnly: true }).stdout.trim().split("\n").filter(Boolean).at(-1) || "";
 function variables(values) {
   return `${Object.entries(values).map(([key, value]) => {
     if (!/^[a-z_]+$/.test(key) || !/^[A-Za-z0-9_.-]+$/.test(value)) throw new Error("Unsafe disposable verifier variable.");
@@ -129,18 +131,89 @@ function installDatabaseFixture(pin, material) {
   psql(vars + readFileSync(absolute(paths.employeeFixture), "utf8"));
   psql(readFileSync(absolute(paths.migration), "utf8"), { transaction: true });
   psql(vars + readFileSync(absolute(paths.fixture), "utf8"));
-  psql(`insert into public.routine_run_participants(organization_id,run_id,user_profile_id,identity_type,operator_id,
-    linked_user_profile_id_snapshot,authenticated_device_profile_id_snapshot,display_name_snapshot,role_snapshot,
-    participation_status,joined_at,creation_idempotency_key,created_by_auth_user_id,updated_by_auth_user_id)
-    select run.organization_id,run.id,null,'shared_device_operator',(state.value->'operator'->>'id')::uuid,
-      '11000000-0000-4000-8000-000000000002','1e000000-0000-4000-8000-000000000001',
-      'Linked Test Operator','staff','completed',run.created_at,'4f100000-0000-4000-8000-000000000099',
-      '1e000000-0000-4000-8000-000000000001','1e000000-0000-4000-8000-000000000001'
+  psql(`select set_config('request.jwt.claim.sub','11000000-0000-4000-8000-000000000001',false);
+    select set_config('mesh.routine_ui_internal','mode',false);
+    update public.routine_organization_settings set mode='pilot'
+      where organization_id='a1000000-0000-4000-8000-000000000001';
+    insert into public.routine_runs(id,organization_id,routine_key,scope_key,operational_date,timezone,template_id,
+      template_version_id,template_version_number_snapshot,template_content_hash_snapshot,snapshot_schema_version,
+      snapshot_state,snapshot_hash,status,revision,creation_idempotency_key,creation_request_hash,started_at,
+      started_by_auth_user_id,finished_at,finished_by_auth_user_id,reopen_count,current_finish_sequence,created_at,
+      created_by_auth_user_id,updated_at,updated_by_auth_user_id)
+    select '${HISTORY_FIXTURE.expectedSharedRunId}',run.organization_id,run.routine_key,'shared-history-anchor',
+      '${HISTORY_FIXTURE.operationalDate}',run.timezone,run.template_id,run.template_version_id,
+      run.template_version_number_snapshot,run.template_content_hash_snapshot,run.snapshot_schema_version,
+      run.snapshot_state,run.snapshot_hash,'finished',1,'4f100000-0000-4000-8000-000000000091',repeat('a',64),
+      '${HISTORY_FIXTURE.operationalDate} 08:00:00+00',run.started_by_auth_user_id,
+      '${HISTORY_FIXTURE.operationalDate} 09:00:00+00',run.finished_by_auth_user_id,0,1,
+      '${HISTORY_FIXTURE.operationalDate} 07:55:00+00',run.created_by_auth_user_id,
+      '${HISTORY_FIXTURE.operationalDate} 09:00:00+00',run.updated_by_auth_user_id
+    from public.routine_runs run
+    where run.id=(select (value->'run'->>'id')::uuid from phase10g_test.state where key='closing_create');
+    insert into public.routine_run_participants(id,organization_id,run_id,user_profile_id,identity_type,operator_id,
+      linked_user_profile_id_snapshot,authenticated_device_profile_id_snapshot,display_name_snapshot,role_snapshot,
+      participation_status,joined_at,creation_idempotency_key,created_at,created_by_auth_user_id,updated_at,updated_by_auth_user_id)
+    values('4f100000-0000-4000-8000-000000000092','a1000000-0000-4000-8000-000000000001',
+      '${HISTORY_FIXTURE.expectedSharedRunId}','11000000-0000-4000-8000-000000000002','personal_profile',null,null,null,
+      'Test Staff','staff','completed','${HISTORY_FIXTURE.operationalDate} 08:00:00+00',
+      '4f100000-0000-4000-8000-000000000093','${HISTORY_FIXTURE.operationalDate} 08:00:00+00',
+      '11000000-0000-4000-8000-000000000001','${HISTORY_FIXTURE.operationalDate} 09:00:00+00',
+      '11000000-0000-4000-8000-000000000001');
+    insert into public.routine_run_participants(id,organization_id,run_id,user_profile_id,identity_type,operator_id,
+      linked_user_profile_id_snapshot,authenticated_device_profile_id_snapshot,display_name_snapshot,role_snapshot,
+      participation_status,joined_at,creation_idempotency_key,created_at,created_by_auth_user_id,updated_at,updated_by_auth_user_id)
+    select '4f100000-0000-4000-8000-000000000094',run.organization_id,run.id,null,'shared_device_operator',
+      (state.value->'operator'->>'id')::uuid,'11000000-0000-4000-8000-000000000002',
+      '1e000000-0000-4000-8000-000000000001','Linked Test Operator','staff','completed',
+      '${HISTORY_FIXTURE.operationalDate} 08:00:00+00','4f100000-0000-4000-8000-000000000095',
+      '${HISTORY_FIXTURE.operationalDate} 08:00:00+00','1e000000-0000-4000-8000-000000000001',
+      '${HISTORY_FIXTURE.operationalDate} 09:00:00+00','1e000000-0000-4000-8000-000000000001'
     from public.routine_runs run cross join phase10j_test.state state
-    where state.key='linked_operator' and run.organization_id='a1000000-0000-4000-8000-000000000001'
-      and run.status='finished' order by run.operational_date desc,run.id limit 1
-    on conflict do nothing;`);
+    where state.key='linked_operator' and run.id='${HISTORY_FIXTURE.expectedSharedRunId}';
+    update public.routine_organization_settings set mode='shadow'
+      where organization_id='a1000000-0000-4000-8000-000000000001';
+    select set_config('mesh.routine_ui_internal','',false);
+    select set_config('request.jwt.claim.sub','',false);`);
   psql(`alter role authenticator password '${PASSWORD}';`);
+}
+
+function scopedHistory(authUserId, dateFrom, dateTo, operatorToken = null) {
+  const headerSetup = operatorToken
+    ? `select set_config('request.headers',jsonb_build_object('x-mesh-routine-operator-session','${operatorToken}')::text,false);`
+    : "";
+  const value = lastScalar(`select set_config('request.jwt.claim.sub','${authUserId}',false);
+    ${headerSetup}
+    set role authenticated;
+    select public.list_routine_v2_history('${dateFrom}','${dateTo}',null,null,null,null,null,100,null);`);
+  return JSON.parse(value);
+}
+
+function collectHistoryFixtureEvidence(operatorId, operatorToken) {
+  const shared = scopedHistory("1e000000-0000-4000-8000-000000000001", HISTORY_FIXTURE.dateFrom, HISTORY_FIXTURE.dateTo, operatorToken);
+  const staff = scopedHistory("11000000-0000-4000-8000-000000000002", HISTORY_FIXTURE.dateFrom, HISTORY_FIXTURE.dateTo);
+  const manager = scopedHistory("11000000-0000-4000-8000-000000000001", HISTORY_FIXTURE.managerDateFrom, HISTORY_FIXTURE.managerDateTo);
+  const crossOrganization = scopedHistory("22000000-0000-4000-8000-000000000001", HISTORY_FIXTURE.dateFrom, HISTORY_FIXTURE.dateTo);
+  const sharedRunIds = (shared.items || []).map((item) => item.id);
+  const authorizedSharedRunIds = JSON.parse(lastScalar(`select coalesce(jsonb_agg(participant.run_id order by participant.run_id),'[]'::jsonb)
+    from public.routine_run_participants participant join public.routine_runs run on run.id=participant.run_id
+    where participant.operator_id='${operatorId}' and run.operational_date between '${HISTORY_FIXTURE.dateFrom}' and '${HISTORY_FIXTURE.dateTo}';`));
+  const targetOrganizationRunIds = JSON.parse(lastScalar(`select coalesce(jsonb_agg(run.id order by run.id),'[]'::jsonb)
+    from public.routine_runs run where run.organization_id='a1000000-0000-4000-8000-000000000001'
+      and run.operational_date between '${HISTORY_FIXTURE.dateFrom}' and '${HISTORY_FIXTURE.dateTo}';`));
+  return Object.freeze({
+    ...HISTORY_FIXTURE,
+    expectedRunDate: scalar(`select operational_date from public.routine_runs where id='${HISTORY_FIXTURE.expectedSharedRunId}';`),
+    sharedParticipantCount: Number(scalar(`select count(*) from public.routine_run_participants where run_id='${HISTORY_FIXTURE.expectedSharedRunId}' and operator_id='${operatorId}';`)),
+    sharedHistoryCount: sharedRunIds.length,
+    sharedRunIds: Object.freeze(sharedRunIds),
+    authorizedSharedRunIds: Object.freeze(authorizedSharedRunIds),
+    unauthorizedSharedRunCount: sharedRunIds.filter((id) => !authorizedSharedRunIds.includes(id)).length,
+    crossOrganizationTargetRunCount: (crossOrganization.items || []).filter((item) => targetOrganizationRunIds.includes(item.id)).length,
+    managerHistoryCount: manager.items?.length || 0,
+    managerContainsExpectedRun: Boolean(manager.items?.some((item) => item.id === HISTORY_FIXTURE.expectedSharedRunId)),
+    staffHistoryCount: staff.items?.length || 0,
+    staffContainsExpectedRun: Boolean(staff.items?.some((item) => item.id === HISTORY_FIXTURE.expectedSharedRunId)),
+  });
 }
 
 async function startProxy(postgrestUrl) {
@@ -189,6 +262,7 @@ export async function startRoutineE2EDisposableBackend() {
     installDatabaseFixture(pin, material);
     const operatorId = scalar("select value->'operator'->>'id' from phase10j_test.state where key='linked_operator';");
     if (!/^[0-9a-f-]{36}$/i.test(operatorId)) throw new Error("Disposable operator fixture is invalid.");
+    const historyFixture = collectHistoryFixtureEvidence(operatorId, material.token);
     docker(["run", "--detach", "--rm", "--pull", "never", "--name", POSTGREST_CONTAINER, "--network", NETWORK,
       "--publish", "127.0.0.1:0:3000", "--env", `PGRST_DB_URI=postgres://authenticator:${PASSWORD}@phase10k4-db:5432/${DATABASE}`,
       "--env", "PGRST_DB_SCHEMAS=public", "--env", "PGRST_DB_ANON_ROLE=anon", "--env", `PGRST_JWT_SECRET=${JWT_SECRET}`,
@@ -225,6 +299,7 @@ export async function startRoutineE2EDisposableBackend() {
       }),
       operatorSession: Object.freeze({ token: material.token, organizationId, deviceAuthUserId: sharedAuthUserId, operatorId,
         sessionMetadata: Object.freeze({ displayName: "Linked Test Operator", role: "staff", source: "disposable_e2e" }) }),
+      historyFixture,
     });
   } catch (error) {
     await stopRoutineE2EDisposableBackend();
