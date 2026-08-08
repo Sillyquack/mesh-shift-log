@@ -1,4 +1,4 @@
--- Disposable Phase 10A fixtures. These identities and rows are test-only.
+-- Disposable Phase 10A + 10A1 fixtures. These identities and rows are test-only.
 begin;
 
 insert into auth.users (id) values

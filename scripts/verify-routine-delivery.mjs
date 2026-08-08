@@ -28,6 +28,7 @@ let sequence = 100;
 
 const paths = {
   foundation: 'supabase/phase10a_routine_engine_foundation.sql',
+  bootstrap: 'supabase/phase10a1_routine_organization_settings_bootstrap.sql',
   templates: 'supabase/phase10b_routine_templates.sql',
   references: 'supabase/phase10c_routine_reference_images.sql',
   runs: 'supabase/phase10d_routine_runs_and_snapshots.sql',
@@ -403,7 +404,7 @@ async function main() {
   `);
   for (const path of baseline) psql(readFileSync(absolute(path), 'utf8'), { transaction: true });
   psql("alter table public.user_profiles drop constraint if exists user_profiles_role_check; alter table public.user_profiles add constraint user_profiles_role_check check(role in ('manager','shift_lead','event_floor_manager','staff','time2staff','counter')); ");
-  for (const path of [paths.foundation, paths.templates, paths.references, paths.runs, paths.lifecycle]) {
+  for (const path of [paths.foundation, paths.bootstrap, paths.templates, paths.references, paths.runs, paths.lifecycle]) {
     psql(readFileSync(absolute(path), 'utf8'), { transaction: true });
   }
   for (const path of [paths.foundationFixture, paths.runFixture, paths.lifecycleFixture]) {

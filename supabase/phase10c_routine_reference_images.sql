@@ -1,6 +1,7 @@
 -- Phase 10C: Routine Reference Images and Placeholders.
 --
--- Apply after phase10a_routine_engine_foundation.sql and
+-- Apply after phase10a_routine_engine_foundation.sql,
+-- phase10a1_routine_organization_settings_bootstrap.sql, and
 -- phase10b_routine_templates.sql. This migration is additive. It creates a
 -- dedicated private Routine Engine bucket and never reads from or mutates
 -- Inventory, Event Operations, Auth configuration, or legacy routine data.

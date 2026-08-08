@@ -26,7 +26,7 @@ const baseline = ["supabase/schema.sql", "supabase/phase7a_workbar_device_auth.s
   "supabase/phase8a_event_operations_core.sql", "supabase/phase8c_zone_command_structure.sql", "supabase/phase8c2_fix_role_duplicates_and_my_zone.sql",
   "supabase/phase8f_calendar_import_realtime.sql", "supabase/phase8h3_smart_staffing_permissions.sql", "supabase/phase8i_event_live_updates.sql",
   "supabase/phase9a_inventory_stocktaking.sql", "supabase/phase9b_stock_policies.sql"];
-const migrations = ["supabase/phase10a_routine_engine_foundation.sql", "supabase/phase10b_routine_templates.sql",
+const migrations = ["supabase/phase10a_routine_engine_foundation.sql", "supabase/phase10a1_routine_organization_settings_bootstrap.sql", "supabase/phase10b_routine_templates.sql",
   "supabase/phase10c_routine_reference_images.sql", "supabase/phase10d_routine_runs_and_snapshots.sql",
   "supabase/phase10e_routine_task_lifecycle.sql", "supabase/phase10f_routine_operational_time.sql",
   "supabase/phase10g_routine_closing_delivery.sql", "supabase/phase10h_routine_double_shift.sql",
@@ -114,19 +114,19 @@ function installDatabaseFixture(pin, material) {
   // shim accepts either representation without changing application SQL.
   psql("create or replace function auth.uid() returns uuid language sql stable as $$ select coalesce(nullif(current_setting('request.jwt.claim.sub',true),''),nullif(current_setting('request.jwt.claims',true),'')::jsonb->>'sub')::uuid $$;");
   psql("alter table public.user_profiles drop constraint if exists user_profiles_role_check; alter table public.user_profiles add constraint user_profiles_role_check check(role in ('manager','shift_lead','event_floor_manager','staff','time2staff','counter')); ");
-  for (const path of migrations.slice(0, 5)) psql(readFileSync(absolute(path), "utf8"), { transaction: true });
+  for (const path of migrations.slice(0, 6)) psql(readFileSync(absolute(path), "utf8"), { transaction: true });
   psql(readFileSync(absolute(fixtures[0]), "utf8"));
   psql(readFileSync(absolute(paths.templateFixture), "utf8"));
   for (const path of fixtures.slice(1, 3)) psql(readFileSync(absolute(path), "utf8"));
-  for (let index = 5; index <= 8; index += 1) {
-    if (index === 8) psql("drop publication if exists supabase_realtime; create publication supabase_realtime;");
+  for (let index = 6; index <= 9; index += 1) {
+    if (index === 9) psql("drop publication if exists supabase_realtime; create publication supabase_realtime;");
     psql(readFileSync(absolute(migrations[index]), "utf8"), { transaction: true });
-    if (fixtures[index - 2]) psql(readFileSync(absolute(fixtures[index - 2]), "utf8"));
+    if (fixtures[index - 3]) psql(readFileSync(absolute(fixtures[index - 3]), "utf8"));
   }
-  psql(readFileSync(absolute(migrations[9]), "utf8"), { transaction: true });
+  psql(readFileSync(absolute(migrations[10]), "utf8"), { transaction: true });
   const vars = variables({ test_pin: pin, session_secret_hash: material.secretHash, session_token: material.token });
   psql(vars + readFileSync(absolute(paths.identityFixture), "utf8"));
-  for (const path of migrations.slice(10)) psql(readFileSync(absolute(path), "utf8"), { transaction: true });
+  for (const path of migrations.slice(11)) psql(readFileSync(absolute(path), "utf8"), { transaction: true });
   psql(vars + readFileSync(absolute(paths.uiFixture), "utf8"));
   psql(vars + readFileSync(absolute(paths.employeeFixture), "utf8"));
   psql(readFileSync(absolute(paths.migration), "utf8"), { transaction: true });

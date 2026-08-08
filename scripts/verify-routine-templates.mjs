@@ -11,6 +11,7 @@ const MIGRATION_ROLE = 'supabase_admin';
 const CONTAINER = `mesh-shift-log-phase10b-${process.pid}-${randomUUID().slice(0, 8)}`;
 const PASSWORD = `phase10b-${randomUUID()}`;
 const FOUNDATION_PATH = resolve(ROOT, 'supabase/phase10a_routine_engine_foundation.sql');
+const BOOTSTRAP_PATH = resolve(ROOT, 'supabase/phase10a1_routine_organization_settings_bootstrap.sql');
 const MIGRATION_PATH = resolve(ROOT, 'supabase/phase10b_routine_templates.sql');
 const FOUNDATION_FIXTURE_PATH = resolve(ROOT, 'supabase/tests/phase10/foundation-fixtures.sql');
 const FIXTURE_PATH = resolve(ROOT, 'supabase/tests/phase10/template-fixtures.sql');
@@ -307,7 +308,7 @@ function reportDatabaseState() {
 
 async function main() {
   const requiredPaths = [
-    FOUNDATION_PATH, MIGRATION_PATH, FOUNDATION_FIXTURE_PATH, FIXTURE_PATH,
+    FOUNDATION_PATH, BOOTSTRAP_PATH, MIGRATION_PATH, FOUNDATION_FIXTURE_PATH, FIXTURE_PATH,
     ASSERTION_PATH, ...BASELINE_PATHS,
   ];
   if (!requiredPaths.every(existsSync)) throw new Error('Required Phase 10B verification input is missing.');
@@ -361,7 +362,8 @@ async function main() {
       check (role in ('manager', 'shift_lead', 'event_floor_manager', 'staff', 'time2staff', 'counter'));
   `);
   psql(readFileSync(FOUNDATION_PATH, 'utf8'), { singleTransaction: true });
-  console.log('PASS Phase 10A foundation applied before Phase 10B');
+  psql(readFileSync(BOOTSTRAP_PATH, 'utf8'), { singleTransaction: true });
+  console.log('PASS Phase 10A + 10A1 foundation applied before Phase 10B');
   const protectedBefore = psql(protectedFingerprintSql, { tuplesOnly: true }).stdout.trim();
   psql(migrationSql, { singleTransaction: true });
   console.log('PASS Phase 10B migration applied to the disposable database');

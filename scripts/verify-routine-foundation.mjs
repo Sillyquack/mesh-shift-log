@@ -6,11 +6,12 @@ import { spawn, spawnSync } from 'node:child_process';
 
 const ROOT = resolve(dirname(fileURLToPath(import.meta.url)), '..');
 const IMAGE = 'public.ecr.aws/supabase/postgres:17.6.1.141';
-const DATABASE = 'phase10a_routine_foundation_test';
+const DATABASE = 'phase10a1_routine_foundation_test';
 const MIGRATION_ROLE = 'supabase_admin';
 const CONTAINER = `mesh-shift-log-phase10a-${process.pid}-${randomUUID().slice(0, 8)}`;
 const PASSWORD = `phase10a-${randomUUID()}`;
 const MIGRATION_PATH = resolve(ROOT, 'supabase/phase10a_routine_engine_foundation.sql');
+const BOOTSTRAP_PATH = resolve(ROOT, 'supabase/phase10a1_routine_organization_settings_bootstrap.sql');
 const FIXTURE_PATH = resolve(ROOT, 'supabase/tests/phase10/foundation-fixtures.sql');
 const ASSERTION_PATH = resolve(ROOT, 'supabase/tests/phase10/foundation-assertions.sql');
 const BASELINE_PATHS = [
@@ -19,7 +20,7 @@ const BASELINE_PATHS = [
   resolve(ROOT, 'supabase/phase5f4_close_day_archives.sql'),
   resolve(ROOT, 'supabase/phase9a_inventory_stocktaking.sql'),
 ];
-const EXPECTED_ASSERTION_PASSES = 64;
+const EXPECTED_ASSERTION_PASSES = 73;
 let containerStarted = false;
 
 if (process.argv.length > 2) {
@@ -121,6 +122,18 @@ function verifyMigrationScope(sql) {
     throw new Error('Phase 10A migration contains a production credential, project ref, or endpoint marker.');
   }
   console.log('PASS migration scope contains no Inventory, legacy routine, Event Operations, or production endpoint references');
+}
+
+function verifyBootstrapScope(sql) {
+  const forbidden = /create_or_update_routine_organization_settings|auth\.uid\s*\(|\bgrant\b|\bcreate\s+(?:or\s+replace\s+)?function\b|service_role|jzuegkbzgynknnvivhia|supabase\.co/i;
+  if (forbidden.test(sql)) {
+    throw new Error('Phase 10A1 bootstrap contains a manager/auth/grant/function or production marker.');
+  }
+  if (!/from public\.organizations organization[\s\S]*order by organization\.id[\s\S]*on conflict \(organization_id\) do nothing;/i.test(sql)
+      || !/created_by_auth_user_id,[\s\S]*updated_by_auth_user_id[\s\S]*null,[\s\n]*null/i.test(sql)) {
+    throw new Error('Phase 10A1 bootstrap is missing deterministic organization ordering, no-op conflict handling, or null system audit actors.');
+  }
+  console.log('PASS Phase 10A1 is a deterministic system bootstrap with no manager impersonation, client grant, or public RPC');
 }
 
 const protectedFingerprintSql = String.raw`
@@ -287,15 +300,17 @@ function reportDatabaseState() {
       )
     order by 1;
   `, { tuplesOnly: true }).stdout.trim();
-  console.log('\nFinal executable Phase 10A database state:');
+  console.log('\nFinal executable Phase 10A + 10A1 database state:');
   console.log(report);
 }
 
 async function main() {
-  const requiredPaths = [MIGRATION_PATH, FIXTURE_PATH, ASSERTION_PATH, ...BASELINE_PATHS];
+  const requiredPaths = [MIGRATION_PATH, BOOTSTRAP_PATH, FIXTURE_PATH, ASSERTION_PATH, ...BASELINE_PATHS];
   if (!requiredPaths.every(existsSync)) throw new Error('Required Phase 10A verification input is missing.');
   const migrationSql = readFileSync(MIGRATION_PATH, 'utf8');
+  const bootstrapSql = readFileSync(BOOTSTRAP_PATH, 'utf8');
   verifyMigrationScope(migrationSql);
+  verifyBootstrapScope(bootstrapSql);
 
   command('docker', ['--version']);
   docker(['image', 'inspect', IMAGE]);
@@ -361,6 +376,10 @@ async function main() {
   const protectedBefore = psql(protectedFingerprintSql, { tuplesOnly: true }).stdout.trim();
   psql(migrationSql, { singleTransaction: true });
   console.log('PASS Phase 10A migration applied to the disposable database');
+  if (psql('select count(*) from public.routine_organization_settings;', { tuplesOnly: true }).stdout.trim() !== '0') {
+    throw new Error('Phase 10A unexpectedly created a routine organization settings row.');
+  }
+  console.log('PASS Phase 10A creates the settings table without a settings row');
   psql(migrationSql, { singleTransaction: true });
   console.log('PASS Phase 10A migration reapplied safely before fixture data');
   const protectedAfter = psql(protectedFingerprintSql, { tuplesOnly: true }).stdout.trim();
@@ -371,6 +390,38 @@ async function main() {
 
   psql(readFileSync(FIXTURE_PATH, 'utf8'), { singleTransaction: true });
   console.log('PASS isolated Phase 10A organizations, Auth users, and profile fixtures installed');
+  psql(String.raw`
+    insert into public.routine_organization_settings (
+      organization_id,mode,timezone,operational_day_cutoff,shared_device_enabled,
+      reopen_window_hours,revision,created_at,updated_at,
+      created_by_auth_user_id,updated_by_auth_user_id
+    ) values (
+      'b2000000-0000-4000-8000-000000000001','shadow','Europe/Oslo','03:30'::time,true,
+      72,9,'2026-01-02 03:04:05+00','2026-01-03 04:05:06+00',
+      '22000000-0000-4000-8000-000000000001','22000000-0000-4000-8000-000000000001'
+    );
+  `, { singleTransaction: true });
+  const preservedBeforeBootstrap = psql(String.raw`
+    select to_jsonb(settings)::text from public.routine_organization_settings settings
+    where organization_id='b2000000-0000-4000-8000-000000000001';
+  `, { tuplesOnly: true }).stdout.trim();
+  psql(bootstrapSql, { singleTransaction: true });
+  console.log('PASS Phase 10A1 system bootstrap applied after Phase 10A');
+  const preservedAfterBootstrap = psql(String.raw`
+    select to_jsonb(settings)::text from public.routine_organization_settings settings
+    where organization_id='b2000000-0000-4000-8000-000000000001';
+  `, { tuplesOnly: true }).stdout.trim();
+  if (!preservedBeforeBootstrap || preservedAfterBootstrap !== preservedBeforeBootstrap) {
+    throw new Error('Phase 10A1 changed the pre-existing non-default settings row.');
+  }
+  console.log('PASS Phase 10A1 preserves the complete existing settings row');
+  const bootstrapState = psql(routineDataFingerprintSql, { tuplesOnly: true }).stdout.trim();
+  psql(bootstrapSql, { singleTransaction: true });
+  const bootstrapReapplyState = psql(routineDataFingerprintSql, { tuplesOnly: true }).stdout.trim();
+  if (!bootstrapState || bootstrapState !== bootstrapReapplyState) {
+    throw new Error('Phase 10A1 reapply changed settings data, revisions, or timestamps.');
+  }
+  console.log('PASS Phase 10A1 immediate reapply is data-, revision-, and timestamp-stable');
   const assertions = psql(readFileSync(ASSERTION_PATH, 'utf8'));
   const passLines = `${assertions.stdout}\n${assertions.stderr}`
     .split('\n')
@@ -380,22 +431,23 @@ async function main() {
     throw new Error(`Expected ${EXPECTED_ASSERTION_PASSES} SQL assertion passes, received ${passLines.length}.`);
   }
   passLines.forEach((line) => console.log(line));
-  console.log(`Executable PostgreSQL Phase 10A assertions: ${passLines.length}/${passLines.length} passed.`);
+  console.log(`Executable PostgreSQL Phase 10A + 10A1 assertions: ${passLines.length}/${passLines.length} passed.`);
 
   await verifyConcurrentStandardRevisionWrites();
 
   const routineDataBeforeReplay = psql(routineDataFingerprintSql, { tuplesOnly: true }).stdout.trim();
   const protectedBeforeReplay = psql(protectedFingerprintSql, { tuplesOnly: true }).stdout.trim();
   psql(migrationSql, { singleTransaction: true });
+  psql(bootstrapSql, { singleTransaction: true });
   const routineDataAfterReplay = psql(routineDataFingerprintSql, { tuplesOnly: true }).stdout.trim();
   const protectedAfterReplay = psql(protectedFingerprintSql, { tuplesOnly: true }).stdout.trim();
   if (!routineDataBeforeReplay || routineDataBeforeReplay !== routineDataAfterReplay) {
-    throw new Error('Phase 10A repeat application modified routine data or audit timestamps.');
+    throw new Error('Phase 10A + 10A1 repeat application modified routine data or audit timestamps.');
   }
   if (!protectedBeforeReplay || protectedBeforeReplay !== protectedAfterReplay) {
     throw new Error('Phase 10A repeat application changed an Inventory or legacy routine schema object.');
   }
-  console.log('PASS Phase 10A repeat application is a data-stable no-op');
+  console.log('PASS Phase 10A + 10A1 repeat application is a data-stable no-op');
   console.log('PASS Inventory and legacy routine schema remain unchanged after executable tests');
   reportDatabaseState();
 }

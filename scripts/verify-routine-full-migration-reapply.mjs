@@ -13,7 +13,14 @@ const PASSWORD = `phase10-full-reapply-${randomUUID()}`;
 const MANAGER_ID = "aa100000-0000-4000-8000-000000000001";
 const STAFF_ID = "aa100000-0000-4000-8000-000000000002";
 const SHARED_DEVICE_ID = "aa100000-0000-4000-8000-000000000003";
+const PRESERVED_MANAGER_ID = "aa100000-0000-4000-8000-000000000004";
+const FUTURE_MANAGER_ID = "ad100000-0000-4000-8000-000000000001";
+const FUTURE_STAFF_ID = "ad100000-0000-4000-8000-000000000002";
+const FUTURE_SHARED_DEVICE_ID = "ad100000-0000-4000-8000-000000000003";
 const ORGANIZATION_ID = "aa000000-0000-4000-8000-000000000001";
+const PRESERVED_ORGANIZATION_ID = "ab000000-0000-4000-8000-000000000001";
+const SECONDARY_ORGANIZATION_ID = "ac000000-0000-4000-8000-000000000001";
+const FUTURE_ORGANIZATION_ID = "ad000000-0000-4000-8000-000000000001";
 const EXPECTED_PACK_HASH = "c149a8416a867dcb7d87224f3ae8e2a214e5ca4954613b118521ebe5ae3aff2a";
 const EXPECTED_SOURCE_HASHES = [
   "ea00e80bde6c17ea1d3f1095949363d79d606dcee16f05f742426c1c5248e079",
@@ -63,6 +70,7 @@ const REPRODUCED_ACL_SIGNATURES = Object.keys(REPRODUCED_ACL_EXPECTATIONS);
 const ACL_SIGNATURES = Object.keys(ACL_EXPECTATIONS);
 let started = false;
 let passCount = 0;
+let migrationApplications = 0;
 
 if (process.argv.length > 2) {
   throw new Error("This verifier accepts no network, URL, host, project, or production arguments.");
@@ -129,6 +137,7 @@ const baseline = [
 ];
 const migrations = [
   "supabase/phase10a_routine_engine_foundation.sql",
+  "supabase/phase10a1_routine_organization_settings_bootstrap.sql",
   "supabase/phase10b_routine_templates.sql",
   "supabase/phase10c_routine_reference_images.sql",
   "supabase/phase10d_routine_runs_and_snapshots.sql",
@@ -233,7 +242,7 @@ function sourceChecks() {
   }
   const audit = auditRepeatedFunctionArguments();
   check("all repeated Phase 10 function identities have stable input argument names", audit.drifts.length === 0);
-  check("function argument audit covers the full Phase 10 definition set", audit.definitions.length === 542 && audit.repeated.length === 85);
+  check("function argument audit covers the full Phase 10 definition set", audit.definitions.length === 543 && audit.repeated.length === 86);
   check("validator has six layered public definitions", audit.target.length === 6);
   check("every validator definition uses the canonical input names", audit.target.every((entry) => JSON.stringify(entry.names) === JSON.stringify(EXPECTED_ARGUMENT_NAMES)));
   check("ACL hardening inventory contains the reproduced 17 signatures", REPRODUCED_ACL_SIGNATURES.length === 17);
@@ -241,6 +250,23 @@ function sourceChecks() {
   console.log(`Static function audit: ${audit.definitions.length} definitions, ${audit.repeated.length} repeated identities, ${audit.drifts.length} drifts`);
 
   const allSql = phase10Sql();
+  const bootstrapSql = readFileSync(absolute(migrations[1]), "utf8");
+  const verifierSource = readFileSync(fileURLToPath(import.meta.url), "utf8");
+  const forbiddenBootstrapCall = ["select public.create_or_update_", "routine_organization_settings("].join("");
+  const applySequenceSource = verifierSource.slice(
+    verifierSource.indexOf("function applySequence("),
+    verifierSource.indexOf("function futureOrganizationChecks("),
+  );
+  check("full Phase 10 manifest contains 16 ordered migrations", migrations.length === 16
+    && migrations[0].endsWith("phase10a_routine_engine_foundation.sql")
+    && migrations[1].endsWith("phase10a1_routine_organization_settings_bootstrap.sql")
+    && migrations.at(-1).endsWith("phase10l_mesh_routine_content_pack.sql"));
+  check("10A1 is a system bootstrap with no manager RPC installation step",
+    !/create_or_update_routine_organization_settings|auth\.uid\s*\(|\bgrant\b|\bcreate\s+(?:or\s+replace\s+)?function\b/i.test(bootstrapSql));
+  check("full-reapply migration sequence contains no out-of-band settings manager bootstrap",
+    !applySequenceSource.includes(forbiddenBootstrapCall));
+  check("future-organization probe uses the manager RPC only after the complete migration sequence",
+    verifierSource.indexOf(forbiddenBootstrapCall) > verifierSource.indexOf("function futureOrganizationChecks("));
   check("Phase 10 migrations contain no DROP CASCADE", !/\bdrop\s+(?:function|table|schema|type|view|materialized\s+view|trigger|policy|publication)[^;]*\bcascade\b/i.test(allSql));
   check("Phase 10 migrations contain no ALTER DEFAULT PRIVILEGES", !/\balter\s+default\s+privileges\b/i.test(allSql));
   check("ACL hardening uses no broad all-functions revoke", !/\brevoke\b[^;]*\bon\s+all\s+functions\b/i.test(allSql));
@@ -274,15 +300,18 @@ grant select,insert,update,delete on storage.objects to authenticated;
 
 const baselineFixtureSql = String.raw`
 insert into auth.users(id) values
-  ('${MANAGER_ID}'),('${STAFF_ID}'),('${SHARED_DEVICE_ID}');
+  ('${MANAGER_ID}'),('${STAFF_ID}'),('${SHARED_DEVICE_ID}'),('${PRESERVED_MANAGER_ID}');
 insert into public.organizations(id,name,slug,created_at) values
-  ('${ORGANIZATION_ID}','Full reapply fixture','phase10-full-reapply-fixture','2026-01-01 00:00:00+00');
+  ('${ORGANIZATION_ID}','Full reapply fixture','phase10-full-reapply-fixture','2026-01-01 00:00:00+00'),
+  ('${PRESERVED_ORGANIZATION_ID}','Preserved settings fixture','phase10-preserved-settings-fixture','2026-01-01 00:00:00+00'),
+  ('${SECONDARY_ORGANIZATION_ID}','Secondary bootstrap fixture','phase10-secondary-bootstrap-fixture','2026-01-01 00:00:00+00');
 insert into public.user_profiles(
   id,organization_id,display_name,role,active,is_shared_device,shared_device_label,created_at,updated_at
 ) values
   ('${MANAGER_ID}','${ORGANIZATION_ID}','Reapply Manager','manager',true,false,null,'2026-01-01 00:00:00+00','2026-01-01 00:00:00+00'),
   ('${STAFF_ID}','${ORGANIZATION_ID}','Reapply Staff','staff',true,false,null,'2026-01-01 00:00:00+00','2026-01-01 00:00:00+00'),
-  ('${SHARED_DEVICE_ID}','${ORGANIZATION_ID}','Reapply Shared Device','staff',true,true,'Shared device fixture','2026-01-01 00:00:00+00','2026-01-01 00:00:00+00');
+  ('${SHARED_DEVICE_ID}','${ORGANIZATION_ID}','Reapply Shared Device','staff',true,true,'Shared device fixture','2026-01-01 00:00:00+00','2026-01-01 00:00:00+00'),
+  ('${PRESERVED_MANAGER_ID}','${PRESERVED_ORGANIZATION_ID}','Preserved Settings Manager','manager',true,false,null,'2026-01-01 00:00:00+00','2026-01-01 00:00:00+00');
 
 insert into public.inventory_products(
   id,organization_id,name,short_name,sku,category,unit_label,active,sort_order,metadata,
@@ -568,6 +597,8 @@ select jsonb_build_object(
   'packOperations',(select count(*) from public.routine_content_pack_operations),
   'pilotMemberships',(select count(*) from public.routine_pilot_memberships),
   'releaseAttestations',(select count(*) from public.routine_release_attestations),
+  'operators',(select count(*) from public.routine_operators),
+  'operatorSessions',(select count(*) from public.routine_operator_sessions),
   'actualImages',(select count(*) from storage.objects where bucket_id='routine-reference-images'),
   'hashes',jsonb_build_object(
     'published',public.phase10_reapply_table_fingerprint('public.routine_template_publication_batches'),
@@ -579,6 +610,66 @@ select jsonb_build_object(
   )
 )::text;
   `));
+}
+
+function settingsState() {
+  return JSON.parse(scalar(String.raw`
+    select coalesce(jsonb_agg(to_jsonb(settings) order by settings.organization_id),'[]'::jsonb)::text
+    from public.routine_organization_settings settings;
+  `));
+}
+
+function settingsRow(state, organizationId) {
+  return state.find((row) => row.organization_id === organizationId);
+}
+
+function settingsReleaseDefaults() {
+  return JSON.parse(scalar(String.raw`
+    select jsonb_build_object(
+      'stage',(select column_default from information_schema.columns
+        where table_schema='public' and table_name='routine_organization_settings' and column_name='ui_release_stage'),
+      'contract',(select column_default from information_schema.columns
+        where table_schema='public' and table_name='routine_organization_settings' and column_name='ui_contract_version')
+    )::text;
+  `));
+}
+
+function assertBootstrappedSettings(label, state, expectedStage, expectedContract, expectedRevision) {
+  for (const organizationId of [ORGANIZATION_ID, SECONDARY_ORGANIZATION_ID]) {
+    const row = settingsRow(state, organizationId);
+    check(`${label}: ${organizationId} keeps exact system defaults`, row?.mode === "legacy"
+      && row.timezone === "Europe/Oslo" && row.operational_day_cutoff === "04:00:00"
+      && row.shared_device_enabled === false && row.reopen_window_hours === 24
+      && row.revision === expectedRevision && row.created_by_auth_user_id === null
+      && row.updated_by_auth_user_id === null
+      && (expectedStage === undefined || row.ui_release_stage === expectedStage)
+      && (expectedContract === undefined || row.ui_contract_version === expectedContract));
+  }
+}
+
+function installPreservedSettingsFixture() {
+  psql(String.raw`
+    insert into public.routine_organization_settings (
+      organization_id,mode,timezone,operational_day_cutoff,shared_device_enabled,
+      reopen_window_hours,revision,created_at,updated_at,
+      created_by_auth_user_id,updated_by_auth_user_id
+    ) values (
+      '${PRESERVED_ORGANIZATION_ID}','shadow','Europe/Oslo','03:30'::time,true,
+      72,9,'2026-01-02 03:04:05+00','2026-01-03 04:05:06+00',
+      '${PRESERVED_MANAGER_ID}','${PRESERVED_MANAGER_ID}'
+    );
+  `, { transaction: true });
+}
+
+function assertPreservedSettingsAfter10A1(state) {
+  const row = settingsRow(state, PRESERVED_ORGANIZATION_ID);
+  check("10A1 preserves every non-default existing settings field", row?.mode === "shadow"
+    && row.timezone === "Europe/Oslo" && row.operational_day_cutoff === "03:30:00"
+    && row.shared_device_enabled === true && row.reopen_window_hours === 72
+    && row.revision === 9 && row.created_at === "2026-01-02T03:04:05+00:00"
+    && row.updated_at === "2026-01-03T04:05:06+00:00"
+    && row.created_by_auth_user_id === PRESERVED_MANAGER_ID
+    && row.updated_by_auth_user_id === PRESERVED_MANAGER_ID);
 }
 
 function validatorContract() {
@@ -794,15 +885,36 @@ function assertEndState(label, state, protectedBaseline) {
       return JSON.stringify(executableGrantees(state.routineFunctions[signature])) === JSON.stringify(expected);
     }));
   const settings = state.operational.settings;
-  check(`${label}: mode remains legacy and release stage remains staff_preview`,
-    settings.length === 1 && settings[0].mode === "legacy" && settings[0].ui_release_stage === "staff_preview");
+  const primarySettings = settingsRow(settings, ORGANIZATION_ID);
+  const secondarySettings = settingsRow(settings, SECONDARY_ORGANIZATION_ID);
+  const preservedSettings = settingsRow(settings, PRESERVED_ORGANIZATION_ID);
+  check(`${label}: one isolated settings row exists per synthetic organization`, settings.length === 3
+    && primarySettings && secondarySettings && preservedSettings);
+  check(`${label}: bootstrapped modes remain legacy and release stage remains staff_preview`,
+    primarySettings.mode === "legacy" && secondarySettings.mode === "legacy"
+      && primarySettings.ui_release_stage === "staff_preview"
+      && secondarySettings.ui_release_stage === "staff_preview"
+      && primarySettings.ui_contract_version === "phase10k4-v1"
+      && secondarySettings.ui_contract_version === "phase10k4-v1");
+  check(`${label}: pre-existing non-default mode remains isolated and unchanged by bootstrap`,
+    preservedSettings.mode === "shadow" && preservedSettings.timezone === "Europe/Oslo"
+      && preservedSettings.operational_day_cutoff === "03:30:00"
+      && preservedSettings.shared_device_enabled === true
+      && preservedSettings.reopen_window_hours === 72
+      && preservedSettings.ui_release_stage === "staff_preview"
+      && preservedSettings.ui_contract_version === "phase10k4-v1");
+  check(`${label}: K4 pause defaults remain inert with null pause metadata`, settings.every((row) =>
+    row.pilot_new_work_paused === false && row.pilot_pause_reason === null
+      && row.pilot_paused_at === null && row.pilot_paused_by_auth_user_id === null));
   check(`${label}: no content pack, publication, run, task, bundle, or delivery state exists`,
     state.operational.templates === 0 && state.operational.publishedTemplates === 0
       && state.operational.runs === 0 && state.operational.runTasks === 0
       && state.operational.bundles === 0 && state.operational.deliveries === 0
       && state.operational.packInstallations === 0 && state.operational.packOperations === 0);
   check(`${label}: no pilot membership, release attestation, or actual routine image exists`,
-    state.operational.pilotMemberships === 0 && state.operational.releaseAttestations === 0 && state.operational.actualImages === 0);
+    state.operational.pilotMemberships === 0 && state.operational.releaseAttestations === 0
+      && state.operational.operators === 0 && state.operational.operatorSessions === 0
+      && state.operational.actualImages === 0);
   const templateValidation = state.validationProbe.templateValidation;
   check(`${label}: draft publication-batch validation returns blockers, warnings, and a SHA-256 content hash`,
     typeof templateValidation.valid === "boolean" && Array.isArray(templateValidation.blockers)
@@ -836,14 +948,38 @@ function assertEndState(label, state, protectedBaseline) {
 }
 
 function applySequence(sequenceNumber) {
-  console.log(`Applying full Phase 10A-L sequence ${sequenceNumber}`);
+  console.log(`Applying full Phase 10A-A1-L sequence ${sequenceNumber}`);
+  let stateAfterK4 = null;
   for (let index = 0; index < migrations.length; index += 1) {
     const path = migrations[index];
+    const beforeK4 = sequenceNumber > 1 && path.endsWith("phase10k4_routine_history_pilot_hardening.sql")
+      ? JSON.stringify(settingsState()) : null;
+    const before10A1 = sequenceNumber > 1 && path.endsWith("phase10a1_routine_organization_settings_bootstrap.sql")
+      ? JSON.stringify(settingsState()) : null;
     psql(readFileSync(absolute(path), "utf8"), { transaction: true });
-    if (sequenceNumber === 1 && index === 0) {
-      psql(managerSql("select public.create_or_update_routine_organization_settings('legacy','Europe/Oslo','04:00'::time,false,24,null);"));
+    migrationApplications += 1;
+    if (path.endsWith("phase10a_routine_engine_foundation.sql")) {
+      check(`sequence ${sequenceNumber}: 10A settings table exists`, scalar("select to_regclass('public.routine_organization_settings') is not null;") === "t");
+      if (sequenceNumber === 1) {
+        check("first 10A apply creates no settings row", scalar("select count(*) from public.routine_organization_settings;") === "0");
+        installPreservedSettingsFixture();
+      }
     }
-    if (index === 1) {
+    if (path.endsWith("phase10a1_routine_organization_settings_bootstrap.sql")) {
+      const state = settingsState();
+      if (sequenceNumber === 1) {
+        check("10A1 creates exactly one settings row per existing organization",
+          state.length === 3 && scalar("select count(*)=count(distinct organization_id) from public.routine_organization_settings;") === "t");
+        check("10A1 runs before UI release columns exist",
+          scalar("select count(*) from information_schema.columns where table_schema='public' and table_name='routine_organization_settings' and column_name in('ui_release_stage','ui_contract_version');") === "0");
+        assertBootstrappedSettings("after 10A1", state, undefined, undefined, 1);
+        assertPreservedSettingsAfter10A1(state);
+      } else {
+        check(`sequence ${sequenceNumber}: 10A1 is revision/timestamp/data stable on reapply`,
+          JSON.stringify(state) === before10A1);
+      }
+    }
+    if (path.endsWith("phase10b_routine_templates.sql")) {
       const contract = validatorContract();
       check(`sequence ${sequenceNumber}: Phase 10B applies with canonical validator names`,
         JSON.stringify(contract.argumentNames) === JSON.stringify(EXPECTED_ARGUMENT_NAMES));
@@ -851,7 +987,115 @@ function applySequence(sequenceNumber) {
         check("first Phase 10B apply starts from an empty template state", scalar("select count(*) from public.routine_templates;") === "0");
       }
     }
+    if (sequenceNumber === 1 && path.endsWith("phase10k1_routine_ui_pilot_gate.sql")) {
+      const state = settingsState();
+      const defaults = settingsReleaseDefaults();
+      check("K1 installs foundation release defaults",
+        defaults.stage === "'foundation'::text" && defaults.contract === "'phase10k1-v1'::text");
+      assertBootstrappedSettings("after K1", state, "foundation", "phase10k1-v1", 1);
+      check("K1 adds foundation release metadata without revising the preserved row",
+        settingsRow(state, PRESERVED_ORGANIZATION_ID)?.revision === 9
+          && settingsRow(state, PRESERVED_ORGANIZATION_ID)?.ui_release_stage === "foundation"
+          && settingsRow(state, PRESERVED_ORGANIZATION_ID)?.ui_contract_version === "phase10k1-v1");
+    }
+    if (sequenceNumber === 1 && path.endsWith("phase10k2_routine_manager_control_center.sql")) {
+      const state = settingsState();
+      assertBootstrappedSettings("after K2", state, "manager_preview", "phase10k2-v1", 2);
+      check("K2 advances the preserved row exactly once", settingsRow(state, PRESERVED_ORGANIZATION_ID)?.revision === 10
+        && settingsRow(state, PRESERVED_ORGANIZATION_ID)?.ui_release_stage === "manager_preview"
+        && settingsRow(state, PRESERVED_ORGANIZATION_ID)?.ui_contract_version === "phase10k2-v1");
+    }
+    if (sequenceNumber === 1 && path.endsWith("phase10k3_routine_employee_workflow.sql")) {
+      const state = settingsState();
+      assertBootstrappedSettings("after K3", state, "staff_preview", "phase10k3-v1", 3);
+      check("K3 advances the preserved row exactly once", settingsRow(state, PRESERVED_ORGANIZATION_ID)?.revision === 11
+        && settingsRow(state, PRESERVED_ORGANIZATION_ID)?.ui_release_stage === "staff_preview"
+        && settingsRow(state, PRESERVED_ORGANIZATION_ID)?.ui_contract_version === "phase10k3-v1");
+    }
+    if (path.endsWith("phase10k4_routine_history_pilot_hardening.sql")) {
+      stateAfterK4 = settingsState();
+      if (sequenceNumber === 1) {
+        const defaults = settingsReleaseDefaults();
+        check("K4 installs current release defaults for future settings rows",
+          defaults.stage === "'staff_preview'::text" && defaults.contract === "'phase10k4-v1'::text");
+        assertBootstrappedSettings("after K4", stateAfterK4, "staff_preview", "phase10k4-v1", 3);
+        check("K4 keeps mode/stage/revision and installs inert pause metadata",
+          stateAfterK4.every((row) => row.ui_release_stage === "staff_preview"
+            && row.ui_contract_version === "phase10k4-v1" && row.pilot_new_work_paused === false
+            && row.pilot_pause_reason === null && row.pilot_paused_at === null
+            && row.pilot_paused_by_auth_user_id === null)
+          && settingsRow(stateAfterK4, PRESERVED_ORGANIZATION_ID)?.mode === "shadow"
+          && settingsRow(stateAfterK4, PRESERVED_ORGANIZATION_ID)?.revision === 11);
+      } else {
+        check(`sequence ${sequenceNumber}: K4 reapply is data, revision, and timestamp stable`,
+          JSON.stringify(stateAfterK4) === beforeK4);
+      }
+    }
+    if (path.endsWith("phase10l_mesh_routine_content_pack.sql")) {
+      check(`sequence ${sequenceNumber}: 10L leaves settings exactly unchanged`,
+        JSON.stringify(settingsState()) === JSON.stringify(stateAfterK4));
+      check(`sequence ${sequenceNumber}: 10L installs no content or operative data`,
+        scalar("select (select count(*) from public.routine_content_pack_installations)=0 and (select count(*) from public.routine_templates)=0 and (select count(*) from public.routine_runs)=0 and (select count(*) from public.routine_bundles)=0 and (select count(*) from public.routine_delivery_records)=0;") === "t");
+    }
   }
+}
+
+function futureOrganizationChecks() {
+  psql(String.raw`
+    insert into auth.users(id) values
+      ('${FUTURE_MANAGER_ID}'),('${FUTURE_STAFF_ID}'),('${FUTURE_SHARED_DEVICE_ID}');
+    insert into public.organizations(id,name,slug,created_at) values
+      ('${FUTURE_ORGANIZATION_ID}','Future organization fixture','phase10-future-organization-fixture','2026-01-04 00:00:00+00');
+    insert into public.user_profiles(
+      id,organization_id,display_name,role,active,is_shared_device,shared_device_label,created_at,updated_at
+    ) values
+      ('${FUTURE_MANAGER_ID}','${FUTURE_ORGANIZATION_ID}','Future Manager','manager',true,false,null,
+        '2026-01-04 00:00:00+00','2026-01-04 00:00:00+00'),
+      ('${FUTURE_STAFF_ID}','${FUTURE_ORGANIZATION_ID}','Future Staff','staff',true,false,null,
+        '2026-01-04 00:00:00+00','2026-01-04 00:00:00+00'),
+      ('${FUTURE_SHARED_DEVICE_ID}','${FUTURE_ORGANIZATION_ID}','Future Shared Device','manager',true,true,'Future device',
+        '2026-01-04 00:00:00+00','2026-01-04 00:00:00+00');
+  `, { transaction: true });
+  check("post-install organization has no implicit settings row before manager action",
+    scalar(`select count(*) from public.routine_organization_settings where organization_id='${FUTURE_ORGANIZATION_ID}';`) === "0");
+
+  const created = JSON.parse(scalar(actorSql(FUTURE_MANAGER_ID, String.raw`
+    select to_jsonb(public.create_or_update_routine_organization_settings(
+      'legacy','Europe/Oslo','04:00'::time,false,24,null
+    ))::text;
+  `)).split("\n").at(-1));
+  check("post-install manager action creates the current K4 release contract",
+    created.organization_id === FUTURE_ORGANIZATION_ID
+      && created.mode === "legacy" && created.ui_release_stage === "staff_preview"
+      && created.ui_contract_version === "phase10k4-v1"
+      && created.pilot_new_work_paused === false && created.pilot_pause_reason === null
+      && created.pilot_paused_at === null && created.pilot_paused_by_auth_user_id === null);
+  check("post-install manager-created settings retain the real manager actor",
+    created.created_by_auth_user_id === FUTURE_MANAGER_ID
+      && created.updated_by_auth_user_id === FUTURE_MANAGER_ID && created.revision === 1);
+
+  const bootstrap = JSON.parse(scalar(actorSql(FUTURE_MANAGER_ID,
+    "select public.get_routine_application_bootstrap()::text;"
+  )).split("\n").at(-1));
+  check("post-install manager bootstrap reads the current K4 contract without migration reapply",
+    bootstrap.organizationId === FUTURE_ORGANIZATION_ID && bootstrap.mode === "legacy"
+      && bootstrap.uiReleaseStage === "staff_preview" && bootstrap.contractVersion === "phase10k4-v1"
+      && bootstrap.managerPreviewAllowed === false && bootstrap.accessReasonCode === "routine_ui_legacy");
+
+  for (const [label, actorId] of [["staff", FUTURE_STAFF_ID], ["shared-device", FUTURE_SHARED_DEVICE_ID]]) {
+    const mutation = psql(actorSql(actorId, String.raw`
+      select public.create_or_update_routine_organization_settings(
+        'legacy','Europe/Oslo','04:00'::time,false,24,1
+      );
+    `), { allowFailure: true });
+    check(`post-install ${label} cannot manage organization settings`, mutation.status !== 0
+      && /Manager access is required|operator_auth_failed/i.test(mutation.stderr));
+    const managerRead = psql(actorSql(actorId, "select public.get_routine_manager_control_center();"), { allowFailure: true });
+    check(`post-install ${label} cannot access the manager read model`, managerRead.status !== 0
+      && /personal authenticated manager|Personal manager access is required|Manager access is required|operator_auth_failed/i.test(managerRead.stderr));
+  }
+  check("future-organization checks create no content or operative Routine data",
+    scalar("select (select count(*) from public.routine_content_pack_installations)=0 and (select count(*) from public.routine_templates)=0 and (select count(*) from public.routine_runs)=0 and (select count(*) from public.routine_bundles)=0 and (select count(*) from public.routine_delivery_records)=0 and (select count(*) from public.routine_operators)=0 and (select count(*) from public.routine_operator_sessions)=0;") === "t");
 }
 
 function namedArgumentChecks() {
@@ -961,6 +1205,7 @@ async function main() {
     assertEndState(`sequence ${sequence}`, state, protectedBaseline);
     console.log(`Sequence ${sequence} fingerprints: protected-schema=${state.protectedSchema} protected-data=${state.protectedData} protected-realtime=${state.protectedRealtime} routine-schema=${state.routineSchema} raw-acl=${state.rawAclFingerprint} effective-acl=${state.effectiveAclFingerprint}`);
   }
+  check("three complete 16-phase sequences apply exactly 48 migrations", migrationApplications === 48);
 
   const aclDrift = [...new Set([
     ...Object.keys(states[0].routineFunctions),
@@ -996,10 +1241,11 @@ async function main() {
   check("content preview and audit are stable across three sequences",
     JSON.stringify(states[1].contentPack) === JSON.stringify(states[0].contentPack)
       && JSON.stringify(states[2].contentPack) === JSON.stringify(states[0].contentPack));
-  check("second A-L sequence is fully schema/data/state stable", JSON.stringify(states[1]) === JSON.stringify(states[0]));
-  check("third A-L sequence is fully schema/data/state stable", JSON.stringify(states[2]) === JSON.stringify(states[0]));
+  check("second A-A1-L sequence is fully schema/data/state stable", JSON.stringify(states[1]) === JSON.stringify(states[0]));
+  check("third A-A1-L sequence is fully schema/data/state stable", JSON.stringify(states[2]) === JSON.stringify(states[0]));
   check("published/content/run/timing/delivery/bundle hashes are stable", JSON.stringify(states[0].operational.hashes) === JSON.stringify(states[2].operational.hashes));
   check("validation blockers, warnings, and content hash are stable", JSON.stringify(states[0].validationProbe) === JSON.stringify(states[2].validationProbe));
+  futureOrganizationChecks();
   namedArgumentChecks();
   console.log(`PASS ${passCount} full Phase 10 migration reapply checks`);
 }

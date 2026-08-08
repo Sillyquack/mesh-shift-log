@@ -16,6 +16,7 @@ const MIGRATION_ROLE = 'supabase_admin';
 const CONTAINER = `mesh-shift-log-phase10d-${process.pid}-${randomUUID().slice(0, 8)}`;
 const PASSWORD = `phase10d-${randomUUID()}`;
 const FOUNDATION_PATH = resolve(ROOT, 'supabase/phase10a_routine_engine_foundation.sql');
+const BOOTSTRAP_PATH = resolve(ROOT, 'supabase/phase10a1_routine_organization_settings_bootstrap.sql');
 const TEMPLATE_PATH = resolve(ROOT, 'supabase/phase10b_routine_templates.sql');
 const REFERENCE_PATH = resolve(ROOT, 'supabase/phase10c_routine_reference_images.sql');
 const MIGRATION_PATH = resolve(ROOT, 'supabase/phase10d_routine_runs_and_snapshots.sql');
@@ -390,7 +391,7 @@ function reportDatabaseState() {
 
 async function main() {
   const requiredPaths = [
-    FOUNDATION_PATH, TEMPLATE_PATH, REFERENCE_PATH, MIGRATION_PATH,
+    FOUNDATION_PATH, BOOTSTRAP_PATH, TEMPLATE_PATH, REFERENCE_PATH, MIGRATION_PATH,
     FOUNDATION_FIXTURE_PATH, FIXTURE_PATH, ASSERTION_PATH,
     CLIENT_PATH, MODEL_PATH, ...BASELINE_PATHS,
   ];
@@ -452,9 +453,10 @@ async function main() {
       check (role in ('manager', 'shift_lead', 'event_floor_manager', 'staff', 'time2staff', 'counter'));
   `);
   psql(readFileSync(FOUNDATION_PATH, 'utf8'), { singleTransaction: true });
+  psql(readFileSync(BOOTSTRAP_PATH, 'utf8'), { singleTransaction: true });
   psql(readFileSync(TEMPLATE_PATH, 'utf8'), { singleTransaction: true });
   psql(readFileSync(REFERENCE_PATH, 'utf8'), { singleTransaction: true });
-  console.log('PASS Phase 10A, 10B, and 10C applied before Phase 10D');
+  console.log('PASS Phase 10A, 10A1, 10B, and 10C applied before Phase 10D');
 
   const protectedBefore = psql(protectedFingerprintSql, { tuplesOnly: true }).stdout.trim();
   psql(migrationSql, { singleTransaction: true });

@@ -25,6 +25,7 @@ let containerStarted = false;
 
 const paths = {
   foundation: resolve(ROOT, 'supabase/phase10a_routine_engine_foundation.sql'),
+  bootstrap: resolve(ROOT, 'supabase/phase10a1_routine_organization_settings_bootstrap.sql'),
   templates: resolve(ROOT, 'supabase/phase10b_routine_templates.sql'),
   references: resolve(ROOT, 'supabase/phase10c_routine_reference_images.sql'),
   runs: resolve(ROOT, 'supabase/phase10d_routine_runs_and_snapshots.sql'),
@@ -448,10 +449,10 @@ async function main() {
     alter table public.user_profiles add constraint user_profiles_role_check
       check (role in ('manager','shift_lead','event_floor_manager','staff','time2staff','counter'));
   `);
-  for (const migrationPath of [paths.foundation, paths.templates, paths.references, paths.runs]) {
+  for (const migrationPath of [paths.foundation, paths.bootstrap, paths.templates, paths.references, paths.runs]) {
     psql(readFileSync(migrationPath, 'utf8'), { singleTransaction: true });
   }
-  console.log('PASS Phase 10A, 10B, 10C, and committed 10D applied in order');
+  console.log('PASS Phase 10A, 10A1, 10B, 10C, and committed 10D applied in order');
   psql(readFileSync(paths.foundationFixture, 'utf8'), { singleTransaction: true });
   psql(readFileSync(paths.runFixture, 'utf8'), { singleTransaction: true });
   console.log('PASS disposable identities and published run template installed');

@@ -1,7 +1,7 @@
 -- Phase 10H: Double Shift bundles, between-shift continuity, read-only
 -- external Event Operations context, and immutable event-transfer evidence.
 --
--- Apply after Phase 10A through Phase 10G. This additive layer never writes
+-- Apply after Phase 10A, 10A1, and Phase 10B through Phase 10G. This additive layer never writes
 -- Event Operations, calendar, Inventory, Asset, Auth, legacy routine, or
 -- Storage data and contains no production activation or seeded routine content.
 
