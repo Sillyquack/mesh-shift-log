@@ -32,13 +32,13 @@ const migrations = ["supabase/phase10a_routine_engine_foundation.sql", "supabase
   "supabase/phase10g_routine_closing_delivery.sql", "supabase/phase10h_routine_double_shift.sql",
   "supabase/phase10i_routine_realtime_offline_sync.sql", "supabase/phase10j_routine_shared_device_identity.sql",
   "supabase/phase10k1_routine_ui_pilot_gate.sql", "supabase/phase10k2_routine_manager_control_center.sql",
-  "supabase/phase10k3_routine_employee_workflow.sql"];
+  "supabase/phase10k3_routine_employee_workflow.sql", "supabase/phase10k4_routine_history_pilot_hardening.sql",
+  "supabase/phase10l_mesh_routine_content_pack.sql", "supabase/phase10o_routine_default_privilege_hardening.sql"];
 const fixtures = ["supabase/tests/phase10/foundation-fixtures.sql", "supabase/tests/phase10/run-snapshot-fixtures.sql",
   "supabase/tests/phase10/lifecycle-fixtures.sql", "supabase/tests/phase10/operational-time-fixtures.sql",
   "supabase/tests/phase10/delivery-fixtures.sql", "supabase/tests/phase10/double-shift-fixtures.sql",
   "supabase/tests/phase10/sync-offline-fixtures.sql"];
 const paths = {
-  migration: "supabase/phase10k4_routine_history_pilot_hardening.sql",
   fixture: "supabase/tests/phase10/history-pilot-fixtures.sql",
   templateFixture: "supabase/tests/phase10/template-fixtures.sql",
   identityFixture: "supabase/tests/phase10/shared-device-fixtures.sql",
@@ -126,10 +126,10 @@ function installDatabaseFixture(pin, material) {
   psql(readFileSync(absolute(migrations[10]), "utf8"), { transaction: true });
   const vars = variables({ test_pin: pin, session_secret_hash: material.secretHash, session_token: material.token });
   psql(vars + readFileSync(absolute(paths.identityFixture), "utf8"));
-  for (const path of migrations.slice(11)) psql(readFileSync(absolute(path), "utf8"), { transaction: true });
+  for (const path of migrations.slice(11, 14)) psql(readFileSync(absolute(path), "utf8"), { transaction: true });
   psql(vars + readFileSync(absolute(paths.uiFixture), "utf8"));
   psql(vars + readFileSync(absolute(paths.employeeFixture), "utf8"));
-  psql(readFileSync(absolute(paths.migration), "utf8"), { transaction: true });
+  for (const path of migrations.slice(14)) psql(readFileSync(absolute(path), "utf8"), { transaction: true });
   psql(vars + readFileSync(absolute(paths.fixture), "utf8"));
   psql(`select set_config('request.jwt.claim.sub','11000000-0000-4000-8000-000000000001',false);
     select set_config('mesh.routine_ui_internal','mode',false);

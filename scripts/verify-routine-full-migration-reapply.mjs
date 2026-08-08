@@ -5,9 +5,12 @@ import { fileURLToPath } from "node:url";
 import { spawnSync } from "node:child_process";
 
 const ROOT = resolve(dirname(fileURLToPath(import.meta.url)), "..");
-const IMAGE = "public.ecr.aws/supabase/postgres:17.6.1.141";
-const DATABASE = "phase10_full_reapply_test";
-const ROLE = "supabase_admin";
+const IMAGE = "public.ecr.aws/supabase/postgres:17.6.1.127";
+const OWNER_CONTEXT = process.env.PHASE10O_OWNER_CONTEXT === "production" ? "production" : "rehearsal";
+const DATABASE = `phase10_full_reapply_${OWNER_CONTEXT}_test`;
+const ROLE = OWNER_CONTEXT === "production" ? "postgres" : "supabase_admin";
+const SESSION_ROLE = OWNER_CONTEXT === "production" ? "postgres" : "phase10o_rehearsal_login";
+const CONNECTION_ROLE = OWNER_CONTEXT === "production" ? "postgres" : "supabase_admin";
 const CONTAINER = `mesh-shift-log-phase10-full-reapply-${process.pid}-${randomUUID().slice(0, 8)}`;
 const PASSWORD = `phase10-full-reapply-${randomUUID()}`;
 const MANAGER_ID = "aa100000-0000-4000-8000-000000000001";
@@ -29,6 +32,12 @@ const EXPECTED_SOURCE_HASHES = [
   "8ebedb39be888dfa118a429fa2046ba2b7b5dc49c868d9d5b811f2aa89b45351",
 ];
 const EXPECTED_ARGUMENT_NAMES = ["input_version_id", "input_publication_version_ids"];
+const EXPECTED_PORTABLE_SCHEMA_FINGERPRINT = "b0557825a4d5fbff851e4a167f3647e4ac74846914768c6ddd3b27584a1e7b32";
+const EXPECTED_AUTHENTICATED_FUNCTION_COUNT = 218;
+const EXPECTED_AUTHENTICATED_FUNCTION_HASH = "61446c15b10333748c65a652f01f6c9e91df67b81593f4db65bc7f0c2bee2a0e";
+const EXPECTED_AUTHENTICATED_RELATION_SELECT_COUNT = 65;
+const EXPECTED_AUTHENTICATED_RELATION_SELECT_HASH = "9f02d0f0f22ef6c607f793210fda83deb88e23cbb68943834ba41dabb206f5bd";
+const EXPECTED_OWNER_ROLES = new Set(["pg_database_owner", "postgres", "supabase_admin", "supabase_storage_admin"]);
 const REPRODUCED_ACL_EXPECTATIONS = Object.freeze({
   "get_routine_run_timeline(uuid)": "public",
   "get_routine_run_workspace(uuid)": "public",
@@ -71,6 +80,7 @@ const ACL_SIGNATURES = Object.keys(ACL_EXPECTATIONS);
 let started = false;
 let passCount = 0;
 let migrationApplications = 0;
+let stableDefaultAclFingerprint = null;
 
 if (process.argv.length > 2) {
   throw new Error("This verifier accepts no network, URL, host, project, or production arguments.");
@@ -90,6 +100,7 @@ function command(name, args, options = {}) {
     timeout: options.timeout ?? 300_000,
     maxBuffer: options.maxBuffer ?? 64 * 1024 * 1024,
     stdio: "pipe",
+    env: options.env ?? process.env,
   });
   if (result.error) throw result.error;
   if (result.status !== 0 && !options.allowFailure) {
@@ -101,11 +112,13 @@ const docker = (args, options) => command("docker", args, options);
 function psql(sql, { tuplesOnly = false, transaction = false, allowFailure = false } = {}) {
   const args = [
     "exec", "-i", CONTAINER, "psql", "--no-psqlrc", "--set=ON_ERROR_STOP=1",
-    `--username=${ROLE}`, `--dbname=${DATABASE}`,
+    `--username=${CONNECTION_ROLE}`, `--dbname=${DATABASE}`,
   ];
   if (tuplesOnly) args.push("--tuples-only", "--no-align", "--quiet");
   if (transaction) args.push("--single-transaction");
-  return docker(args, { input: sql, allowFailure, timeout: 300_000 });
+  const roleSql = ROLE === "postgres" ? ""
+    : `set session authorization ${SESSION_ROLE};\nset role ${ROLE};\n`;
+  return docker(args, { input: `${roleSql}${sql.replace(/^\uFEFF/, "")}`, allowFailure, timeout: 300_000 });
 }
 const scalar = (sql) => psql(sql, { tuplesOnly: true }).stdout.trim();
 const fingerprint = (value) => createHash("sha256").update(JSON.stringify(value)).digest("hex");
@@ -152,6 +165,7 @@ const migrations = [
   "supabase/phase10k3_routine_employee_workflow.sql",
   "supabase/phase10k4_routine_history_pilot_hardening.sql",
   "supabase/phase10l_mesh_routine_content_pack.sql",
+  "supabase/phase10o_routine_default_privilege_hardening.sql",
 ];
 const phase10Sql = () => migrations.map((path) => readFileSync(absolute(path), "utf8")).join("\n");
 
@@ -257,10 +271,11 @@ function sourceChecks() {
     verifierSource.indexOf("function applySequence("),
     verifierSource.indexOf("function futureOrganizationChecks("),
   );
-  check("full Phase 10 manifest contains 16 ordered migrations", migrations.length === 16
+  check("full Phase 10 manifest contains 17 ordered migrations", migrations.length === 17
     && migrations[0].endsWith("phase10a_routine_engine_foundation.sql")
     && migrations[1].endsWith("phase10a1_routine_organization_settings_bootstrap.sql")
-    && migrations.at(-1).endsWith("phase10l_mesh_routine_content_pack.sql"));
+    && migrations.at(-2).endsWith("phase10l_mesh_routine_content_pack.sql")
+    && migrations.at(-1).endsWith("phase10o_routine_default_privilege_hardening.sql"));
   check("10A1 is a system bootstrap with no manager RPC installation step",
     !/create_or_update_routine_organization_settings|auth\.uid\s*\(|\bgrant\b|\bcreate\s+(?:or\s+replace\s+)?function\b/i.test(bootstrapSql));
   check("full-reapply migration sequence contains no out-of-band settings manager bootstrap",
@@ -268,7 +283,15 @@ function sourceChecks() {
   check("future-organization probe uses the manager RPC only after the complete migration sequence",
     verifierSource.indexOf(forbiddenBootstrapCall) > verifierSource.indexOf("function futureOrganizationChecks("));
   check("Phase 10 migrations contain no DROP CASCADE", !/\bdrop\s+(?:function|table|schema|type|view|materialized\s+view|trigger|policy|publication)[^;]*\bcascade\b/i.test(allSql));
-  check("Phase 10 migrations contain no ALTER DEFAULT PRIVILEGES", !/\balter\s+default\s+privileges\b/i.test(allSql));
+  const defaultPrivilegeStatements = [...allSql.matchAll(/alter\s+default\s+privileges[^;]+;/ig)].map((match) => match[0]);
+  check("only 10O changes default privileges and never names an owner role",
+    defaultPrivilegeStatements.length === 10
+      && defaultPrivilegeStatements.every((statement) => /\brevoke\b/i.test(statement) && !/\bfor\s+(?:user|role)\b/i.test(statement))
+      && !migrations.slice(0, -1).some((path) => /\balter\s+default\s+privileges\b/i.test(readFileSync(absolute(path), "utf8"))));
+  const phase10oSql = readFileSync(absolute(migrations.at(-1)), "utf8");
+  check("10O is future-only DDL in one explicit transaction",
+    /^begin;/i.test(phase10oSql.trim()) && /commit;\s*$/i.test(phase10oSql.trim())
+      && !/\b(?:insert|update|delete|merge|truncate|create\s+(?:or\s+replace\s+)?function|grant\s+|alter\s+(?:table|function|policy)|drop\s+)\b/i.test(phase10oSql));
   check("ACL hardening uses no broad all-functions revoke", !/\brevoke\b[^;]*\bon\s+all\s+functions\b/i.test(allSql));
   check("Phase 10 policies contain no unconditional true predicate", !/\busing\s*\(\s*true\s*\)|\bwith\s+check\s*\(\s*true\s*\)/i.test(allSql));
   check("legacy validator key is absent from all Phase 10 migrations", !/\binput_batch_version_ids\b/.test(allSql));
@@ -503,7 +526,7 @@ with protected_tables as (
     ))
 ), table_hashes as (
   select format('%I.%I',schemaname,tablename) table_name,
-    public.phase10_reapply_table_fingerprint(format('%I.%I',schemaname,tablename)) table_hash
+    phase10_reapply_test.table_fingerprint(format('%I.%I',schemaname,tablename)) table_hash
   from protected_tables
   union all select 'storage.buckets',encode(extensions.digest(convert_to(coalesce((
     select string_agg(to_jsonb(value)::text,E'\n' order by to_jsonb(value)::text) from storage.buckets value
@@ -526,7 +549,8 @@ where pubname='supabase_realtime' and (
 `;
 
 const fingerprintHelperSql = String.raw`
-create or replace function public.phase10_reapply_table_fingerprint(input_relation text)
+create schema if not exists phase10_reapply_test;
+create or replace function phase10_reapply_test.table_fingerprint(input_relation text)
 returns text language plpgsql stable set search_path=pg_catalog as $$
 declare v_hash text;
 begin
@@ -537,7 +561,7 @@ begin
   return v_hash;
 end;
 $$;
-revoke all on function public.phase10_reapply_table_fingerprint(text) from public,anon,authenticated;
+revoke all on function phase10_reapply_test.table_fingerprint(text) from public,anon,authenticated;
 `;
 
 const routineSchemaFingerprintSql = String.raw`
@@ -572,12 +596,176 @@ with routine_relations as (
 ) select encode(extensions.digest(convert_to(coalesce(string_agg(entry,E'\n' order by entry),''),'UTF8'),'sha256'),'hex') from entries;
 `;
 
+const canonicalCatalogSql = readFileSync(absolute("scripts/routine-canonical-catalog-forensics-v1.sql"), "utf8");
+const ACL_CATEGORIES = new Set(["relation_acl", "function_acl", "schema_acl", "default_acl"]);
+
+function canonicalValue(value) {
+  if (Array.isArray(value)) return value.map(canonicalValue);
+  if (value && typeof value === "object") {
+    return Object.fromEntries(Object.keys(value).sort().map((key) => [key, canonicalValue(value[key])]));
+  }
+  return value;
+}
+
+function canonicalJson(value) {
+  return JSON.stringify(canonicalValue(value));
+}
+
+function catalogForMutation(mutation = "") {
+  const result = psql(`begin;\n${mutation}\n${canonicalCatalogSql}\nrollback;`, { tuplesOnly: true });
+  const line = result.stdout.split("\n").map((entry) => entry.trim()).filter(Boolean).at(-1);
+  if (!line) throw new Error("Canonical catalog query returned no payload.");
+  return JSON.parse(line);
+}
+
+function portableCatalog(catalog) {
+  const records = catalog.records
+    .filter((record) => !ACL_CATEGORIES.has(record.category))
+    .map((record) => ({
+      ...record,
+      fields: { ...record.fields, ...(Object.hasOwn(record.fields, "owner") ? { owner: "<OBJECT_OWNER>" } : {}) },
+    }));
+  const payload = records.map((record) => [record.category, record.identity, record.fields]);
+  return { records, fingerprint: createHash("sha256").update(canonicalJson(payload)).digest("hex") };
+}
+
+function existingObjectSnapshot() {
+  const catalog = catalogForMutation();
+  return canonicalJson({
+    records: catalog.records.filter((record) => record.category !== "default_acl"),
+    protectedSchema: scalar(protectedSchemaFingerprintSql),
+    protectedData: scalar(protectedDataFingerprintSql),
+    protectedRealtime: scalar(protectedRealtimeFingerprintSql),
+    routineData: routineDataState(),
+    operational: routineOperationalState(),
+  });
+}
+
+function clientAclAttestation(catalog) {
+  const functionRows = catalog.records.filter((record) => record.category === "function_acl");
+  const relationRows = catalog.records.filter((record) => record.category === "relation_acl");
+  const hasPrivilege = (record, grantee, privilege) => record.fields.effective_acl
+    .some((entry) => entry.grantee === grantee && entry.privilege === privilege);
+  const authenticatedFunctions = functionRows.filter((record) => hasPrivilege(record, "authenticated", "EXECUTE"))
+    .map((record) => record.identity).sort();
+  const authenticatedSelect = relationRows.filter((record) => hasPrivilege(record, "authenticated", "SELECT"))
+    .map((record) => record.identity).sort();
+  const broadFunctionExecute = Object.fromEntries(["PUBLIC", "anon"].map((role) => [role,
+    functionRows.filter((record) => hasPrivilege(record, role, "EXECUTE")).map((record) => record.identity).sort()]));
+  const clientDml = relationRows.flatMap((record) => record.fields.effective_acl
+    .filter((entry) => ["PUBLIC", "anon", "authenticated"].includes(entry.grantee)
+      && ["INSERT", "UPDATE", "DELETE", "TRUNCATE", "REFERENCES", "TRIGGER"].includes(entry.privilege))
+    .map((entry) => `${record.identity}|${entry.grantee}|${entry.privilege}`)).sort();
+  const reviewed = Object.entries(ACL_EXPECTATIONS).map(([signature, exposure]) => {
+    const record = functionRows.find((entry) => entry.identity === `public.${signature}`);
+    return Boolean(record) && hasPrivilege(record, "authenticated", "EXECUTE") === (exposure === "public");
+  });
+  const permissivePolicies = catalog.records.filter((record) => record.category === "policy"
+    && record.identity.startsWith("public.routine_")
+    && (record.fields.roles.some((role) => ["public", "anon"].includes(role.toLowerCase()))
+      || /^\(?\s*true\s*\)?$/i.test(record.fields.using ?? "")
+      || /^\(?\s*true\s*\)?$/i.test(record.fields.with_check ?? "")));
+  return {
+    authenticatedFunctions,
+    authenticatedFunctionHash: createHash("sha256").update(canonicalJson(authenticatedFunctions)).digest("hex"),
+    authenticatedSelect,
+    authenticatedSelectHash: createHash("sha256").update(canonicalJson(authenticatedSelect)).digest("hex"),
+    broadFunctionExecute,
+    clientDml,
+    reviewedCount: reviewed.filter(Boolean).length,
+    permissivePolicyCount: permissivePolicies.length,
+  };
+}
+
+function environmentAttestation(catalog) {
+  const execution = JSON.parse(scalar("select jsonb_build_object('sessionUser',session_user,'currentUser',current_user)::text;"));
+  const owners = [...new Set(catalog.records.map((record) => record.fields?.owner).filter(Boolean))].sort();
+  const privilegedGrantCounts = Object.fromEntries(["postgres", "supabase_admin", "service_role"].map((role) => [role,
+    catalog.records.filter((record) => ACL_CATEGORIES.has(record.category)
+      && record.fields.effective_acl?.some((entry) => entry.grantee === role)).length]));
+  const defaultAclContexts = catalog.records.filter((record) => record.category === "default_acl")
+    .map((record) => ({ identity: record.identity, owner: record.fields.owner, schema: record.fields.schema,
+      objectType: record.fields.object_type, effectiveAcl: record.fields.effective_acl }));
+  return { execution, owners, privilegedGrantCounts, defaultAclContexts };
+}
+
+function futureObjectProbe(setup = "") {
+  const marker = "PHASE10O_FUTURE_PROBE|";
+  const sql = String.raw`
+begin;
+${setup}
+create table public.phase10o_future_table_probe(id bigint);
+create sequence public.phase10o_future_sequence_probe;
+create function public.phase10o_future_function_probe() returns integer language sql as 'select 1';
+select '${marker}'||jsonb_build_object(
+  'sessionUser',session_user,
+  'currentUser',current_user,
+  'tableOwner',pg_get_userbyid((select relowner from pg_catalog.pg_class where oid='public.phase10o_future_table_probe'::regclass)),
+  'sequenceOwner',pg_get_userbyid((select relowner from pg_catalog.pg_class where oid='public.phase10o_future_sequence_probe'::regclass)),
+  'functionOwner',pg_get_userbyid((select proowner from pg_catalog.pg_proc where oid='public.phase10o_future_function_probe()'::regprocedure)),
+  'clientPrivileges',(
+    select coalesce(jsonb_agg(entry order by entry),'[]'::jsonb) from (
+      select 'table|'||(case when privilege.grantee=0 then 'PUBLIC' else pg_get_userbyid(privilege.grantee) end)||'|'||privilege.privilege_type entry
+      from pg_catalog.pg_class relation,
+        lateral aclexplode(coalesce(relation.relacl,acldefault('r',relation.relowner))) privilege
+      where relation.oid='public.phase10o_future_table_probe'::regclass
+        and (privilege.grantee=0 or pg_get_userbyid(privilege.grantee) in('anon','authenticated'))
+      union all
+      select 'sequence|'||(case when privilege.grantee=0 then 'PUBLIC' else pg_get_userbyid(privilege.grantee) end)||'|'||privilege.privilege_type
+      from pg_catalog.pg_class relation,
+        lateral aclexplode(coalesce(relation.relacl,acldefault('S',relation.relowner))) privilege
+      where relation.oid='public.phase10o_future_sequence_probe'::regclass
+        and (privilege.grantee=0 or pg_get_userbyid(privilege.grantee) in('anon','authenticated'))
+      union all
+      select 'function|'||(case when privilege.grantee=0 then 'PUBLIC' else pg_get_userbyid(privilege.grantee) end)||'|'||privilege.privilege_type
+      from pg_catalog.pg_proc procedure,
+        lateral aclexplode(coalesce(procedure.proacl,acldefault('f',procedure.proowner))) privilege
+      where procedure.oid='public.phase10o_future_function_probe()'::regprocedure
+        and (privilege.grantee=0 or pg_get_userbyid(privilege.grantee) in('anon','authenticated'))
+    ) privileges
+  ),
+  'ownerAccess',jsonb_build_object(
+    'table',has_table_privilege(current_user,'public.phase10o_future_table_probe','SELECT,INSERT,UPDATE,DELETE'),
+    'sequence',has_sequence_privilege(current_user,'public.phase10o_future_sequence_probe','USAGE,SELECT,UPDATE'),
+    'function',has_function_privilege(current_user,'public.phase10o_future_function_probe()','EXECUTE')
+  ),
+  'defaultAclRoles',(
+    select coalesce(jsonb_agg(distinct pg_get_userbyid(default_acl.defaclrole) order by pg_get_userbyid(default_acl.defaclrole)),'[]'::jsonb)
+    from pg_catalog.pg_default_acl default_acl
+    left join pg_catalog.pg_namespace namespace on namespace.oid=default_acl.defaclnamespace
+    where default_acl.defaclrole=current_user::regrole
+      and (default_acl.defaclnamespace=0 or namespace.nspname='public')
+      and default_acl.defaclobjtype in('r','S','f')
+  )
+)::text;
+rollback;
+`;
+  const result = psql(sql, { tuplesOnly: true });
+  const line = result.stdout.split("\n").find((entry) => entry.startsWith(marker));
+  if (!line) throw new Error(`Future-object probe returned no marker:\n${result.stdout}\n${result.stderr}`);
+  return JSON.parse(line.slice(marker.length));
+}
+
+function semanticMutationProbes() {
+  const mutations = Object.freeze({
+    columnDefault: "alter table public.routine_templates add column phase10o_probe text default 'probe';",
+    foreignKey: "alter table public.routine_templates drop constraint routine_templates_organization_id_fkey;",
+    index: "create index phase10o_portable_index_probe on public.routine_templates(name);",
+    policy: "create policy phase10o_portable_policy_probe on public.routine_templates as restrictive for select to authenticated using (false);",
+    body: "create or replace function public.routine_current_actor_source() returns text language sql stable security definer set search_path=pg_catalog as $$ select 'probe'::text $$;",
+    searchPath: "alter function public.routine_current_actor_source() set search_path=public,pg_catalog;",
+    rls: "alter table public.routine_templates force row level security;",
+  });
+  return Object.fromEntries(Object.entries(mutations).map(([label, mutation]) => [label,
+    portableCatalog(catalogForMutation(mutation)).fingerprint]));
+}
+
 function routineDataState() {
   const tables = scalar("select coalesce(string_agg(tablename,E'\\n' order by tablename),'') from pg_catalog.pg_tables where schemaname='public' and tablename like 'routine_%';")
     .split("\n").filter(Boolean);
   const data = {};
   for (const table of tables) {
-    const [count, hash] = scalar(`select count(*)||'|'||public.phase10_reapply_table_fingerprint('public.${table}') from public.${table};`).split("|");
+    const [count, hash] = scalar(`select count(*)||'|'||phase10_reapply_test.table_fingerprint('public.${table}') from public.${table};`).split("|");
     data[table] = { count: Number(count), hash };
   }
   return data;
@@ -601,12 +789,12 @@ select jsonb_build_object(
   'operatorSessions',(select count(*) from public.routine_operator_sessions),
   'actualImages',(select count(*) from storage.objects where bucket_id='routine-reference-images'),
   'hashes',jsonb_build_object(
-    'published',public.phase10_reapply_table_fingerprint('public.routine_template_publication_batches'),
-    'content',public.phase10_reapply_table_fingerprint('public.routine_template_versions'),
-    'runs',public.phase10_reapply_table_fingerprint('public.routine_runs'),
-    'timing',public.phase10_reapply_table_fingerprint('public.routine_run_task_timings'),
-    'delivery',public.phase10_reapply_table_fingerprint('public.routine_delivery_records'),
-    'bundles',public.phase10_reapply_table_fingerprint('public.routine_bundles')
+    'published',phase10_reapply_test.table_fingerprint('public.routine_template_publication_batches'),
+    'content',phase10_reapply_test.table_fingerprint('public.routine_template_versions'),
+    'runs',phase10_reapply_test.table_fingerprint('public.routine_runs'),
+    'timing',phase10_reapply_test.table_fingerprint('public.routine_run_task_timings'),
+    'delivery',phase10_reapply_test.table_fingerprint('public.routine_delivery_records'),
+    'bundles',phase10_reapply_test.table_fingerprint('public.routine_bundles')
   )
 )::text;
   `));
@@ -840,11 +1028,17 @@ function contentPackProbe() {
 
 function captureState() {
   const routineFunctions = routineFunctionState();
+  const catalog = catalogForMutation();
+  const portable = portableCatalog(catalog);
   return {
     protectedSchema: scalar(protectedSchemaFingerprintSql),
     protectedData: scalar(protectedDataFingerprintSql),
     protectedRealtime: scalar(protectedRealtimeFingerprintSql),
     routineSchema: scalar(routineSchemaFingerprintSql),
+    portableSchema: portable.fingerprint,
+    portableRecordCount: portable.records.length,
+    clientAcl: clientAclAttestation(catalog),
+    environment: environmentAttestation(catalog),
     routineFunctions,
     rawAclFingerprint: fingerprint(Object.fromEntries(Object.entries(routineFunctions).map(([signature,state]) => [signature,state.rawAcl]))),
     effectiveAclFingerprint: fingerprint(Object.fromEntries(Object.entries(routineFunctions).map(([signature,state]) => [signature,state.effectiveAcl]))),
@@ -862,6 +1056,9 @@ function assertEndState(label, state, protectedBaseline) {
   check(`${label}: protected data fingerprint is unchanged`, state.protectedData === protectedBaseline.data);
   check(`${label}: protected Realtime membership is unchanged`, state.protectedRealtime === protectedBaseline.realtime);
   check(`${label}: validator argument names are canonical`, JSON.stringify(state.validator.argumentNames) === JSON.stringify(EXPECTED_ARGUMENT_NAMES));
+  console.log(`PORTABLE_DIAGNOSTIC|${OWNER_CONTEXT}|records=${state.portableRecordCount}|fingerprint=${state.portableSchema}`);
+  check(`${label}: portable semantic schema fingerprint matches the reviewed contract`,
+    state.portableSchema === EXPECTED_PORTABLE_SCHEMA_FINGERPRINT);
   check(`${label}: validator order, types, return, stability, and security remain unchanged`,
     state.validator.identity === "input_version_id uuid, input_publication_version_ids uuid[]"
       && state.validator.result === "jsonb" && state.validator.volatility === "s" && state.validator.securityDefiner === true);
@@ -877,13 +1074,26 @@ function assertEndState(label, state, protectedBaseline) {
     }).map(([signature]) => signature);
   if (broadlyExecutable.length > 0) console.log(`BROAD_ROUTINE_EXECUTE|${label}|${broadlyExecutable.length}|${broadlyExecutable.join(",")}`);
   check(`${label}: no Routine function grants EXECUTE to PUBLIC or anon`, broadlyExecutable.length === 0);
-  check(`${label}: affected public RPC and internal-helper allowlists are exact`,
+  check(`${label}: reviewed 32-signature client contract is exact`,
     ACL_SIGNATURES.every((signature) => {
-      const expected = ACL_EXPECTATIONS[signature] === "public"
-        ? ["authenticated", "postgres", "service_role", "supabase_admin"]
-        : ["postgres", "service_role", "supabase_admin"];
-      return JSON.stringify(executableGrantees(state.routineFunctions[signature])) === JSON.stringify(expected);
-    }));
+      const authenticated = executableGrantees(state.routineFunctions[signature]).includes("authenticated");
+      return authenticated === (ACL_EXPECTATIONS[signature] === "public");
+    }) && state.clientAcl.reviewedCount === 32);
+  check(`${label}: authenticated function EXECUTE is the exact reviewed 218-signature allowlist`,
+    state.clientAcl.authenticatedFunctions.length === EXPECTED_AUTHENTICATED_FUNCTION_COUNT
+      && state.clientAcl.authenticatedFunctionHash === EXPECTED_AUTHENTICATED_FUNCTION_HASH);
+  check(`${label}: authenticated relation SELECT is the exact reviewed 65-relation allowlist`,
+    state.clientAcl.authenticatedSelect.length === EXPECTED_AUTHENTICATED_RELATION_SELECT_COUNT
+      && state.clientAcl.authenticatedSelectHash === EXPECTED_AUTHENTICATED_RELATION_SELECT_HASH);
+  check(`${label}: literal client ACL has no broad function access, direct DML, or unconditional/broad Routine RLS`,
+    state.clientAcl.broadFunctionExecute.PUBLIC.length === 0
+      && state.clientAcl.broadFunctionExecute.anon.length === 0
+      && state.clientAcl.clientDml.length === 0
+      && state.clientAcl.permissivePolicyCount === 0);
+  check(`${label}: owner/platform evidence uses only reviewed environmental owner variants`,
+    state.environment.owners.every((owner) => EXPECTED_OWNER_ROLES.has(owner))
+      && state.environment.execution.currentUser === ROLE
+      && state.environment.execution.sessionUser === SESSION_ROLE);
   const settings = state.operational.settings;
   const primarySettings = settingsRow(settings, ORGANIZATION_ID);
   const secondarySettings = settingsRow(settings, SECONDARY_ORGANIZATION_ID);
@@ -948,7 +1158,7 @@ function assertEndState(label, state, protectedBaseline) {
 }
 
 function applySequence(sequenceNumber) {
-  console.log(`Applying full Phase 10A-A1-L sequence ${sequenceNumber}`);
+  console.log(`Applying full Phase 10A-A1-L-O sequence ${sequenceNumber} as ${ROLE}`);
   let stateAfterK4 = null;
   for (let index = 0; index < migrations.length; index += 1) {
     const path = migrations[index];
@@ -956,6 +1166,8 @@ function applySequence(sequenceNumber) {
       ? JSON.stringify(settingsState()) : null;
     const before10A1 = sequenceNumber > 1 && path.endsWith("phase10a1_routine_organization_settings_bootstrap.sql")
       ? JSON.stringify(settingsState()) : null;
+    const before10O = path.endsWith("phase10o_routine_default_privilege_hardening.sql")
+      ? existingObjectSnapshot() : null;
     psql(readFileSync(absolute(path), "utf8"), { transaction: true });
     migrationApplications += 1;
     if (path.endsWith("phase10a_routine_engine_foundation.sql")) {
@@ -1036,6 +1248,43 @@ function applySequence(sequenceNumber) {
         JSON.stringify(settingsState()) === JSON.stringify(stateAfterK4));
       check(`sequence ${sequenceNumber}: 10L installs no content or operative data`,
         scalar("select (select count(*) from public.routine_content_pack_installations)=0 and (select count(*) from public.routine_templates)=0 and (select count(*) from public.routine_runs)=0 and (select count(*) from public.routine_bundles)=0 and (select count(*) from public.routine_delivery_records)=0;") === "t");
+    }
+    if (path.endsWith("phase10o_routine_default_privilege_hardening.sql")) {
+      check(`sequence ${sequenceNumber}: 10O changes only pg_default_acl`,
+        existingObjectSnapshot() === before10O);
+      const catalog = catalogForMutation();
+      const relevantDefaults = catalog.records.filter((record) => record.category === "default_acl"
+        && record.fields.owner === ROLE
+        && (record.fields.schema === "public" || record.fields.schema === null)
+        && ["r", "S", "f"].includes(record.fields.object_type));
+      const defaultFingerprint = createHash("sha256").update(canonicalJson(relevantDefaults)).digest("hex");
+      if (sequenceNumber === 1) stableDefaultAclFingerprint = defaultFingerprint;
+      else check(`sequence ${sequenceNumber}: 10O default ACL reapply is a catalog no-op`,
+        defaultFingerprint === stableDefaultAclFingerprint);
+
+      const probe = futureObjectProbe();
+      check(`sequence ${sequenceNumber}: future table, sequence, and function have no client privileges`,
+        probe.clientPrivileges.length === 0);
+      check(`sequence ${sequenceNumber}: future-object owner access remains intact`,
+        probe.ownerAccess.table === true && probe.ownerAccess.sequence === true && probe.ownerAccess.function === true);
+      check(`sequence ${sequenceNumber}: 10O and future objects use the effective migration role`,
+        probe.currentUser === ROLE && probe.tableOwner === ROLE && probe.sequenceOwner === ROLE
+          && probe.functionOwner === ROLE && probe.defaultAclRoles.length === 1 && probe.defaultAclRoles[0] === ROLE);
+      check(`sequence ${sequenceNumber}: session and effective role context is recorded`,
+        probe.sessionUser === SESSION_ROLE && (OWNER_CONTEXT === "production"
+          ? probe.currentUser === probe.sessionUser : probe.currentUser !== probe.sessionUser));
+
+      if (sequenceNumber === 1) {
+        const negativeTable = futureObjectProbe("alter default privileges in schema public grant select on tables to authenticated;");
+        const negativeSequence = futureObjectProbe("alter default privileges in schema public grant usage on sequences to anon;");
+        const negativeFunction = futureObjectProbe("alter default privileges grant execute on functions to public;");
+        check("default-ACL attestation detects a reintroduced authenticated table privilege",
+          negativeTable.clientPrivileges.some((entry) => entry === "table|authenticated|SELECT"));
+        check("default-ACL attestation detects a reintroduced anon sequence privilege",
+          negativeSequence.clientPrivileges.some((entry) => entry === "sequence|anon|USAGE"));
+        check("default-ACL attestation detects reintroduced PUBLIC function EXECUTE",
+          negativeFunction.clientPrivileges.some((entry) => entry === "function|PUBLIC|EXECUTE"));
+      }
     }
   }
 }
@@ -1180,6 +1429,19 @@ async function main() {
     await new Promise((resolveWait) => setTimeout(resolveWait, 500));
   }
   if (!ready) throw new Error("Disposable PostgreSQL did not become ready.");
+  if (OWNER_CONTEXT === "rehearsal") {
+    const bootstrap = docker([
+      "exec", "-i", CONTAINER, "psql", "--no-psqlrc", "--set=ON_ERROR_STOP=1",
+      "--username=supabase_admin", `--dbname=${DATABASE}`,
+    ], { input: `create role ${SESSION_ROLE} login; grant supabase_admin, authenticated, anon to ${SESSION_ROLE};` });
+    check("disposable rehearsal login can SET ROLE to the migration owner", bootstrap.status === 0);
+  } else {
+    const bootstrap = docker([
+      "exec", "-i", CONTAINER, "psql", "--no-psqlrc", "--set=ON_ERROR_STOP=1",
+      "--username=supabase_admin", `--dbname=${DATABASE}`,
+    ], { input: `grant connect,create,temporary on database ${DATABASE} to postgres; grant usage,create on schema public,storage to postgres;` });
+    check("disposable production owner can create objects in the production-shaped database", bootstrap.status === 0);
+  }
   const serverVersion = scalar("show server_version;");
   check("network-isolated disposable PostgreSQL 17.6 is running", serverVersion.startsWith("17.6"));
   console.log(`PostgreSQL ${serverVersion}; Docker network mode: none`);
@@ -1205,7 +1467,7 @@ async function main() {
     assertEndState(`sequence ${sequence}`, state, protectedBaseline);
     console.log(`Sequence ${sequence} fingerprints: protected-schema=${state.protectedSchema} protected-data=${state.protectedData} protected-realtime=${state.protectedRealtime} routine-schema=${state.routineSchema} raw-acl=${state.rawAclFingerprint} effective-acl=${state.effectiveAclFingerprint}`);
   }
-  check("three complete 16-phase sequences apply exactly 48 migrations", migrationApplications === 48);
+  check("three complete 17-phase sequences apply exactly 51 migrations", migrationApplications === 51);
 
   const aclDrift = [...new Set([
     ...Object.keys(states[0].routineFunctions),
@@ -1223,9 +1485,12 @@ async function main() {
       console.log(`ACL_DETAIL|${signature}|${JSON.stringify(states[0].routineFunctions[signature])}|${JSON.stringify(states[1].routineFunctions[signature])}`);
     }
   }
-  check("first and second A-L sequence have identical Routine function grants", aclDrift.length === 0);
-  check("Routine schema fingerprint is identical across all three sequences",
+  check("first and second A-A1-L-O sequence have identical Routine function grants", aclDrift.length === 0);
+  check("legacy environment-dependent Routine schema fingerprint is identical within this owner context",
     states[0].routineSchema === states[1].routineSchema && states[0].routineSchema === states[2].routineSchema);
+  check("portable semantic schema fingerprint is identical across all three sequences",
+    states[0].portableSchema === EXPECTED_PORTABLE_SCHEMA_FINGERPRINT
+      && states.every((state) => state.portableSchema === states[0].portableSchema));
   check("raw Routine function ACL fingerprint is identical across all three sequences",
     states[0].rawAclFingerprint === states[1].rawAclFingerprint
       && states[0].rawAclFingerprint === states[2].rawAclFingerprint);
@@ -1241,21 +1506,53 @@ async function main() {
   check("content preview and audit are stable across three sequences",
     JSON.stringify(states[1].contentPack) === JSON.stringify(states[0].contentPack)
       && JSON.stringify(states[2].contentPack) === JSON.stringify(states[0].contentPack));
-  check("second A-A1-L sequence is fully schema/data/state stable", JSON.stringify(states[1]) === JSON.stringify(states[0]));
-  check("third A-A1-L sequence is fully schema/data/state stable", JSON.stringify(states[2]) === JSON.stringify(states[0]));
+  check("second A-A1-L-O sequence is fully schema/data/state stable", JSON.stringify(states[1]) === JSON.stringify(states[0]));
+  check("third A-A1-L-O sequence is fully schema/data/state stable", JSON.stringify(states[2]) === JSON.stringify(states[0]));
   check("published/content/run/timing/delivery/bundle hashes are stable", JSON.stringify(states[0].operational.hashes) === JSON.stringify(states[2].operational.hashes));
   check("validation blockers, warnings, and content hash are stable", JSON.stringify(states[0].validationProbe) === JSON.stringify(states[2].validationProbe));
   futureOrganizationChecks();
   namedArgumentChecks();
-  console.log(`PASS ${passCount} full Phase 10 migration reapply checks`);
+  const mutationFingerprints = semanticMutationProbes();
+  for (const [label, mutatedFingerprint] of Object.entries(mutationFingerprints)) {
+    check(`portable attestation rejects a real ${label} semantic change`,
+      mutatedFingerprint !== EXPECTED_PORTABLE_SCHEMA_FINGERPRINT);
+  }
+  const unexpectedClientCatalog = catalogForMutation(
+    "grant execute on function public.routine_current_actor_source() to anon;"
+  );
+  check("literal client ACL attestation rejects one unexpected anon privilege",
+    clientAclAttestation(unexpectedClientCatalog).broadFunctionExecute.anon
+      .includes("public.routine_current_actor_source()"));
+  console.log(`LEGACY_DIAGNOSTIC|${OWNER_CONTEXT}|schema=${states[0].routineSchema}|raw-acl=${states[0].rawAclFingerprint}|effective-acl=${states[0].effectiveAclFingerprint}`);
+  console.log(`CLIENT_ACL_ATTESTATION|${OWNER_CONTEXT}|PASS|functions=${states[0].clientAcl.authenticatedFunctions.length}|relations=${states[0].clientAcl.authenticatedSelect.length}`);
+  console.log(`DEFAULT_ACL_ATTESTATION|${OWNER_CONTEXT}|PASS|current_user=${states[0].environment.execution.currentUser}`);
+  console.log(`OWNER_PLATFORM_REPORT|${OWNER_CONTEXT}|${canonicalJson(states[0].environment)}`);
+  console.log(`PORTABLE_RESULT|${OWNER_CONTEXT}|${states[0].portableSchema}`);
+  console.log(`PASS ${passCount} full Phase 10 migration reapply checks (${OWNER_CONTEXT}, 51/51)`);
+  return states[0].portableSchema;
 }
 
+let portableResult = null;
 try {
-  await main();
+  portableResult = await main();
 } catch (error) {
   console.error(String(error?.stack ?? error));
   process.exitCode = 1;
 } finally {
   cleanup();
   console.log(`Disposable database cleanup: ${started ? "FAILED" : "complete"}`);
+}
+
+if (!process.exitCode && OWNER_CONTEXT === "rehearsal" && process.env.PHASE10O_CHILD !== "1") {
+  const child = command(process.execPath, [fileURLToPath(import.meta.url)], {
+    timeout: 600_000,
+    env: { ...process.env, PHASE10O_OWNER_CONTEXT: "production", PHASE10O_CHILD: "1" },
+  });
+  process.stdout.write(child.stdout);
+  process.stderr.write(child.stderr);
+  const productionMatch = child.stdout.match(/PORTABLE_RESULT\|production\|([0-9a-f]{64})/);
+  check("rehearsal and production-shaped owner contexts have the identical portable fingerprint",
+    portableResult === EXPECTED_PORTABLE_SCHEMA_FINGERPRINT
+      && productionMatch?.[1] === EXPECTED_PORTABLE_SCHEMA_FINGERPRINT);
+  console.log("PASS owner-context matrix: rehearsal 51/51 + production-shaped 51/51");
 }
