@@ -1,6 +1,6 @@
 -- Phase 10G: immutable Closing delivery records and next-Opening comparisons.
 --
--- Apply after Phase 10A through Phase 10F. This migration is additive and
+-- Apply after Phase 10A, 10A1, and Phase 10B through Phase 10F. This migration is additive and
 -- repeatable. It seeds no routine content, creates no runs, and has no write
 -- dependency on Inventory, Asset Registry, Event Operations, Auth config,
 -- legacy routines, or either Inventory Storage surface.

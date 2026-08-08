@@ -1,5 +1,5 @@
 -- Phase 10K1 disposable fixtures. All identities and rows already belong to
--- the isolated Phase 10A-10J verifier database.
+-- the isolated Phase 10A, 10A1, and 10B-10J verifier database.
 create schema if not exists phase10k1_test;
 create table if not exists phase10k1_test.state(key text primary key,value jsonb not null);
 grant usage on schema phase10k1_test to authenticated;

@@ -1,7 +1,7 @@
 -- Phase 10E: Task Lifecycle, Immutable Audit, Deviations, Overrides,
 -- Verifications, Handovers, and Transfers.
 --
--- Apply after Phase 10A through Phase 10D. This migration is additive. It
+-- Apply after Phase 10A, 10A1, and Phase 10B through Phase 10D. This migration is additive. It
 -- creates no production runs or routine content and never writes to or adds
 -- dependencies on Inventory, Asset Registry, Event Operations, Auth config,
 -- legacy routines, or either Inventory Storage surface.

@@ -1,6 +1,6 @@
 -- Phase 10F: Europe/Oslo Operational Date and Timing Engine.
 --
--- Apply after Phase 10A through Phase 10E. This migration is additive and
+-- Apply after Phase 10A, 10A1, and Phase 10B through Phase 10E. This migration is additive and
 -- contains no organization activation, routine content, production data, or
 -- writes to Inventory, Asset, Event Operations, Auth configuration, legacy
 -- routine tables, or Storage.

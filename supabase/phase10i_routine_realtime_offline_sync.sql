@@ -1,7 +1,7 @@
 -- Phase 10I: Realtime signals, authenticated offline receipts, conflict
 -- preservation, and immutable late-delivery reconciliation.
 --
--- Apply after Phase 10A through Phase 10H. This migration creates no routine
+-- Apply after Phase 10A, 10A1, and Phase 10B through Phase 10H. This migration creates no routine
 -- content or operational rows. It does not touch Inventory, Asset Registry,
 -- Event Operations, Auth configuration, Storage, or legacy routines.
 

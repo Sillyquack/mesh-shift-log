@@ -54,6 +54,79 @@ grant execute on function phase10_test.assert_sqlstate(text, text, text) to auth
 grant execute on function phase10_test.assert_lives(text, text) to authenticated, anon;
 
 select phase10_test.assert_true(
+  (select count(*) = 3 from public.routine_organization_settings)
+  and not exists (
+    select 1
+    from public.organizations organization
+    left join public.routine_organization_settings settings
+      on settings.organization_id = organization.id
+    where settings.organization_id is null
+  ),
+  'DB-10A1-01: bootstrap creates one settings row for every existing organization'
+);
+
+select phase10_test.assert_true(
+  (select bool_and(
+     mode = 'legacy'
+     and timezone = 'Europe/Oslo'
+     and operational_day_cutoff = '04:00'::time
+     and not shared_device_enabled
+     and reopen_window_hours = 24
+     and revision = 1
+   )
+   from public.routine_organization_settings
+   where organization_id in (
+     'a1000000-0000-4000-8000-000000000001',
+     'c3000000-0000-4000-8000-000000000001'
+   )),
+  'DB-10A1-02: missing organizations receive the exact inert settings defaults'
+);
+
+select phase10_test.assert_true(
+  not exists (
+    select 1
+    from public.routine_organization_settings
+    where organization_id in (
+      'a1000000-0000-4000-8000-000000000001',
+      'c3000000-0000-4000-8000-000000000001'
+    )
+      and (created_by_auth_user_id is not null or updated_by_auth_user_id is not null)
+  ),
+  'DB-10A1-03: bootstrapped actor audit is null and records a system action'
+);
+
+select phase10_test.assert_true(
+  (select mode = 'shadow'
+          and timezone = 'Europe/Oslo'
+          and operational_day_cutoff = '03:30'::time
+          and shared_device_enabled
+          and reopen_window_hours = 72
+          and revision = 9
+          and created_at = '2026-01-02 03:04:05+00'::timestamptz
+          and updated_at = '2026-01-03 04:05:06+00'::timestamptz
+          and created_by_auth_user_id = '22000000-0000-4000-8000-000000000001'
+          and updated_by_auth_user_id = '22000000-0000-4000-8000-000000000001'
+   from public.routine_organization_settings
+   where organization_id = 'b2000000-0000-4000-8000-000000000001'),
+  'DB-10A1-04: pre-existing non-default settings and audit timestamps remain exact'
+);
+
+select phase10_test.assert_true(
+  (select count(*) = count(distinct organization_id)
+   from public.routine_organization_settings)
+  and (select count(*) = 1
+       from public.routine_organization_settings
+       where organization_id = 'a1000000-0000-4000-8000-000000000001')
+  and (select count(*) = 1
+       from public.routine_organization_settings
+       where organization_id = 'b2000000-0000-4000-8000-000000000001')
+  and (select count(*) = 1
+       from public.routine_organization_settings
+       where organization_id = 'c3000000-0000-4000-8000-000000000001'),
+  'DB-10A1-05: settings bootstrap is tenant-separated without cross-organization overwrite'
+);
+
+select phase10_test.assert_true(
   (select count(*) = 6
    from pg_catalog.pg_class relation
    join pg_catalog.pg_namespace namespace on namespace.oid = relation.relnamespace
@@ -175,22 +248,22 @@ select phase10_test.assert_true(
 
 -- Constraint probes execute as the disposable database owner.
 select phase10_test.assert_sqlstate(
-  $sql$insert into public.routine_organization_settings (organization_id, mode)
-       values ('c3000000-0000-4000-8000-000000000001', 'invalid')$sql$,
+  $sql$update public.routine_organization_settings set mode = 'invalid'
+       where organization_id = 'c3000000-0000-4000-8000-000000000001'$sql$,
   '23514',
   'DB-10A-09: invalid routine mode is rejected'
 );
 
 select phase10_test.assert_sqlstate(
-  $sql$insert into public.routine_organization_settings (organization_id, timezone)
-       values ('c3000000-0000-4000-8000-000000000001', 'UTC')$sql$,
+  $sql$update public.routine_organization_settings set timezone = 'UTC'
+       where organization_id = 'c3000000-0000-4000-8000-000000000001'$sql$,
   '23514',
   'DB-10A-10: invalid routine timezone is rejected'
 );
 
 select phase10_test.assert_sqlstate(
-  $sql$insert into public.routine_organization_settings (organization_id, revision)
-       values ('c3000000-0000-4000-8000-000000000001', 0)$sql$,
+  $sql$update public.routine_organization_settings set revision = 0
+       where organization_id = 'c3000000-0000-4000-8000-000000000001'$sql$,
   '23514',
   'DB-10A-11: non-positive settings revision is rejected'
 );
@@ -249,9 +322,9 @@ select phase10_test.assert_true(
 
 select phase10_test.assert_lives(
   $sql$select public.create_or_update_routine_organization_settings(
-    'legacy', 'Europe/Oslo', '04:00'::time, false, 24, null
+    'legacy', 'Europe/Oslo', '04:00'::time, false, 24, 1
   )$sql$,
-  'DB-10A-18: manager creates own organization routine settings'
+  'DB-10A-18: manager explicitly updates bootstrapped organization settings'
 );
 
 select phase10_test.assert_lives(
@@ -397,7 +470,7 @@ reset role;
 select set_config('request.jwt.claim.sub', '22000000-0000-4000-8000-000000000001', false);
 set role authenticated;
 select public.create_or_update_routine_organization_settings(
-  'legacy', 'Europe/Oslo', '04:00'::time, false, 24, null
+  'shadow', 'Europe/Oslo', '03:30'::time, true, 72, 9
 );
 select public.upsert_routine_location(
   'shared-key', 'Organization B Shared Key', 'room', null, 10, '{}'::jsonb, null, null
@@ -589,11 +662,11 @@ select phase10_test.assert_sqlstate(
 );
 
 select public.create_or_update_routine_organization_settings(
-  'pilot', 'Europe/Oslo', '04:00'::time, false, 24, 1
+  'pilot', 'Europe/Oslo', '04:00'::time, false, 24, 2
 );
 select phase10_test.assert_sqlstate(
   $sql$select public.create_or_update_routine_organization_settings(
-    'shadow', 'Europe/Oslo', '04:00'::time, false, 24, 1
+    'shadow', 'Europe/Oslo', '04:00'::time, false, 24, 2
   )$sql$,
   '40001',
   'DB-10A-47: stale expected settings revision is rejected'
@@ -615,6 +688,25 @@ select phase10_test.assert_sqlstate(
     values ('a1000000-0000-4000-8000-000000000001', 'direct-manager-write', 'Denied', 'room')$sql$,
   '42501',
   'DB-10A-49: authenticated manager direct table INSERT is blocked'
+);
+
+select phase10_test.assert_sqlstate(
+  $sql$insert into public.routine_organization_settings (organization_id)
+       values ('a1000000-0000-4000-8000-000000000001')$sql$,
+  '42501',
+  'DB-10A1-06: authenticated direct settings INSERT remains blocked'
+);
+
+select phase10_test.assert_sqlstate(
+  $sql$update public.routine_organization_settings set reopen_window_hours = 12$sql$,
+  '42501',
+  'DB-10A1-07: authenticated direct settings UPDATE remains blocked'
+);
+
+select phase10_test.assert_sqlstate(
+  $sql$delete from public.routine_organization_settings$sql$,
+  '42501',
+  'DB-10A1-08: authenticated direct settings DELETE remains blocked'
 );
 
 select phase10_test.assert_sqlstate(
@@ -741,6 +833,11 @@ select phase10_test.assert_sqlstate(
   'select * from public.routine_locations',
   '42501',
   'DB-10A-62: anon cannot read Phase 10A tables'
+);
+select phase10_test.assert_sqlstate(
+  'select * from public.routine_organization_settings',
+  '42501',
+  'DB-10A1-09: anon cannot read bootstrapped settings'
 );
 select phase10_test.assert_sqlstate(
   $sql$select public.create_routine_standard(

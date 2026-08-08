@@ -1,6 +1,7 @@
 -- Phase 10B: Routine Templates, drafts, and immutable publishing.
 --
--- Apply after phase10a_routine_engine_foundation.sql. This migration is
+-- Apply after phase10a_routine_engine_foundation.sql and
+-- phase10a1_routine_organization_settings_bootstrap.sql. This migration is
 -- additive, does not seed routine content, and does not activate Routine
 -- Engine v2 for any organization.
 

@@ -1,26 +1,35 @@
 # Routine Engine v2 production rollout runbook
 
-Status: plan only. Phase 10M updates reviewed local content but does not execute this runbook, connect to a production project, install content, publish, promote a release stage, change mode, pause work, or create an operational record.
+Status: plan only. Phase 10A1 repairs the local migration chain but does not execute this runbook, connect to a production project, install content, publish, promote a release stage, change mode, pause work, or create an operational record.
+
+## Phase 10A1 stop record and renewed gates
+
+The staffed production attempt stopped before 10A because the production-shaped contract exposed a missing organization-settings bootstrap: 10A creates the table and manager mutation RPC but does not create a row for organizations that already exist. No production DDL, DML or mutating RPC was executed. The separate manager RPC must never be used as an installation workaround.
+
+Phase 10A1 is the system bootstrap. It inserts one inert `legacy` settings row for every organization missing one, uses `Europe/Oslo`, cutoff `04:00`, shared device disabled, reopen window 24, revision 1 and null actor-audit fields, and never updates an existing row. K1 then supplies `foundation/phase10k1-v1`; K2 advances only foundation rows to `manager_preview/phase10k2-v1` and increments the revision once; K3 advances only manager-preview rows to `staff_preview/phase10k3-v1` and increments once; K4 keeps mode/stage/revision, sets contract `phase10k4-v1` and leaves pause metadata inert; 10L leaves settings unchanged and installs no content.
+
+All previously captured recovery snapshots remain untouched. After the Phase 10A1 branch is reviewed and merged, repeat Gate 0 and Gate 1 against the new exact commit, reconfirm a successful physical backup inside the required pre-window interval, and rerun the final zero-delta/write-quiescence gate. None of this documentation or local evidence grants production authorization.
 
 ## Required approval and exact migration order
 
 Obtain explicit production-change approval and record the approved Supabase project ref before any command is run. Apply the existing schema and canonical Phase 9 chain first, then these migrations exactly once in order:
 
 1. `phase10a_routine_engine_foundation.sql`
-2. `phase10b_routine_templates.sql`
-3. `phase10c_routine_reference_images.sql`
-4. `phase10d_routine_runs_and_snapshots.sql`
-5. `phase10e_routine_task_lifecycle.sql`
-6. `phase10f_routine_operational_time.sql`
-7. `phase10g_routine_closing_delivery.sql`
-8. `phase10h_routine_double_shift.sql`
-9. `phase10i_routine_realtime_offline_sync.sql`
-10. `phase10j_routine_shared_device_identity.sql`
-11. `phase10k1_routine_ui_pilot_gate.sql`
-12. `phase10k2_routine_manager_control_center.sql`
-13. `phase10k3_routine_employee_workflow.sql`
-14. `phase10k4_routine_history_pilot_hardening.sql`
-15. `phase10l_mesh_routine_content_pack.sql`
+2. `phase10a1_routine_organization_settings_bootstrap.sql`
+3. `phase10b_routine_templates.sql`
+4. `phase10c_routine_reference_images.sql`
+5. `phase10d_routine_runs_and_snapshots.sql`
+6. `phase10e_routine_task_lifecycle.sql`
+7. `phase10f_routine_operational_time.sql`
+8. `phase10g_routine_closing_delivery.sql`
+9. `phase10h_routine_double_shift.sql`
+10. `phase10i_routine_realtime_offline_sync.sql`
+11. `phase10j_routine_shared_device_identity.sql`
+12. `phase10k1_routine_ui_pilot_gate.sql`
+13. `phase10k2_routine_manager_control_center.sql`
+14. `phase10k3_routine_employee_workflow.sql`
+15. `phase10k4_routine_history_pilot_hardening.sql`
+16. `phase10l_mesh_routine_content_pack.sql`
 
 The 10L migration installs the reviewed content-pack mechanism but does not install organization content. Never reorder, squash, or edit an already-applied phase migration.
 
@@ -42,14 +51,15 @@ Verify that `routine_events`, and only approved tables, are members of `supabase
 
 Compare RLS enablement, policies, function owners, fixed search paths and exact authenticated `EXECUTE` grants with the disposable catalog fingerprint. Confirm anon has no Routine Engine access, authenticated clients have no direct mutation DML, and release/E2E attestation tables expose no client DML. Scan the build and repository for service-role keys, secrets, PINs, bearer/session tokens and production URLs.
 
-Before any production migration, run `npm run verify:routine-full-migration-reapply`. Its network-isolated PostgreSQL 17.6 rehearsal must complete three exact Phase 10A–10L sequences with identical Routine schema (`f44dc34640c684d2dc1cbb072f88f7d111c49f13a9b5a934905a07c73733c33a` for the reviewed 1.1R payload), raw function ACL (`ac86a7505043d1db53b1b9bd8d9b43561b520a7bf1c8d5a99e8d09f55e17a2ad`) and effective function ACL (`2ef51b540d59b3288f508993ce0d6b6f824fa2e4300cf219f11f23e3956fa9c4`) fingerprints. The validator parameters must remain `input_version_id` and `input_publication_version_ids`. Recreated wrappers must revoke default `PUBLIC`/`anon` execution in the phase that creates them and explicitly grant only the authenticated public/RLS accessors. Do not substitute broad default-privilege changes, an all-functions revoke, or drop/recreate behavior. Stop if any first-install or reapply ACL differs from these reviewed fingerprints.
+Before any production migration, run `npm run verify:routine-full-migration-reapply`. Its network-isolated PostgreSQL 17.6 rehearsal must complete three exact 16-migration Phase 10A → 10A1 → 10B–10L sequences (48/48 applications) without a manager-RPC bootstrap and with identical Routine schema (`f44dc34640c684d2dc1cbb072f88f7d111c49f13a9b5a934905a07c73733c33a` for the reviewed 1.1R payload), raw function ACL (`ac86a7505043d1db53b1b9bd8d9b43561b520a7bf1c8d5a99e8d09f55e17a2ad`) and effective function ACL (`2ef51b540d59b3288f508993ce0d6b6f824fa2e4300cf219f11f23e3956fa9c4`) fingerprints. It must also prove multi-organization bootstrap, complete preservation of a non-default existing row, exact K1/K2/K3/K4 stage progression, and data/revision/timestamp stability on reapply. The validator parameters must remain `input_version_id` and `input_publication_version_ids`. Recreated wrappers must revoke default `PUBLIC`/`anon` execution in the phase that creates them and explicitly grant only the authenticated public/RLS accessors. Do not substitute broad default-privilege changes, an all-functions revoke, or drop/recreate behavior. Stop if any first-install or reapply ACL differs from these reviewed fingerprints.
 
-## Phase 10M migration-manifest checkpoint
+## Phase 10A1 and 10M migration-manifest checkpoint
 
-The affected generated artifacts for the uncommitted 1.1R review tree are pinned below. These hashes are local-review evidence, not migration approval:
+The affected artifacts for the current review tree are pinned below. These hashes are local-review evidence, not migration approval:
 
 | Artifact | SHA-256 |
 |---|---|
+| `supabase/phase10a1_routine_organization_settings_bootstrap.sql` | `56ac1afa16d5676bd0c7118b4e246d5d7558aa65e18cd88f0e1dbd4cb86ba2cd` |
 | `content/routine-engine/mesh-routine-content-v1.json` | `fc2e639d692a3850200f73738946f40d8cde16ffc8cae7f65ab38fd077a56a3c` |
 | `supabase/phase10l_mesh_routine_content_pack.sql` | `f91b0479bffc9456954c5f1de388b5713039aa9ad8cc72042aab4da7f213a1fa` |
 | `docs/routine-engine-v2-mesh-content-v1.md` | `dd0483555368f2cd9f3ad2774e211157dc3774d87e0f3785e3d1798f4488cc20` |

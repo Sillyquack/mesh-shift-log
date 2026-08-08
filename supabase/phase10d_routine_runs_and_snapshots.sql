@@ -1,6 +1,6 @@
 -- Phase 10D: Authoritative Routine Runs and Immutable Snapshots.
 --
--- Apply after Phase 10A, 10B, and 10C. This additive migration creates no
+-- Apply after Phase 10A, 10A1, 10B, and 10C. This additive migration creates no
 -- production runs and seeds no routine content. Inventory, Asset Registry,
 -- and Event Operations are read-only snapshot sources: this migration adds
 -- no foreign keys, triggers, policies, or writes to those domains.

@@ -19,7 +19,7 @@ const absolute = (path) => resolve(ROOT, path);
 if (process.argv.length > 2) throw new Error("This verifier accepts no network, URL, host, or project arguments.");
 
 const paths = {
-  foundation: "supabase/phase10a_routine_engine_foundation.sql", templates: "supabase/phase10b_routine_templates.sql",
+  foundation: "supabase/phase10a_routine_engine_foundation.sql", bootstrap: "supabase/phase10a1_routine_organization_settings_bootstrap.sql", templates: "supabase/phase10b_routine_templates.sql",
   references: "supabase/phase10c_routine_reference_images.sql", runs: "supabase/phase10d_routine_runs_and_snapshots.sql",
   lifecycle: "supabase/phase10e_routine_task_lifecycle.sql", time: "supabase/phase10f_routine_operational_time.sql",
   delivery: "supabase/phase10g_routine_closing_delivery.sql", doubleShift: "supabase/phase10h_routine_double_shift.sql",
@@ -176,7 +176,7 @@ async function main() {
   psql("create schema if not exists storage; create table if not exists storage.buckets(id text primary key,name text not null,public boolean not null default false,file_size_limit bigint,allowed_mime_types text[]); create table if not exists storage.objects(id uuid primary key default gen_random_uuid(),bucket_id text not null,name text not null,owner_id uuid,metadata jsonb not null default '{}',unique(bucket_id,name)); alter table storage.objects enable row level security; grant usage on schema storage to authenticated,anon; grant select,insert,update,delete on storage.objects to authenticated;");
   for (const path of baseline) psql(readFileSync(absolute(path), "utf8"), { transaction: true });
   psql("alter table public.user_profiles drop constraint if exists user_profiles_role_check; alter table public.user_profiles add constraint user_profiles_role_check check(role in ('manager','shift_lead','event_floor_manager','staff','time2staff','counter')); ");
-  for (const path of [paths.foundation, paths.templates, paths.references, paths.runs, paths.lifecycle]) psql(readFileSync(absolute(path), "utf8"), { transaction: true });
+  for (const path of [paths.foundation, paths.bootstrap, paths.templates, paths.references, paths.runs, paths.lifecycle]) psql(readFileSync(absolute(path), "utf8"), { transaction: true });
   for (const path of [paths.foundationFixture, paths.runFixture, paths.lifecycleFixture]) psql(readFileSync(absolute(path), "utf8"));
   psql(readFileSync(absolute(paths.time), "utf8"), { transaction: true }); psql(readFileSync(absolute(paths.timeFixture), "utf8"));
   psql(readFileSync(absolute(paths.delivery), "utf8"), { transaction: true }); psql(readFileSync(absolute(paths.deliveryFixture), "utf8"));

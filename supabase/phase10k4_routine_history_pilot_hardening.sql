@@ -37,6 +37,74 @@ begin
 end;
 $phase10k4_release_contract$;
 
+-- Existing rows are upgraded above. Reassert the terminal release contract as
+-- the insert default for organizations provisioned after this full migration
+-- sequence; this does not rewrite any existing settings row.
+alter table public.routine_organization_settings
+  alter column ui_release_stage set default 'staff_preview',
+  alter column ui_contract_version set default 'phase10k4-v1';
+
+-- A post-install organization has no settings row or preview state yet. Keep
+-- the existing public settings RPC, but use the already-established strict
+-- personal-manager boundary for its explicit initial insert so authorization
+-- does not depend circularly on the row being created. CREATE OR REPLACE keeps
+-- the existing function identity and privileges; no new API or grant is added.
+create or replace function public.create_or_update_routine_organization_settings(
+  input_mode text,
+  input_timezone text,
+  input_operational_day_cutoff time without time zone,
+  input_shared_device_enabled boolean,
+  input_reopen_window_hours integer,
+  input_expected_revision bigint default null
+)
+returns public.routine_organization_settings
+language plpgsql
+security definer
+set search_path = pg_catalog
+as $$
+declare
+  v_manager public.user_profiles%rowtype := public.routine_phase10k1_require_personal_manager();
+  v_settings public.routine_organization_settings%rowtype;
+begin
+  select settings.*
+  into v_settings
+  from public.routine_organization_settings settings
+  where settings.organization_id = v_manager.organization_id
+  for update;
+
+  if v_settings.organization_id is null then
+    if input_expected_revision is not null then
+      raise exception using errcode = '40001', message = 'Stale routine settings revision.';
+    end if;
+    insert into public.routine_organization_settings (
+      organization_id, mode, timezone, operational_day_cutoff,
+      shared_device_enabled, reopen_window_hours,
+      created_by_auth_user_id, updated_by_auth_user_id
+    ) values (
+      v_manager.organization_id, input_mode, input_timezone, input_operational_day_cutoff,
+      input_shared_device_enabled, input_reopen_window_hours,
+      v_manager.id, v_manager.id
+    ) returning * into v_settings;
+  else
+    if input_expected_revision is distinct from v_settings.revision then
+      raise exception using errcode = '40001', message = 'Stale routine settings revision.';
+    end if;
+    update public.routine_organization_settings settings
+    set mode = input_mode,
+        timezone = input_timezone,
+        operational_day_cutoff = input_operational_day_cutoff,
+        shared_device_enabled = input_shared_device_enabled,
+        reopen_window_hours = input_reopen_window_hours,
+        revision = settings.revision + 1,
+        updated_by_auth_user_id = v_manager.id
+    where settings.organization_id = v_manager.organization_id
+    returning * into v_settings;
+  end if;
+
+  return v_settings;
+end;
+$$;
+
 create table if not exists public.routine_release_attestations (
   id uuid primary key default gen_random_uuid(),
   organization_id uuid not null references public.organizations(id),

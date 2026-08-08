@@ -1,4 +1,4 @@
--- Disposable Phase 10C fixtures. Phase 10A and 10B fixtures are installed first.
+-- Disposable Phase 10C fixtures. Phase 10A, 10A1, and 10B fixtures are installed first.
 begin;
 
 select set_config('request.jwt.claim.sub', '11000000-0000-4000-8000-000000000001', false);
