@@ -26,6 +26,26 @@ const sessionRestore = app.slice(
   app.indexOf('async function restoreSupabaseUser()'),
   app.indexOf('useEffect(() => {\n    function updateOnlineStatus'),
 );
+const pilotNotice = app.slice(app.indexOf('function PilotNotice('), app.indexOf('function AlertCard('));
+
+function cssRules(source) {
+  return [...source.matchAll(/([^{}]+)\{([^{}]*)\}/g)].map((match) => ({
+    selectors: match[1].split(',').map((selector) => selector.trim()),
+    declarations: match[2],
+  }));
+}
+
+function ruleWithExactSelectors(rules, expectedSelectors) {
+  return rules.find((rule) =>
+    rule.selectors.length === expectedSelectors.length &&
+    expectedSelectors.every((selector) => rule.selectors.includes(selector))
+  );
+}
+
+function explicitMinHeightPx(rule) {
+  const match = rule?.declarations.match(/(?:^|;)\s*min-height:\s*(\d+)px\s*(?:;|$)/);
+  return match ? Number(match[1]) : null;
+}
 
 test('login exposes a focused Forgot password flow without changing email normalization', () => {
   assert.match(login, /Forgot password\?/);
@@ -137,6 +157,42 @@ test('password UI remains horizontally safe on mobile widths', () => {
   assert.match(styles, /\.password-field-row\s*\{[\s\S]*?grid-template-columns:\s*minmax\(0, 1fr\) auto;/);
   assert.match(styles, /\.account-security-modal\s*\{[\s\S]*?overflow-x:\s*hidden;/);
   for (const width of [375, 390, 430]) assert.ok(width - 20 > 300);
+});
+
+test('legacy login and pilot touch targets enforce an explicit 48px minimum', () => {
+  const rules = cssRules(styles);
+  const loginTabsRule = ruleWithExactSelectors(rules, ['.login-mode-tabs button']);
+  const sharedActionRule = ruleWithExactSelectors(rules, [
+    '.primary-button',
+    '.ghost-button',
+    '.file-button',
+    '.date-chips button',
+  ]);
+
+  assert.equal(explicitMinHeightPx(loginTabsRule), 48);
+  assert.equal(explicitMinHeightPx(sharedActionRule), 48);
+
+  const relevantOverrides = rules.filter((rule) =>
+    explicitMinHeightPx(rule) !== null &&
+    rule.selectors.some((selector) =>
+      selector.includes('.login-mode-tabs') ||
+      selector === '.primary-button' ||
+      (/\.(?:login-shell|login-panel|login-form|pilot-modal|modal-backdrop)/.test(selector) &&
+        selector.includes('.primary-button'))
+    )
+  );
+  assert.ok(relevantOverrides.length >= 2);
+  for (const rule of relevantOverrides) {
+    assert.ok(
+      explicitMinHeightPx(rule) >= 48,
+      `${rule.selectors.join(', ')} lowers a login or pilot touch target below 48px`,
+    );
+  }
+
+  const loginTabs = login.slice(login.indexOf('<div className="login-mode-tabs"'), login.indexOf('</div>', login.indexOf('<div className="login-mode-tabs"')));
+  assert.match(loginTabs, /<button[\s\S]*?Staff code login[\s\S]*?<button[\s\S]*?Email login/);
+  assert.match(login, /<button\s+type="submit"\s+className="primary-button"[\s\S]*?: "Log in"/);
+  assert.match(pilotNotice, /<button\s+type="button"\s+className="primary-button"[\s\S]*?I understand/);
 });
 
 console.log('Supabase Auth password security verification passed.');

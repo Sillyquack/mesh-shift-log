@@ -273,7 +273,7 @@ h2 {
 }
 
 .login-mode-tabs button {
-  min-height: 42px;
+  min-height: 48px;
   border: 1px solid var(--line);
   border-radius: 8px;
   background: var(--surface-strong);
@@ -315,7 +315,7 @@ textarea {
 .ghost-button,
 .file-button,
 .date-chips button {
-  min-height: 46px;
+  min-height: 48px;
   border: 0;
   border-radius: 8px;
   font-weight: 800;
