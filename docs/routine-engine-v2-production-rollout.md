@@ -1,6 +1,6 @@
 # Routine Engine v2 production rollout runbook
 
-Status: plan only. Phase 10A1 repairs the local migration chain but does not execute this runbook, connect to a production project, install content, publish, promote a release stage, change mode, pause work, or create an operational record.
+Status: plan only for Phase 10O. Phase 10A–10L are already present in production, while the organization remains `legacy/staff_preview`. This runbook does not apply 10O, install content, publish, promote a release stage, change mode, pause work, or create an operational record.
 
 ## Phase 10A1 stop record and renewed gates
 
@@ -30,12 +30,15 @@ Obtain explicit production-change approval and record the approved Supabase proj
 14. `phase10k3_routine_employee_workflow.sql`
 15. `phase10k4_routine_history_pilot_hardening.sql`
 16. `phase10l_mesh_routine_content_pack.sql`
+17. `phase10o_routine_default_privilege_hardening.sql`
 
-The 10L migration installs the reviewed content-pack mechanism but does not install organization content. Never reorder, squash, or edit an already-applied phase migration.
+The 10L migration installs the reviewed content-pack mechanism but does not install organization content. Phase 10O is a forward-only default-privilege hardening for objects created later by the effective migration role; it changes no existing object, grant, policy, row, Storage policy or Realtime membership. Never reorder, squash, or edit an already-applied phase migration. No database rollback is required: catalog forensics proved that existing Routine objects are already semantically correct and secure.
 
 ## Project-ref preflight
 
 Have two people compare the intended project ref, organization ID, environment label, CLI link target and browser project URL. Stop if any value is empty or differs between the CLI and dashboard. Record only non-secret identifiers. Do not print tokens, database passwords, service-role keys, PINs or operator session tokens.
+
+Immediately before authorizing 10O, use the approved read-only connection to record `session_user` and `current_user`. If the connection uses `SET ROLE`, `current_user` must be the role that will create later objects. Stop unless the intended object-creation role is proven; 10O intentionally contains no hardcoded `FOR ROLE` clause. Production 10O application is not authorized by this document.
 
 ## Backup and verification
 
@@ -51,7 +54,9 @@ Verify that `routine_events`, and only approved tables, are members of `supabase
 
 Compare RLS enablement, policies, function owners, fixed search paths and exact authenticated `EXECUTE` grants with the disposable catalog fingerprint. Confirm anon has no Routine Engine access, authenticated clients have no direct mutation DML, and release/E2E attestation tables expose no client DML. Scan the build and repository for service-role keys, secrets, PINs, bearer/session tokens and production URLs.
 
-Before any production migration, run `npm run verify:routine-full-migration-reapply`. Its network-isolated PostgreSQL 17.6 rehearsal must complete three exact 16-migration Phase 10A → 10A1 → 10B–10L sequences (48/48 applications) without a manager-RPC bootstrap and with identical Routine schema (`4a913601c4e890a69f5712a82bd3ed85de461c6473bc2ca57a33f56cf4c86202` for the reviewed 1.1R payload), raw function ACL (`ac86a7505043d1db53b1b9bd8d9b43561b520a7bf1c8d5a99e8d09f55e17a2ad`) and effective function ACL (`2ef51b540d59b3288f508993ce0d6b6f824fa2e4300cf219f11f23e3956fa9c4`) fingerprints. It must also prove multi-organization bootstrap, complete preservation of a non-default existing row, exact K1/K2/K3/K4 stage progression, and data/revision/timestamp stability on reapply. The validator parameters must remain `input_version_id` and `input_publication_version_ids`. Recreated wrappers must revoke default `PUBLIC`/`anon` execution in the phase that creates them and explicitly grant only the authenticated public/RLS accessors. Do not substitute broad default-privilege changes, an all-functions revoke, or drop/recreate behavior. Stop if any first-install or reapply ACL differs from these reviewed fingerprints.
+Before any production migration, run `npm run verify:routine-full-migration-reapply`. Its network-isolated PostgreSQL 17.6.1.127 matrix must apply the exact 17-migration Phase 10A → 10A1 → 10B–10L → 10O sequence three times in both the rehearsal (`supabase_admin`) and production-shaped (`postgres`) owner contexts: 51/51 applications per context. Both must produce portable semantic schema fingerprint `b0557825a4d5fbff851e4a167f3647e4ac74846914768c6ddd3b27584a1e7b32`. The portable payload uses fixed deparser `search_path=pg_catalog`, explicit schema-qualified identities, deterministic records, all non-owner semantic fields, and excludes owners and every ACL category. The former schema/raw/effective fingerprints are environment-dependent diagnostics only.
+
+Acceptance also requires separate literal attestations. Existing-object client access must retain zero `PUBLIC`/`anon` Routine function execution, the exact authenticated 218-signature function allowlist, the reviewed 32/32 public/internal signature contract, zero direct client Routine DML, the exact authenticated 65-relation SELECT allowlist, zero unconditional or broad (`PUBLIC`/`anon`) Routine RLS, and canonical validator argument names. The existing authenticated policies remain predicate-constrained even though PostgreSQL labels their policy-combination mode `PERMISSIVE`. Default ACL must separately prove that future public tables, sequences and functions created by the effective `current_user` give `PUBLIC`, `anon` and `authenticated` no privilege while owner access remains. Actual owners, `postgres`, `supabase_admin`, `service_role`, privileged grants and `pg_default_acl.defaclrole` are reported as environment evidence and never normalized into browser access. Stop on any client/default-ACL mismatch or an owner outside the narrow Routine variants (`postgres`/`supabase_admin`) and the reviewed infrastructure owners (`pg_database_owner`/`supabase_storage_admin`).
 
 ## Phase 10A1 and 10M migration-manifest checkpoint
 
@@ -62,6 +67,7 @@ The affected artifacts for the current review tree are pinned below. These hashe
 | `supabase/phase10a1_routine_organization_settings_bootstrap.sql` | `56ac1afa16d5676bd0c7118b4e246d5d7558aa65e18cd88f0e1dbd4cb86ba2cd` |
 | `content/routine-engine/mesh-routine-content-v1.json` | `fc2e639d692a3850200f73738946f40d8cde16ffc8cae7f65ab38fd077a56a3c` |
 | `supabase/phase10l_mesh_routine_content_pack.sql` | `f91b0479bffc9456954c5f1de388b5713039aa9ad8cc72042aab4da7f213a1fa` |
+| `supabase/phase10o_routine_default_privilege_hardening.sql` | `ca8c96adb59d936a4b36d360da260e535fbe92b50ecfcf68137c8fe113b400ce` |
 | `docs/routine-engine-v2-mesh-content-v1.md` | `dd0483555368f2cd9f3ad2774e211157dc3774d87e0f3785e3d1798f4488cc20` |
 | `docs/routine-engine-v2-mesh-operational-standards-amendment-2026-08-07.md` | `aed94b69e98e7f7ed6ace5a37d84cf50770ea6fd3337b536898179f9c4f8c2a8` |
 
@@ -69,7 +75,7 @@ Gate 0 and Gate 1 must be rerun against the eventual new commit before any produ
 
 ## Shadow and manager preview
 
-Keep the installed preview stage and explicitly select `shadow` only after migration verification. Shadow remains read-only for operational mutations. Verify legacy Opening/Closing operation, Stock Count, Inventory Storage and Event Operations. Never move directly from legacy to pilot.
+Keep the installed preview stage and do not select `shadow` until 10O has been separately applied and its portable schema, literal client ACL, literal default ACL and owner/platform attestations all pass. Shadow remains blocked today because production 10O has not been applied. Verify legacy Opening/Closing operation, Stock Count, Inventory Storage and Event Operations. Never move directly from legacy to pilot.
 
 Managers review foundation, locations/routes, standards, reference images, devices/operators, pilot membership candidates, history sources and the legacy unscoped aggregate. Shared-device identities must not open manager surfaces. Resolve blockers with existing manager RPCs; do not edit tables directly.
 
