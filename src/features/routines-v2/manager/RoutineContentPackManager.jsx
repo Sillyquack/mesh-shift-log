@@ -2,6 +2,7 @@ import { useCallback, useEffect, useState } from "react";
 import { getMeshRoutineContentPackAudit, installMeshRoutineContentPack, previewMeshRoutineContentPack } from "../api/routineManagerClient.js";
 import { createIdempotencyKey, managerErrorMessage, shortHash } from "../data/routineManagerModel.js";
 import { Field, StatusPill } from "./RoutineManagerPrimitives.jsx";
+import RoutineProductionReadinessAmendment from "./RoutineProductionReadinessAmendment.jsx";
 
 const formatResource = (entry) => `${entry.resourceType}: ${entry.key}`;
 
@@ -96,6 +97,8 @@ export default function RoutineContentPackManager({
     <section className="rm-card"><header><h3>Unresolved publication and readiness requirements</h3><StatusPill state="blocked">{preview.unresolvedRequirements?.length || 0} blockers</StatusPill></header><ul className="rm-issues rm-blockers">{preview.unresolvedRequirements?.map((entry) => <li key={entry.standardKey}><strong>{entry.label}</strong><br/><small>{entry.standardKey} · affects {entry.affectedTaskIds?.join(", ")}</small></li>)}</ul><p className="rm-note">These values remain genuinely unresolved. Installation is allowed, but publication and later readiness remain blocked.</p></section>
 
     <section className="rm-card"><h3>Readiness impact</h3><dl className="rm-evidence">{Object.entries(preview.readinessImpact || {}).map(([key, value]) => <div key={key}><dt>{key.replaceAll(/([A-Z])/g, " $1")}</dt><dd>{String(value)}</dd></div>)}</dl></section>
+
+    <RoutineProductionReadinessAmendment providerHash={metadata.packHash} onApplied={refresh} />
 
     {installed ? <section className="rm-card"><header><h3>Installed editable drafts</h3><StatusPill state="ready">{installed.installStatus || "installed"}</StatusPill></header><div className="rm-split"><article><h4>Opening</h4><p><code>{installed.openingDraftVersionId}</code></p><small>Template {installed.openingTemplateId}</small></article><article><h4>Closing</h4><p><code>{installed.closingDraftVersionId}</code></p><small>Template {installed.closingTemplateId}</small></article></div>{onOpenTemplates ? <button type="button" className="ghost-button" onClick={onOpenTemplates}>Open editable templates</button> : null}{audit?.semanticDivergence && (audit.semanticDivergence.opening || audit.semanticDivergence.closing) ? <p className="rm-inline-blocker">Changed from installed pack. Manager edits are preserved and will not be repaired automatically.</p> : null}</section> : null}
 

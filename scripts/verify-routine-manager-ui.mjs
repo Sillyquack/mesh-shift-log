@@ -151,7 +151,7 @@ function sourceChecks() {
   const workspace = readFileSync(absolute("src/features/routines-v2/components/RoutineEngineWorkspace.jsx"), "utf8");
   const preview = readFileSync(absolute("src/features/routines-v2/components/RoutineEnginePreviewHome.jsx"), "utf8");
   const managerWorkspace = readFileSync(absolute("src/features/routines-v2/manager/RoutineManagerWorkspace.jsx"), "utf8");
-  const clientFiles = ["routineManagerClient.js", "routineConfigurationClient.js", "routineTemplateClient.js"].map((name) => readFileSync(absolute(`src/features/routines-v2/api/${name}`), "utf8")).join("\n");
+  const clientFiles = ["routineManagerClient.js", "routineConfigurationClient.js", "routineTemplateClient.js", "routineProductionReadinessAmendmentClient.js"].map((name) => readFileSync(absolute(`src/features/routines-v2/api/${name}`), "utf8")).join("\n");
   const managerFiles = [
     "RoutineManagerWorkspace.jsx", "RoutineManagerOverview.jsx", "RoutineFoundationManager.jsx", "RoutineLocationsManager.jsx",
     "RoutineLocationSetsManager.jsx", "RoutineStandardsManager.jsx", "RoutineTemplatesManager.jsx", "RoutineTemplateEditor.jsx",
@@ -159,7 +159,7 @@ function sourceChecks() {
     "RoutineTimingEditor.jsx", "RoutineDependencyEditor.jsx", "RoutineRelationEditor.jsx", "RoutineReferenceLinkEditor.jsx",
     "RoutineTemplateValidationPanel.jsx", "RoutineTemplateDiffPanel.jsx", "RoutinePublicationDialog.jsx", "RoutineReferenceManager.jsx",
     "RoutineOperatorAdmin.jsx", "RoutinePilotAccessManager.jsx", "RoutineReleaseReadiness.jsx", "RoutineManagerErrorBoundary.jsx",
-    "RoutineManagerPrimitives.jsx", "RoutineTemplateActiveDialog.jsx",
+    "RoutineManagerPrimitives.jsx", "RoutineTemplateActiveDialog.jsx", "RoutineProductionReadinessAmendment.jsx",
   ];
   const sources = Object.fromEntries(managerFiles.map((name) => [name, readFileSync(absolute(`src/features/routines-v2/manager/${name}`), "utf8")]));
   const allManager = Object.values(sources).join("\n");
@@ -170,6 +170,9 @@ function sourceChecks() {
   const harness = readFileSync(absolute("src/features/routines-v2/testing/routineManagerHarnessEntry.jsx"), "utf8");
   const main = readFileSync(absolute("src/main.jsx"), "utf8");
   const contentPack = JSON.parse(readFileSync(absolute("content/routine-engine/mesh-routine-content-v1-2r.json"), "utf8"));
+  const amendmentClient = readFileSync(absolute("src/features/routines-v2/api/routineProductionReadinessAmendmentClient.js"), "utf8");
+  const amendmentModel = readFileSync(absolute("src/features/routines-v2/data/routineProductionReadinessAmendmentModel.js"), "utf8");
+  const amendmentManifest = readFileSync(absolute("src/features/routines-v2/data/routineProductionReadinessAmendmentManifest.js"), "utf8");
   const contentStandards = Object.fromEntries(contentPack.standards.map((entry) => [entry.key, entry]));
   const combined = `${managerSql}\n${clientFiles}\n${allManager}\n${harness}`;
 
@@ -227,6 +230,13 @@ function sourceChecks() {
   for (const name of managerFiles) check(`${name} exists as isolated manager component`, existsSync(absolute(`src/features/routines-v2/manager/${name}`)) && sources[name].length > 100);
   check("manager clients use central RPC client", clientFiles.includes("routineRpcClient.request") || clientFiles.includes("managerRpc"));
   check("manager clients have no table builder", !/\.(from|insert|update|delete)\s*\(/.test(clientFiles));
+  check("production amendment pins the reviewed provider", amendmentModel.includes("2dcfc69b822f973c23e54934b6799faa5b9400ae0529096f049067811a417f25") && amendmentManifest.includes('packVersion: "1.2R"'));
+  check("production amendment scope is exactly reviewed", ["O02", "O28", "O29", "O34", "O35", "C06", "C17"].every((id) => amendmentModel.includes(`"${id}"`)) && amendmentModel.includes('changedItems.length !== 1'));
+  check("production amendment reuses only existing manager RPC clients", ["saveLocation", "updateRoutineReferenceImageMetadata", "saveTask", "saveItem"].every((name) => amendmentClient.includes(name)) && !/installMesh|publish|createStandardRevision|setRoutineEngineMode/.test(amendmentClient));
+  check("production amendment preserves nonsemantic standard label", amendmentModel.includes("No supported standard metadata RPC exists") && amendmentModel.includes("structured value and revision remain unchanged"));
+  check("production amendment verifies authoritative readback", amendmentClient.includes("authoritative-readback-after-unknown-outcome") && amendmentClient.includes("Reviewed amendment is not complete after authoritative readback"));
+  check("production amendment reuses a reference idempotency key", amendmentClient.includes("const request = () => updateRoutineReferenceImageMetadata") && amendmentClient.includes("result.mode === \"network_error\"") && amendmentClient.includes("result = await request()"));
+  check("production amendment reports partial safe progress", amendmentClient.includes("completedEvidence") && amendmentClient.includes("remainingResource"));
   check("manager overview uses the authoritative publication batch preview", clientFiles.includes('managerRpc("preview_routine_template_publication_batch"') && clientFiles.includes("applyRoutineBatchValidations"));
   check("template editor receives the same authoritative batch validation", clientFiles.includes("getRoutineManagerControlCenter()") && clientFiles.includes("publicationValidationContext"));
   for (const rpc of ["upsert_routine_location", "set_routine_location_active", "upsert_routine_location_set", "replace_routine_location_set_members", "create_routine_standard", "create_routine_standard_revision", "create_routine_template", "create_routine_template_draft", "set_routine_template_active", "update_routine_draft_metadata", "upsert_routine_draft_section", "reorder_routine_draft_sections", "upsert_routine_draft_task", "reorder_routine_draft_tasks", "upsert_routine_draft_task_item", "reorder_routine_draft_task_items", "replace_routine_draft_dependencies", "replace_routine_draft_relations", "validate_routine_template_version", "publish_routine_template_versions", "discard_routine_template_draft"]) check(`${rpc} is reused by client`, clientFiles.includes(`"${rpc}"`));
