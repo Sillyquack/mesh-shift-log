@@ -4,11 +4,14 @@ import { dirname, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 
 const ROOT = resolve(dirname(fileURLToPath(import.meta.url)), "..");
-const PACK_PATH = resolve(ROOT, "content/routine-engine/mesh-routine-content-v1-2r.json");
-const DOC_PATH = resolve(ROOT, "docs/routine-engine-v2-mesh-content-v1-2r.md");
-const SQL_PATH = resolve(ROOT, "supabase/phase10q_mesh_routine_content_pack_1_2r.sql");
+const PACK_PATH = resolve(ROOT, "content/routine-engine/mesh-routine-content-v1-3r.json");
+const PREVIOUS_PACK_PATH = resolve(ROOT, "content/routine-engine/mesh-routine-content-v1-2r.json");
+const DOC_PATH = resolve(ROOT, "docs/routine-engine-v2-mesh-content-v1-3r.md");
+const SQL_PATH = resolve(ROOT, "supabase/phase10r_mesh_routine_content_pack_1_3r.sql");
+const MANIFEST_PATH = resolve(ROOT, "src/features/routines-v2/data/routineProductionReadinessAmendmentManifest.js");
 const BASE_AMENDMENT_PATH = resolve(ROOT, "docs/routine-engine-v2-mesh-operational-standards-amendment-2026-08-07.md");
-const AMENDMENT_PATH = resolve(ROOT, "docs/routine-engine-v2-production-readiness-amendment-2026-08-09.md");
+const PRODUCTION_AMENDMENT_PATH = resolve(ROOT, "docs/routine-engine-v2-production-readiness-amendment-2026-08-09.md");
+const AMENDMENT_PATH = resolve(ROOT, "docs/routine-engine-v2-serviceware-route-amendment-2026-08-09.md");
 const AMENDMENT_METADATA_HEADING = "## Generated pack metadata";
 const PACK_START = "-- BEGIN GENERATED MESH CONTENT PACK PAYLOAD";
 const PACK_END = "-- END GENERATED MESH CONTENT PACK PAYLOAD";
@@ -65,8 +68,8 @@ const LOCATION_SETS = [
   ["cornerbar-fridges", "Cornerbar fridges", FRIDGE_KEYS.slice(4), {}],
   ["closing-door-check", "Closing door check", DOOR_KEYS, {}],
   ["final-guest-area-sweep", "Final guest area sweep", ["workbar", "members-lounge", ...TOILET_KEYS, "cornerbar", "atrium", ...ROOM_KEYS, "kitchen"], {}],
-  ["serviceware-recovery-route", "Serviceware recovery route", ["workbar", "members-lounge", "atrium", "cornerbar", ...ROOM_KEYS, "kitchen", "serviceware-storage"], { managerIncomplete: true }],
-].map(([key, name, members, metadata], sortOrder) => ({ key, name, description: key === "serviceware-recovery-route" ? "Known physical recovery points only. Relevant office-floor points remain unresolved." : null, members, sortOrder, metadata }));
+  ["serviceware-recovery-route", "Serviceware recovery route", ["workbar", "members-lounge", "atrium", "cornerbar", ...ROOM_KEYS, "kitchen", "serviceware-storage"], { managerIncomplete: false, authoritativeStandardKey: "serviceware-office-recovery-route-confirmation" }],
+].map(([key, name, members, metadata], sortOrder) => ({ key, name, description: key === "serviceware-recovery-route" ? "Scope anchor for serviceware recovery; the authoritative office-floor kitchen sequence is stored in the shared serviceware route standard." : null, members, sortOrder, metadata }));
 
 const SELF_SERVICE_COMPONENTS = [
   "milk jug with milk during service", "sugar", "sweetener", "stirrers", "loose-leaf tea slots",
@@ -147,6 +150,69 @@ const CORNERBAR_OPERATING_STANDARD = Object.freeze({
   finalClosing: ["confirm-last-service-and-event-operation-ended", "full-restock-close-lock-and-check-left-middle-right-fridges", "clean-and-return-bar-equipment", "clean-and-return-beer-tap-parts-and-drip-trays", "reset-cornerbar-to-approved-final-standard", "turn-off-music", "apply-closed-lighting", "complete-physical-area-sweep", "close-and-lock-relevant-inner-doors", "remove-unauthorized-manual-salto-unlocks", "lock-cornerbar-street-door-in-salto", "engage-upper-physical-security-lock", "verify-salto-lock-and-upper-physical-lock-separately"],
   eventActive: { ordinaryClosingMayClaimComplete: false, notApplicableAllowed: false, transferRequired: true, transferScopes: ["fridges", "doors-and-locks", "equipment", "music-and-lighting", "final-sweep", "reset-controls"], finalEvidence: "physical-completion-evidence-required" },
 });
+const SERVICEWARE_RECOVERY_ROUTE = Object.freeze({
+  contractKey: "mesh-serviceware-office-recovery-route-v1",
+  purpose: "Collect all café/Workbar serviceware that has migrated to office-floor kitchens and restore the full Workbar default before completion.",
+  equipment: {
+    trolley: 1,
+    emptyTraysMinimum: 2,
+    cleanTray: 1,
+    dirtyTray: 1,
+    cleanDirtySeparationRequiredThroughout: true,
+    sameTrayMixingAllowed: false,
+  },
+  route: [
+    "Start in Workbar.",
+    "Take the Workbar elevator to floor 2.",
+    "Inspect both kitchens on floor 2, beginning on the Workbar-elevator side and finishing at the other elevator.",
+    "Take the other elevator to floor 3.",
+    "Inspect both kitchens on floor 3, moving from the other-elevator side toward the Workbar elevator.",
+    "Take the Workbar elevator to floor 4.",
+    "Inspect both kitchens on floor 4, moving from the Workbar-elevator side toward the other elevator.",
+    "Take the other elevator to floor 5 and inspect the kitchen on that side.",
+    "Never pass through the office that separates the two sides of floor 5.",
+    "Take the other elevator back to floor 4, return to the Workbar elevator without repeating the completed kitchen inspection, and take the Workbar elevator to floor 5.",
+    "Inspect the kitchen closest to the Workbar elevator.",
+    "Return to Workbar using the Workbar elevator.",
+  ],
+  scope: {
+    floors: [2, 3, 4, 5],
+    kitchensPerFloor: 2,
+    kitchenTypesPerFloor: ["large", "small"],
+    totalKitchens: 8,
+    officeAreasIncluded: false,
+    floor5SeparatingOffice: "explicitly_excluded_never_pass_through",
+  },
+  collect: [
+    "cappuccino cups", "espresso cups", "cocktail glasses", "wine glasses", "beer glasses", "coffee cups",
+    "other glassware or serviceware belonging to Workbar/Café",
+    "such equipment present in excess of what belongs on the office floor",
+  ],
+  sorting: {
+    clean: "Return directly to the correct shelf or fixed place.",
+    dirty: "Take to the prep kitchen, wash, and return to the correct place.",
+    cleanSurplus: "Return to the correct prep-kitchen storage when not needed in active service.",
+    cleanDirtyNeverMixedInSameTray: true,
+  },
+  timing: {
+    opening: { performAtAnyAppropriatePoint: true, completeNoLaterThanLocalTime: "10:45" },
+    closingDailyRecovery: { after: ["lunch service", "staff lunch"], normalTargetLocalTimeApprox: "13:30" },
+  },
+  responsibility: { performer: "responsible person for the shift", designedForPeople: 1 },
+  completion: {
+    requiredState: "full configured Workbar default stock of cups, glasses and relevant serviceware physically restored",
+    completingWalkAloneIsSufficient: false,
+    missingEquipmentActions: ["find", "wash if dirty", "return to correct position"],
+    openingWorkerArrivalState: "fully prepared Workbar",
+  },
+  unavailableArea: {
+    wait: false,
+    bypassAccessControl: false,
+    actions: ["notify manager", "record the specific inaccessible area as a deviation", "continue the remainder of the route"],
+    defaultRestorationRequirementRemains: true,
+  },
+  referenceMedia: { mandatoryImage: false, mandatoryRouteDiagram: false, logicalImageBlocker: false },
+});
 
 const STANDARDS = [
   ["workbar-milk-fridge-target", "Workbar Milk Fridge target", "object", "manual", { regularMilk: 2, oatly: 2 }],
@@ -159,13 +225,13 @@ const STANDARDS = [
   ["wine-glasses-full-target", "Wine glasses full visual layout", "object", "manual", WINE_GLASS_LAYOUT],
   ["wine-glasses-service-ready-target", "Wine glasses service-ready visual layout", "object", "manual", WINE_GLASS_LAYOUT],
   ["self-service-tea-slot-names", "Six named loose-leaf tea slots", "list", "manual", TEA_SLOT_NAMES],
-  ["serviceware-office-recovery-route-confirmation", "Serviceware office recovery route confirmation", "object", "location_set"],
+  ["serviceware-office-recovery-route-confirmation", "Serviceware office recovery route confirmation", "object", "location_set", SERVICEWARE_RECOVERY_ROUTE, "Authoritative serviceware route supplied by Robert on 2026-08-09."],
   ["door-and-lock-rules", "Door and lock rules", "object", "manual", DOOR_AND_LOCK_RULES],
   ["fridge-closing-rules", "Fridge closing rules", "object", "manual", FRIDGE_CLOSING_RULES],
   ["cornerbar-operating-standard", "Cornerbar Operating Standard", "object", "manual", CORNERBAR_OPERATING_STANDARD],
-].map(([key, label, valueType, sourceKind, currentValue]) => ({
+].map(([key, label, valueType, sourceKind, currentValue, revisionReason]) => ({
   key, label, description: currentValue === undefined ? "Unresolved publication and readiness blocker." : null,
-  valueType, sourceKind, ...(currentValue === undefined ? {} : { currentRevision: { value: currentValue, reason: "Approved Mesh operational standards amendment 2026-08-07." } }),
+  valueType, sourceKind, ...(currentValue === undefined ? {} : { currentRevision: { value: currentValue, reason: revisionReason || "Approved Mesh operational standards amendment 2026-08-07." } }),
 }));
 
 const REFERENCES = [
@@ -211,9 +277,7 @@ const REFERENCES = [
   ["salto-closing-status", "Salto closing status", ["C43"]],
 ].map(([key, label, taskIds]) => ({ key, label, description: `Placeholder reference for ${label}.`, placeholderText: "Referansebilde kommer", buttonLabel: "Vis hvordan det skal se ut", taskIds }));
 
-const UNRESOLVED = [
-  ["serviceware-office-recovery-route-confirmation", "Exact serviceware recovery route through relevant office floors", ["O15", "C03", "C27"]],
-].map(([standardKey, label, affectedTaskIds]) => ({ standardKey, label, affectedTaskIds, blockerType: "publication_and_readiness" }));
+const UNRESOLVED = [];
 
 const SECTION_CONFIG = {
   O: [
@@ -241,6 +305,7 @@ const TASK_LOCATIONS = {
 };
 
 const TIMING = {
+  O15: { targetLocalTime: "10:45:00", hardDeadlineLocalTime: "10:45:00" },
   O23: { targetLocalTime: "08:00:00" },
   O29: { visibleFromLocalTime: "09:35:00", startFromLocalTime: "09:40:00", targetLocalTime: "09:45:00", overdueLocalTime: "09:55:00" },
   O35: { visibleFromLocalTime: "10:35:00", startFromLocalTime: "10:40:00", targetLocalTime: "10:45:00", overdueLocalTime: "10:50:00", hardDeadlineLocalTime: "10:55:00" },
@@ -651,6 +716,60 @@ function applyProductionReadinessAmendment(openingTasks, closingTasks, amendment
   }
   for (const id of touched) finalizeProductionReadinessAmendment(tasks.get(id), amendmentDecisionHash);
 }
+function finalizeServicewareRouteAmendment(task, amendmentDecisionHash) {
+  task.items.forEach((item, sortOrder) => { item.sortOrder = sortOrder; item.metadata.sourceText = `\`${item.key}\` — ${item.label}`; });
+  task.structuredItemsText = task.items.map((item) => `- \`${item.key}\` — ${item.label}`).join("\n");
+  task.metadata.deviationRules = bullets(task.deviationRulesText);
+  task.metadata.referenceGuidance = bullets(task.referenceGuidanceText);
+  task.metadata.servicewareRouteAmendment = { date: "2026-08-09", decisionHash: amendmentDecisionHash,
+    standardKey: "serviceware-office-recovery-route-confirmation" };
+  task.sourceHash = sha256(canonical({ priorSourceHash: task.sourceHash, title: task.title, timingText: task.timingText,
+    instructions: task.instructions, structuredItemsText: task.structuredItemsText, doneCriteriaText: task.doneCriteriaText,
+    deviationRulesText: task.deviationRulesText, referenceGuidanceText: task.referenceGuidanceText, timing: task.timing, amendmentDecisionHash }));
+}
+function applyServicewareRouteAmendment(openingTasks, closingTasks, amendmentDecisionHash) {
+  const tasks = new Map([...openingTasks, ...closingTasks].map((task) => [task.id, task]));
+  const routeItem = (task, key, label) => {
+    const item = task.items.find((entry) => entry.key === key);
+    if (!item) throw new Error(`${task.id}/${key}: route evidence item is missing.`);
+    item.label = label;
+    item.sourceKind = "routine_standard";
+    item.standardKey = "serviceware-office-recovery-route-confirmation";
+    item.sourceConfig = {};
+    delete item.locationSetKey;
+  };
+
+  const opening = tasks.get("O15");
+  opening.timingText = "Perform at any appropriate point during Opening; the shared route and full Workbar default restoration must be complete no later than 10:45.";
+  opening.metadata.timingSourceText = opening.timingText;
+  opening.locationDescription = "Workbar, office-floor kitchens on floors 2–5, prep kitchen, and the shared serviceware recovery route.";
+  opening.instructions = "During Opening, the responsible person for the shift performs the current shared serviceware office-recovery standard in its configured sequence. Follow its one-person equipment, clean/dirty separation, collection, sorting and inaccessible-area rules. Restore the full configured Workbar default physically; completing the walk alone is insufficient. Complete the route and restoration no later than 10:45. Previous Closing evidence is context only and never completes this Opening task.";
+  routeItem(opening, "recovery_route_checked", "shared serviceware office-recovery route completed in its configured sequence by the shift-responsible person");
+  opening.doneCriteriaText = "- The current shared route standard is completed by the shift-responsible person no later than 10:45.\n- Every accessible kitchen in the configured eight-kitchen scope was inspected without entering office areas.\n- Any inaccessible area was reported to the manager, recorded specifically as a deviation, and the remainder of the route continued.\n- Clean and dirty items remained separated.\n- Every defined cup and glass position matches its visual layout.\n- Missing or dirty serviceware was found, washed where required, and returned to the correct position.\n- The full configured Workbar default is physically restored; completing the walk alone is not enough.";
+  opening.deviationRulesText = "- The shared route is incomplete or the 10:45 deadline is missed.\n- A floor or kitchen is inaccessible: do not wait or bypass access control; notify the manager, record the specific area and continue the remainder.\n- Clean and dirty serviceware is mixed.\n- Any defined layout position remains empty or contains the wrong type.\n- Any required item remains in washing or unlocated.\n- Workbar's configured default is not physically restored.\n- Broken, lost or damaged serviceware.";
+  opening.referenceGuidanceText = "- Shared route source: `serviceware-office-recovery-route-confirmation`; no image or route diagram is mandatory.\n- `ordinary-coffee-cup-layout`.\n- `cappuccino-cup-shelf-layout`.\n- `cappuccino-and-espresso-machine-top-layout`.\n- `wine-glass-layout`.\n- Previous Closing evidence is context only and never completes this Opening task.";
+  finalizeServicewareRouteAmendment(opening, amendmentDecisionHash);
+
+  const closingRoute = tasks.get("C03");
+  closingRoute.timingText = "Perform after lunch service and staff lunch; the normal daily-recovery target is approximately 13:30. C27 later verifies the evidence and final state without forcing a second route.";
+  closingRoute.metadata.timingSourceText = closingRoute.timingText;
+  closingRoute.locationDescription = "Workbar, office-floor kitchens on floors 2–5, prep kitchen, and the shared serviceware recovery route.";
+  closingRoute.instructions = "After lunch service and staff lunch, the responsible person for the shift performs the current shared serviceware office-recovery standard, normally around 13:30. Follow its one-person route, equipment, clean/dirty separation, collection, sorting and inaccessible-area rules. Return clean items, wash and return dirty items, store clean surplus correctly, and restore the full configured Workbar default. C27 later reviews this route evidence and final accountability; C27 does not require the route to be walked again.";
+  routeItem(closingRoute, "recovery_locations_checked", "shared serviceware office-recovery route completed in its configured sequence after lunch and staff lunch");
+  closingRoute.doneCriteriaText = "- The shift-responsible person completed the current shared route after lunch service and staff lunch, normally around 13:30.\n- Every accessible kitchen in the eight-kitchen scope was inspected; office areas were excluded.\n- Clean and dirty items remained separated and followed the correct return, wash or surplus-storage flow.\n- Any inaccessible area was reported to the manager and recorded specifically while the remainder continued.\n- The full configured Workbar default was physically restored; completing the walk alone was not enough.\n- Route evidence remains available for C27 final accountability.";
+  closingRoute.deviationRulesText = "- A floor or kitchen is inaccessible: do not wait or bypass access control; notify the manager, record the specific area and continue the remainder.\n- The shared route or Workbar default restoration is incomplete.\n- Clean and dirty serviceware is mixed.\n- Serviceware is missing or damaged.\n- An item remains unlocated without owner/follow-up.\n- The normal approximately 13:30 target is missed; record the actual completion/deviation without skipping the route.";
+  closingRoute.referenceGuidanceText = "- Shared route source: `serviceware-office-recovery-route-confirmation`; no image or route diagram is mandatory.\n- Use `ordinary-coffee-cup-layout`, `cappuccino-cup-shelf-layout`, `cappuccino-and-espresso-machine-top-layout` and `wine-glass-layout` when recovered items are returned.";
+  finalizeServicewareRouteAmendment(closingRoute, amendmentDecisionHash);
+
+  const finalAccountability = tasks.get("C27");
+  finalAccountability.locationDescription = "Workbar serviceware storage and washing areas; shared C03 route evidence supplies the office-floor recovery context.";
+  finalAccountability.instructions = "Review the current C03 evidence against the shared serviceware office-recovery standard; do not repeat the physical route solely for C27. Perform the final physical layout and accountability check, locate, wash and return any remaining missing items, and restore the full configured Workbar default. Coffee cups and wine glasses remain separate evidence lines. Event-held items require completed transfer evidence and never become an artificial numeric total.";
+  routeItem(finalAccountability, "full_recovery_route_checked", "current C03 shared-route evidence reviewed against the authoritative standard; no duplicate route required");
+  finalAccountability.doneCriteriaText = "- Current C03 route evidence validates against the shared serviceware office-recovery standard.\n- C27 did not force an unnecessary second route.\n- Coffee-cup and wine-glass layouts are separately complete with correct types and positions.\n- Items in washing and unlocated items are zero for ordinary final Closing.\n- Any event scope has completed transfer evidence.\n- The full configured Workbar default is physically restored.\n- Delivery evidence describes physical layout/accountability, not an artificial total.";
+  finalAccountability.deviationRulesText = "- C03 route evidence is absent, stale, incomplete or does not match the shared standard.\n- The full configured Workbar default is not physically restored.\n- Any layout position is empty or contains the wrong type.\n- Any item remains in washing or unlocated.\n- Required serviceware cannot be washed and returned.\n- Event transfer/evidence is incomplete.";
+  finalAccountability.referenceGuidanceText = "- Shared route source and C03 evidence: `serviceware-office-recovery-route-confirmation`; do not walk a duplicate route solely for C27.\n- `ordinary-coffee-cup-layout`.\n- `cappuccino-cup-shelf-layout`.\n- `cappuccino-and-espresso-machine-top-layout`.\n- `wine-glass-layout`.";
+  finalizeServicewareRouteAmendment(finalAccountability, amendmentDecisionHash);
+}
 function parseDoubleShift(source) {
   const matcher = /^# (DS\d{2}) — ([^\n]+)\n([\s\S]*?)(?=^# [^\n]+|$(?![\s\S]))/gm;
   const steps = [];
@@ -729,20 +848,22 @@ function amendmentDecisionBody(source) {
   if (index < 0) throw new Error("Operational standards amendment is missing the generated metadata boundary.");
   return `${source.replaceAll("\r\n", "\n").slice(0, index).trimEnd()}\n`;
 }
-function buildPack(openingSource, closingSource, doubleShiftSource, baseAmendmentSource, amendmentSource) {
+function buildPack(openingSource, closingSource, doubleShiftSource, baseAmendmentSource, productionAmendmentSource, amendmentSource) {
   validateSource(openingSource, "Opening", SOURCE_HASHES.opening);
   validateSource(closingSource, "Closing", SOURCE_HASHES.closing);
   validateSource(doubleShiftSource, "Double Shift", SOURCE_HASHES.doubleShift);
   const baseAmendmentDecisionHash = sha256(amendmentDecisionBody(baseAmendmentSource));
+  const productionAmendmentDecisionHash = sha256(amendmentDecisionBody(productionAmendmentSource));
   const amendmentDecisionHash = sha256(amendmentDecisionBody(amendmentSource));
   const openingTasks = parseRoutine(openingSource, "O");
   const closingTasks = parseRoutine(closingSource, "C");
   applyOperationalStandardsAmendment(openingTasks, closingTasks, baseAmendmentDecisionHash);
-  applyProductionReadinessAmendment(openingTasks, closingTasks, amendmentDecisionHash);
+  applyProductionReadinessAmendment(openingTasks, closingTasks, productionAmendmentDecisionHash);
+  applyServicewareRouteAmendment(openingTasks, closingTasks, amendmentDecisionHash);
   const doubleShiftSteps = parseDoubleShift(doubleShiftSource);
   const allRelations = relations(closingTasks);
   const pack = {
-    schemaVersion: "1.0", packKey: "mesh-routine-content", packVersion: "1.2R",
+    schemaVersion: "1.0", packKey: "mesh-routine-content", packVersion: "1.3R",
     name: "Mesh Opening and Closing operational content", description: "Editable Opening and Closing drafts plus Double Shift system-step copy. Installation never publishes or creates operative state.",
     sections: [...SECTION_CONFIG.O.map((value, sortOrder) => ({ ...value, routineKey: "opening", sortOrder })), ...SECTION_CONFIG.C.map((value, sortOrder) => ({ ...value, routineKey: "closing", sortOrder }))],
     locations: LOCATIONS, locationSets: LOCATION_SETS, standards: STANDARDS, references: REFERENCES,
@@ -754,7 +875,8 @@ function buildPack(openingSource, closingSource, doubleShiftSource, baseAmendmen
       { kind: "closing", fileName: "mesh-closing-content-spec-v1R-combined.md", sha256: SOURCE_HASHES.closing },
       { kind: "double_shift", fileName: "mesh-double-shift-content-spec-v1R.md", sha256: SOURCE_HASHES.doubleShift },
       { kind: "operational_standards_amendment", fileName: "routine-engine-v2-mesh-operational-standards-amendment-2026-08-07.md", sha256: baseAmendmentDecisionHash, hashScope: "content-before-generated-pack-metadata" },
-      { kind: "production_readiness_amendment", fileName: "routine-engine-v2-production-readiness-amendment-2026-08-09.md", sha256: amendmentDecisionHash, hashScope: "content-before-generated-pack-metadata" },
+      { kind: "production_readiness_amendment", fileName: "routine-engine-v2-production-readiness-amendment-2026-08-09.md", sha256: productionAmendmentDecisionHash, hashScope: "content-before-generated-pack-metadata" },
+      { kind: "serviceware_route_amendment", fileName: "routine-engine-v2-serviceware-route-amendment-2026-08-09.md", sha256: amendmentDecisionHash, hashScope: "content-before-generated-pack-metadata" },
     ],
   };
   validatePack(pack);
@@ -764,13 +886,13 @@ function buildPack(openingSource, closingSource, doubleShiftSource, baseAmendmen
 function generatedAmendment(pack) {
   const source = readFileSync(AMENDMENT_PATH, "utf8");
   const body = amendmentDecisionBody(source);
-  const amendment = pack.sourceDocuments.find((entry) => entry.kind === "production_readiness_amendment");
+  const amendment = pack.sourceDocuments.find((entry) => entry.kind === "serviceware_route_amendment");
   return `${body}\n${AMENDMENT_METADATA_HEADING}\n\nThis section is generated from the canonical pack and is excluded from the amendment decision-body hash.\n\n- Pack: \`${pack.packKey}@${pack.packVersion}\`\n- Canonical pack SHA-256: \`${pack.packHash}\`\n- Amendment decision-body SHA-256: \`${amendment.sha256}\`\n- Production action: supported draft amendment only; never installation or publication\n`;
 }
 function syncAmendment(pack, checkOnly) {
   const expected = generatedAmendment(pack);
   const source = readFileSync(AMENDMENT_PATH, "utf8");
-  if (checkOnly) { if (source !== expected) throw new Error("Operational standards amendment metadata is stale."); }
+  if (checkOnly) { if (source !== expected) throw new Error("Serviceware route amendment metadata is stale."); }
   else writeFileSync(AMENDMENT_PATH, expected);
 }
 function validatePack(pack, withHash = false) {
@@ -780,7 +902,7 @@ function validatePack(pack, withHash = false) {
   if (unknown.length) throw new Error(`Unknown top-level fields: ${unknown.join(", ")}`);
   for (const key of TOP_LEVEL_FIELDS.filter((key) => key !== "packHash")) if (!(key in pack)) throw new Error(`Missing top-level field: ${key}`);
   if (pack.opening.tasks.length !== 37 || pack.closing.tasks.length !== 46 || pack.doubleShiftSteps.length !== 4) throw new Error("Content counts must be Opening 37, Closing 46, Double Shift 4.");
-  if (pack.packVersion !== "1.2R") throw new Error("Production-readiness pack version must be 1.2R.");
+  if (pack.packVersion !== "1.3R") throw new Error("Serviceware-route pack version must be 1.3R.");
   for (const [tasks, prefix, count] of [[pack.opening.tasks, "O", 37], [pack.closing.tasks, "C", 46]]) {
     const expected = new Set(Array.from({ length: count }, (_, index) => `${prefix}${String(index + 1).padStart(2, "0")}`));
     for (const task of tasks) {
@@ -794,7 +916,14 @@ function validatePack(pack, withHash = false) {
   if (/coffee container|coffee urn|coffee pot/i.test(canonical(pack))) throw new Error("Content violates Coffee Canister terminology.");
   if (pack.standards.find((standard) => standard.key === "workbar-milk-fridge-target")?.currentRevision?.value?.regularMilk !== 2 || pack.standards.find((standard) => standard.key === "workbar-milk-fridge-target")?.currentRevision?.value?.oatly !== 2) throw new Error("Workbar Milk Fridge target must be 2 regular milk + 2 Oatly.");
   if (!pack.standards.find((standard) => standard.key === "self-service-fixed-components").currentRevision.value.includes("eggs")) throw new Error("Self-service fixed components must include eggs.");
-  if (pack.unresolvedRequirements.length !== 1 || pack.unresolvedRequirements[0].standardKey !== "serviceware-office-recovery-route-confirmation") throw new Error("The serviceware office recovery route must be the sole unresolved requirement.");
+  if (pack.unresolvedRequirements.length !== 0) throw new Error("The authoritative serviceware route must leave no unresolved content requirements.");
+  const servicewareStandard = pack.standards.find((standard) => standard.key === "serviceware-office-recovery-route-confirmation");
+  if (!servicewareStandard?.currentRevision?.value || servicewareStandard.currentRevision.value.scope?.totalKitchens !== 8
+    || servicewareStandard.currentRevision.value.scope?.officeAreasIncluded !== false
+    || servicewareStandard.currentRevision.value.timing?.opening?.completeNoLaterThanLocalTime !== "10:45"
+    || servicewareStandard.currentRevision.value.timing?.closingDailyRecovery?.normalTargetLocalTimeApprox !== "13:30") {
+    throw new Error("The shared serviceware route standard is incomplete.");
+  }
   if (canonical(pack.standards.find((standard) => standard.key === "coffee-cups-full-target")?.currentRevision?.value) !== canonical(pack.standards.find((standard) => standard.key === "coffee-cups-service-ready-target")?.currentRevision?.value)) throw new Error("Coffee-cup full and service-ready layouts must be semantically identical.");
   if (canonical(pack.standards.find((standard) => standard.key === "wine-glasses-full-target")?.currentRevision?.value) !== canonical(pack.standards.find((standard) => standard.key === "wine-glasses-service-ready-target")?.currentRevision?.value)) throw new Error("Wine-glass full and service-ready layouts must be semantically identical.");
   if (pack.sourceDocuments.find((entry) => entry.kind === "operational_standards_amendment")?.hashScope !== "content-before-generated-pack-metadata") throw new Error("Operational standards amendment provenance is incomplete.");
@@ -803,9 +932,12 @@ function validatePack(pack, withHash = false) {
   if (pack.doubleShiftSteps.find((step) => step.id === "DS03")?.mandatoryText !== "yes for a returning Double Shift participant") throw new Error("DS03 conditional mandatory semantics must remain exact.");
   if (!pack.doubleShiftSteps.find((step) => step.id === "DS04")?.systemGenerated || !pack.doubleShiftSteps.find((step) => step.id === "DS04")?.eligibilityText) throw new Error("DS04 must be a system-generated definition with eligibility rules.");
   if (Object.keys(pack.doubleShiftCopy).join("|") !== "beforeOpening|betweenShifts|return|completion" || Object.values(pack.doubleShiftCopy).some((value) => !value)) throw new Error("Double Shift bundle copy is incomplete.");
-  for (const requirement of pack.unresolvedRequirements) {
-    const standard = pack.standards.find((entry) => entry.key === requirement.standardKey);
-    if (!standard || "currentRevision" in standard) throw new Error(`${requirement.standardKey} must remain unresolved without a current revision.`);
+  for (const taskId of ["O15", "C03", "C27"]) {
+    const routine = taskId.startsWith("O") ? pack.opening : pack.closing;
+    const task = routine.tasks.find((entry) => entry.id === taskId);
+    if (!task?.items.some((item) => item.standardKey === "serviceware-office-recovery-route-confirmation" && item.sourceKind === "routine_standard")) {
+      throw new Error(`${taskId} must validate against the shared serviceware route standard.`);
+    }
   }
   const serialized = canonical(pack).toLowerCase();
   if (/"(?:alarmCode|safeCode|saltoPassword|saltoPin)"\s*:/i.test(serialized)) throw new Error("Credential fields are forbidden.");
@@ -831,7 +963,66 @@ function generatedDocBase(pack) {
 function generatedDoc(pack) {
   return generatedDocBase(pack)
     .replace("# Mesh Routine Content Pack v1", `# Mesh Routine Content Pack ${pack.packVersion}`)
-    .replace("content/routine-engine/mesh-routine-content-v1.json", "content/routine-engine/mesh-routine-content-v1-2r.json");
+    .replace("content/routine-engine/mesh-routine-content-v1.json", "content/routine-engine/mesh-routine-content-v1-3r.json");
+}
+function amendmentTaskProjection(task, routeItemKey) {
+  const routeItem = task.items.find((item) => item.key === routeItemKey);
+  if (!routeItem) throw new Error(`${task.id}/${routeItemKey} is missing from the amendment projection.`);
+  return {
+    id: task.id,
+    taskKey: task.taskKey,
+    title: task.title,
+    locationDescription: task.locationDescription,
+    instructions: task.instructions,
+    doneCriteriaText: task.doneCriteriaText,
+    metadata: {
+      timingSourceText: task.metadata.timingSourceText,
+      deviationRules: task.metadata.deviationRules,
+      referenceGuidance: task.metadata.referenceGuidance,
+    },
+    timing: task.timing,
+    items: [{
+      key: routeItem.key,
+      label: routeItem.label,
+      sourceKind: routeItem.sourceKind,
+      standardKey: routeItem.standardKey || null,
+      locationSetKey: routeItem.locationSetKey || null,
+    }],
+  };
+}
+function amendmentPackProjection(pack) {
+  const standard = pack.standards.find((entry) => entry.key === "serviceware-office-recovery-route-confirmation");
+  const locationSet = pack.locationSets.find((entry) => entry.key === "serviceware-recovery-route");
+  if (!standard) throw new Error("Serviceware standard is missing from the amendment projection.");
+  if (!locationSet) throw new Error("Serviceware location-set scope anchor is missing from the amendment projection.");
+  return {
+    packVersion: pack.packVersion,
+    packHash: pack.packHash,
+    standards: [{
+      key: standard.key,
+      label: standard.label,
+      sourceKind: standard.sourceKind,
+      ...(standard.currentRevision ? { currentRevision: standard.currentRevision } : {}),
+    }],
+    locationSets: [{ key: locationSet.key, name: locationSet.name, description: locationSet.description, metadata: locationSet.metadata }],
+    opening: { tasks: [amendmentTaskProjection(pack.opening.tasks.find((task) => task.id === "O15"), "recovery_route_checked")] },
+    closing: { tasks: [
+      amendmentTaskProjection(pack.closing.tasks.find((task) => task.id === "C03"), "recovery_locations_checked"),
+      amendmentTaskProjection(pack.closing.tasks.find((task) => task.id === "C27"), "full_recovery_route_checked"),
+    ] },
+  };
+}
+function generatedProductionAmendmentManifest(pack) {
+  const previous = JSON.parse(readFileSync(PREVIOUS_PACK_PATH, "utf8"));
+  const baseline = amendmentPackProjection(previous);
+  const target = amendmentPackProjection(pack);
+  return `// Generated byte-derived projection of the reviewed 1.2R → 1.3R serviceware-route amendment.\n// Canonical pack hashes remain authoritative; unrelated fields are deliberately absent.\nexport const productionAmendmentBaseline = Object.freeze(${JSON.stringify(baseline, null, 2)});\n\nexport const productionAmendmentTarget = Object.freeze(${JSON.stringify(target, null, 2)});\n`;
+}
+function syncProductionAmendmentManifest(pack, checkOnly) {
+  const expected = generatedProductionAmendmentManifest(pack);
+  if (checkOnly) {
+    if (readFileSync(MANIFEST_PATH, "utf8") !== expected) throw new Error("Generated production amendment manifest is stale.");
+  } else writeFileSync(MANIFEST_PATH, expected);
 }
 function generatedSql(pack) {
   const payload = JSON.stringify(pack);
@@ -843,7 +1034,7 @@ function syncSql(pack, checkOnly) {
   const source = readFileSync(SQL_PATH, "utf8");
   const start = source.indexOf(PACK_START);
   const end = source.indexOf(PACK_END);
-  if (start < 0 || end < start) throw new Error("Phase 10L SQL is missing generated payload markers.");
+  if (start < 0 || end < start) throw new Error("Phase 10R SQL is missing generated payload markers.");
   const expected = `${source.slice(0, start)}${generatedSql(pack)}${source.slice(end + PACK_END.length)}`;
   if (checkOnly) { if (source !== expected) throw new Error("Generated SQL content payload is stale."); }
   else writeFileSync(SQL_PATH, expected);
@@ -859,7 +1050,8 @@ if (args.has("--bootstrap") || args.has("--verify-sources")) {
   const openingPath = resolve(String(args.get("--opening")));
   const closingPath = resolve(String(args.get("--closing")));
   const doubleShiftPath = resolve(String(args.get("--double-shift")));
-  const pack = buildPack(readFileSync(openingPath, "utf8"), readFileSync(closingPath, "utf8"), readFileSync(doubleShiftPath, "utf8"), readFileSync(BASE_AMENDMENT_PATH, "utf8"), readFileSync(AMENDMENT_PATH, "utf8"));
+  const pack = buildPack(readFileSync(openingPath, "utf8"), readFileSync(closingPath, "utf8"), readFileSync(doubleShiftPath, "utf8"),
+    readFileSync(BASE_AMENDMENT_PATH, "utf8"), readFileSync(PRODUCTION_AMENDMENT_PATH, "utf8"), readFileSync(AMENDMENT_PATH, "utf8"));
   if (args.has("--verify-sources")) {
     const existing = JSON.parse(readFileSync(PACK_PATH, "utf8"));
     if (canonical(existing) !== canonical(pack)) throw new Error("Canonical pack differs from the three locked authoritative sources.");
@@ -870,6 +1062,7 @@ if (args.has("--bootstrap") || args.has("--verify-sources")) {
     writeFileSync(DOC_PATH, generatedDoc(pack));
     syncSql(pack, false);
     syncAmendment(pack, false);
+    syncProductionAmendmentManifest(pack, false);
     console.log(`Generated ${pack.packKey}@${pack.packVersion} ${pack.packHash}`);
   }
 } else {
@@ -882,5 +1075,6 @@ if (args.has("--bootstrap") || args.has("--verify-sources")) {
   } else writeFileSync(DOC_PATH, expectedDoc);
   syncSql(pack, checkOnly);
   syncAmendment(pack, checkOnly);
+  syncProductionAmendmentManifest(pack, checkOnly);
   console.log(`${checkOnly ? "Verified" : "Synchronized"} ${pack.packKey}@${pack.packVersion} ${pack.packHash}`);
 }

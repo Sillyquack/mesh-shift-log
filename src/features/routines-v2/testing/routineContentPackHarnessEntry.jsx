@@ -1,6 +1,7 @@
 import React from "react";
 import { createRoot } from "react-dom/client";
-import contentPack from "../../../../content/routine-engine/mesh-routine-content-v1-2r.json";
+import contentPack from "../../../../content/routine-engine/mesh-routine-content-v1-3r.json";
+import installationPack from "../../../../content/routine-engine/mesh-routine-content-v1.json";
 import "../../../styles.css";
 import "../components/RoutineEngineShell.css";
 import "../manager/RoutineManager.css";
@@ -20,18 +21,21 @@ const basePreview = {
   resourcesToReuse: [{ resourceType: "location", key: "workbar" }, { resourceType: "location", key: "atrium" }],
   unresolvedRequirements: contentPack.unresolvedRequirements,
   counts: { sections: contentPack.sections.length, openingTasks: 37, closingTasks: 46, doubleShiftSteps: 4, items: countItems, relations: contentPack.opening.relations.length + contentPack.closing.relations.length, references: contentPack.references.length },
-  organizationStateHash: "d".repeat(64), readinessImpact: { releaseReadiness: "blocked", publication: "blocked_by_unresolved_requirements", modeChanged: false, releaseStageChanged: false },
+  organizationStateHash: "d".repeat(64), readinessImpact: { releaseReadiness: "publication_separate", publication: "resolved_content_not_published", modeChanged: false, releaseStageChanged: false },
   existingTemplates: {},
 };
 const installedResult = { installStatus: "installed", installationId: "60000000-0000-4000-8000-000000000001", packHash: contentPack.packHash, openingTemplateId: "60000000-0000-4000-8000-000000000002", openingDraftVersionId: "60000000-0000-4000-8000-000000000003", closingTemplateId: "60000000-0000-4000-8000-000000000004", closingDraftVersionId: "60000000-0000-4000-8000-000000000005", published: false, runsCreated: false };
+const installationPreview = { ...basePreview, packMetadata: { ...basePreview.packMetadata, packVersion: installationPack.packVersion, packHash: installationPack.packHash }, unresolvedRequirements: installationPack.unresolvedRequirements };
 const installedPreview = { ...basePreview, alreadyInstalled: true, installStatus: "installed", resourcesToCreate: [], resourcesToReuse: [{ resourceType: "installation", key: contentPack.packKey }], existingTemplates: { openingTemplateId: installedResult.openingTemplateId, openingDraftVersionId: installedResult.openingDraftVersionId, closingTemplateId: installedResult.closingTemplateId, closingDraftVersionId: installedResult.closingDraftVersionId } };
+const installationInstalledPreview = { ...installationPreview, alreadyInstalled: true, installStatus: "installed", resourcesToCreate: [], resourcesToReuse: [{ resourceType: "installation", key: installationPack.packKey }], existingTemplates: installedPreview.existingTemplates };
 const previewer = async () => installedPreview;
 const auditLoader = async () => ({ semanticDivergence: { opening: false, closing: false } });
 const frame = (children) => <main className="rm-workspace" data-visual-scenario={scenario}><header className="rm-topbar"><div><p className="eyebrow">Visual harness · {scenario}</p><h1>Operational content</h1></div><button type="button" className="ghost-button">Back to preview home</button></header><section className="rm-panel rm-stack">{children}</section></main>;
 
 function ContentManager({ failure, alreadyInstalled = false }) {
   let installed = alreadyInstalled;
-  const scenarioPreviewer = async () => installed ? installedPreview : basePreview;
+  const installFlow = ["install-confirmation", "install-note-required", "install-success", "stale-preserved", "network-preserved", "keyboard-install"].includes(scenario);
+  const scenarioPreviewer = async () => installed ? (installFlow ? installationInstalledPreview : installedPreview) : installFlow ? installationPreview : basePreview;
   const installer = async () => {
     if (failure) { const error = new Error(failure === "stale" ? "Stale organization state." : "Network unavailable."); error.kind = failure; throw error; }
     installed = true;
@@ -65,7 +69,7 @@ function Relations({ dependencies = false }) {
   return frame(<section className="rm-card"><header><h2>{dependencies ? "Continuous completion dependencies" : "Cross-run and delivery relations"}</h2><StatusPill state="ready">{entries.length} declarative</StatusPill></header><div className="rm-table-wrap"><table><thead><tr><th>Source</th><th>Type</th><th>Target</th><th>Evidence</th></tr></thead><tbody>{entries.map((entry, index) => <tr key={index}><td>{entry.sourceTaskId || entry.predecessorTaskId}</td><td>{entry.relationType || entry.dependencyType}</td><td>{entry.targetTaskId || entry.successorTaskId}</td><td>{entry.metadata?.evidenceItemKeys?.join(", ") || "Server state"}</td></tr>)}</tbody></table></div></section>);
 }
 
-function Readiness() { return frame(<section className="rm-card"><header><h2>Operational content readiness</h2><StatusPill state="blocked">Blocked</StatusPill></header><ul className="rm-issues rm-blockers">{contentPack.unresolvedRequirements.map((entry) => <li key={entry.standardKey}>{entry.label}</li>)}</ul><dl className="rm-evidence"><div><dt>Opening</dt><dd>Draft 37/37</dd></div><div><dt>Closing</dt><dd>Draft 46/46</dd></div><div><dt>Double Shift</dt><dd>4 system steps</dd></div><div><dt>Published</dt><dd>No</dd></div></dl></section>); }
+function Readiness() { return frame(<section className="rm-card"><header><h2>Operational content readiness</h2><StatusPill state="warning">Publication separate</StatusPill></header><p className="rm-note">All 14 operational standards are resolved; zero real content blockers remain. Image placeholders are warnings.</p><dl className="rm-evidence"><div><dt>Opening</dt><dd>Draft 37/37</dd></div><div><dt>Closing</dt><dd>Draft 46/46</dd></div><div><dt>Double Shift</dt><dd>4 system steps</dd></div><div><dt>Published</dt><dd>No</dd></div></dl></section>); }
 function NoInstaller({ shared = false }) { return frame(<section className="routine-state-card"><p className="eyebrow">{shared ? "Shared-device operator" : "Personal staff"}</p><h2>Manager content installation is unavailable</h2><p>Only an active, personal manager can preview or install editable operational content.</p></section>); }
 function ProjectRooms() { const set = contentPack.locationSets.find((entry) => entry.key === "opening-project-rooms"); return frame(<section className="rm-card"><header><h2>Project-room route</h2><StatusPill state="ready">6 exact rooms</StatusPill></header><ol>{set.members.map((key) => <li key={key}>{contentPack.locations.find((location) => location.key === key).name}</li>)}</ol><p className="rm-note">Room 005 is not generated.</p></section>); }
 function DoubleShift() { return frame(<section className="rm-card"><header><h2>Double Shift bundle copy</h2><StatusPill state="ready">4/4 system steps</StatusPill></header><ol>{contentPack.doubleShiftSteps.map((step) => <li key={step.id}><strong>{step.id} — {step.title}</strong><p>{step.stepKey}{step.systemGenerated ? " · system-generated" : ""}</p></li>)}</ol><p className="rm-note">No third template and no copied Opening or Closing tasks.</p></section>); }

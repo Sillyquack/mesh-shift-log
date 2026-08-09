@@ -158,8 +158,10 @@ select phase9gd_test.assert_true(
    where standard.active and product.millum_item_ref = '6631634')
   and not exists (
     select 1 from public.inventory_location_products standard
+    join public.inventory_locations location on location.id = standard.location_id
     join public.inventory_products product on product.id = standard.product_id
-    where standard.active and product.millum_item_ref = '4030686'
+    where standard.active and location.location_type = 'fridge'
+      and product.millum_item_ref = '4030686'
   ),
   'DB-9GD-7: both Skog defaults use the 0.33 L product and exclude 0.75 L'
 );
@@ -169,8 +171,10 @@ select phase9gd_test.assert_true(
           join public.inventory_products product on product.id = standard.product_id
           where standard.active and product.millum_item_ref = '5932918')
   and not exists (select 1 from public.inventory_location_products standard
+                  join public.inventory_locations location on location.id = standard.location_id
                   join public.inventory_products product on product.id = standard.product_id
-                  where standard.active and product.millum_item_ref = '4019089'),
+                  where standard.active and location.location_type = 'fridge'
+                    and product.millum_item_ref = '4019089'),
   'DB-9GD-8: Cornerbar Pils uses the Aass bottle identity and excludes the keg'
 );
 
@@ -236,8 +240,10 @@ select phase9gd_test.assert_true(
   exists (select 1 from public.inventory_products where millum_item_ref = '5744222')
   and not exists (
     select 1 from public.inventory_location_products standard
+    join public.inventory_locations location on location.id = standard.location_id
     join public.inventory_products product on product.id = standard.product_id
-    where standard.active and product.millum_item_ref = '5744222'
+    where standard.active and location.location_type = 'fridge'
+      and product.millum_item_ref = '5744222'
   ),
   'DB-9GD-15: discontinued Aass Eplemost identity remains while active defaults are absent'
 );
@@ -318,6 +324,7 @@ select phase9gd_test.assert_true(
     join public.inventory_products product on product.id = standard.product_id
     where standard.active
       and location.organization_id = 'aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaa1'
+      and location.location_type = 'fridge'
       and product.millum_item_ref in ('5104641', '4030686', '4019089', '3221686', '4014701', '4054613', '5744222')
   ),
   'DB-9GD-22: every explicitly rejected competing identity stays out of active defaults'

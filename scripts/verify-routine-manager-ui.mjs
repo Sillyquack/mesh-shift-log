@@ -169,7 +169,7 @@ function sourceChecks() {
   const hook = readFileSync(absolute("src/features/routines-v2/hooks/useRoutineTemplateEditor.js"), "utf8");
   const harness = readFileSync(absolute("src/features/routines-v2/testing/routineManagerHarnessEntry.jsx"), "utf8");
   const main = readFileSync(absolute("src/main.jsx"), "utf8");
-  const contentPack = JSON.parse(readFileSync(absolute("content/routine-engine/mesh-routine-content-v1-2r.json"), "utf8"));
+  const contentPack = JSON.parse(readFileSync(absolute("content/routine-engine/mesh-routine-content-v1-3r.json"), "utf8"));
   const amendmentClient = readFileSync(absolute("src/features/routines-v2/api/routineProductionReadinessAmendmentClient.js"), "utf8");
   const amendmentModel = readFileSync(absolute("src/features/routines-v2/data/routineProductionReadinessAmendmentModel.js"), "utf8");
   const amendmentManifest = readFileSync(absolute("src/features/routines-v2/data/routineProductionReadinessAmendmentManifest.js"), "utf8");
@@ -177,7 +177,7 @@ function sourceChecks() {
   const combined = `${managerSql}\n${clientFiles}\n${allManager}\n${harness}`;
 
   check("manager verifier registered", packageJson.scripts["verify:routine-manager-ui"] === "node scripts/verify-routine-manager-ui.mjs");
-  check("manager preview consumes the 1.2R content contract", contentPack.packVersion === "1.2R" && contentPack.unresolvedRequirements.length === 1 && contentPack.unresolvedRequirements[0].standardKey === "serviceware-office-recovery-route-confirmation");
+  check("manager preview consumes the 1.3R resolved content contract", contentPack.packVersion === "1.3R" && contentPack.unresolvedRequirements.length === 0 && contentPack.standards.filter((entry) => entry.currentRevision).length === 14);
   check("manager standards remain structured server-owned revisions", ["coffee-cups-full-target", "coffee-cups-service-ready-target", "wine-glasses-full-target", "wine-glasses-service-ready-target", "door-and-lock-rules", "fridge-closing-rules", "cornerbar-operating-standard"].every((key) => contentStandards[key]?.valueType === "object" && contentStandards[key]?.currentRevision?.value));
   check("manager content references remain optional placeholders", contentPack.references.every((entry) => entry.placeholderText === "Referansebilde kommer" && entry.buttonLabel === "Vis hvordan det skal se ut") && !contentPack.unresolvedRequirements.some((entry) => /image|reference/i.test(entry.standardKey)));
   check("K2 migration names manager_preview", managerSql.includes("'manager_preview'"));
@@ -230,12 +230,12 @@ function sourceChecks() {
   for (const name of managerFiles) check(`${name} exists as isolated manager component`, existsSync(absolute(`src/features/routines-v2/manager/${name}`)) && sources[name].length > 100);
   check("manager clients use central RPC client", clientFiles.includes("routineRpcClient.request") || clientFiles.includes("managerRpc"));
   check("manager clients have no table builder", !/\.(from|insert|update|delete)\s*\(/.test(clientFiles));
-  check("production amendment pins the reviewed provider", amendmentModel.includes("2dcfc69b822f973c23e54934b6799faa5b9400ae0529096f049067811a417f25") && amendmentManifest.includes('packVersion: "1.2R"'));
-  check("production amendment scope is exactly reviewed", ["O02", "O28", "O29", "O34", "O35", "C06", "C17"].every((id) => amendmentModel.includes(`"${id}"`)) && amendmentModel.includes('changedItems.length !== 1'));
-  check("production amendment reuses only existing manager RPC clients", ["saveLocation", "updateRoutineReferenceImageMetadata", "saveTask", "saveItem"].every((name) => amendmentClient.includes(name)) && !/installMesh|publish|createStandardRevision|setRoutineEngineMode/.test(amendmentClient));
-  check("production amendment preserves nonsemantic standard label", amendmentModel.includes("No supported standard metadata RPC exists") && amendmentModel.includes("structured value and revision remain unchanged"));
-  check("production amendment verifies authoritative readback", amendmentClient.includes("authoritative-readback-after-unknown-outcome") && amendmentClient.includes("Reviewed amendment is not complete after authoritative readback"));
-  check("production amendment reuses a reference idempotency key", amendmentClient.includes("const request = () => updateRoutineReferenceImageMetadata") && amendmentClient.includes("result.mode === \"network_error\"") && amendmentClient.includes("result = await request()"));
+  check("production amendment pins the reviewed provider", amendmentModel.includes("b416001c2885bbf54bdb029b8e7164cbb903a76b8344396a4e9fcffa26107fe1") && amendmentManifest.includes('"packVersion": "1.2R"') && amendmentManifest.includes('"packVersion": "1.3R"'));
+  check("production amendment scope is exactly reviewed", ["O15", "C03", "C27"].every((id) => amendmentModel.includes(`"${id}"`)) && amendmentModel.includes('serviceware-office-recovery-route-confirmation') && amendmentModel.includes('serviceware-recovery-route'));
+  check("production amendment reuses only existing manager RPC clients", ["saveLocationSet", "createStandardRevision", "saveTask", "saveItem"].every((name) => amendmentClient.includes(name)) && !/installMesh|publish|setRoutineEngineMode|\.from\s*\(/.test(amendmentClient));
+  check("production amendment keeps one shared editable standard", amendmentModel.includes('kind: "standard_revision"') && amendmentModel.includes('field: "sourceBinding"') && sources["RoutineStandardsManager.jsx"].includes("SERVICEWARE_ROUTE_STANDARD_KEY"));
+  check("production amendment verifies authoritative readback", amendmentClient.includes("authoritative-readback-after-unknown-outcome") && amendmentClient.includes("Reviewed 1.3R serviceware amendment is not complete after authoritative readback"));
+  check("production amendment reuses a stable standard idempotency key", sources["RoutineProductionReadinessAmendment.jsx"].includes("useRef(null)") && sources["RoutineProductionReadinessAmendment.jsx"].includes("standardIdempotencyKey.current"));
   check("production amendment reports partial safe progress", amendmentClient.includes("completedEvidence") && amendmentClient.includes("remainingResource"));
   check("manager overview uses the authoritative publication batch preview", clientFiles.includes('managerRpc("preview_routine_template_publication_batch"') && clientFiles.includes("applyRoutineBatchValidations"));
   check("template editor receives the same authoritative batch validation", clientFiles.includes("getRoutineManagerControlCenter()") && clientFiles.includes("publicationValidationContext"));

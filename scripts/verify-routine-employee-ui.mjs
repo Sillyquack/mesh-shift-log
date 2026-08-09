@@ -73,9 +73,9 @@ function sourceChecks() {
   const models = readFileSync(absolute("src/features/routines-v2/data/routineEmployeeModel.js"), "utf8") + readFileSync(absolute("src/features/routines-v2/data/routineTaskViewModel.js"), "utf8");
   const css = readFileSync(absolute("src/features/routines-v2/employee/RoutineEmployee.css"), "utf8"); const combined = `${client}\n${hooks}\n${components}\n${models}`;
   const offlineDb = readFileSync(absolute("src/features/routines-v2/offline/routineOfflineDb.js"), "utf8");
-  const contentPack = JSON.parse(readFileSync(absolute("content/routine-engine/mesh-routine-content-v1-2r.json"), "utf8"));
+  const contentPack = JSON.parse(readFileSync(absolute("content/routine-engine/mesh-routine-content-v1-3r.json"), "utf8"));
   const contentTasks = Object.fromEntries([...contentPack.opening.tasks, ...contentPack.closing.tasks].map((entry) => [entry.id, entry]));
-  check("employee content receives the 1.2R server-authored contract", contentPack.packVersion === "1.2R" && contentPack.unresolvedRequirements.length === 1);
+  check("employee content receives the 1.3R server-authored contract", contentPack.packVersion === "1.3R" && contentPack.unresolvedRequirements.length === 0);
   check("employee checkpoints require independent physical layout checks", [contentTasks.O29, contentTasks.O35].every((task) => /new physical check/.test(task.structuredItemsText) && /never inherited/.test(task.doneCriteriaText)));
   check("employee event-active Cornerbar work uses transfer evidence, not N/A", ["C10", "C20", "C30", "C33", "C38", "C40", "C41", "C42", "C43"].every((id) => contentTasks[id].items.some((item) => item.standardKey === "cornerbar-operating-standard")));
   check("employee task content contains no security credential field", !/(alarmCode|safeCode|saltoPassword|saltoPin|pinCode)/i.test(JSON.stringify(contentPack)));
