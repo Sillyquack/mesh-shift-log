@@ -35,6 +35,7 @@ const SHELF_STORAGE_GUIDANCE_ASSERTION_PATH = resolve(ROOT, 'supabase/tests/phas
 const HISTORY_DETAIL_ASSERTION_PATH = resolve(ROOT, 'supabase/tests/phase9/history-detail-assertions.sql');
 const MILLUM_EXPORT_FIXTURE_PATH = resolve(ROOT, 'supabase/tests/phase9/millum-export-fixtures.sql');
 const MILLUM_EXPORT_ASSERTION_PATH = resolve(ROOT, 'supabase/tests/phase9/millum-export-assertions.sql');
+const TERMINAL_MIGRATION_FIXTURE_PATH = resolve(ROOT, 'supabase/tests/phase9/terminal-migration-production-shape.sql');
 const EXPECTED_ASSERTION_PASSES = 70;
 const EXPECTED_COUNTER_ASSERTION_PASSES = 47;
 const EXPECTED_REPLACEMENT_ASSERTION_PASSES = 28;
@@ -359,7 +360,7 @@ async function main() {
     throw new Error('Phase 9P is not terminal.');
   }
   entries.forEach((entry) => resolveMigrationPath(entry.path));
-  if (![FIXTURE_PATH, ASSERTION_PATH, PRE_PHASE9D_FIXTURE_PATH, INTEGRITY_ASSERTION_PATH, IDENTITY_ASSERTION_PATH, STRUCTURED_ASSERTION_PATH, OPERATIONAL_ASSERTION_PATH, MAPPING_ASSERTION_PATH, COUNTER_FIXTURE_PATH, COUNTER_ASSERTION_PATH, REPLACEMENT_FIXTURE_PATH, REPLACEMENT_ASSERTION_PATH, MOBILE_ASSERTION_PATH, SESSION_LOCATION_SCOPE_ASSERTION_PATH, SHELF_STORAGE_GUIDANCE_ASSERTION_PATH, HISTORY_DETAIL_ASSERTION_PATH, MILLUM_EXPORT_FIXTURE_PATH, MILLUM_EXPORT_ASSERTION_PATH].every(existsSync)) {
+  if (![FIXTURE_PATH, ASSERTION_PATH, PRE_PHASE9D_FIXTURE_PATH, INTEGRITY_ASSERTION_PATH, IDENTITY_ASSERTION_PATH, STRUCTURED_ASSERTION_PATH, OPERATIONAL_ASSERTION_PATH, MAPPING_ASSERTION_PATH, COUNTER_FIXTURE_PATH, COUNTER_ASSERTION_PATH, REPLACEMENT_FIXTURE_PATH, REPLACEMENT_ASSERTION_PATH, MOBILE_ASSERTION_PATH, SESSION_LOCATION_SCOPE_ASSERTION_PATH, SHELF_STORAGE_GUIDANCE_ASSERTION_PATH, HISTORY_DETAIL_ASSERTION_PATH, MILLUM_EXPORT_FIXTURE_PATH, MILLUM_EXPORT_ASSERTION_PATH, TERMINAL_MIGRATION_FIXTURE_PATH].every(existsSync)) {
     throw new Error('Phase 9 executable security SQL is missing.');
   }
 
@@ -413,6 +414,7 @@ async function main() {
   `);
   console.log('PASS disposable Supabase Storage policy surface bootstrapped');
   console.log('Canonical migration order:');
+  let securityFixturesInstalledBeforeTerminal = false;
   for (const [index, entry] of entries.entries()) {
     const sql = readFileSync(resolveMigrationPath(entry.path), 'utf8');
     if (entry.path === PHASE9_SESSION_INTEGRITY_MIGRATION) {
@@ -432,6 +434,13 @@ async function main() {
       }
       console.log('PASS Phase 9D rejects legacy duplicate-active data without modifying it');
     }
+    if (entry.path === 'supabase/20260804123921_phase9l_millum_august_carry_forward_and_future_scope.sql') {
+      psql(readFileSync(FIXTURE_PATH, 'utf8'), { singleTransaction: true });
+      console.log('PASS disposable organizations, Auth users, profiles, and inventory fixtures installed before one-time production-data layers');
+      psql(readFileSync(TERMINAL_MIGRATION_FIXTURE_PATH, 'utf8'), { singleTransaction: true });
+      console.log('PASS exact disposable Phase 9L approved source shape installed');
+      securityFixturesInstalledBeforeTerminal = true;
+    }
     psql(sql, { singleTransaction: true });
     console.log(`PASS ${index + 1}. ${entry.path}`);
     if (entry.repeatable) {
@@ -440,8 +449,10 @@ async function main() {
     }
   }
 
-  psql(readFileSync(FIXTURE_PATH, 'utf8'), { singleTransaction: true });
-  console.log('PASS disposable organizations, Auth users, profiles, and inventory fixtures');
+  if (!securityFixturesInstalledBeforeTerminal) {
+    psql(readFileSync(FIXTURE_PATH, 'utf8'), { singleTransaction: true });
+    console.log('PASS disposable organizations, Auth users, profiles, and inventory fixtures');
+  }
   psql(readFileSync(COUNTER_FIXTURE_PATH, 'utf8'), { singleTransaction: true });
   console.log('PASS isolated Phase 9G-B counter memberships and assignment fixtures');
   psql(readFileSync(REPLACEMENT_FIXTURE_PATH, 'utf8'), { singleTransaction: true });

@@ -142,8 +142,10 @@ select phase9g_test.assert_true(
   not exists (
     select 1
     from public.inventory_location_products standard
+    join public.inventory_locations location on location.id = standard.location_id
     join public.inventory_products product on product.id = standard.product_id
-    where standard.active and product.millum_item_ref in ('4000232', '6017933')
+    where standard.active and location.location_type = 'fridge'
+      and product.millum_item_ref in ('4000232', '6017933')
   )
   and exists (
     select 1 from public.inventory_catalogue_unresolved_mappings

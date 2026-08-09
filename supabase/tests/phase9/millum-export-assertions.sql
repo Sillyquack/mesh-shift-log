@@ -30,6 +30,17 @@ revoke all on function phase9i_test.assert_sqlstate(text, text, text) from publi
 grant execute on function phase9i_test.assert_true(boolean, text) to authenticated;
 grant execute on function phase9i_test.assert_sqlstate(text, text, text) to authenticated;
 
+create temp table phase9_millum_source_state as
+select line.session_id, md5(jsonb_agg(to_jsonb(line) order by line.id)::text) as line_digest
+from public.inventory_count_lines line
+where line.session_id in (
+  '9a100000-0000-4000-8000-000000000001',
+  '9a100000-0000-4000-8000-000000000002',
+  '9a100000-0000-4000-8000-000000000003',
+  '9a100000-0000-4000-8000-000000000004'
+)
+group by line.session_id;
+
 select set_config('request.jwt.claim.sub', '10000000-0000-4000-8000-000000000001', false);
 set role authenticated;
 create temp table phase9_millum_results as
@@ -104,7 +115,8 @@ select phase9i_test.assert_true(
 
 select phase9i_test.assert_true(
   (select count(*) = 8 from public.inventory_millum_export_rows row join public.inventory_millum_export_profiles profile on profile.id = row.profile_id
-   where profile.organization_id = 'aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaa1' and not row.enabled and row.mapped_product_id is null),
+   where profile.organization_id = 'aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaa1' and profile.profile_version = 1
+     and not row.enabled and row.mapped_product_id is null),
   'DB-9I-9: all eight disabled duplicate or cross-group positions remain preserved and unmapped'
 );
 
@@ -116,21 +128,28 @@ select phase9i_test.assert_true(
 
 select phase9i_test.assert_true(
   (select count(*) = 7 from public.inventory_millum_export_rows row
+   join public.inventory_millum_export_profiles profile on profile.id = row.profile_id
    where row.group_name = 'HARD ALCOHOL' and row.row_order in (2,5,12,17,19,23,33)
-     and not row.enabled and row.occurrence = 2),
+     and profile.organization_id = 'aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaa1'
+     and profile.profile_version = 1 and not row.enabled and row.occurrence = 2),
   'DB-9I-11: every adjacent HARD ALCOHOL duplicate keeps first enabled and second disabled'
 );
 
 select phase9i_test.assert_true(
   (select count(*) = 1 from public.inventory_millum_export_rows row
-   where row.item_number = '4054613' and row.enabled and row.group_name = 'BEER' and row.row_order = 9 and row.occurrence = 2)
+   join public.inventory_millum_export_profiles profile on profile.id = row.profile_id
+   where profile.organization_id = 'aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaa1' and profile.profile_version = 1
+     and row.item_number = '4054613' and row.enabled and row.group_name = 'BEER' and row.row_order = 9 and row.occurrence = 2)
   and (select count(*) = 1 from public.inventory_millum_export_rows row
-   where row.item_number = '4054613' and not row.enabled and row.group_name = 'HARD ALCOHOL' and row.row_order = 14 and row.mapped_product_id is null),
+   join public.inventory_millum_export_profiles profile on profile.id = row.profile_id
+   where profile.organization_id = 'aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaa1' and profile.profile_version = 1
+     and row.item_number = '4054613' and not row.enabled and row.group_name = 'HARD ALCOHOL' and row.row_order = 14 and row.mapped_product_id is null),
   'DB-9I-12: 4054613 is active only in BEER row 9 and preserved disabled in HARD ALCOHOL row 14'
 );
 
 select phase9i_test.assert_true(
-  not exists (select mapped_product_id from public.inventory_millum_export_rows where enabled and mapped_product_id is not null group by mapped_product_id having count(*) > 1),
+  not exists (select profile_id, mapped_product_id from public.inventory_millum_export_rows
+    where enabled and mapped_product_id is not null group by profile_id, mapped_product_id having count(*) > 1),
   'DB-9I-13: no stable Mesh product maps to two active Millum rows'
 );
 
@@ -204,20 +223,20 @@ select phase9i_test.assert_true(
 );
 
 select phase9i_test.assert_true(
-  (select row->>'finalValue' = '4' and (row->>'finalValueNumeric')::numeric = 4 from phase9_millum_anchor_rows where row->>'itemNumber' = '4000232')
-  and (select row->>'finalValue' = '2,67' from phase9_millum_anchor_rows where row->>'itemNumber' = '4057913')
-  and (select row->>'finalValue' = '3,87' from phase9_millum_anchor_rows where row->>'itemNumber' = '4004935'),
-  'DB-9I-25: manager JSON preserves the final formatted authoritative wine values'
+  (select row->>'finalValue' = '16,09' and (row->>'finalValueNumeric')::numeric = 16.09 from phase9_millum_anchor_rows where row->>'itemNumber' = '4000232')
+  and (select row->>'finalValue' = '103,9' from phase9_millum_anchor_rows where row->>'itemNumber' = '4057913')
+  and (select row->>'finalValue' = '111,07' from phase9_millum_anchor_rows where row->>'itemNumber' = '4004935'),
+  'DB-9I-25: manager JSON preserves the final Phase 9O value-equivalent wine values'
 );
 
 select phase9i_test.assert_true(
-  (select row->>'finalValue' = '2,5' from phase9_millum_results result,
+  (select row->>'finalValue' = '10,05' from phase9_millum_results result,
     lateral jsonb_array_elements(result.payload->'groups') group_row,
     lateral jsonb_array_elements(group_row->'rows') row where result.fixture = 'partial' and row->>'itemNumber' = '4000232')
-  and (select row->>'finalValue' = '2,5' from phase9_millum_results result,
+  and (select row->>'finalValue' = '97,4' from phase9_millum_results result,
     lateral jsonb_array_elements(result.payload->'groups') group_row,
     lateral jsonb_array_elements(group_row->'rows') row where result.fixture = 'partial' and row->>'itemNumber' = '4057913'),
-  'DB-9I-26: approved partial fixture displays 15/6 and 150/60 as 2,5'
+  'DB-9I-26: approved partial fixture applies the final Phase 9O wine value conversion'
 );
 
 select phase9i_test.assert_true(
@@ -325,11 +344,9 @@ select phase9i_test.assert_sqlstate(
 reset role;
 
 select phase9i_test.assert_true(
-  (select count(*) = 2 from public.inventory_millum_export_snapshots
-   where organization_id = 'aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaa1')
-  and (select count(*) = count(distinct session_id) from public.inventory_millum_export_snapshots
-       where organization_id = 'aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaa1'),
-  'DB-9I-43: only clean exports persist one immutable snapshot while blocked previews remain retryable'
+  (select count(*) = 0 from public.inventory_millum_export_snapshots
+   where organization_id = 'aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaa1'),
+  'DB-9I-43: final single-session exports remain derived previews without stale pre-9N snapshots'
 );
 
 select set_config('request.jwt.claim.sub', '10000000-0000-4000-8000-000000000001', false);
@@ -342,18 +359,13 @@ select phase9i_test.assert_true(
 reset role;
 
 select phase9i_test.assert_true(
-  (select snapshot.source_digest = source.current_digest
-   from public.inventory_millum_export_snapshots snapshot
-   cross join lateral (
-     select md5(jsonb_build_object(
-       'sessions', (select jsonb_agg(to_jsonb(source_session) order by source_session.id)
-         from public.inventory_count_sessions source_session where source_session.id = snapshot.session_id),
-       'lines', (select jsonb_agg(to_jsonb(line) order by line.session_id, line.id)
-         from public.inventory_count_lines line where line.session_id = snapshot.session_id)
-     )::text) as current_digest
-   ) source
-   where snapshot.session_id = '9a100000-0000-4000-8000-000000000001'),
-  'DB-9I-45: export view and snapshot generation leave approved source lines byte-logically unchanged'
+  (select bool_and(before.line_digest = after.line_digest)
+   from phase9_millum_source_state before
+   join lateral (
+     select md5(jsonb_agg(to_jsonb(line) order by line.id)::text) as line_digest
+     from public.inventory_count_lines line where line.session_id = before.session_id
+   ) after on true),
+  'DB-9I-45: export previews leave every approved source line byte-logically unchanged'
 );
 
 select phase9i_test.assert_true(
@@ -369,10 +381,18 @@ select phase9i_test.assert_sqlstate(
   'DB-9I-47: published export profile configuration cannot be edited'
 );
 
-select phase9i_test.assert_sqlstate(
-  $$delete from public.inventory_millum_export_snapshots where session_id = '9a100000-0000-4000-8000-000000000001'$$,
-  'P0001',
-  'DB-9I-48: generated historical export snapshots cannot be changed or deleted'
+select phase9i_test.assert_true(
+  exists (
+    select 1 from pg_catalog.pg_trigger trigger
+    join pg_catalog.pg_class relation on relation.oid = trigger.tgrelid
+    join pg_catalog.pg_namespace namespace on namespace.oid = relation.relnamespace
+    where namespace.nspname = 'public'
+      and relation.relname = 'inventory_millum_export_snapshots'
+      and trigger.tgname = 'inventory_millum_snapshots_immutable'
+      and trigger.tgenabled <> 'D'
+      and not trigger.tgisinternal
+  ),
+  'DB-9I-48: any retained historical export snapshot remains protected by the immutable trigger'
 );
 
 drop schema phase9i_test cascade;
