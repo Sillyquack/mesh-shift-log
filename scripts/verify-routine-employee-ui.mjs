@@ -69,12 +69,13 @@ function sourceChecks() {
   const sql = readFileSync(absolute(paths.employee), "utf8"); const client = readFileSync(absolute("src/features/routines-v2/api/routineEmployeeClient.js"), "utf8");
   const hooks = hookFiles.map((name) => readFileSync(absolute(`src/features/routines-v2/hooks/${name}`), "utf8")).join("\n");
   const components = employeeFiles.filter((name) => name.endsWith(".jsx")).map((name) => readFileSync(absolute(`src/features/routines-v2/employee/${name}`), "utf8")).join("\n");
+  const offlineState = readFileSync(absolute("src/features/routines-v2/employee/RoutineOfflineState.jsx"), "utf8");
   const models = readFileSync(absolute("src/features/routines-v2/data/routineEmployeeModel.js"), "utf8") + readFileSync(absolute("src/features/routines-v2/data/routineTaskViewModel.js"), "utf8");
   const css = readFileSync(absolute("src/features/routines-v2/employee/RoutineEmployee.css"), "utf8"); const combined = `${client}\n${hooks}\n${components}\n${models}`;
   const offlineDb = readFileSync(absolute("src/features/routines-v2/offline/routineOfflineDb.js"), "utf8");
-  const contentPack = JSON.parse(readFileSync(absolute("content/routine-engine/mesh-routine-content-v1.json"), "utf8"));
+  const contentPack = JSON.parse(readFileSync(absolute("content/routine-engine/mesh-routine-content-v1-2r.json"), "utf8"));
   const contentTasks = Object.fromEntries([...contentPack.opening.tasks, ...contentPack.closing.tasks].map((entry) => [entry.id, entry]));
-  check("employee content receives the 1.1R server-authored contract", contentPack.packVersion === "1.1R" && contentPack.unresolvedRequirements.length === 1);
+  check("employee content receives the 1.2R server-authored contract", contentPack.packVersion === "1.2R" && contentPack.unresolvedRequirements.length === 1);
   check("employee checkpoints require independent physical layout checks", [contentTasks.O29, contentTasks.O35].every((task) => /new physical check/.test(task.structuredItemsText) && /never inherited/.test(task.doneCriteriaText)));
   check("employee event-active Cornerbar work uses transfer evidence, not N/A", ["C10", "C20", "C30", "C33", "C38", "C40", "C41", "C42", "C43"].every((id) => contentTasks[id].items.some((item) => item.standardKey === "cornerbar-operating-standard")));
   check("employee task content contains no security credential field", !/(alarmCode|safeCode|saltoPassword|saltoPin|pinCode)/i.test(JSON.stringify(contentPack)));
@@ -139,6 +140,8 @@ function sourceChecks() {
   check("reference object URL is revoked", components.includes("URL.revokeObjectURL")); check("reference image is lazy", components.includes("loading=\"lazy\""));
   check("dialog is modal", components.includes("aria-modal=\"true\"")); check("dialog traps tab", components.includes("event.key !== \"Tab\"")); check("dialog handles Escape", components.includes("event.key === \"Escape\""));
   check("dialog returns focus", components.includes("returnFocus.current?.focus")); check("sync has aria live", components.includes("aria-live=\"polite\"")); check("auth has assertive live region", components.includes("aria-live=\"assertive\""));
+  check("sync label follows connection status instead of transport alone", offlineState.includes("Realtime disconnected") && offlineState.includes("Realtime refresh failed") && offlineState.includes("statusLabel"));
+  check("server confirmation is never claimed while disconnected", offlineState.includes('sync.serverConfirmed === true') && offlineState.includes('!["disconnected", "catch_up_failed"].includes(status)') && offlineState.includes("server confirmation pending"));
   check("mobile safe areas applied", css.includes("env(safe-area-inset")); check("all employee buttons have 48px targets", css.includes("min-height:48px"));
   check("mobile width is constrained", css.includes("min-width:0") && css.includes("overflow-x:clip")); check("mobile viewports have no minimum fixed width", !/min-width:\s*(320|375|390|430)px/.test(css));
   check("task titles wrap", css.includes("overflow-wrap:anywhere")); check("dark mode included", css.includes("prefers-color-scheme:dark")); check("sticky progress exists", css.includes("position:sticky"));

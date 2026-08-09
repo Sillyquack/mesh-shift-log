@@ -28,7 +28,7 @@ insert into phase10k4_test.state(key,value) values('manager_legacy',public.get_r
 
 -- Configure disposable readiness entirely through the existing manager RPCs.
 select public.upsert_routine_location('pilot-door','Disposable pilot door','door',null,100,'{}'::jsonb,null,null);
-select public.create_routine_standard('coffee_canister_target','Coffee Canister target','Disposable pilot target','integer','units','manual',true);
+select public.create_routine_standard('coffee_canister_target','Coffee Canisters target','Disposable pilot target','integer','units','manual',true);
 select public.create_routine_standard_revision((select id from public.routine_standards where standard_key='coffee_canister_target'),
   '{"value":2}'::jsonb,null,'Disposable pilot target','4f100000-0000-4000-8000-000000000001',1);
 select public.create_routine_standard('coffee_cup_full_target','Coffee-cup full target','Disposable pilot target','integer','units','manual',true);
@@ -37,6 +37,25 @@ select public.create_routine_standard_revision((select id from public.routine_st
 select public.create_routine_standard('wine_glass_full_target','Wine-glass full target','Disposable pilot target','integer','units','manual',true);
 select public.create_routine_standard_revision((select id from public.routine_standards where standard_key='wine_glass_full_target'),
   '{"value":48}'::jsonb,null,'Disposable pilot target','4f100000-0000-4000-8000-000000000003',1);
+
+-- Phase 10P intentionally resolves the five canonical content-pack keys. Keep
+-- the historical K4 keys above for the original K4 contract, and add the
+-- canonical keys through the same manager RPCs for the complete E2E chain.
+select public.create_routine_standard('workbar-coffee-canister-assigned-target','Workbar-assigned Coffee Canisters target','Disposable canonical target','object',null,'manual',true);
+select public.create_routine_standard_revision((select id from public.routine_standards where standard_key='workbar-coffee-canister-assigned-target'),
+  '{"assignedToWorkbar":4,"membersLoungeDuringService":1,"kitchenReserveDuringService":3}'::jsonb,null,'Disposable canonical target','4f100000-0000-4000-8000-000000000011',1);
+select public.create_routine_standard('coffee-cups-full-target','Coffee cups full visual layout','Disposable canonical target','object',null,'manual',true);
+select public.create_routine_standard_revision((select id from public.routine_standards where standard_key='coffee-cups-full-target'),
+  '{"layout":"full"}'::jsonb,null,'Disposable canonical target','4f100000-0000-4000-8000-000000000012',1);
+select public.create_routine_standard('coffee-cups-service-ready-target','Coffee cups service-ready visual layout','Disposable canonical target','object',null,'manual',true);
+select public.create_routine_standard_revision((select id from public.routine_standards where standard_key='coffee-cups-service-ready-target'),
+  '{"layout":"service-ready"}'::jsonb,null,'Disposable canonical target','4f100000-0000-4000-8000-000000000013',1);
+select public.create_routine_standard('wine-glasses-full-target','Wine glasses full visual layout','Disposable canonical target','object',null,'manual',true);
+select public.create_routine_standard_revision((select id from public.routine_standards where standard_key='wine-glasses-full-target'),
+  '{"layout":"full"}'::jsonb,null,'Disposable canonical target','4f100000-0000-4000-8000-000000000014',1);
+select public.create_routine_standard('wine-glasses-service-ready-target','Wine glasses service-ready visual layout','Disposable canonical target','object',null,'manual',true);
+select public.create_routine_standard_revision((select id from public.routine_standards where standard_key='wine-glasses-service-ready-target'),
+  '{"layout":"service-ready"}'::jsonb,null,'Disposable canonical target','4f100000-0000-4000-8000-000000000015',1);
 
 -- The older template fixture's weekday condition predates the current closed
 -- fact registry. The manager updates that disposable draft through the normal

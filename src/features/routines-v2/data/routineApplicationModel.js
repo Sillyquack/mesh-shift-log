@@ -62,6 +62,7 @@ export function normalizeRoutineApplicationBootstrap(value) {
     previewAllowed: value.previewAllowed === true,
     operationalAllowed: value.operationalAllowed === true,
     managerPreviewAllowed: value.managerPreviewAllowed === true,
+    settingsRevision: Number(value.settingsRevision ?? value.settings_revision ?? 0),
     organizationId: value.organizationId ?? value.organization_id ?? null,
     identity: Object.freeze({
       actorSource: identity.actorSource ?? identity.actor_source ?? null,
@@ -96,6 +97,14 @@ export function normalizeRoutineApplicationBootstrap(value) {
 export function shouldShowRoutineEngineLauncher(bootstrap) {
   return Boolean(bootstrap && bootstrap.mode !== ROUTINE_ENGINE_MODES.LEGACY
     && (bootstrap.previewAllowed || bootstrap.accessState === ROUTINE_UI_ACCESS_STATES.OPERATOR_REQUIRED));
+}
+
+export function canPersonalManagerActivateShadow(bootstrap) {
+  return Boolean(bootstrap?.mode === ROUTINE_ENGINE_MODES.LEGACY
+    && bootstrap?.identity?.actorSource === "personal_auth"
+    && bootstrap?.identity?.role === "manager"
+    && Number.isSafeInteger(bootstrap?.settingsRevision)
+    && bootstrap.settingsRevision > 0);
 }
 
 export function isRoutineReadOnlyPreview(bootstrap) {

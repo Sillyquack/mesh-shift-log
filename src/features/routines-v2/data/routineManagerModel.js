@@ -54,6 +54,24 @@ export function normalizeManagerWorkspace(value = {}) {
   };
 }
 
+export function applyRoutineBatchValidations(workspace = {}, preview = {}) {
+  const validations = new Map((preview.versions || []).map((entry) => [entry.versionId, entry.validation]));
+  return {
+    ...workspace,
+    templates: (workspace.templates || []).map((template) => {
+      const versionId = template.activeDraft?.id;
+      return versionId && validations.has(versionId)
+        ? { ...template, validation: validations.get(versionId) }
+        : template;
+    }),
+    publicationValidationContext: {
+      versionIds: (preview.versions || []).map((entry) => entry.versionId),
+      blockerCount: (preview.blockers || []).length,
+      warningCount: (preview.warnings || []).length,
+    },
+  };
+}
+
 export function readinessState(category = {}) {
   if (category.ready) return "ready";
   if ((category.blockers || []).length) return "blocked";

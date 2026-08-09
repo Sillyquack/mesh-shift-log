@@ -4,20 +4,22 @@ import { ROUTINE_REALTIME_MODE, subscribeRoutineRealtime } from "../realtime/rou
 
 export function useRoutineEngineSync({ open, bootstrap, onRefresh, subscribe = subscribeRoutineRealtime } = {}) {
   const [status, setStatus] = useState({ status: "disabled", mode: "disabled" });
+  const previewAllowed = bootstrap?.previewAllowed === true;
+  const organizationId = bootstrap?.organizationId;
+  const actorSource = bootstrap?.identity?.actorSource;
+  const effectiveOperatorId = bootstrap?.identity?.effectiveOperatorId;
+  const operatorSessionId = bootstrap?.identity?.session?.id || bootstrap?.identity?.operatorSessionId;
+  const personalPrincipal = actorSource === "personal_auth";
+  const sharedPrincipal = actorSource === "shared_device_operator" && Boolean(effectiveOperatorId && operatorSessionId);
+  const mode = bootstrap?.sync?.cursorPollingRequired ? ROUTINE_REALTIME_MODE.CURSOR_POLLING : ROUTINE_REALTIME_MODE.POSTGRES_REALTIME;
   useEffect(() => {
-    const personalPrincipal = bootstrap?.identity?.actorSource === "personal_auth";
-    const sharedPrincipal = bootstrap?.identity?.actorSource === "shared_device_operator"
-      && Boolean(bootstrap?.identity?.effectiveOperatorId && (bootstrap?.identity?.session?.id || bootstrap?.identity?.operatorSessionId));
-    if (!open || !bootstrap?.previewAllowed || !bootstrap.organizationId || (!personalPrincipal && !sharedPrincipal)) {
+    if (!open || !previewAllowed || !organizationId || (!personalPrincipal && !sharedPrincipal)) {
       setStatus({ status: "disabled", mode: "disabled" });
       return undefined;
     }
-    const mode = bootstrap.sync.cursorPollingRequired
-      ? ROUTINE_REALTIME_MODE.CURSOR_POLLING
-      : ROUTINE_REALTIME_MODE.POSTGRES_REALTIME;
     setStatus({ status: "connecting", mode });
     const subscription = subscribe({
-      organizationId: bootstrap.organizationId,
+      organizationId,
       enabled: true,
       mode,
       client: supabaseAuthClient,
@@ -26,6 +28,6 @@ export function useRoutineEngineSync({ open, bootstrap, onRefresh, subscribe = s
       onStatus: (next) => setStatus({ ...next, mode }),
     });
     return () => { subscription.unsubscribe(); };
-  }, [bootstrap, onRefresh, open, subscribe]);
+  }, [mode, onRefresh, open, organizationId, personalPrincipal, previewAllowed, sharedPrincipal, subscribe]);
   return status;
 }
