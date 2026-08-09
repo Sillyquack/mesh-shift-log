@@ -33,7 +33,8 @@ const migrations = ["supabase/phase10a_routine_engine_foundation.sql", "supabase
   "supabase/phase10i_routine_realtime_offline_sync.sql", "supabase/phase10j_routine_shared_device_identity.sql",
   "supabase/phase10k1_routine_ui_pilot_gate.sql", "supabase/phase10k2_routine_manager_control_center.sql",
   "supabase/phase10k3_routine_employee_workflow.sql", "supabase/phase10k4_routine_history_pilot_hardening.sql",
-  "supabase/phase10l_mesh_routine_content_pack.sql", "supabase/phase10o_routine_default_privilege_hardening.sql"];
+  "supabase/phase10l_mesh_routine_content_pack.sql", "supabase/phase10p_routine_readiness_finalization.sql",
+  "supabase/phase10q_mesh_routine_content_pack_1_2r.sql", "supabase/phase10o_routine_default_privilege_hardening.sql"];
 const fixtures = ["supabase/tests/phase10/foundation-fixtures.sql", "supabase/tests/phase10/run-snapshot-fixtures.sql",
   "supabase/tests/phase10/lifecycle-fixtures.sql", "supabase/tests/phase10/operational-time-fixtures.sql",
   "supabase/tests/phase10/delivery-fixtures.sql", "supabase/tests/phase10/double-shift-fixtures.sql",

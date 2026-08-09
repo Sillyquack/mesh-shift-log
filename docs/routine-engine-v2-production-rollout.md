@@ -1,6 +1,6 @@
 # Routine Engine v2 production rollout runbook
 
-Status: plan only for Phase 10O. Phase 10A–10L are already present in production, while the organization remains `legacy/staff_preview`. This runbook does not apply 10O, install content, publish, promote a release stage, change mode, pause work, or create an operational record.
+Status: review plan for the Phase 10P/10Q readiness finalization. The production organization remains `shadow/staff_preview`; the existing 1.1R installation ledger and editable drafts remain unpublished. This document does not apply a migration, install content, publish, promote a release stage, change mode, pause work, or create an operational record.
 
 ## Phase 10A1 stop record and renewed gates
 
@@ -30,9 +30,11 @@ Obtain explicit production-change approval and record the approved Supabase proj
 14. `phase10k3_routine_employee_workflow.sql`
 15. `phase10k4_routine_history_pilot_hardening.sql`
 16. `phase10l_mesh_routine_content_pack.sql`
-17. `phase10o_routine_default_privilege_hardening.sql`
+17. `phase10p_routine_readiness_finalization.sql`
+18. `phase10q_mesh_routine_content_pack_1_2r.sql`
+19. `phase10o_routine_default_privilege_hardening.sql`
 
-The 10L migration installs the reviewed content-pack mechanism but does not install organization content. Phase 10O is a forward-only default-privilege hardening for objects created later by the effective migration role; it changes no existing object, grant, policy, row, Storage policy or Realtime membership. Never reorder, squash, or edit an already-applied phase migration. No database rollback is required: catalog forensics proved that existing Routine objects are already semantically correct and secure.
+The 10L migration installs the reviewed content-pack mechanism but does not install organization content. Phase 10P replaces only a private readiness calculation. Phase 10Q replaces only the private provider with 1.2R and never installs or edits organization content. Phase 10O is a forward-only default-privilege hardening for objects created later by the effective migration role; it changes no existing object, grant, policy, row, Storage policy or Realtime membership. The ordering above is the canonical clean/disposable manifest. A production environment that already has 10O applies only newly approved forward migrations after separate authorization and then repeats the ACL attestations; it never rewrites migration history. No database rollback is required.
 
 ## Project-ref preflight
 
@@ -54,7 +56,7 @@ Verify that `routine_events`, and only approved tables, are members of `supabase
 
 Compare RLS enablement, policies, function owners, fixed search paths and exact authenticated `EXECUTE` grants with the disposable catalog fingerprint. Confirm anon has no Routine Engine access, authenticated clients have no direct mutation DML, and release/E2E attestation tables expose no client DML. Scan the build and repository for service-role keys, secrets, PINs, bearer/session tokens and production URLs.
 
-Before any production migration, run `npm run verify:routine-full-migration-reapply`. Its network-isolated PostgreSQL 17.6.1.127 matrix must apply the exact 17-migration Phase 10A → 10A1 → 10B–10L → 10O sequence three times in both the rehearsal (`supabase_admin`) and production-shaped (`postgres`) owner contexts: 51/51 applications per context. Both must produce portable semantic schema fingerprint `b0557825a4d5fbff851e4a167f3647e4ac74846914768c6ddd3b27584a1e7b32`. The portable payload uses fixed deparser `search_path=pg_catalog`, explicit schema-qualified identities, deterministic records, all non-owner semantic fields, and excludes owners and every ACL category. The former schema/raw/effective fingerprints are environment-dependent diagnostics only.
+Before any production migration, run `npm run verify:routine-full-migration-reapply`. Its network-isolated PostgreSQL 17.6 matrix must apply the exact 19-migration Phase 10A → 10A1 → 10B–10L → 10P → 10Q → 10O sequence three times in both the rehearsal (`supabase_admin`) and production-shaped (`postgres`) owner contexts: 57/57 applications per context. Both must produce portable semantic schema fingerprint `8a93247ce7735deb6949f8592eee7b0c42b4ae374d724b8b876b62e745fade45`. The portable payload uses fixed deparser `search_path=pg_catalog`, explicit schema-qualified identities, deterministic records, all non-owner semantic fields, and excludes owners and every ACL category. The former schema/raw/effective fingerprints are environment-dependent diagnostics only.
 
 Acceptance also requires separate literal attestations. Existing-object client access must retain zero `PUBLIC`/`anon` Routine function execution, the exact authenticated 218-signature function allowlist, the reviewed 32/32 public/internal signature contract, zero direct client Routine DML, the exact authenticated 65-relation SELECT allowlist, zero unconditional or broad (`PUBLIC`/`anon`) Routine RLS, and canonical validator argument names. The existing authenticated policies remain predicate-constrained even though PostgreSQL labels their policy-combination mode `PERMISSIVE`. Default ACL must separately prove that future public tables, sequences and functions created by the effective `current_user` give `PUBLIC`, `anon` and `authenticated` no privilege while owner access remains. Actual owners, `postgres`, `supabase_admin`, `service_role`, privileged grants and `pg_default_acl.defaclrole` are reported as environment evidence and never normalized into browser access. Stop on any client/default-ACL mismatch or an owner outside the narrow Routine variants (`postgres`/`supabase_admin`) and the reviewed infrastructure owners (`pg_database_owner`/`supabase_storage_admin`).
 
@@ -66,7 +68,10 @@ The affected artifacts for the current review tree are pinned below. These hashe
 |---|---|
 | `supabase/phase10a1_routine_organization_settings_bootstrap.sql` | `56ac1afa16d5676bd0c7118b4e246d5d7558aa65e18cd88f0e1dbd4cb86ba2cd` |
 | `content/routine-engine/mesh-routine-content-v1.json` | `fc2e639d692a3850200f73738946f40d8cde16ffc8cae7f65ab38fd077a56a3c` |
+| `content/routine-engine/mesh-routine-content-v1-2r.json` | `cc135dadb310cf87cd1af4589179ebef20de429130f9dfb5c54dcd5340a28b41` |
 | `supabase/phase10l_mesh_routine_content_pack.sql` | `f91b0479bffc9456954c5f1de388b5713039aa9ad8cc72042aab4da7f213a1fa` |
+| `supabase/phase10p_routine_readiness_finalization.sql` | `53488c334bfcc86a24df98fe1bb0ab1ac694d950f4684268a1d8742a912a04f5` |
+| `supabase/phase10q_mesh_routine_content_pack_1_2r.sql` | `73004f725d077879843daa5c6d0caf322955a32b85f823abb65d86985255b296` |
 | `supabase/phase10o_routine_default_privilege_hardening.sql` | `ca8c96adb59d936a4b36d360da260e535fbe92b50ecfcf68137c8fe113b400ce` |
 | `docs/routine-engine-v2-mesh-content-v1.md` | `dd0483555368f2cd9f3ad2774e211157dc3774d87e0f3785e3d1798f4488cc20` |
 | `docs/routine-engine-v2-mesh-operational-standards-amendment-2026-08-07.md` | `aed94b69e98e7f7ed6ace5a37d84cf50770ea6fd3337b536898179f9c4f8c2a8` |
@@ -75,15 +80,15 @@ Gate 0 and Gate 1 must be rerun against the eventual new commit before any produ
 
 ## Shadow and manager preview
 
-Keep the installed preview stage and do not select `shadow` until 10O has been separately applied and its portable schema, literal client ACL, literal default ACL and owner/platform attestations all pass. Shadow remains blocked today because production 10O has not been applied. Verify legacy Opening/Closing operation, Stock Count, Inventory Storage and Event Operations. Never move directly from legacy to pilot.
+Preserve the installed `shadow/staff_preview` state. The portable schema, literal client ACL, literal default ACL and owner/platform attestations remain mandatory for every forward migration. Verify legacy Opening/Closing operation, Stock Count, Inventory Storage and Event Operations. Never move from shadow to pilot without a separate approval.
 
 Managers review foundation, locations/routes, standards, reference images, devices/operators, pilot membership candidates, history sources and the legacy unscoped aggregate. Shared-device identities must not open manager surfaces. Resolve blockers with existing manager RPCs; do not edit tables directly.
 
 ## Phase 10L content installation and publication
 
-Keep the organization in `legacy` for migration verification. After fresh Gate 0/Gate 1 approval, a manager may explicitly choose `shadow`, open Operational content, verify `mesh-routine-content@1.1R` and hash `c149a8416a867dcb7d87224f3ae8e2a214e5ca4954613b118521ebe5ae3aff2a`, review create/reuse/conflict analysis, and explicitly install editable Opening and Closing drafts. Re-preview after installation and compare the content audit, IDs, draft hashes and divergence state. Installation must not publish, create a run or bundle, or change mode/stage.
+Production already has the immutable `mesh-routine-content@1.1R` installation ledger and two editable drafts. Do not reinstall or rewrite that historical ledger. After fresh Gate 0/Gate 1 approval, apply the reviewed 1.2R amendments only through supported personal-manager draft/Foundation RPCs with expected revisions and stable idempotency keys. Re-preview after every semantic group and compare IDs, draft hashes and expected divergence. Amendments must not publish, create a run or bundle, or change mode/stage.
 
-The 1.1R pack resolves the cup/glass layouts, four Workbar-assigned Coffee Canisters, six tea names, door/lock rules and fridge rules through approved structured revisions. Full and service-ready cup/glass standards are visually identical, not numeric; O29/O35 recheck independently. Cornerbar has a separate structured operating standard but no third routine. Event-active scope uses formal transfer/evidence and never N/A. The sole remaining original blocker is **Exact serviceware recovery route through the relevant office floors**; resolve it later only through the existing manager standard/location-set mutations using an approved complete route. Never guess office-floor points or create room 005.
+The 1.2R amendment preserves the cup/glass layouts, four Workbar-assigned Coffee Canisters, six tea names, door/lock rules and fridge rules, and corrects only reviewed terminology and seven task groups. Full and service-ready cup/glass standards are visually identical, not numeric; O29/O35 recheck independently. Cornerbar has a separate structured operating standard but no third routine. Event-active scope uses formal transfer/evidence and never N/A. The sole remaining blocker is **Exact serviceware recovery route through the relevant office floors**; resolve it later only through existing manager standard/location-set mutations using an approved complete route. Never guess office-floor points or create room 005.
 
 Managers may upload actual approved reference images gradually through Manager Control Center using prepare → upload → finalize and must never construct Storage paths. Placeholders remain warnings and are not required for draft installation. Validate and compare both drafts; any change from the installed pack remains visible in the audit. Publish Opening and Closing atomically with the existing batch-publish RPC, including when publishing only one version. Recompute readiness after publication. DS01–DS04 remain bundle system steps and no `double_shift` template is created.
 

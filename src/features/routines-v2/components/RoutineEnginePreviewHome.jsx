@@ -9,7 +9,8 @@ function CountCard({ label, value }) {
 
 export default function RoutineEnginePreviewHome({ bootstrap, syncStatus, onEndSession, onSwitchOperator, onOpenEmployee, onOpenManager }) {
   const summaries = bootstrap.summaries;
-  const empty = summaries.publishedTemplateCount === 0 && summaries.visibleRunCount === 0;
+  const noRunnableContent = summaries.publishedTemplateCount === 0 && summaries.visibleRunCount === 0;
+  const installedDrafts = Number(summaries.draftTemplateCount || 0);
   return (
     <main className="routine-shell-main" id="routine-preview-home">
       <section className="routine-hero">
@@ -57,10 +58,12 @@ export default function RoutineEnginePreviewHome({ bootstrap, syncStatus, onEndS
         <CountCard label="Open deviations" value={summaries.openDeviationCount} />
       </section>
 
-      {empty ? (
+      {noRunnableContent ? (
         <section className="routine-empty-state">
           <div className="routine-empty-mark" aria-hidden="true">R2</div>
-          <div><h2>No routine content yet</h2><p>Templates and runs have not been seeded. Opening, Closing, Event Operations and Stock Count continue in the current app.</p></div>
+          <div><h2>No published or runnable routine content yet</h2><p>{installedDrafts > 0
+            ? `${installedDrafts} editable draft${installedDrafts === 1 ? " is" : "s are"} installed. Publishing and operative work remain separate, controlled actions.`
+            : "No published template or visible run is available. Opening, Closing, Event Operations and Stock Count continue in the current app."}</p></div>
         </section>
       ) : (
         <section className="routine-empty-state"><div><h2>Preview data is available</h2><p>Operational controls intentionally remain unavailable in Phase 10K1.</p></div></section>

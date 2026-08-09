@@ -4,10 +4,11 @@ import { dirname, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 
 const ROOT = resolve(dirname(fileURLToPath(import.meta.url)), "..");
-const PACK_PATH = resolve(ROOT, "content/routine-engine/mesh-routine-content-v1.json");
-const DOC_PATH = resolve(ROOT, "docs/routine-engine-v2-mesh-content-v1.md");
-const SQL_PATH = resolve(ROOT, "supabase/phase10l_mesh_routine_content_pack.sql");
-const AMENDMENT_PATH = resolve(ROOT, "docs/routine-engine-v2-mesh-operational-standards-amendment-2026-08-07.md");
+const PACK_PATH = resolve(ROOT, "content/routine-engine/mesh-routine-content-v1-2r.json");
+const DOC_PATH = resolve(ROOT, "docs/routine-engine-v2-mesh-content-v1-2r.md");
+const SQL_PATH = resolve(ROOT, "supabase/phase10q_mesh_routine_content_pack_1_2r.sql");
+const BASE_AMENDMENT_PATH = resolve(ROOT, "docs/routine-engine-v2-mesh-operational-standards-amendment-2026-08-07.md");
+const AMENDMENT_PATH = resolve(ROOT, "docs/routine-engine-v2-production-readiness-amendment-2026-08-09.md");
 const AMENDMENT_METADATA_HEADING = "## Generated pack metadata";
 const PACK_START = "-- BEGIN GENERATED MESH CONTENT PACK PAYLOAD";
 const PACK_END = "-- END GENERATED MESH CONTENT PACK PAYLOAD";
@@ -33,8 +34,8 @@ const LOCATIONS = [
   ["workbar", "Workbar", "zone"], ["atrium", "Atrium", "zone"], ["cornerbar", "Cornerbar", "zone"],
   ["members-lounge", "Members lounge", "zone"], ["kitchen", "Kitchen", "zone"],
   ["cleaning-station", "Cleaning station", "station"], ["self-service-counter", "Self-service counter", "station"],
-  ["coffee-machine", "Coffee machine", "equipment"], ["coffee-canister-kitchen-reserve", "Coffee Canister kitchen reserve", "storage"],
-  ["workbar-bar-coffee-canister-cupboard", "Workbar bar Coffee Canister cupboard", "storage"],
+  ["coffee-machine", "Coffee machine", "equipment"], ["coffee-canister-kitchen-reserve", "Coffee Canisters kitchen reserve", "storage"],
+  ["workbar-bar-coffee-canister-cupboard", "Workbar bar Coffee Canisters cupboard", "storage"],
   ["register", "Register", "station"], ["workbar-screen", "Workbar screen", "equipment"],
   ["serviceware-storage", "Serviceware storage", "storage"], ["waste-room-route", "Waste room / waste route", "collection_point"],
   ["project-room-001", "001", "room"], ["project-room-002", "002", "room"], ["project-room-003", "003", "room"],
@@ -149,7 +150,7 @@ const CORNERBAR_OPERATING_STANDARD = Object.freeze({
 
 const STANDARDS = [
   ["workbar-milk-fridge-target", "Workbar Milk Fridge target", "object", "manual", { regularMilk: 2, oatly: 2 }],
-  ["workbar-coffee-canister-assigned-target", "Workbar-assigned Coffee Canister target", "object", "manual", WORKBAR_CANISTER_TARGET],
+  ["workbar-coffee-canister-assigned-target", "Workbar-assigned Coffee Canisters target", "object", "manual", WORKBAR_CANISTER_TARGET],
   ["baked-goods-daily", "Baked goods daily", "object", "manual", { requiredEveryDay: true }],
   ["self-service-fixed-components", "Self-service fixed components", "list", "manual", SELF_SERVICE_COMPONENTS],
   ["self-service-overnight-policy", "Self-service overnight policy", "list", "manual", OVERNIGHT_POLICY],
@@ -177,8 +178,8 @@ const REFERENCES = [
   ["project-room-standard", "Project-room standard", ["O16", "O31", "C04"]],
   ["workbar-standard-layout", "Workbar standard layout", ["O23", "O25", "O29", "O35", "C05", "C14", "C22"]],
   ["atrium-standard-layout", "Atrium standard layout", ["O23", "O25", "C05", "C14", "C22"]],
-  ["coffee-canister-lunch-reserve", "Coffee Canister lunch reserve", ["O06", "O28", "O34"]],
-  ["coffee-canister-rinsed-storage", "Coffee Canister rinsed storage", ["C06", "C17"]],
+  ["coffee-canister-lunch-reserve", "Coffee Canisters lunch reserve", ["O06", "O28", "O34"]],
+  ["coffee-canister-rinsed-storage", "Coffee Canisters rinsed storage", ["C06", "C17"]],
   ["ordinary-coffee-cup-layout", "Ordinary coffee-cup layout", ["O15", "O29", "O35", "C27"]],
   ["cappuccino-cup-shelf-layout", "Cappuccino-cup shelf layout", ["O15", "O29", "O35", "C27"]],
   ["cappuccino-and-espresso-machine-top-layout", "Cappuccino and espresso machine-top layout", ["O15", "O29", "O35", "C27"]],
@@ -608,6 +609,48 @@ function applyOperationalStandardsAmendment(openingTasks, closingTasks, amendmen
 
   for (const id of touched) finalizeTaskAmendment(tasks.get(id), amendmentDecisionHash);
 }
+function finalizeProductionReadinessAmendment(task, amendmentDecisionHash) {
+  task.metadata.deviationRules = bullets(task.deviationRulesText);
+  task.metadata.referenceGuidance = bullets(task.referenceGuidanceText);
+  task.metadata.productionReadinessAmendment = { date: "2026-08-09", decisionHash: amendmentDecisionHash };
+  task.sourceHash = sha256(canonical({ priorSourceHash: task.sourceHash, title: task.title, instructions: task.instructions,
+    structuredItemsText: task.structuredItemsText, doneCriteriaText: task.doneCriteriaText,
+    deviationRulesText: task.deviationRulesText, referenceGuidanceText: task.referenceGuidanceText, amendmentDecisionHash }));
+}
+function applyProductionReadinessAmendment(openingTasks, closingTasks, amendmentDecisionHash) {
+  const tasks = new Map([...openingTasks, ...closingTasks].map((task) => [task.id, task]));
+  const touched = new Set();
+  const task = (id) => { const value = tasks.get(id); if (!value) throw new Error(`Missing task for production-readiness amendment: ${id}`); touched.add(id); return value; };
+
+  {
+    const value = task("O02");
+    replaceTaskText(value, "timingText", "before the first Coffee Canister brewing plan is finalized", "before the first brewing plan for Coffee Canisters is finalized");
+    replaceTaskText(value.metadata, "timingSourceText", "before the first Coffee Canister brewing plan is finalized", "before the first brewing plan for Coffee Canisters is finalized");
+  }
+  replaceTaskText(task("O28"), "locationDescription", "Coffee Canister kitchen reserve", "Coffee Canisters kitchen reserve");
+  replaceTaskText(task("O29"), "deviationRulesText", "Missing stock, serviceware, Coffee Canister or access.", "Missing stock, serviceware, Coffee Canisters or access.");
+  {
+    const value = task("O34");
+    replaceTaskText(value, "locationDescription", "Coffee Canister kitchen reserve", "Coffee Canisters kitchen reserve");
+    replaceTaskText(value, "deviationRulesText", "Missing or damaged Coffee Canister/part.", "One or more Coffee Canisters or parts are missing or damaged.");
+  }
+  replaceTaskText(task("O35"), "deviationRulesText", "Any product, serviceware or Coffee Canister shortage.", "Any product, serviceware or Coffee Canisters shortage.");
+  {
+    const value = task("C06");
+    replaceTaskText(value, "locationDescription", "Coffee Canister kitchen reserve", "Coffee Canisters kitchen reserve");
+    replaceTaskText(value, "deviationRulesText", "Coffee Canister or part missing/damaged.", "Coffee Canisters or parts missing/damaged.");
+  }
+  {
+    const value = task("C17");
+    replaceTaskText(value, "instructions", "fixed Coffee Canister cupboard", "fixed Coffee Canisters cupboard");
+    const returned = value.items.find((item) => item.key === "returned_to_workbar_cupboard");
+    if (!returned) throw new Error("C17 returned-to-cupboard item is missing.");
+    returned.label = returned.label.replace("Coffee Canister cupboard", "Coffee Canisters cupboard");
+    returned.metadata.sourceText = returned.metadata.sourceText.replace("Coffee Canister cupboard", "Coffee Canisters cupboard");
+    replaceTaskText(value, "structuredItemsText", "Coffee Canister cupboard", "Coffee Canisters cupboard");
+  }
+  for (const id of touched) finalizeProductionReadinessAmendment(tasks.get(id), amendmentDecisionHash);
+}
 function parseDoubleShift(source) {
   const matcher = /^# (DS\d{2}) — ([^\n]+)\n([\s\S]*?)(?=^# [^\n]+|$(?![\s\S]))/gm;
   const steps = [];
@@ -686,18 +729,20 @@ function amendmentDecisionBody(source) {
   if (index < 0) throw new Error("Operational standards amendment is missing the generated metadata boundary.");
   return `${source.replaceAll("\r\n", "\n").slice(0, index).trimEnd()}\n`;
 }
-function buildPack(openingSource, closingSource, doubleShiftSource, amendmentSource) {
+function buildPack(openingSource, closingSource, doubleShiftSource, baseAmendmentSource, amendmentSource) {
   validateSource(openingSource, "Opening", SOURCE_HASHES.opening);
   validateSource(closingSource, "Closing", SOURCE_HASHES.closing);
   validateSource(doubleShiftSource, "Double Shift", SOURCE_HASHES.doubleShift);
+  const baseAmendmentDecisionHash = sha256(amendmentDecisionBody(baseAmendmentSource));
   const amendmentDecisionHash = sha256(amendmentDecisionBody(amendmentSource));
   const openingTasks = parseRoutine(openingSource, "O");
   const closingTasks = parseRoutine(closingSource, "C");
-  applyOperationalStandardsAmendment(openingTasks, closingTasks, amendmentDecisionHash);
+  applyOperationalStandardsAmendment(openingTasks, closingTasks, baseAmendmentDecisionHash);
+  applyProductionReadinessAmendment(openingTasks, closingTasks, amendmentDecisionHash);
   const doubleShiftSteps = parseDoubleShift(doubleShiftSource);
   const allRelations = relations(closingTasks);
   const pack = {
-    schemaVersion: "1.0", packKey: "mesh-routine-content", packVersion: "1.1R",
+    schemaVersion: "1.0", packKey: "mesh-routine-content", packVersion: "1.2R",
     name: "Mesh Opening and Closing operational content", description: "Editable Opening and Closing drafts plus Double Shift system-step copy. Installation never publishes or creates operative state.",
     sections: [...SECTION_CONFIG.O.map((value, sortOrder) => ({ ...value, routineKey: "opening", sortOrder })), ...SECTION_CONFIG.C.map((value, sortOrder) => ({ ...value, routineKey: "closing", sortOrder }))],
     locations: LOCATIONS, locationSets: LOCATION_SETS, standards: STANDARDS, references: REFERENCES,
@@ -708,7 +753,8 @@ function buildPack(openingSource, closingSource, doubleShiftSource, amendmentSou
       { kind: "opening", fileName: "mesh-opening-content-spec-v1R-combined.md", sha256: SOURCE_HASHES.opening },
       { kind: "closing", fileName: "mesh-closing-content-spec-v1R-combined.md", sha256: SOURCE_HASHES.closing },
       { kind: "double_shift", fileName: "mesh-double-shift-content-spec-v1R.md", sha256: SOURCE_HASHES.doubleShift },
-      { kind: "operational_standards_amendment", fileName: "routine-engine-v2-mesh-operational-standards-amendment-2026-08-07.md", sha256: amendmentDecisionHash, hashScope: "content-before-generated-pack-metadata" },
+      { kind: "operational_standards_amendment", fileName: "routine-engine-v2-mesh-operational-standards-amendment-2026-08-07.md", sha256: baseAmendmentDecisionHash, hashScope: "content-before-generated-pack-metadata" },
+      { kind: "production_readiness_amendment", fileName: "routine-engine-v2-production-readiness-amendment-2026-08-09.md", sha256: amendmentDecisionHash, hashScope: "content-before-generated-pack-metadata" },
     ],
   };
   validatePack(pack);
@@ -718,8 +764,8 @@ function buildPack(openingSource, closingSource, doubleShiftSource, amendmentSou
 function generatedAmendment(pack) {
   const source = readFileSync(AMENDMENT_PATH, "utf8");
   const body = amendmentDecisionBody(source);
-  const amendment = pack.sourceDocuments.find((entry) => entry.kind === "operational_standards_amendment");
-  return `${body}\n${AMENDMENT_METADATA_HEADING}\n\nThis section is generated from the canonical pack and is excluded from the amendment decision-body hash.\n\n- Pack: \`${pack.packKey}@${pack.packVersion}\`\n- Canonical pack SHA-256: \`${pack.packHash}\`\n- Amendment decision-body SHA-256: \`${amendment.sha256}\`\n- Production action: none\n`;
+  const amendment = pack.sourceDocuments.find((entry) => entry.kind === "production_readiness_amendment");
+  return `${body}\n${AMENDMENT_METADATA_HEADING}\n\nThis section is generated from the canonical pack and is excluded from the amendment decision-body hash.\n\n- Pack: \`${pack.packKey}@${pack.packVersion}\`\n- Canonical pack SHA-256: \`${pack.packHash}\`\n- Amendment decision-body SHA-256: \`${amendment.sha256}\`\n- Production action: supported draft amendment only; never installation or publication\n`;
 }
 function syncAmendment(pack, checkOnly) {
   const expected = generatedAmendment(pack);
@@ -734,7 +780,7 @@ function validatePack(pack, withHash = false) {
   if (unknown.length) throw new Error(`Unknown top-level fields: ${unknown.join(", ")}`);
   for (const key of TOP_LEVEL_FIELDS.filter((key) => key !== "packHash")) if (!(key in pack)) throw new Error(`Missing top-level field: ${key}`);
   if (pack.opening.tasks.length !== 37 || pack.closing.tasks.length !== 46 || pack.doubleShiftSteps.length !== 4) throw new Error("Content counts must be Opening 37, Closing 46, Double Shift 4.");
-  if (pack.packVersion !== "1.1R") throw new Error("Operational standards pack version must be 1.1R.");
+  if (pack.packVersion !== "1.2R") throw new Error("Production-readiness pack version must be 1.2R.");
   for (const [tasks, prefix, count] of [[pack.opening.tasks, "O", 37], [pack.closing.tasks, "C", 46]]) {
     const expected = new Set(Array.from({ length: count }, (_, index) => `${prefix}${String(index + 1).padStart(2, "0")}`));
     for (const task of tasks) {
@@ -769,7 +815,7 @@ function validatePack(pack, withHash = false) {
     if (packHash !== expectedHash) throw new Error(`Pack hash mismatch: expected ${expectedHash}, got ${packHash}.`);
   }
 }
-function generatedDoc(pack) {
+function generatedDocBase(pack) {
   const allDependencies = [...pack.opening.dependencies, ...pack.closing.dependencies];
   const allRelations = [...pack.opening.relations, ...pack.closing.relations];
   const rows = (tasks) => tasks.map((task) => {
@@ -781,6 +827,11 @@ function generatedDoc(pack) {
   }).join("\n");
   const relationRows = [...pack.opening.relations, ...pack.closing.relations].map((entry) => `| ${entry.sourceTaskId} | ${entry.relationType} | ${entry.targetRoutineKey}/${entry.targetTaskId} | ${entry.metadata.deliveryKey || "—"} |`).join("\n");
   return `# Mesh Routine Content Pack v1\n\n> Generated from \`content/routine-engine/mesh-routine-content-v1.json\`. Do not edit by hand.\n\n- Pack: \`${pack.packKey}@${pack.packVersion}\`\n- Schema: \`${pack.schemaVersion}\`\n- SHA-256: \`${pack.packHash}\`\n- Opening: ${pack.opening.tasks.length} tasks in ${pack.opening.sections.length} sections\n- Closing: ${pack.closing.tasks.length} tasks in ${pack.closing.sections.length} sections\n- Double Shift: ${pack.doubleShiftSteps.length} system steps; no third template\n- Locations / sets / standards / references: ${pack.locations.length} / ${pack.locationSets.length} / ${pack.standards.length} / ${pack.references.length}\n- Unresolved publication/readiness blockers: ${pack.unresolvedRequirements.length}\n\nThe task audit below records the exact locked-source plus amendment provenance hash for all 83 O/C tasks. Each canonical task also retains its full instruction, structured-item text, done criteria, deviation/blocking rules and reference guidance in the JSON manifest.\n\n## Source and amendment provenance\n\n${pack.sourceDocuments.map((entry) => `- \`${entry.kind}\` — \`${entry.fileName}\`: \`${entry.sha256}\`${entry.hashScope ? ` (${entry.hashScope})` : ""}`).join("\n")}\n\n## Opening\n\n| ID | Title | Section | Type | Criticality | Required | Initial | Completion | N/A | Verification | Repeat | Items | Dependencies | References | Relations | Unresolved blockers | Location/set | Server timing | Provenance SHA-256 |\n|---|---|---|---|---|---|---|---|---|---|---|---:|---:|---:|---:|---|---|---|---|\n${rows(pack.opening.tasks)}\n\n## Closing\n\n| ID | Title | Section | Type | Criticality | Required | Initial | Completion | N/A | Verification | Repeat | Items | Dependencies | References | Relations | Unresolved blockers | Location/set | Server timing | Provenance SHA-256 |\n|---|---|---|---|---|---|---|---|---|---|---:|---:|---:|---:|---|---|---|---|\n${rows(pack.closing.tasks)}\n\n## Double Shift system steps\n\n${pack.doubleShiftSteps.map((step) => `- ${step.id} / \`${step.stepKey}\` — ${step.title}${step.systemGenerated ? " (system-generated)" : ""}; source \`${step.sourceHash}\``).join("\n")}\n\n### Bundle copy\n\n${Object.entries(pack.doubleShiftCopy).map(([key, value]) => `- **${key}**\n\n  \`\`\`text\n${value.split("\n").map((line) => `  ${line}`).join("\n")}\n  \`\`\``).join("\n")}\n\n## Unresolved publication and readiness blockers\n\n${pack.unresolvedRequirements.map((entry) => `- \`${entry.standardKey}\`: ${entry.label} (${entry.affectedTaskIds.join(", ")})`).join("\n")}\n\n## Logical references\n\n${pack.references.map((entry) => `- \`${entry.key}\` — ${entry.label}; tasks ${entry.taskIds.join(", ")}`).join("\n")}\n\n## Cross-run relations\n\n| Source | Type | Target | Delivery key |\n|---|---|---|---|\n${relationRows}\n`;
+}
+function generatedDoc(pack) {
+  return generatedDocBase(pack)
+    .replace("# Mesh Routine Content Pack v1", `# Mesh Routine Content Pack ${pack.packVersion}`)
+    .replace("content/routine-engine/mesh-routine-content-v1.json", "content/routine-engine/mesh-routine-content-v1-2r.json");
 }
 function generatedSql(pack) {
   const payload = JSON.stringify(pack);
@@ -808,7 +859,7 @@ if (args.has("--bootstrap") || args.has("--verify-sources")) {
   const openingPath = resolve(String(args.get("--opening")));
   const closingPath = resolve(String(args.get("--closing")));
   const doubleShiftPath = resolve(String(args.get("--double-shift")));
-  const pack = buildPack(readFileSync(openingPath, "utf8"), readFileSync(closingPath, "utf8"), readFileSync(doubleShiftPath, "utf8"), readFileSync(AMENDMENT_PATH, "utf8"));
+  const pack = buildPack(readFileSync(openingPath, "utf8"), readFileSync(closingPath, "utf8"), readFileSync(doubleShiftPath, "utf8"), readFileSync(BASE_AMENDMENT_PATH, "utf8"), readFileSync(AMENDMENT_PATH, "utf8"));
   if (args.has("--verify-sources")) {
     const existing = JSON.parse(readFileSync(PACK_PATH, "utf8"));
     if (canonical(existing) !== canonical(pack)) throw new Error("Canonical pack differs from the three locked authoritative sources.");

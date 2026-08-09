@@ -1,6 +1,6 @@
 import React from "react";
 import { createRoot } from "react-dom/client";
-import contentPack from "../../../../content/routine-engine/mesh-routine-content-v1.json";
+import contentPack from "../../../../content/routine-engine/mesh-routine-content-v1-2r.json";
 import "../../../styles.css";
 import "../components/RoutineEngineShell.css";
 import "../manager/RoutineManager.css";

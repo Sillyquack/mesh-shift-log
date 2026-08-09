@@ -6,6 +6,7 @@ import { spawnSync } from "node:child_process";
 import React from "react";
 import { renderToStaticMarkup } from "react-dom/server";
 import {
+  canPersonalManagerActivateShadow,
   isRoutineReadOnlyPreview,
   normalizeRoutineApplicationBootstrap,
   routineLauncherLabel,
@@ -236,10 +237,14 @@ function sourceChecks() {
   check("preview keeps the K2 manager entry server-gated and non-operative", preview.includes("bootstrap.managerPreviewAllowed") && preview.includes("Manager Control Center") && preview.includes("Operative run and task controls remain unavailable"));
   check("launcher label is preview-specific in shadow", launcher.includes("routineLauncherLabel"));
   check("launcher backend failure preserves legacy", launcher.includes("current shift log remains available"));
+  check("legacy activation is personal-manager-only", launcher.includes("canPersonalManagerActivateShadow") && launcher.includes('mode: "shadow"'));
+  check("legacy activation uses the existing audited mode RPC", launcher.includes("setRoutineEngineMode") && launcher.includes("expectedRevision: bootstrap.settingsRevision"));
+  check("legacy activation never names pilot or active", !/mode:\s*["'](?:pilot|active)["']/.test(launcher));
   check("sync hook selects both transports from bootstrap", syncHook.includes("CURSOR_POLLING") && syncHook.includes("POSTGRES_REALTIME"));
   check("shared polling disables BroadcastChannel", syncHook.includes("CURSOR_POLLING ? null"));
   check("sync cleanup unsubscribes", syncHook.includes("subscription.unsubscribe()"));
   check("sync requires an established personal or shared principal", syncHook.includes("personalPrincipal") && syncHook.includes("sharedPrincipal") && syncHook.includes("identity?.session?.id"));
+  check("sync effect depends on stable primitives, not the bootstrap object", !/\[bootstrap,/.test(syncHook) && syncHook.includes("organizationId") && syncHook.includes("previewAllowed"));
   check("operator client identity uses sessionStorage only", identityHook.includes("sessionStorage") && !identityHook.includes("localStorage"));
   check("operator drafts restore by principal", identityHook.includes("restoreRoutineOfflineDataForPrincipal"));
   check("operator token module persists only in sessionStorage", sessionModule.includes("sessionStorage") && !sessionModule.includes("localStorage") && !sessionModule.includes("indexedDB") && !sessionModule.includes("BroadcastChannel"));
@@ -269,7 +274,7 @@ async function modelAndRenderChecks() {
     accessState:"manager_preview",previewAllowed:true,operationalAllowed:false,managerPreviewAllowed:true,organizationId:"a1000000-0000-4000-8000-000000000001",
     identity:{ actorSource:"personal_auth",kind:"personal",displayName:"Preview Manager",role:"manager" },
     capabilities:{ manageConfiguration:true,manageTemplates:true },serverClock:{ serverNow:"2026-08-06T09:00:00Z",timezone:"Europe/Oslo",operationalDate:"2026-08-06",cutoff:"04:00:00" },
-    sync:{ mode:"postgres_realtime",realtimeAllowed:true },summaries:{ publishedTemplateCount:0,draftTemplateCount:0,visibleRunCount:0,visibleBundleCount:0,openDeviationCount:0 },emptyStateReason:"no_published_templates" });
+    sync:{ mode:"postgres_realtime",realtimeAllowed:true },summaries:{ publishedTemplateCount:0,draftTemplateCount:2,visibleRunCount:0,visibleBundleCount:0,openDeviationCount:0 },emptyStateReason:"no_published_templates",settingsRevision:4 });
   const shared = normalizeRoutineApplicationBootstrap({ contractVersion:"phase10k1-v1",uiReleaseStage:"foundation",mode:"shadow",
     accessState:"read_only_preview",previewAllowed:true,operationalAllowed:false,organizationId:"a1000000-0000-4000-8000-000000000001",
     identity:{ actorSource:"shared_device_operator",kind:"shared",displayName:"Test Operator",role:"staff",effectiveOperatorId:"operator-1",
@@ -278,6 +283,9 @@ async function modelAndRenderChecks() {
   const legacy = normalizeRoutineApplicationBootstrap({ mode:"legacy",accessState:"hidden",previewAllowed:false });
   check("normalization is deterministic", JSON.stringify(manager) === JSON.stringify(normalizeRoutineApplicationBootstrap(JSON.parse(JSON.stringify(manager)))));
   check("legacy hides the launcher", !shouldShowRoutineEngineLauncher(legacy));
+  check("personal manager may explicitly activate Shadow from Legacy", canPersonalManagerActivateShadow(normalizeRoutineApplicationBootstrap({ mode:"legacy",settingsRevision:4,identity:{ actorSource:"personal_auth",role:"manager" } })));
+  check("shared-device operator may never activate Shadow", !canPersonalManagerActivateShadow(normalizeRoutineApplicationBootstrap({ mode:"legacy",settingsRevision:4,identity:{ actorSource:"shared_device_operator",role:"manager" } })));
+  check("personal staff may never activate Shadow", !canPersonalManagerActivateShadow(normalizeRoutineApplicationBootstrap({ mode:"legacy",settingsRevision:4,identity:{ actorSource:"personal_auth",role:"staff" } })));
   check("shadow manager shows the launcher", shouldShowRoutineEngineLauncher(manager));
   check("operator-required state shows a login launcher", shouldShowRoutineEngineLauncher(normalizeRoutineApplicationBootstrap({ mode:"shadow",accessState:"operator_required" })));
   check("shadow launcher label is exact", routineLauncherLabel(manager) === "Routine Engine v2 Preview");
@@ -285,7 +293,8 @@ async function modelAndRenderChecks() {
   check("shared shadow is read only", isRoutineReadOnlyPreview(shared));
   check("capability defaults are deny-by-default", shared.capabilities.performTasks === false && shared.capabilities.manageTemplates === false);
   check("server operational date is preserved exactly", manager.serverClock.operationalDate === "2026-08-06");
-  check("manager-only draft count remains numeric", manager.summaries.draftTemplateCount === 0);
+  check("manager-only draft count remains numeric", manager.summaries.draftTemplateCount === 2);
+  check("settings revision is preserved for stale-safe mode changes", manager.settingsRevision === 4);
   const { createServer } = await import("vite");
   const vite = await createServer({ root: ROOT, appType: "custom", server: { middlewareMode: true }, logLevel: "silent" });
   let RoutineEnginePreviewHome;
@@ -295,7 +304,7 @@ async function modelAndRenderChecks() {
   const managerMarkup = renderToStaticMarkup(React.createElement(RoutineEnginePreviewHome,{bootstrap:manager,syncStatus:{status:"current"}}));
   const sharedMarkup = renderToStaticMarkup(React.createElement(RoutineEnginePreviewHome,{bootstrap:shared,syncStatus:{status:"current"},onEndSession(){},onSwitchOperator(){}}));
   check("manager preview renders its identity", managerMarkup.includes("Preview Manager"));
-  check("manager preview renders empty state", managerMarkup.includes("No routine content yet"));
+  check("manager preview distinguishes installed drafts from runnable content", managerMarkup.includes("No published or runnable routine content yet") && managerMarkup.includes("2 editable drafts are installed"));
   check("manager preview renders no operational buttons", !/Start Opening|Complete|Finish/.test(managerMarkup));
   check("shared preview renders operator and device", sharedMarkup.includes("Test Operator") && sharedMarkup.includes("Test Workbar"));
   check("shared preview exposes session controls", sharedMarkup.includes("Switch operator") && sharedMarkup.includes("End session"));

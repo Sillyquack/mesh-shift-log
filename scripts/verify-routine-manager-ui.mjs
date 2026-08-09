@@ -13,6 +13,7 @@ import {
   timingPreview,
 } from "../src/features/routines-v2/data/routineTemplateEditorModel.js";
 import {
+  applyRoutineBatchValidations,
   classifyManagerError,
   moveEntry,
   normalizeManagerWorkspace,
@@ -168,12 +169,12 @@ function sourceChecks() {
   const hook = readFileSync(absolute("src/features/routines-v2/hooks/useRoutineTemplateEditor.js"), "utf8");
   const harness = readFileSync(absolute("src/features/routines-v2/testing/routineManagerHarnessEntry.jsx"), "utf8");
   const main = readFileSync(absolute("src/main.jsx"), "utf8");
-  const contentPack = JSON.parse(readFileSync(absolute("content/routine-engine/mesh-routine-content-v1.json"), "utf8"));
+  const contentPack = JSON.parse(readFileSync(absolute("content/routine-engine/mesh-routine-content-v1-2r.json"), "utf8"));
   const contentStandards = Object.fromEntries(contentPack.standards.map((entry) => [entry.key, entry]));
   const combined = `${managerSql}\n${clientFiles}\n${allManager}\n${harness}`;
 
   check("manager verifier registered", packageJson.scripts["verify:routine-manager-ui"] === "node scripts/verify-routine-manager-ui.mjs");
-  check("manager preview consumes the 1.1R content contract", contentPack.packVersion === "1.1R" && contentPack.unresolvedRequirements.length === 1 && contentPack.unresolvedRequirements[0].standardKey === "serviceware-office-recovery-route-confirmation");
+  check("manager preview consumes the 1.2R content contract", contentPack.packVersion === "1.2R" && contentPack.unresolvedRequirements.length === 1 && contentPack.unresolvedRequirements[0].standardKey === "serviceware-office-recovery-route-confirmation");
   check("manager standards remain structured server-owned revisions", ["coffee-cups-full-target", "coffee-cups-service-ready-target", "wine-glasses-full-target", "wine-glasses-service-ready-target", "door-and-lock-rules", "fridge-closing-rules", "cornerbar-operating-standard"].every((key) => contentStandards[key]?.valueType === "object" && contentStandards[key]?.currentRevision?.value));
   check("manager content references remain optional placeholders", contentPack.references.every((entry) => entry.placeholderText === "Referansebilde kommer" && entry.buttonLabel === "Vis hvordan det skal se ut") && !contentPack.unresolvedRequirements.some((entry) => /image|reference/i.test(entry.standardKey)));
   check("K2 migration names manager_preview", managerSql.includes("'manager_preview'"));
@@ -226,6 +227,8 @@ function sourceChecks() {
   for (const name of managerFiles) check(`${name} exists as isolated manager component`, existsSync(absolute(`src/features/routines-v2/manager/${name}`)) && sources[name].length > 100);
   check("manager clients use central RPC client", clientFiles.includes("routineRpcClient.request") || clientFiles.includes("managerRpc"));
   check("manager clients have no table builder", !/\.(from|insert|update|delete)\s*\(/.test(clientFiles));
+  check("manager overview uses the authoritative publication batch preview", clientFiles.includes('managerRpc("preview_routine_template_publication_batch"') && clientFiles.includes("applyRoutineBatchValidations"));
+  check("template editor receives the same authoritative batch validation", clientFiles.includes("getRoutineManagerControlCenter()") && clientFiles.includes("publicationValidationContext"));
   for (const rpc of ["upsert_routine_location", "set_routine_location_active", "upsert_routine_location_set", "replace_routine_location_set_members", "create_routine_standard", "create_routine_standard_revision", "create_routine_template", "create_routine_template_draft", "set_routine_template_active", "update_routine_draft_metadata", "upsert_routine_draft_section", "reorder_routine_draft_sections", "upsert_routine_draft_task", "reorder_routine_draft_tasks", "upsert_routine_draft_task_item", "reorder_routine_draft_task_items", "replace_routine_draft_dependencies", "replace_routine_draft_relations", "validate_routine_template_version", "publish_routine_template_versions", "discard_routine_template_draft"]) check(`${rpc} is reused by client`, clientFiles.includes(`"${rpc}"`));
   check("template overview exposes real active-state action", sources["RoutineTemplatesManager.jsx"].includes('template.active ? "Deactivate" : "Activate"') && sources["RoutineTemplatesManager.jsx"].includes("client.setTemplateActive(payload)"));
   check("deactivation uses explicit confirmation consequence", sources["RoutineTemplateActiveDialog.jsx"].includes("Deactivation prevents new runs from using this template.") && sources["RoutineTemplateActiveDialog.jsx"].includes("Published versions and historical runs are not changed."));
@@ -323,6 +326,18 @@ function modelChecks() {
   check("readiness warning state is textual", readinessState({ ready: false, blockers: [] }) === "warning");
   const normalized = normalizeManagerWorkspace({ foundation: { settings: { mode: "shadow" }, locations: [], locationSets: [], standards: [] }, templates: [], releaseReadiness: { ready: false, categories: {} } });
   check("manager workspace defaults deny empty data", normalized.settings.mode === "shadow" && normalized.templates.length === 0 && normalized.operators.sessions.length === 0);
+  const corrected = applyRoutineBatchValidations({ templates: [
+    { id: "opening", activeDraft: { id: "draft-opening" }, validation: { blockers: [{ code: "isolated_false_positive" }] } },
+    { id: "closing", activeDraft: { id: "draft-closing" }, validation: { blockers: [{ code: "isolated_false_positive" }] } },
+    { id: "published", activeDraft: null, validation: { blockers: [{ code: "unchanged" }] } },
+  ] }, { versions: [
+    { versionId: "draft-opening", validation: { blockers: [], warnings: [{ code: "opening_warning" }] } },
+    { versionId: "draft-closing", validation: { blockers: [{ code: "genuine_blocker" }], warnings: [] } },
+  ], blockers: [{ versionId: "draft-closing" }], warnings: [{ versionId: "draft-opening" }] });
+  check("batch validation replaces isolated false positives", corrected.templates[0].validation.blockers.length === 0 && corrected.templates[0].validation.warnings[0].code === "opening_warning");
+  check("batch validation preserves genuine blockers", corrected.templates[1].validation.blockers[0].code === "genuine_blocker");
+  check("batch validation leaves unrelated templates unchanged", corrected.templates[2].validation.blockers[0].code === "unchanged");
+  check("batch validation records its complete context", corrected.publicationValidationContext.versionIds.join("|") === "draft-opening|draft-closing" && corrected.publicationValidationContext.blockerCount === 1 && corrected.publicationValidationContext.warningCount === 1);
 }
 
 async function main() {
