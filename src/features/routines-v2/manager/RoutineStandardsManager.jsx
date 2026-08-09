@@ -4,6 +4,7 @@ import { createIdempotencyKey } from "../data/routineManagerModel.js";
 import { EmptyState, Field, StatusPill } from "./RoutineManagerPrimitives.jsx";
 
 const empty = { stableKey: "", label: "", description: "", valueType: "integer", unit: "", sourceKind: "manual", active: true };
+const SERVICEWARE_ROUTE_STANDARD_KEY = "serviceware-office-recovery-route-confirmation";
 function valueFor(type, raw) {
   if (type === "integer") { if (!/^-?\d+$/.test(raw.trim())) throw new Error("Enter a whole number."); return Number(raw); }
   if (type === "decimal") { const value = Number(raw); if (!Number.isFinite(value)) throw new Error("Enter a decimal number."); return value; }
@@ -40,9 +41,9 @@ export default function RoutineStandardsManager({ standards, onRefresh, client =
     </form> : null}
     {!standards.length ? <EmptyState title="No standards">Create logical standards before publication.</EmptyState> : <div className="rm-chip-row">{standards.map((standard) => <button type="button" className="ghost-button" key={standard.id} onClick={() => { setSelected(standard); setRaw(standard.valueType === "boolean" ? "true" : ""); }}>{standard.label}</button>)}</div>}
     {selected ? <article className="rm-card">
-      <header><div><h4>{selected.label}</h4><code>{selected.stableKey}</code></div><StatusPill state={selected.externalReadonly ? "warning" : "ready"}>{selected.sourceKind}</StatusPill></header>
+      <header><div><h4>{selected.label}</h4><code>{selected.stableKey}</code></div><StatusPill state={selected.externalReadonly && selected.stableKey !== SERVICEWARE_ROUTE_STANDARD_KEY ? "warning" : "ready"}>{selected.sourceKind}</StatusPill></header>
       <dl className="rm-evidence"><div><dt>Value type</dt><dd>{selected.valueType}</dd></div><div><dt>Unit</dt><dd>{selected.unit || "—"}</dd></div><div><dt>Logical revision</dt><dd>{selected.revision}</dd></div><div><dt>Status</dt><dd>{selected.active ? "Active" : "Inactive"}</dd></div></dl>
-      {selected.externalReadonly ? <p className="rm-note">External source standards are read-only here. Values resolve from the authoritative inventory, asset, or location-set source.</p> : <div className="rm-form">
+      {selected.externalReadonly && selected.stableKey !== SERVICEWARE_ROUTE_STANDARD_KEY ? <p className="rm-note">External source standards are read-only here. Values resolve from the authoritative inventory, asset, or location-set source.</p> : <div className="rm-form">
         {selected.valueType === "boolean" ? <Field id="standard-value" label="New revision value" help="Structured boolean."><select id="standard-value" value={raw} onChange={(event) => setRaw(event.target.value)}><option value="true">true</option><option value="false">false</option></select></Field> : selected.valueType === "list" ? <Field id="standard-value" label="New revision values" help="One list value per line; serialized as an array."><textarea id="standard-value" value={raw} onChange={(event) => setRaw(event.target.value)} /></Field> : <Field id="standard-value" label="New revision value" help={selected.valueType === "object" ? "Advanced validated JSON object; never evaluated." : `Structured ${selected.valueType} value.`}><textarea id="standard-value" className={selected.valueType === "object" ? "rm-code-input" : ""} value={raw} onChange={(event) => setRaw(event.target.value)} placeholder={selected.valueType === "object" ? "{\n  \"key\": \"value\"\n}" : "Value"} /></Field>}
         <Field id="standard-reason" label="Revision reason" help="Stored with immutable revision history."><input id="standard-reason" value={reason} onChange={(event) => setReason(event.target.value)} /></Field>
         <button type="button" className="primary-button" onClick={addRevision} disabled={!raw || !reason}>Create immutable revision</button>

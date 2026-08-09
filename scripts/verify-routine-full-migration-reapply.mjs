@@ -24,16 +24,18 @@ const ORGANIZATION_ID = "aa000000-0000-4000-8000-000000000001";
 const PRESERVED_ORGANIZATION_ID = "ab000000-0000-4000-8000-000000000001";
 const SECONDARY_ORGANIZATION_ID = "ac000000-0000-4000-8000-000000000001";
 const FUTURE_ORGANIZATION_ID = "ad000000-0000-4000-8000-000000000001";
-const EXPECTED_PACK_HASH = "2dcfc69b822f973c23e54934b6799faa5b9400ae0529096f049067811a417f25";
+const EXPECTED_PACK_HASH = "b416001c2885bbf54bdb029b8e7164cbb903a76b8344396a4e9fcffa26107fe1";
+const EXPECTED_PREVIOUS_PACK_HASH = "2dcfc69b822f973c23e54934b6799faa5b9400ae0529096f049067811a417f25";
 const EXPECTED_SOURCE_HASHES = [
   "ea00e80bde6c17ea1d3f1095949363d79d606dcee16f05f742426c1c5248e079",
   "27698f86716a141268546c623609f8b956213e53f20d00c03935cad01bd9244c",
   "f4fce4d5a3dcafecd7dfca2a5bf780f7c3652634da2cb0f068daa5d4f506a0eb",
   "8ebedb39be888dfa118a429fa2046ba2b7b5dc49c868d9d5b811f2aa89b45351",
   "d0280ca6e780f8f6876ad8747f0ee80693ebb1aa0a15761b63962376f8e54224",
+  "7ee5032edc7518e80aec18e5f4ce50a3c7a12e48aa9e560727c87d672c3c72f1",
 ];
 const EXPECTED_ARGUMENT_NAMES = ["input_version_id", "input_publication_version_ids"];
-const EXPECTED_PORTABLE_SCHEMA_FINGERPRINT = "8a93247ce7735deb6949f8592eee7b0c42b4ae374d724b8b876b62e745fade45";
+const EXPECTED_PORTABLE_SCHEMA_FINGERPRINT = "ad21abfe652dbc8301402c4234800dad52b35f63de957ba23cf69ac6aa28315b";
 const EXPECTED_AUTHENTICATED_FUNCTION_COUNT = 218;
 const EXPECTED_AUTHENTICATED_FUNCTION_HASH = "61446c15b10333748c65a652f01f6c9e91df67b81593f4db65bc7f0c2bee2a0e";
 const EXPECTED_AUTHENTICATED_RELATION_SELECT_COUNT = 65;
@@ -169,6 +171,7 @@ const migrations = [
   "supabase/phase10p_routine_readiness_finalization.sql",
   "supabase/phase10q_mesh_routine_content_pack_1_2r.sql",
   "supabase/phase10o_routine_default_privilege_hardening.sql",
+  "supabase/phase10r_mesh_routine_content_pack_1_3r.sql",
 ];
 const phase10Sql = () => migrations.map((path) => readFileSync(absolute(path), "utf8")).join("\n");
 
@@ -259,7 +262,7 @@ function sourceChecks() {
   }
   const audit = auditRepeatedFunctionArguments();
   check("all repeated Phase 10 function identities have stable input argument names", audit.drifts.length === 0);
-  check("function argument audit covers the full Phase 10 definition set", audit.definitions.length === 545 && audit.repeated.length === 88);
+  check("function argument audit covers the full Phase 10 definition set", audit.definitions.length === 546 && audit.repeated.length === 88);
   check("validator has six layered public definitions", audit.target.length === 6);
   check("every validator definition uses the canonical input names", audit.target.every((entry) => JSON.stringify(entry.names) === JSON.stringify(EXPECTED_ARGUMENT_NAMES)));
   check("ACL hardening inventory contains the reproduced 17 signatures", REPRODUCED_ACL_SIGNATURES.length === 17);
@@ -274,13 +277,14 @@ function sourceChecks() {
     verifierSource.indexOf("function applySequence("),
     verifierSource.indexOf("function futureOrganizationChecks("),
   );
-  check("full Phase 10 manifest contains 19 ordered migrations", migrations.length === 19
+  check("full Phase 10 manifest contains 20 ordered migrations", migrations.length === 20
     && migrations[0].endsWith("phase10a_routine_engine_foundation.sql")
     && migrations[1].endsWith("phase10a1_routine_organization_settings_bootstrap.sql")
-    && migrations.at(-4).endsWith("phase10l_mesh_routine_content_pack.sql")
-    && migrations.at(-3).endsWith("phase10p_routine_readiness_finalization.sql")
-    && migrations.at(-2).endsWith("phase10q_mesh_routine_content_pack_1_2r.sql")
-    && migrations.at(-1).endsWith("phase10o_routine_default_privilege_hardening.sql"));
+    && migrations.at(-5).endsWith("phase10l_mesh_routine_content_pack.sql")
+    && migrations.at(-4).endsWith("phase10p_routine_readiness_finalization.sql")
+    && migrations.at(-3).endsWith("phase10q_mesh_routine_content_pack_1_2r.sql")
+    && migrations.at(-2).endsWith("phase10o_routine_default_privilege_hardening.sql")
+    && migrations.at(-1).endsWith("phase10r_mesh_routine_content_pack_1_3r.sql"));
   check("10A1 is a system bootstrap with no manager RPC installation step",
     !/create_or_update_routine_organization_settings|auth\.uid\s*\(|\bgrant\b|\bcreate\s+(?:or\s+replace\s+)?function\b/i.test(bootstrapSql));
   check("full-reapply migration sequence contains no out-of-band settings manager bootstrap",
@@ -292,8 +296,8 @@ function sourceChecks() {
   check("only 10O changes default privileges and never names an owner role",
     defaultPrivilegeStatements.length === 10
       && defaultPrivilegeStatements.every((statement) => /\brevoke\b/i.test(statement) && !/\bfor\s+(?:user|role)\b/i.test(statement))
-      && !migrations.slice(0, -1).some((path) => /\balter\s+default\s+privileges\b/i.test(readFileSync(absolute(path), "utf8"))));
-  const phase10oSql = readFileSync(absolute(migrations.at(-1)), "utf8");
+      && !migrations.filter((path) => !path.endsWith("phase10o_routine_default_privilege_hardening.sql")).some((path) => /\balter\s+default\s+privileges\b/i.test(readFileSync(absolute(path), "utf8"))));
+  const phase10oSql = readFileSync(absolute(migrations.find((path) => path.endsWith("phase10o_routine_default_privilege_hardening.sql"))), "utf8");
   check("10O is future-only DDL in one explicit transaction",
     /^begin;/i.test(phase10oSql.trim()) && /commit;\s*$/i.test(phase10oSql.trim())
       && !/\b(?:insert|update|delete|merge|truncate|create\s+(?:or\s+replace\s+)?function|grant\s+|alter\s+(?:table|function|policy)|drop\s+)\b/i.test(phase10oSql));
@@ -304,13 +308,15 @@ function sourceChecks() {
   const client = readFileSync(absolute("src/features/routines-v2/api/routineTemplateClient.js"), "utf8");
   check("Supabase RPC payload uses the canonical validator key", client.includes("input_publication_version_ids") && !client.includes("input_batch_version_ids"));
   const baselinePack = JSON.parse(readFileSync(absolute("content/routine-engine/mesh-routine-content-v1.json"), "utf8"));
-  const pack = JSON.parse(readFileSync(absolute("content/routine-engine/mesh-routine-content-v1-2r.json"), "utf8"));
+  const previousPack = JSON.parse(readFileSync(absolute("content/routine-engine/mesh-routine-content-v1-2r.json"), "utf8"));
+  const pack = JSON.parse(readFileSync(absolute("content/routine-engine/mesh-routine-content-v1-3r.json"), "utf8"));
   check("frozen content pack 1.1R remains canonical", baselinePack.packVersion === "1.1R" && baselinePack.packHash === "c149a8416a867dcb7d87224f3ae8e2a214e5ca4954613b118521ebe5ae3aff2a");
+  check("frozen content pack 1.2R remains canonical", previousPack.packVersion === "1.2R" && previousPack.packHash === EXPECTED_PREVIOUS_PACK_HASH);
   check("content pack hash remains canonical", pack.packHash === EXPECTED_PACK_HASH);
-  check("content pack minor version is 1.2R", pack.packVersion === "1.2R");
+  check("content pack minor version is 1.3R", pack.packVersion === "1.3R");
   check("authoritative content source hashes remain canonical", JSON.stringify(pack.sourceDocuments.map((entry) => entry.sha256)) === JSON.stringify(EXPECTED_SOURCE_HASHES));
   check("content pack shape remains 37 Opening, 46 Closing, and four system steps", pack.opening.tasks.length === 37 && pack.closing.tasks.length === 46 && pack.doubleShiftSteps.length === 4);
-  check("only the serviceware office route remains unresolved", pack.unresolvedRequirements.length === 1 && pack.unresolvedRequirements[0].standardKey === "serviceware-office-recovery-route-confirmation");
+  check("serviceware route resolves the final content blocker", pack.unresolvedRequirements.length === 0 && pack.standards.filter((entry) => entry.currentRevision).length === 14);
 }
 
 const storageBootstrapSql = String.raw`
@@ -1147,12 +1153,11 @@ function assertEndState(label, state, protectedBaseline) {
   check(`${label}: content preview keeps the canonical pack and source hashes`,
     state.contentPack.preview.packMetadata.packHash === EXPECTED_PACK_HASH
       && JSON.stringify(state.contentPack.sourceDocuments.map((entry) => entry.sha256)) === JSON.stringify(EXPECTED_SOURCE_HASHES));
-  check(`${label}: content preview keeps 37/46 tasks, four DS steps, and one unresolved blocker`,
+  check(`${label}: content preview keeps 37/46 tasks, four DS steps, and no unresolved blocker`,
     state.contentPack.preview.counts.openingTasks === 37
       && state.contentPack.preview.counts.closingTasks === 46
       && state.contentPack.preview.counts.doubleShiftSteps === 4
-      && state.contentPack.preview.unresolvedRequirements.length === 1
-      && state.contentPack.preview.unresolvedRequirements[0].standardKey === "serviceware-office-recovery-route-confirmation");
+      && state.contentPack.preview.unresolvedRequirements.length === 0);
   check(`${label}: content audit confirms no installation or operations`,
     state.contentPack.audit.installation === null && state.contentPack.audit.operations.length === 0
       && state.contentPack.audit.currentPreview.packMetadata.packHash === EXPECTED_PACK_HASH);
@@ -1266,11 +1271,21 @@ function applySequence(sequenceNumber) {
     if (path.endsWith("phase10q_mesh_routine_content_pack_1_2r.sql")) {
       check(`sequence ${sequenceNumber}: 10Q exposes the exact 1.2R provider`,
         scalar("select (public.routine_mesh_content_pack_v1()->>'packVersion')||':'||(public.routine_mesh_content_pack_v1()->>'packHash');")
-          === `1.2R:${EXPECTED_PACK_HASH}`);
+          === `1.2R:${EXPECTED_PREVIOUS_PACK_HASH}`);
       check(`sequence ${sequenceNumber}: 10Q leaves settings and all content state unchanged`,
         JSON.stringify(settingsState()) === JSON.stringify(stateAfterK4)
           && scalar("select (select count(*) from public.routine_content_pack_installations)=0 and (select count(*) from public.routine_templates)=0 and (select count(*) from public.routine_runs)=0 and (select count(*) from public.routine_bundles)=0;") === "t");
       check(`sequence ${sequenceNumber}: 10Q provider remains private`,
+        scalar("select not has_function_privilege('anon','public.routine_mesh_content_pack_v1()','EXECUTE') and not has_function_privilege('authenticated','public.routine_mesh_content_pack_v1()','EXECUTE');") === "t");
+    }
+    if (path.endsWith("phase10r_mesh_routine_content_pack_1_3r.sql")) {
+      check(`sequence ${sequenceNumber}: 10R exposes the exact 1.3R provider`,
+        scalar("select (public.routine_mesh_content_pack_v1()->>'packVersion')||':'||(public.routine_mesh_content_pack_v1()->>'packHash');")
+          === `1.3R:${EXPECTED_PACK_HASH}`);
+      check(`sequence ${sequenceNumber}: 10R leaves settings and all content state unchanged`,
+        JSON.stringify(settingsState()) === JSON.stringify(stateAfterK4)
+          && scalar("select (select count(*) from public.routine_content_pack_installations)=0 and (select count(*) from public.routine_templates)=0 and (select count(*) from public.routine_runs)=0 and (select count(*) from public.routine_bundles)=0;") === "t");
+      check(`sequence ${sequenceNumber}: 10R provider remains private`,
         scalar("select not has_function_privilege('anon','public.routine_mesh_content_pack_v1()','EXECUTE') and not has_function_privilege('authenticated','public.routine_mesh_content_pack_v1()','EXECUTE');") === "t");
     }
     if (path.endsWith("phase10o_routine_default_privilege_hardening.sql")) {
@@ -1491,7 +1506,7 @@ async function main() {
     assertEndState(`sequence ${sequence}`, state, protectedBaseline);
     console.log(`Sequence ${sequence} fingerprints: protected-schema=${state.protectedSchema} protected-data=${state.protectedData} protected-realtime=${state.protectedRealtime} routine-schema=${state.routineSchema} raw-acl=${state.rawAclFingerprint} effective-acl=${state.effectiveAclFingerprint}`);
   }
-  check("three complete 19-phase sequences apply exactly 57 migrations", migrationApplications === 57);
+  check("three complete 20-phase sequences apply exactly 60 migrations", migrationApplications === 60);
 
   const aclDrift = [...new Set([
     ...Object.keys(states[0].routineFunctions),
@@ -1552,7 +1567,7 @@ async function main() {
   console.log(`DEFAULT_ACL_ATTESTATION|${OWNER_CONTEXT}|PASS|current_user=${states[0].environment.execution.currentUser}`);
   console.log(`OWNER_PLATFORM_REPORT|${OWNER_CONTEXT}|${canonicalJson(states[0].environment)}`);
   console.log(`PORTABLE_RESULT|${OWNER_CONTEXT}|${states[0].portableSchema}`);
-  console.log(`PASS ${passCount} full Phase 10 migration reapply checks (${OWNER_CONTEXT}, 57/57)`);
+  console.log(`PASS ${passCount} full Phase 10 migration reapply checks (${OWNER_CONTEXT}, 60/60)`);
   return states[0].portableSchema;
 }
 
@@ -1578,5 +1593,5 @@ if (!process.exitCode && OWNER_CONTEXT === "rehearsal" && process.env.PHASE10O_C
   check("rehearsal and production-shaped owner contexts have the identical portable fingerprint",
     portableResult === EXPECTED_PORTABLE_SCHEMA_FINGERPRINT
       && productionMatch?.[1] === EXPECTED_PORTABLE_SCHEMA_FINGERPRINT);
-  console.log("PASS owner-context matrix: rehearsal 57/57 + production-shaped 57/57");
+  console.log("PASS owner-context matrix: rehearsal 60/60 + production-shaped 60/60");
 }
