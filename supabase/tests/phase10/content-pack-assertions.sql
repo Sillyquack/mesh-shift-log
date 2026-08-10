@@ -32,7 +32,43 @@ select phase10l_test.assert(23,'pre-restock is not linked as final completion',n
 select phase10l_test.assert(24,'all logical references are placeholders',(select count(*)=40 and bool_and(version.state='placeholder') from public.routine_reference_images reference join public.routine_reference_image_versions version on version.id=reference.current_version_id where reference.organization_id='a1000000-0000-4000-8000-000000000001'));
 select phase10l_test.assert(25,'reference button copy is exact',not exists(select 1 from public.routine_template_task_reference_images where organization_id='a1000000-0000-4000-8000-000000000001' and button_label<>'Vis hvordan det skal se ut'));
 select phase10l_test.assert(26,'serviceware scope points to the authoritative route standard',exists(select 1 from public.routine_location_sets location_set where location_set.organization_id='a1000000-0000-4000-8000-000000000001' and location_set.set_key='serviceware-recovery-route' and location_set.description='Scope anchor for serviceware recovery; the authoritative office-floor kitchen sequence is stored in the shared serviceware route standard.') and exists(select 1 from public.routine_standards standard join public.routine_standard_revisions revision on revision.id=standard.current_revision_id where standard.organization_id='a1000000-0000-4000-8000-000000000001' and standard.standard_key='serviceware-office-recovery-route-confirmation' and revision.value_json->>'contractKey'='mesh-serviceware-office-recovery-route-v1'));
-select phase10l_test.assert(27,'inventory source uses authoritative location code',not exists(select 1 from public.routine_template_task_items where organization_id='a1000000-0000-4000-8000-000000000001' and source_kind='inventory_readonly' and source_config->>'locationCode'<>'WORKBAR_NON_ALCO_FRIDGE'));
+select phase10l_test.assert(27,'inventory and asset source bindings are canonical while aggregate checks remain static',
+  (select count(*)=3 and bool_and(item.source_config='{"mode":"location_standards","locationCodes":["WORKBAR_NON_ALCO_FRIDGE"],"activeOnly":true}'::jsonb and item.standard_id is null and item.source_location_set_id is null)
+    from public.routine_template_task_items item
+    join public.routine_template_tasks task on task.id=item.task_id
+    where item.organization_id='a1000000-0000-4000-8000-000000000001'
+      and task.metadata->>'authoritativeSourceId' in('O13','C08','C28')
+      and item.item_key='inventory_standard_items'
+      and item.source_kind='inventory_readonly')
+  and
+  (select count(*)=6 and bool_and(item.source_kind='static' and item.source_config='{}'::jsonb and item.standard_id is null and item.source_location_set_id is null)
+    from public.routine_template_task_items item
+    join public.routine_template_tasks task on task.id=item.task_id
+    where item.organization_id='a1000000-0000-4000-8000-000000000001'
+      and task.metadata->>'authoritativeSourceId' in('O13','C08','C28')
+      and item.item_key in('eggs_present_and_to_standard','fridge_clean_and_operating'))
+  and
+  (select count(*)=3
+    from public.routine_template_task_items item
+    where item.organization_id='a1000000-0000-4000-8000-000000000001'
+      and item.source_kind='inventory_readonly')
+  and
+  (select count(*)=1 and bool_and(item.item_key='active_asset_registry_items'
+      and item.source_config='{"mode":"active_assets","requiredForClosing":true}'::jsonb
+      and item.standard_id is null and item.source_location_set_id is null)
+    from public.routine_template_task_items item
+    join public.routine_template_tasks task on task.id=item.task_id
+    where item.organization_id='a1000000-0000-4000-8000-000000000001'
+      and task.metadata->>'authoritativeSourceId'='C37'
+      and item.source_kind='asset_registry_readonly')
+  and
+  (select count(*)=5 and bool_and(item.source_kind='static' and item.source_config='{}'::jsonb
+      and item.standard_id is null and item.source_location_set_id is null)
+    from public.routine_template_task_items item
+    join public.routine_template_tasks task on task.id=item.task_id
+    where item.organization_id='a1000000-0000-4000-8000-000000000001'
+      and task.metadata->>'authoritativeSourceId'='C37'
+      and item.item_key in('device_physically_accounted_for','correct_charging_position','charging_confirmed','damage_or_fault_recorded','event_transfer_evidence_when_required')));
 select phase10l_test.assert(28,'install preserves mode and release stage',(select (select value from phase10l_test.state where key='before_state')->>'mode'=(select value from phase10l_test.state where key='after_state')->>'mode' and (select value from phase10l_test.state where key='before_state')->>'stage'=(select value from phase10l_test.state where key='after_state')->>'stage'));
 select phase10l_test.assert(29,'install creates no operative state',(select (select value from phase10l_test.state where key='before_state')-array['mode','stage']=(select value from phase10l_test.state where key='after_state')-array['mode','stage']));
 select phase10l_test.assert(30,'release readiness has no serviceware blocker before publication',(select not (value->>'ready')::boolean and value->'categories'->'operationalContent'->'evidenceCounts'->>'unresolvedRequirements'='0' and not value->'categories'->'operationalContent'->'blockers' @> '["Unresolved: Exact serviceware recovery route through relevant office floors"]'::jsonb and value->'categories'->'operationalContent'->'blockers' @> '["Opening draft is not published.","Closing draft is not published."]'::jsonb from phase10l_test.state where key='readiness'));

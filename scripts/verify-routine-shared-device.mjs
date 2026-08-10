@@ -60,6 +60,9 @@ const paths = {
   doubleShift: "supabase/phase10h_routine_double_shift.sql",
   sync: "supabase/phase10i_routine_realtime_offline_sync.sql",
   identity: "supabase/phase10j_routine_shared_device_identity.sql",
+  identityAlignment: "supabase/phase10t_routine_participant_identity_conflict_alignment.sql",
+  operationConvergence: "supabase/phase10u_routine_operation_idempotency_convergence.sql",
+  creationProvenance: "supabase/phase10v_routine_creation_idempotency_provenance_alignment.sql",
   foundationFixture: "supabase/tests/phase10/foundation-fixtures.sql",
   runFixture: "supabase/tests/phase10/run-snapshot-fixtures.sql",
   lifecycleFixture: "supabase/tests/phase10/lifecycle-fixtures.sql",
@@ -416,6 +419,9 @@ function verifyCatalogContracts() {
   for (const name of functions) check(`${name} is installed`, scalar(`select exists(select 1 from pg_proc procedure join pg_namespace namespace on namespace.oid=procedure.pronamespace where namespace.nspname='public' and procedure.proname='${name}');`) === "t");
   const rlsTables = Object.keys(columns);
   for (const table of rlsTables) check(`${table} has RLS enabled`, scalar(`select relrowsecurity from pg_class where oid='public.${table}'::regclass;`) === "t");
+  check("Phase 10V removes only the four resource provenance uniqueness constraints",
+    scalar("select count(*) from pg_constraint where conname in('routine_runs_org_creation_idempotency_unique','routine_run_participants_org_idempotency_unique','routine_bundles_org_idempotency_unique','routine_bundle_participants_idempotency_unique');") === "0"
+      && scalar("select count(*) from pg_constraint where conname in('routine_shared_devices_org_idempotency_unique','routine_operators_org_idempotency_unique');") === "2");
   const privateFunctions = ["routine_resolve_effective_actor()", "routine_operator_credential_is_fresh(uuid)",
     "routine_require_fresh_operator_credential(text,uuid)", "routine_event_transfer_is_visible(uuid,uuid)"];
   for (const signature of privateFunctions) check(`${signature} has no direct authenticated execute`,
@@ -479,6 +485,65 @@ async function verifyConcurrency(pin, operatorId) {
   check("parallel operator joins complete safely", joinRace.every((result) => result.status === 0));
   check("parallel joins converge on one operator participant", scalar(`select count(*) from public.routine_run_participants
     where run_id='${runId}' and operator_id='${operatorId}' and identity_type='shared_device_operator';`) === "1");
+  const sharedJoinKey = "7e400000-0000-4000-8000-000000000001";
+  const sharedJoinSql = (targetRunId = runId) => psqlVariables({ session_token: winning.token }) +
+    `select set_config('request.jwt.claim.sub','1e000000-0000-4000-8000-000000000001',false);
+     select set_config('request.headers',jsonb_build_object('x-mesh-routine-operator-session',:'session_token')::text,false); set role authenticated;
+     select public.join_routine_run('${targetRunId}','${sharedJoinKey}')::text;`;
+  const sharedJoinRace = await Promise.all([concurrent(sharedJoinSql()), concurrent(sharedJoinSql())]);
+  const sharedJoinPayloads = sharedJoinRace.map((result) => {
+    const line = result.stdout.split("\n").map((entry) => entry.trim()).filter((entry) => entry.startsWith("{") || entry.startsWith("[")).at(-1);
+    return line ? JSON.parse(line) : null;
+  });
+  check("same shared-device operator and idempotency key converge concurrently",
+    sharedJoinRace.every((result) => result.status === 0)
+      && sharedJoinPayloads.every((payload) => payload?.participant?.operator_id === operatorId)
+      && sharedJoinPayloads.filter((payload) => payload?.idempotentReplay === true).length === 1
+      && scalar(`select count(*) from public.routine_run_operations where actor_auth_user_id='1e000000-0000-4000-8000-000000000001'
+        and effective_operator_id='${operatorId}' and actor_source='shared_device_operator'
+        and operation_type='join_run' and idempotency_key='${sharedJoinKey}';`) === "1");
+  const sharedJoinConflict = await concurrent(sharedJoinSql("7e400000-0000-4000-8000-000000000099"));
+  check("shared-device operator reuse with a different payload retains the deterministic error",
+    sharedJoinConflict.status !== 0 && sharedJoinConflict.stderr.includes("Idempotency key was already used with another routine request."));
+  const temporaryOperatorId = scalar("select id from public.routine_operators where operator_key='temporary-staff-01';");
+  const secondClientId = "1e200000-0000-4000-8000-000000000005";
+  psql(`select set_config('request.jwt.claim.sub','1e000000-0000-4000-8000-000000000001',false); set role authenticated;
+    select public.register_routine_client_instance('${secondClientId}','phase10u-test','phase10u-v1','node-race','1e200000-0000-4000-8000-000000000006');`);
+  const temporarySession = sessionMaterial("1e300000-0000-4000-8000-000000000005");
+  const temporaryAuth = psql(psqlVariables({ test_pin: pin, session_secret_hash: temporarySession.secretHash }) +
+    `select set_config('request.jwt.claim.sub','1e000000-0000-4000-8000-000000000001',false); set role authenticated;
+     select public.authenticate_routine_operator('${secondClientId}','${temporaryOperatorId}','${temporarySession.sessionId}',:'session_secret_hash',:'test_pin','1e300000-0000-4000-8000-000000000006');`);
+  check("second operator receives an independent active shared-device session", temporaryAuth.status === 0
+    && scalar(`select count(*) from public.routine_operator_sessions where id in('${activeSessionId}','${temporarySession.sessionId}') and status='active';`) === "2");
+  const operatorJoinSql = (token, key) => psqlVariables({ session_token: token }) +
+    `select set_config('request.jwt.claim.sub','1e000000-0000-4000-8000-000000000001',false);
+     select set_config('request.headers',jsonb_build_object('x-mesh-routine-operator-session',:'session_token')::text,false); set role authenticated;
+     select public.join_routine_run('${runId}','${key}')::text;`;
+  const operatorSharedKey = "7e400000-0000-4000-8000-000000000002";
+  const twoOperatorRace = await Promise.all([
+    concurrent(operatorJoinSql(winning.token, operatorSharedKey)),
+    concurrent(operatorJoinSql(temporarySession.token, operatorSharedKey)),
+  ]);
+  check("two operators on one device may use the same UUID without identity collision", twoOperatorRace.every((result) => result.status === 0)
+    && scalar(`select count(*) from public.routine_run_operations where actor_auth_user_id='1e000000-0000-4000-8000-000000000001'
+      and actor_source='shared_device_operator' and operation_type='join_run' and idempotency_key='${operatorSharedKey}';`) === "2"
+    && scalar(`select count(distinct effective_operator_id)||':'||count(distinct operator_session_id) from public.routine_run_operations
+      where actor_auth_user_id='1e000000-0000-4000-8000-000000000001' and actor_source='shared_device_operator'
+        and operation_type='join_run' and idempotency_key='${operatorSharedKey}';`) === "2:2");
+  const crossIdentityKey = "7e400000-0000-4000-8000-000000000003";
+  const personalJoinSql = `select set_config('request.jwt.claim.sub','11000000-0000-4000-8000-000000000002',false); set role authenticated;
+    select public.join_routine_run('${runId}','${crossIdentityKey}')::text;`;
+  const crossIdentityRace = await Promise.all([
+    concurrent(operatorJoinSql(winning.token, crossIdentityKey)),
+    concurrent(personalJoinSql),
+  ]);
+  check("personal and shared-device identities do not suppress each other on the same UUID", crossIdentityRace.every((result) => result.status === 0)
+    && scalar(`select count(*) from public.routine_run_operations where operation_type='join_run' and idempotency_key='${crossIdentityKey}'
+      and ((actor_source='personal_auth' and actor_auth_user_id='11000000-0000-4000-8000-000000000002' and effective_operator_id is null)
+        or (actor_source='shared_device_operator' and actor_auth_user_id='1e000000-0000-4000-8000-000000000001' and effective_operator_id='${operatorId}'));`) === "2"
+    && scalar(`select count(*) from public.routine_run_participants where run_id='${runId}'
+      and ((identity_type='personal_profile' and user_profile_id='11000000-0000-4000-8000-000000000002')
+        or (identity_type='shared_device_operator' and operator_id='${operatorId}'));`) === "2");
   let wrongPin = validPin();
   while (wrongPin === pin) wrongPin = validPin();
   const wrongPinSql = () => psqlVariables({ test_pin: wrongPin, session_secret_hash: sessionMaterial().secretHash }) +
@@ -492,6 +557,77 @@ async function verifyConcurrency(pin, operatorId) {
   check("parallel failures cannot bypass operator lockout", scalar(`select exists(select 1 from public.routine_operator_auth_throttles
     where shared_device_id=(select shared_device_id from public.routine_operator_sessions where id='${activeSessionId}')
       and operator_id='${operatorId}' and failed_attempt_count>=5 and locked_until>clock_timestamp());`) === "t");
+  const waitingKey = "7e400000-0000-4000-8000-000000000004";
+  const waitingHash = scalar(`select public.routine_run_request_hash(jsonb_build_object('runId','${runId}'::uuid));`);
+  const holderSql = psqlVariables({ session_token: winning.token }) +
+    `set application_name='phase10u-stale-holder'; set statement_timeout='10s'; set lock_timeout='10s'; begin;
+     select set_config('request.jwt.claim.sub','1e000000-0000-4000-8000-000000000001',false);
+     select set_config('request.headers',jsonb_build_object('x-mesh-routine-operator-session',:'session_token')::text,false);
+     select public.routine_run_operation_replay('a1000000-0000-4000-8000-000000000001','1e000000-0000-4000-8000-000000000001',
+       'join_run','${waitingKey}','${waitingHash}'); select pg_sleep(30); commit;`;
+  const staleHolder = concurrent(holderSql);
+  let holderReady = false;
+  for (let attempt = 0; attempt < 80 && !holderReady; attempt += 1) {
+    holderReady = scalar("select exists(select 1 from pg_stat_activity activity join pg_locks lock_row on lock_row.pid=activity.pid where activity.application_name='phase10u-stale-holder' and lock_row.locktype='advisory' and lock_row.granted);") === "t";
+    if (!holderReady) await new Promise((resolveWait) => setTimeout(resolveWait, 25));
+  }
+  check("stale-session probe holds the shared-device operation lock", holderReady);
+  const staleWaiter = concurrent(operatorJoinSql(winning.token, waitingKey));
+  await new Promise((resolveWait) => setTimeout(resolveWait, 100));
+  const sessionRevision = scalar(`select revision from public.routine_operator_sessions where id='${activeSessionId}';`);
+  const revokeResult = psql(`select set_config('request.jwt.claim.sub','11000000-0000-4000-8000-000000000001',false); set role authenticated;
+    select public.revoke_routine_operator_session('${activeSessionId}','Phase 10U waiting-lock expiry probe',${sessionRevision},'7e400000-0000-4000-8000-000000000005');`);
+  check("stale-session probe revokes through the supported manager RPC", revokeResult.status === 0
+    && scalar(`select status from public.routine_operator_sessions where id='${activeSessionId}';`) === "revoked");
+  check("stale-session probe terminates only its disposable lock holder", scalar("select pg_terminate_backend(pid) from pg_stat_activity where application_name='phase10u-stale-holder';") === "t");
+  const [staleHolderResult, staleWaiterResult] = await Promise.all([staleHolder, staleWaiter]);
+  check("operator session revoked while waiting cannot replay under stale identity", staleHolderResult.status !== 0
+    && staleWaiterResult.status !== 0 && /operator_auth_failed|operator session/i.test(staleWaiterResult.stderr)
+    && scalar(`select count(*) from public.routine_run_operations where actor_auth_user_id='1e000000-0000-4000-8000-000000000001'
+      and effective_operator_id='${operatorId}' and operation_type='join_run' and idempotency_key='${waitingKey}';`) === "0");
+}
+
+async function verifyDirectBundleReplayConcurrency() {
+  const personalCall = (expression) => concurrent(
+    `select set_config('request.jwt.claim.sub','11000000-0000-4000-8000-000000000001',false); set role authenticated; select (${expression})::text;`
+  );
+  const responseJson = (result) => {
+    const line = result.stdout.split("\n").map((entry) => entry.trim()).filter((entry) => entry.startsWith("{") || entry.startsWith("[")).at(-1);
+    return line ? JSON.parse(line) : null;
+  };
+  const transferId = scalar("select value->'transfer'->>'id' from phase10h_test.state where key='event_transfer_proposed';");
+  const acceptedRevision = Number(scalar("select value->>'transferRevision' from phase10h_test.state where key='event_transfer_accepted';"));
+  const acceptanceExpression = `public.accept_routine_event_transfer('${transferId}',${acceptedRevision - 1},'1b000000-0000-4000-8000-000000000015')`;
+  const acceptanceFingerprint = scalar(`select md5(to_jsonb(value)::text) from public.routine_event_transfer_acceptances value where transfer_id='${transferId}';`);
+  const acceptanceRace = await Promise.all([personalCall(acceptanceExpression), personalCall(acceptanceExpression)]);
+  check("direct event-transfer acceptance path replays concurrently without mutation", acceptanceRace.every((result) => result.status === 0)
+    && acceptanceRace.map(responseJson).every((payload) => payload?.idempotentReplay === true)
+    && scalar(`select count(*) from public.routine_event_transfer_acceptances where transfer_id='${transferId}';`) === "1"
+    && scalar(`select count(*) from public.routine_bundle_operations where operation_type='accept_event_transfer' and idempotency_key='1b000000-0000-4000-8000-000000000015';`) === "1"
+    && acceptanceFingerprint === scalar(`select md5(to_jsonb(value)::text) from public.routine_event_transfer_acceptances value where transfer_id='${transferId}';`));
+
+  const completedRevision = Number(scalar("select value->>'transferRevision' from phase10h_test.state where key='event_transfer_completed';"));
+  const completionExpression = `public.complete_routine_event_transfer('${transferId}','standard_met','{"items":[{"itemKey":"condition-check","status":"completed","value":{"checked":true},"resultCode":"passed","note":null}],"summary":"Physical Event Operations control completed."}'::jsonb,true,false,null,${completedRevision - 1},'1b000000-0000-4000-8000-000000000016')`;
+  const completionFingerprint = scalar(`select md5(to_jsonb(value)::text) from public.routine_event_transfer_completions value where transfer_id='${transferId}';`);
+  const completionRace = await Promise.all([personalCall(completionExpression), personalCall(completionExpression)]);
+  check("direct event-transfer completion path replays concurrently without mutation", completionRace.every((result) => result.status === 0)
+    && completionRace.map(responseJson).every((payload) => payload?.idempotentReplay === true)
+    && scalar(`select count(*) from public.routine_event_transfer_completions where transfer_id='${transferId}';`) === "1"
+    && scalar(`select count(*) from public.routine_bundle_operations where operation_type='complete_event_transfer' and idempotency_key='1b000000-0000-4000-8000-000000000016';`) === "1"
+    && completionFingerprint === scalar(`select md5(to_jsonb(value)::text) from public.routine_event_transfer_completions value where transfer_id='${transferId}';`));
+
+  const bundleId = scalar("select value->'bundle'->>'id' from phase10h_test.state where key='bundle_create';");
+  const participantId = scalar(`select id from public.routine_bundle_participants where bundle_id='${bundleId}' and user_profile_id='11000000-0000-4000-8000-000000000001';`);
+  const ds01BundleRevision = Number(scalar("select value->'bundle'->>'revision' from phase10h_test.state where key='ds01';"));
+  const ds01ParticipantRevision = Number(scalar("select value->'participant'->>'revision' from phase10h_test.state where key='ds01';"));
+  const ds01Expression = `public.confirm_double_shift_plan('${bundleId}','${participantId}',time '18:00',${ds01BundleRevision - 1},${ds01ParticipantRevision - 1},'1b000000-0000-4000-8000-000000000007')`;
+  const ds01Fingerprint = scalar(`select md5(to_jsonb(value)::text) from public.routine_bundle_steps value where bundle_id='${bundleId}' and bundle_participant_id='${participantId}' and step_key='ds01_confirm_plan';`);
+  const ds01Race = await Promise.all([personalCall(ds01Expression), personalCall(ds01Expression)]);
+  check("ordinary bundle-step path replays concurrently without revision or event drift", ds01Race.every((result) => result.status === 0)
+    && ds01Race.map(responseJson).every((payload) => payload?.idempotentReplay === true)
+    && scalar(`select count(*) from public.routine_bundle_operations where operation_type='confirm_double_shift_plan' and idempotency_key='1b000000-0000-4000-8000-000000000007';`) === "1"
+    && scalar(`select count(*) from public.routine_events where bundle_id='${bundleId}' and event_type='double_shift_plan_confirmed';`) === "1"
+    && ds01Fingerprint === scalar(`select md5(to_jsonb(value)::text) from public.routine_bundle_steps value where bundle_id='${bundleId}' and bundle_participant_id='${participantId}' and step_key='ds01_confirm_plan';`));
 }
 
 async function main() {
@@ -534,6 +670,9 @@ async function main() {
   const protectedDataBefore = scalar(protectedDataFingerprintSql);
   const historyBefore = scalar(routineHistoryFingerprintSql);
   psql(readFileSync(absolute(paths.identity), "utf8"), { transaction: true });
+  psql(readFileSync(absolute(paths.identityAlignment), "utf8"), { transaction: true });
+  psql(readFileSync(absolute(paths.operationConvergence), "utf8"), { transaction: true });
+  psql(readFileSync(absolute(paths.creationProvenance), "utf8"), { transaction: true });
   check("Phase 10J preserves protected schema/functions/policies", protectedSchemaBefore === scalar(protectedSchemaFingerprintSql));
   check("Phase 10J preserves Event Operations data", protectedDataBefore === scalar(protectedDataFingerprintSql));
   check("Phase 10J preserves pre-existing routine hashes and historical rows", historyBefore === scalar(routineHistoryFingerprintSql));
@@ -582,6 +721,9 @@ async function main() {
     coalesce((select jsonb_agg(to_jsonb(value) order by value.id)::text from public.routine_operator_operations value),'[]')||
     coalesce((select jsonb_agg(to_jsonb(value) order by value.id)::text from public.routine_operator_events value),'[]'));`);
   psql(readFileSync(absolute(paths.identity), "utf8"), { transaction: true });
+  psql(readFileSync(absolute(paths.identityAlignment), "utf8"), { transaction: true });
+  psql(readFileSync(absolute(paths.operationConvergence), "utf8"), { transaction: true });
+  psql(readFileSync(absolute(paths.creationProvenance), "utf8"), { transaction: true });
   check("Phase 10J reapplies without row or timestamp mutation", identityDataBefore === scalar(`select md5(
     coalesce((select jsonb_agg(to_jsonb(value) order by value.id)::text from public.routine_shared_devices value),'[]')||
     coalesce((select jsonb_agg(to_jsonb(value) order by value.id)::text from public.routine_operators value),'[]')||
@@ -601,6 +743,7 @@ async function main() {
   check("reference image versions remain queryable", Number(scalar("select count(*) from public.routine_reference_image_versions;")) >= 0);
 
   const operatorId = scalar("select id from public.routine_operators where operator_key='linked-staff-01';");
+  await verifyDirectBundleReplayConcurrency();
   await verifyConcurrency(pin, operatorId);
   if (passCount < MINIMUM_CHECKS) throw new Error(`Expected at least ${MINIMUM_CHECKS} meaningful checks, received ${passCount}.`);
   console.log(`PASS ${passCount} Phase 10J contract checks (minimum ${MINIMUM_CHECKS})`);
