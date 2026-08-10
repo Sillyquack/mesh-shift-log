@@ -24,7 +24,8 @@ const ORGANIZATION_ID = "aa000000-0000-4000-8000-000000000001";
 const PRESERVED_ORGANIZATION_ID = "ab000000-0000-4000-8000-000000000001";
 const SECONDARY_ORGANIZATION_ID = "ac000000-0000-4000-8000-000000000001";
 const FUTURE_ORGANIZATION_ID = "ad000000-0000-4000-8000-000000000001";
-const EXPECTED_PACK_HASH = "b416001c2885bbf54bdb029b8e7164cbb903a76b8344396a4e9fcffa26107fe1";
+const EXPECTED_PACK_HASH = "48b7c4dfdb1340ddff14748a3c6d57df504f33fe822f25b6dde0d4ab48a6caf8";
+const EXPECTED_PHASE10R_PACK_HASH = "b416001c2885bbf54bdb029b8e7164cbb903a76b8344396a4e9fcffa26107fe1";
 const EXPECTED_PREVIOUS_PACK_HASH = "2dcfc69b822f973c23e54934b6799faa5b9400ae0529096f049067811a417f25";
 const EXPECTED_SOURCE_HASHES = [
   "ea00e80bde6c17ea1d3f1095949363d79d606dcee16f05f742426c1c5248e079",
@@ -33,9 +34,10 @@ const EXPECTED_SOURCE_HASHES = [
   "8ebedb39be888dfa118a429fa2046ba2b7b5dc49c868d9d5b811f2aa89b45351",
   "d0280ca6e780f8f6876ad8747f0ee80693ebb1aa0a15761b63962376f8e54224",
   "7ee5032edc7518e80aec18e5f4ce50a3c7a12e48aa9e560727c87d672c3c72f1",
+  "56cc1ac9b6fc1cdc89586f8539e185dfef6e6a5d54d483bbdffcbb1d7ff4c2af",
 ];
 const EXPECTED_ARGUMENT_NAMES = ["input_version_id", "input_publication_version_ids"];
-const EXPECTED_PORTABLE_SCHEMA_FINGERPRINT = "ad21abfe652dbc8301402c4234800dad52b35f63de957ba23cf69ac6aa28315b";
+const EXPECTED_PORTABLE_SCHEMA_FINGERPRINT = "1285920a3b13f2337871e3355751fc9043f17e380c55dec43f86ca01cff612e5";
 const EXPECTED_AUTHENTICATED_FUNCTION_COUNT = 218;
 const EXPECTED_AUTHENTICATED_FUNCTION_HASH = "61446c15b10333748c65a652f01f6c9e91df67b81593f4db65bc7f0c2bee2a0e";
 const EXPECTED_AUTHENTICATED_RELATION_SELECT_COUNT = 65;
@@ -172,6 +174,10 @@ const migrations = [
   "supabase/phase10q_mesh_routine_content_pack_1_2r.sql",
   "supabase/phase10o_routine_default_privilege_hardening.sql",
   "supabase/phase10r_mesh_routine_content_pack_1_3r.sql",
+  "supabase/phase10s_mesh_routine_content_pack_1_4r.sql",
+  "supabase/phase10t_routine_participant_identity_conflict_alignment.sql",
+  "supabase/phase10u_routine_operation_idempotency_convergence.sql",
+  "supabase/phase10v_routine_creation_idempotency_provenance_alignment.sql",
 ];
 const phase10Sql = () => migrations.map((path) => readFileSync(absolute(path), "utf8")).join("\n");
 
@@ -257,17 +263,17 @@ function auditRepeatedFunctionArguments() {
 }
 
 function sourceChecks() {
-  for (const path of [...baseline, ...migrations, "content/routine-engine/mesh-routine-content-v1.json", "content/routine-engine/mesh-routine-content-v1-2r.json", "src/features/routines-v2/api/routineTemplateClient.js"]) {
+  for (const path of [...baseline, ...migrations, "content/routine-engine/mesh-routine-content-v1.json", "content/routine-engine/mesh-routine-content-v1-2r.json", "content/routine-engine/mesh-routine-content-v1-3r.json", "content/routine-engine/mesh-routine-content-v1-4r.json", "src/features/routines-v2/api/routineTemplateClient.js"]) {
     check(`required file exists: ${path}`, existsSync(absolute(path)));
   }
   const audit = auditRepeatedFunctionArguments();
+  console.log(`Static function audit: ${audit.definitions.length} definitions, ${audit.repeated.length} repeated identities, ${audit.drifts.length} drifts`);
   check("all repeated Phase 10 function identities have stable input argument names", audit.drifts.length === 0);
-  check("function argument audit covers the full Phase 10 definition set", audit.definitions.length === 546 && audit.repeated.length === 88);
+  check("function argument audit covers the full Phase 10 definition set", audit.definitions.length === 556 && audit.repeated.length === 93);
   check("validator has six layered public definitions", audit.target.length === 6);
   check("every validator definition uses the canonical input names", audit.target.every((entry) => JSON.stringify(entry.names) === JSON.stringify(EXPECTED_ARGUMENT_NAMES)));
   check("ACL hardening inventory contains the reproduced 17 signatures", REPRODUCED_ACL_SIGNATURES.length === 17);
   check("full ACL audit contains 15 additional same-class signatures", ACL_SIGNATURES.length === 32);
-  console.log(`Static function audit: ${audit.definitions.length} definitions, ${audit.repeated.length} repeated identities, ${audit.drifts.length} drifts`);
 
   const allSql = phase10Sql();
   const bootstrapSql = readFileSync(absolute(migrations[1]), "utf8");
@@ -277,14 +283,18 @@ function sourceChecks() {
     verifierSource.indexOf("function applySequence("),
     verifierSource.indexOf("function futureOrganizationChecks("),
   );
-  check("full Phase 10 manifest contains 20 ordered migrations", migrations.length === 20
+  check("full Phase 10 manifest contains 24 ordered migrations through 10V", migrations.length === 24
     && migrations[0].endsWith("phase10a_routine_engine_foundation.sql")
     && migrations[1].endsWith("phase10a1_routine_organization_settings_bootstrap.sql")
-    && migrations.at(-5).endsWith("phase10l_mesh_routine_content_pack.sql")
-    && migrations.at(-4).endsWith("phase10p_routine_readiness_finalization.sql")
-    && migrations.at(-3).endsWith("phase10q_mesh_routine_content_pack_1_2r.sql")
-    && migrations.at(-2).endsWith("phase10o_routine_default_privilege_hardening.sql")
-    && migrations.at(-1).endsWith("phase10r_mesh_routine_content_pack_1_3r.sql"));
+    && migrations.at(-9).endsWith("phase10l_mesh_routine_content_pack.sql")
+    && migrations.at(-8).endsWith("phase10p_routine_readiness_finalization.sql")
+    && migrations.at(-7).endsWith("phase10q_mesh_routine_content_pack_1_2r.sql")
+    && migrations.at(-6).endsWith("phase10o_routine_default_privilege_hardening.sql")
+    && migrations.at(-5).endsWith("phase10r_mesh_routine_content_pack_1_3r.sql")
+    && migrations.at(-4).endsWith("phase10s_mesh_routine_content_pack_1_4r.sql")
+    && migrations.at(-3).endsWith("phase10t_routine_participant_identity_conflict_alignment.sql")
+    && migrations.at(-2).endsWith("phase10u_routine_operation_idempotency_convergence.sql")
+    && migrations.at(-1).endsWith("phase10v_routine_creation_idempotency_provenance_alignment.sql"));
   check("10A1 is a system bootstrap with no manager RPC installation step",
     !/create_or_update_routine_organization_settings|auth\.uid\s*\(|\bgrant\b|\bcreate\s+(?:or\s+replace\s+)?function\b/i.test(bootstrapSql));
   check("full-reapply migration sequence contains no out-of-band settings manager bootstrap",
@@ -309,11 +319,13 @@ function sourceChecks() {
   check("Supabase RPC payload uses the canonical validator key", client.includes("input_publication_version_ids") && !client.includes("input_batch_version_ids"));
   const baselinePack = JSON.parse(readFileSync(absolute("content/routine-engine/mesh-routine-content-v1.json"), "utf8"));
   const previousPack = JSON.parse(readFileSync(absolute("content/routine-engine/mesh-routine-content-v1-2r.json"), "utf8"));
-  const pack = JSON.parse(readFileSync(absolute("content/routine-engine/mesh-routine-content-v1-3r.json"), "utf8"));
+  const frozenServicewarePack = JSON.parse(readFileSync(absolute("content/routine-engine/mesh-routine-content-v1-3r.json"), "utf8"));
+  const pack = JSON.parse(readFileSync(absolute("content/routine-engine/mesh-routine-content-v1-4r.json"), "utf8"));
   check("frozen content pack 1.1R remains canonical", baselinePack.packVersion === "1.1R" && baselinePack.packHash === "c149a8416a867dcb7d87224f3ae8e2a214e5ca4954613b118521ebe5ae3aff2a");
   check("frozen content pack 1.2R remains canonical", previousPack.packVersion === "1.2R" && previousPack.packHash === EXPECTED_PREVIOUS_PACK_HASH);
+  check("frozen content pack 1.3R remains canonical", frozenServicewarePack.packVersion === "1.3R" && frozenServicewarePack.packHash === EXPECTED_PHASE10R_PACK_HASH);
   check("content pack hash remains canonical", pack.packHash === EXPECTED_PACK_HASH);
-  check("content pack minor version is 1.3R", pack.packVersion === "1.3R");
+  check("content pack minor version is 1.4R", pack.packVersion === "1.4R");
   check("authoritative content source hashes remain canonical", JSON.stringify(pack.sourceDocuments.map((entry) => entry.sha256)) === JSON.stringify(EXPECTED_SOURCE_HASHES));
   check("content pack shape remains 37 Opening, 46 Closing, and four system steps", pack.opening.tasks.length === 37 && pack.closing.tasks.length === 46 && pack.doubleShiftSteps.length === 4);
   check("serviceware route resolves the final content blocker", pack.unresolvedRequirements.length === 0 && pack.standards.filter((entry) => entry.currentRevision).length === 14);
@@ -1170,7 +1182,7 @@ function assertEndState(label, state, protectedBaseline) {
 }
 
 function applySequence(sequenceNumber) {
-  console.log(`Applying full Phase 10A-A1-L-P-Q-O sequence ${sequenceNumber} as ${ROLE}`);
+  console.log(`Applying full Phase 10A-A1-L-P-Q-O-R-S-T-U-V sequence ${sequenceNumber} as ${ROLE}`);
   let stateAfterK4 = null;
   for (let index = 0; index < migrations.length; index += 1) {
     const path = migrations[index];
@@ -1281,12 +1293,67 @@ function applySequence(sequenceNumber) {
     if (path.endsWith("phase10r_mesh_routine_content_pack_1_3r.sql")) {
       check(`sequence ${sequenceNumber}: 10R exposes the exact 1.3R provider`,
         scalar("select (public.routine_mesh_content_pack_v1()->>'packVersion')||':'||(public.routine_mesh_content_pack_v1()->>'packHash');")
-          === `1.3R:${EXPECTED_PACK_HASH}`);
+          === `1.3R:${EXPECTED_PHASE10R_PACK_HASH}`);
       check(`sequence ${sequenceNumber}: 10R leaves settings and all content state unchanged`,
         JSON.stringify(settingsState()) === JSON.stringify(stateAfterK4)
           && scalar("select (select count(*) from public.routine_content_pack_installations)=0 and (select count(*) from public.routine_templates)=0 and (select count(*) from public.routine_runs)=0 and (select count(*) from public.routine_bundles)=0;") === "t");
       check(`sequence ${sequenceNumber}: 10R provider remains private`,
         scalar("select not has_function_privilege('anon','public.routine_mesh_content_pack_v1()','EXECUTE') and not has_function_privilege('authenticated','public.routine_mesh_content_pack_v1()','EXECUTE');") === "t");
+    }
+    if (path.endsWith("phase10s_mesh_routine_content_pack_1_4r.sql")) {
+      check(`sequence ${sequenceNumber}: 10S exposes the exact 1.4R provider`,
+        scalar("select (public.routine_mesh_content_pack_v1()->>'packVersion')||':'||(public.routine_mesh_content_pack_v1()->>'packHash');")
+          === `1.4R:${EXPECTED_PACK_HASH}`);
+      check(`sequence ${sequenceNumber}: 10S leaves settings and all content state unchanged`,
+        JSON.stringify(settingsState()) === JSON.stringify(stateAfterK4)
+          && scalar("select (select count(*) from public.routine_content_pack_installations)=0 and (select count(*) from public.routine_templates)=0 and (select count(*) from public.routine_runs)=0 and (select count(*) from public.routine_bundles)=0;") === "t");
+    }
+    if (path.endsWith("phase10t_routine_participant_identity_conflict_alignment.sql")) {
+      check(`sequence ${sequenceNumber}: 10T leaves no stale personal-participant conflict target`, scalar(String.raw`
+        select count(*) from pg_proc procedure join pg_namespace namespace on namespace.oid=procedure.pronamespace
+        where namespace.nspname='public' and procedure.prokind='f' and (
+          pg_get_functiondef(procedure.oid)~*'on[[:space:]]+conflict[[:space:]]*\\([[:space:]]*run_id[[:space:]]*,[[:space:]]*user_profile_id[[:space:]]*\\)[[:space:]]+do[[:space:]]+nothing'
+          or pg_get_functiondef(procedure.oid)~*'on[[:space:]]+conflict[[:space:]]*\\([[:space:]]*bundle_id[[:space:]]*,[[:space:]]*user_profile_id[[:space:]]*\\)[[:space:]]+do[[:space:]]+nothing');
+      `) === "0");
+    }
+    if (path.endsWith("phase10u_routine_operation_idempotency_convergence.sql")) {
+      check(`sequence ${sequenceNumber}: 10U installs four volatile concurrency-convergence functions`, scalar(String.raw`
+        select count(*) from pg_proc procedure join pg_namespace namespace on namespace.oid=procedure.pronamespace
+        where namespace.nspname='public' and procedure.oid=any(array[
+          'public.routine_run_operation_replay(uuid,uuid,text,uuid,text)'::regprocedure,
+          'public.routine_record_run_operation(uuid,uuid,text,uuid,text,text,uuid,jsonb)'::regprocedure,
+          'public.routine_bundle_operation_replay(uuid,uuid,text,uuid,text)'::regprocedure,
+          'public.routine_record_bundle_operation(uuid,uuid,text,uuid,text,text,uuid,jsonb)'::regprocedure
+        ]) and procedure.provolatile='v' and pg_get_functiondef(procedure.oid) like '%pg_advisory_xact_lock%';
+      `) === "4");
+      check(`sequence ${sequenceNumber}: 10U leaves run and bundle uniqueness contracts intact`, scalar(String.raw`
+        select (select count(*) from pg_index index_catalog join pg_class index_row on index_row.oid=index_catalog.indexrelid
+          where index_row.relname in('routine_run_operations_personal_idempotency','routine_run_operations_operator_idempotency')
+            and index_catalog.indisunique and index_catalog.indisvalid and index_catalog.indpred is not null)::text||':'||
+          (select count(*) from pg_constraint where conrelid='public.routine_bundle_operations'::regclass
+            and conname='routine_bundle_operations_idempotency_unique' and contype='u')::text;
+      `) === "2:1");
+    }
+    if (path.endsWith("phase10v_routine_creation_idempotency_provenance_alignment.sql")) {
+      check(`sequence ${sequenceNumber}: 10V removes exactly the four legacy resource provenance constraints`, scalar(String.raw`
+        select count(*) from pg_constraint where conname in(
+          'routine_runs_org_creation_idempotency_unique','routine_run_participants_org_idempotency_unique',
+          'routine_bundles_org_idempotency_unique','routine_bundle_participants_idempotency_unique');
+      `) === "0");
+      check(`sequence ${sequenceNumber}: 10V preserves UUID NOT NULL provenance and six business identity indexes`, scalar(String.raw`
+        select
+          (select count(*) from information_schema.columns where table_schema='public'
+            and table_name in('routine_runs','routine_run_participants','routine_bundles','routine_bundle_participants')
+            and column_name='creation_idempotency_key' and data_type='uuid' and is_nullable='NO')::text||':'||
+          (select count(*) from pg_index index_row join pg_class index_relation on index_relation.oid=index_row.indexrelid
+            where index_relation.relname in('routine_runs_authoritative_identity_idx','routine_run_participants_personal_unique',
+              'routine_run_participants_operator_unique','routine_bundles_active_identity_unique',
+              'routine_bundle_participants_personal_unique','routine_bundle_participants_operator_unique')
+              and index_row.indisunique and index_row.indisvalid and index_row.indisready)::text;
+      `) === "4:6");
+      check(`sequence ${sequenceNumber}: 10V leaves settings content and operative rows unchanged`,
+        JSON.stringify(settingsState()) === JSON.stringify(stateAfterK4)
+          && scalar("select (select count(*) from public.routine_content_pack_installations)=0 and (select count(*) from public.routine_templates)=0 and (select count(*) from public.routine_runs)=0 and (select count(*) from public.routine_bundles)=0;") === "t");
     }
     if (path.endsWith("phase10o_routine_default_privilege_hardening.sql")) {
       check(`sequence ${sequenceNumber}: 10O changes only pg_default_acl`,
@@ -1506,7 +1573,7 @@ async function main() {
     assertEndState(`sequence ${sequence}`, state, protectedBaseline);
     console.log(`Sequence ${sequence} fingerprints: protected-schema=${state.protectedSchema} protected-data=${state.protectedData} protected-realtime=${state.protectedRealtime} routine-schema=${state.routineSchema} raw-acl=${state.rawAclFingerprint} effective-acl=${state.effectiveAclFingerprint}`);
   }
-  check("three complete 20-phase sequences apply exactly 60 migrations", migrationApplications === 60);
+  check("three complete 24-migration sequences apply exactly 72 migrations", migrationApplications === 72);
 
   const aclDrift = [...new Set([
     ...Object.keys(states[0].routineFunctions),
@@ -1524,7 +1591,7 @@ async function main() {
       console.log(`ACL_DETAIL|${signature}|${JSON.stringify(states[0].routineFunctions[signature])}|${JSON.stringify(states[1].routineFunctions[signature])}`);
     }
   }
-  check("first and second A-A1-L-P-Q-O sequence have identical Routine function grants", aclDrift.length === 0);
+  check("first and second complete sequence have identical Routine function grants", aclDrift.length === 0);
   check("legacy environment-dependent Routine schema fingerprint is identical within this owner context",
     states[0].routineSchema === states[1].routineSchema && states[0].routineSchema === states[2].routineSchema);
   check("portable semantic schema fingerprint is identical across all three sequences",
@@ -1545,8 +1612,8 @@ async function main() {
   check("content preview and audit are stable across three sequences",
     JSON.stringify(states[1].contentPack) === JSON.stringify(states[0].contentPack)
       && JSON.stringify(states[2].contentPack) === JSON.stringify(states[0].contentPack));
-  check("second A-A1-L-P-Q-O sequence is fully schema/data/state stable", JSON.stringify(states[1]) === JSON.stringify(states[0]));
-  check("third A-A1-L-P-Q-O sequence is fully schema/data/state stable", JSON.stringify(states[2]) === JSON.stringify(states[0]));
+  check("second complete sequence is fully schema/data/state stable", JSON.stringify(states[1]) === JSON.stringify(states[0]));
+  check("third complete sequence is fully schema/data/state stable", JSON.stringify(states[2]) === JSON.stringify(states[0]));
   check("published/content/run/timing/delivery/bundle hashes are stable", JSON.stringify(states[0].operational.hashes) === JSON.stringify(states[2].operational.hashes));
   check("validation blockers, warnings, and content hash are stable", JSON.stringify(states[0].validationProbe) === JSON.stringify(states[2].validationProbe));
   futureOrganizationChecks();

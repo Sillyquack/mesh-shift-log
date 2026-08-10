@@ -4,14 +4,15 @@ import { dirname, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 
 const ROOT = resolve(dirname(fileURLToPath(import.meta.url)), "..");
-const PACK_PATH = resolve(ROOT, "content/routine-engine/mesh-routine-content-v1-3r.json");
-const PREVIOUS_PACK_PATH = resolve(ROOT, "content/routine-engine/mesh-routine-content-v1-2r.json");
-const DOC_PATH = resolve(ROOT, "docs/routine-engine-v2-mesh-content-v1-3r.md");
-const SQL_PATH = resolve(ROOT, "supabase/phase10r_mesh_routine_content_pack_1_3r.sql");
-const MANIFEST_PATH = resolve(ROOT, "src/features/routines-v2/data/routineProductionReadinessAmendmentManifest.js");
+const PACK_PATH = resolve(ROOT, "content/routine-engine/mesh-routine-content-v1-4r.json");
+const PREVIOUS_PACK_PATH = resolve(ROOT, "content/routine-engine/mesh-routine-content-v1-3r.json");
+const DOC_PATH = resolve(ROOT, "docs/routine-engine-v2-mesh-content-v1-4r.md");
+const SQL_PATH = resolve(ROOT, "supabase/phase10s_mesh_routine_content_pack_1_4r.sql");
+const MANIFEST_PATH = resolve(ROOT, "src/features/routines-v2/data/routineRuntimeContractAlignmentManifest.js");
 const BASE_AMENDMENT_PATH = resolve(ROOT, "docs/routine-engine-v2-mesh-operational-standards-amendment-2026-08-07.md");
 const PRODUCTION_AMENDMENT_PATH = resolve(ROOT, "docs/routine-engine-v2-production-readiness-amendment-2026-08-09.md");
-const AMENDMENT_PATH = resolve(ROOT, "docs/routine-engine-v2-serviceware-route-amendment-2026-08-09.md");
+const SERVICEWARE_AMENDMENT_PATH = resolve(ROOT, "docs/routine-engine-v2-serviceware-route-amendment-2026-08-09.md");
+const AMENDMENT_PATH = resolve(ROOT, "docs/routine-engine-v2-runtime-contract-alignment-amendment-2026-08-09.md");
 const AMENDMENT_METADATA_HEADING = "## Generated pack metadata";
 const PACK_START = "-- BEGIN GENERATED MESH CONTENT PACK PAYLOAD";
 const PACK_END = "-- END GENERATED MESH CONTENT PACK PAYLOAD";
@@ -20,6 +21,24 @@ const SOURCE_HASHES = Object.freeze({
   opening: "ea00e80bde6c17ea1d3f1095949363d79d606dcee16f05f742426c1c5248e079",
   closing: "27698f86716a141268546c623609f8b956213e53f20d00c03935cad01bd9244c",
   doubleShift: "f4fce4d5a3dcafecd7dfca2a5bf780f7c3652634da2cb0f068daa5d4f506a0eb",
+});
+
+const WORKBAR_NON_ALCO_LOCATION_STANDARD_SOURCE = Object.freeze({
+  mode: "location_standards",
+  locationCodes: Object.freeze(["WORKBAR_NON_ALCO_FRIDGE"]),
+  activeOnly: true,
+});
+const INVENTORY_ITEM_BINDINGS = Object.freeze({
+  O13: Object.freeze(["inventory_standard_items"]),
+  C08: Object.freeze(["inventory_standard_items"]),
+  C28: Object.freeze(["inventory_standard_items"]),
+});
+const REQUIRED_CLOSING_ASSET_SOURCE = Object.freeze({
+  mode: "active_assets",
+  requiredForClosing: true,
+});
+const ASSET_REGISTRY_ITEM_BINDINGS = Object.freeze({
+  C37: Object.freeze(["active_asset_registry_items"]),
 });
 
 const TOP_LEVEL_FIELDS = Object.freeze([
@@ -310,13 +329,26 @@ const TIMING = {
   O29: { visibleFromLocalTime: "09:35:00", startFromLocalTime: "09:40:00", targetLocalTime: "09:45:00", overdueLocalTime: "09:55:00" },
   O35: { visibleFromLocalTime: "10:35:00", startFromLocalTime: "10:40:00", targetLocalTime: "10:45:00", overdueLocalTime: "10:50:00", hardDeadlineLocalTime: "10:55:00" },
   O37: { targetLocalTime: "11:00:00" },
-  C14: { visibleFromLocalTime: "17:35:00", targetLocalTime: "17:45:00", overdueLocalTime: "17:55:00" },
+  C14: { visibleFromLocalTime: "17:35:00", startFromLocalTime: "17:35:00", targetLocalTime: "17:45:00", overdueLocalTime: "17:55:00" },
 };
 
 const CONDITIONS = {
-  O22: { fact: "organization_flag", operator: "equals", value: "seasonal_candles" },
+  O22: { fact: "organization_flag", key: "seasonal_candles", operator: "equals", value: true },
   C19: { fact: "weekday", operator: "in", value: ["wednesday", "friday"] },
 };
+
+const TASK_TYPE_OVERRIDES = Object.freeze({ C15: "gate" });
+
+const AVAILABILITY_MODE_OVERRIDES = Object.freeze({
+  O15: "immediate",
+  O22: "condition",
+  O23: "immediate",
+  O29: "time_window",
+  O35: "time_window",
+  O37: "after_task",
+  C14: "time_window",
+  C19: "condition",
+});
 
 function sha256(value) { return createHash("sha256").update(value).digest("hex"); }
 function canonical(value) {
@@ -378,6 +410,8 @@ function metadataValue(block, label) {
 function normalizePolicy(value) { return value?.replaceAll("-", "_").replaceAll(" ", "_").toLowerCase(); }
 function sourceTypeToTaskType(sourceType) { return sourceType === "conditional" ? "action" : sourceType; }
 function applyItemSources(task) {
+  const inventoryItemKeys = new Set(INVENTORY_ITEM_BINDINGS[task.id] || []);
+  const assetRegistryItemKeys = new Set(ASSET_REGISTRY_ITEM_BINDINGS[task.id] || []);
   for (const item of task.items) {
     const text = `${item.key} ${item.label}`.toLowerCase();
     let standardKey = null;
@@ -394,10 +428,27 @@ function applyItemSources(task) {
     if (task.id === "C33") standardKey = "fridge-closing-rules";
     if (task.id === "C42") standardKey = "door-and-lock-rules";
     if (standardKey) { item.sourceKind = "routine_standard"; item.standardKey = standardKey; item.sourceConfig = {}; }
-    if (["O13", "C08", "C28"].includes(task.id) && /(product|stock|fridge|egg|food|non-alcohol)/.test(text)) {
-      delete item.standardKey; item.sourceKind = "inventory_readonly"; item.sourceConfig = { locationCode: "WORKBAR_NON_ALCO_FRIDGE", access: "read_only" };
+    if (inventoryItemKeys.has(item.key)) {
+      delete item.standardKey;
+      delete item.locationSetKey;
+      item.sourceKind = "inventory_readonly";
+      item.sourceConfig = {
+        ...WORKBAR_NON_ALCO_LOCATION_STANDARD_SOURCE,
+        locationCodes: [...WORKBAR_NON_ALCO_LOCATION_STANDARD_SOURCE.locationCodes],
+      };
     }
-    if (task.id === "C37") { delete item.standardKey; item.sourceKind = "asset_registry_readonly"; item.sourceConfig = { access: "read_only" }; }
+    if (assetRegistryItemKeys.has(item.key)) {
+      delete item.standardKey;
+      delete item.locationSetKey;
+      item.sourceKind = "asset_registry_readonly";
+      item.sourceConfig = { ...REQUIRED_CLOSING_ASSET_SOURCE };
+    }
+  }
+  for (const itemKey of inventoryItemKeys) {
+    if (!task.items.some((item) => item.key === itemKey)) throw new Error(`${task.id}/${itemKey}: explicit inventory source binding was not found.`);
+  }
+  for (const itemKey of assetRegistryItemKeys) {
+    if (!task.items.some((item) => item.key === itemKey)) throw new Error(`${task.id}/${itemKey}: explicit asset-registry source binding was not found.`);
   }
   if (TASK_LOCATION_SETS[task.id]) {
     const routeItem = task.items.find((item) => /location|route|room|fridge|door|sweep|area|zone/.test(`${item.key} ${item.label}`.toLowerCase()));
@@ -422,13 +473,13 @@ function parseRoutine(source, prefix) {
     const task = {
       id, taskKey: `${prefix.toLowerCase()}${match[1]}-${metadataValue(block, "Stable key").split(".").slice(2).join("-")}`,
       stableKey: metadataValue(block, "Stable key"), title: match[2].trim(), sectionKey: section.key,
-      sourceType, taskType: sourceTypeToTaskType(sourceType), criticality: normalizePolicy(metadataValue(block, "Criticality")),
+      sourceType, taskType: TASK_TYPE_OVERRIDES[id] || sourceTypeToTaskType(sourceType), criticality: normalizePolicy(metadataValue(block, "Criticality")),
       mandatory: metadataValue(block, "Mandatory") === "true", initialAssessmentPolicy: normalizePolicy(metadataValue(block, "Initial assessment policy")),
       completionPolicy: normalizePolicy(metadataValue(block, "Completion policy")), notApplicablePolicy: normalizePolicy(metadataValue(block, "Not-applicable policy")),
       verificationPolicy: normalizePolicy(metadataValue(block, "Verification policy")), repeatPolicy: normalizePolicy(metadataValue(block, "Repeat policy")),
       timingText: metadataValue(block, "Timing"), locationDescription: metadataValue(block, "Location"), instructions,
       structuredItemsText, items: parseItems(structuredItemsText, id), doneCriteriaText, deviationRulesText, referenceGuidanceText,
-      availabilityMode: CONDITIONS[id] ? "condition" : sourceType === "continuous" ? "continuous" : TIMING[id] ? "time_window" : "immediate",
+      availabilityMode: AVAILABILITY_MODE_OVERRIDES[id] || (sourceType === "continuous" ? "continuous" : "immediate"),
       condition: CONDITIONS[id] || {}, timing: TIMING[id] || {}, locationKey: TASK_LOCATIONS[id] || null, locationSetKey: TASK_LOCATION_SETS[id] || null,
       metadata: { authoritativeSourceId: id, sourceType, deviationRules: bullets(deviationRulesText), referenceGuidance: bullets(referenceGuidanceText), timingSourceText: metadataValue(block, "Timing") },
       sourceHash: sha256(block),
@@ -770,6 +821,44 @@ function applyServicewareRouteAmendment(openingTasks, closingTasks, amendmentDec
   finalAccountability.referenceGuidanceText = "- Shared route source and C03 evidence: `serviceware-office-recovery-route-confirmation`; do not walk a duplicate route solely for C27.\n- `ordinary-coffee-cup-layout`.\n- `cappuccino-cup-shelf-layout`.\n- `cappuccino-and-espresso-machine-top-layout`.\n- `wine-glass-layout`.";
   finalizeServicewareRouteAmendment(finalAccountability, amendmentDecisionHash);
 }
+function applyRuntimeContractAlignment(openingTasks, closingTasks, amendmentDecisionHash) {
+  const tasks = new Map([...openingTasks, ...closingTasks].map((task) => [task.id, task]));
+  const expected = {
+    O15: { sourceType: "measurement", taskType: "measurement", availabilityMode: "immediate", condition: {}, timing: TIMING.O15 },
+    O22: { sourceType: "conditional", taskType: "action", availabilityMode: "condition", condition: CONDITIONS.O22, timing: {} },
+    O23: { sourceType: "checkpoint", taskType: "checkpoint", availabilityMode: "immediate", condition: {}, timing: TIMING.O23 },
+    O37: { sourceType: "gate", taskType: "gate", availabilityMode: "after_task", condition: {}, timing: TIMING.O37 },
+    C14: { sourceType: "checkpoint", taskType: "checkpoint", availabilityMode: "time_window", condition: {}, timing: TIMING.C14 },
+    C15: { sourceType: "checkpoint", taskType: "gate", availabilityMode: "immediate", condition: {}, timing: {} },
+  };
+
+  for (const [id, contract] of Object.entries(expected)) {
+    const task = tasks.get(id);
+    if (!task) throw new Error(`Missing task for runtime-contract alignment: ${id}`);
+    for (const field of ["sourceType", "taskType", "availabilityMode"]) {
+      if (task[field] !== contract[field]) throw new Error(`${id} has an unexpected ${field}: ${task[field]}`);
+    }
+    if (canonical(task.condition) !== canonical(contract.condition) || canonical(task.timing) !== canonical(contract.timing)) {
+      throw new Error(`${id} has an unexpected condition or timing contract.`);
+    }
+    if (id === "O15") continue;
+    task.metadata.runtimeContractAlignment = {
+      date: "2026-08-09",
+      decisionHash: amendmentDecisionHash,
+      originalSourceClassification: task.sourceType,
+      operationalTaskType: task.taskType,
+    };
+    task.sourceHash = sha256(canonical({
+      priorSourceHash: task.sourceHash,
+      sourceType: task.sourceType,
+      taskType: task.taskType,
+      availabilityMode: task.availabilityMode,
+      condition: task.condition,
+      timing: task.timing,
+      amendmentDecisionHash,
+    }));
+  }
+}
 function parseDoubleShift(source) {
   const matcher = /^# (DS\d{2}) — ([^\n]+)\n([\s\S]*?)(?=^# [^\n]+|$(?![\s\S]))/gm;
   const steps = [];
@@ -806,29 +895,33 @@ function parseDoubleShiftCopy(source) {
   }
   return copy;
 }
-function dependencies() {
+function runtimeContractMetadata(amendmentDecisionHash) {
+  return { runtimeContractAlignment: { date: "2026-08-09", decisionHash: amendmentDecisionHash } };
+}
+function dependencies(amendmentDecisionHash) {
   const result = [
     ["O27", "O29", "complete_predecessor_on_successor"], ["O33", "O35", "complete_predecessor_on_successor"],
     ...["O30", "O31", "O32", "O33", "O34", "O35", "O36"].map((id) => [id, "O37", "must_complete"]),
-    ...["C03", "C04", "C05", "C06", "C07", "C08", "C09", "C10", "C11", "C12", "C13"].map((id) => [id, "C14", "must_complete"]),
+    ...["C03", "C04", "C06", "C07", "C08", "C09", "C10", "C11", "C12", "C13"].map((id) => [id, "C14", "must_complete"]),
+    ["C05", "C15", "complete_predecessor_on_successor", runtimeContractMetadata(amendmentDecisionHash)],
     ["C34", "C35", "must_complete"], ["C35", "C36", "must_complete"], ["C41", "C42", "must_complete"], ["C42", "C43", "must_complete"],
     ...["C27", "C28", "C29", "C30", "C31", "C32", "C33", "C36", "C37", "C38", "C39", "C40", "C41", "C42", "C43", "C44"].map((id) => [id, "C45", "must_complete"]),
     ["C45", "C46", "must_complete"],
   ];
-  return result.map(([predecessorTaskId, successorTaskId, dependencyType]) => ({ predecessorTaskId, successorTaskId, dependencyType, metadata: {} }));
+  return result.map(([predecessorTaskId, successorTaskId, dependencyType, metadata = {}]) => ({ predecessorTaskId, successorTaskId, dependencyType, metadata }));
 }
 function relation(sourceTaskId, targetRoutineKey, targetTaskId, relationType, metadata = {}) { return { sourceTaskId, targetRoutineKey, targetTaskId, relationType, metadata }; }
 function delivery(sourceTaskId, targetTaskId, deliveryKey, label, evidenceItemKeys) {
   return relation(sourceTaskId, "opening", targetTaskId, "delivery_comparison", { deliveryKey, label, category: "opening_readiness", comparisonMode: "ready_on_arrival", required: true, allowNotApplicable: false, scopePolicy: "same_scope", evidenceItemKeys, requireValidTaskVerification: false, requireValidRunVerification: false });
 }
-function relations(closingTasks) {
+function relations(closingTasks, amendmentDecisionHash) {
   const itemKeys = (id, pattern) => closingTasks.find((task) => task.id === id).items.filter((item) => pattern.test(`${item.key} ${item.label}`.toLowerCase())).map((item) => item.key);
   return [
     relation("O01", "closing", "C01", "repeat_required"), relation("O03", "closing", "C18", "complementary_action"),
     relation("O04", "closing", "C23", "complementary_action"), relation("O05", "closing", "C24", "complementary_action"),
     relation("O19", "closing", "C38", "complementary_action"), relation("O20", "closing", "C39", "complementary_action"),
     relation("O21", "closing", "C40", "complementary_action"), relation("O17", "closing", "C35", "complementary_action"),
-    relation("O06", "closing", "C17", "complementary_action"), relation("O22", "closing", "C22", "conditional_companion", { condition: CONDITIONS.O22 }),
+    relation("O06", "closing", "C17", "complementary_action"), relation("O22", "closing", "C22", "conditional_companion", { condition: CONDITIONS.O22, ...runtimeContractMetadata(amendmentDecisionHash) }),
     relation("O16", "closing", "C04", "repeat_required"), relation("O15", "closing", "C27", "repeat_required"),
     delivery("C28", "O13", "workbar-food-non-alcoholic-fridge", "Workbar food/non-alcoholic fridge ready for Opening", itemKeys("C28", /product|stock|fridge|egg|food|non-alcohol/)),
     delivery("C29", "O09", "workbar-milk-fridge", "Workbar Milk Fridge ready for Opening", itemKeys("C29", /milk|oat|fridge|standard/)),
@@ -848,27 +941,29 @@ function amendmentDecisionBody(source) {
   if (index < 0) throw new Error("Operational standards amendment is missing the generated metadata boundary.");
   return `${source.replaceAll("\r\n", "\n").slice(0, index).trimEnd()}\n`;
 }
-function buildPack(openingSource, closingSource, doubleShiftSource, baseAmendmentSource, productionAmendmentSource, amendmentSource) {
+function buildPack(openingSource, closingSource, doubleShiftSource, baseAmendmentSource, productionAmendmentSource, servicewareAmendmentSource, amendmentSource) {
   validateSource(openingSource, "Opening", SOURCE_HASHES.opening);
   validateSource(closingSource, "Closing", SOURCE_HASHES.closing);
   validateSource(doubleShiftSource, "Double Shift", SOURCE_HASHES.doubleShift);
   const baseAmendmentDecisionHash = sha256(amendmentDecisionBody(baseAmendmentSource));
   const productionAmendmentDecisionHash = sha256(amendmentDecisionBody(productionAmendmentSource));
+  const servicewareAmendmentDecisionHash = sha256(amendmentDecisionBody(servicewareAmendmentSource));
   const amendmentDecisionHash = sha256(amendmentDecisionBody(amendmentSource));
   const openingTasks = parseRoutine(openingSource, "O");
   const closingTasks = parseRoutine(closingSource, "C");
   applyOperationalStandardsAmendment(openingTasks, closingTasks, baseAmendmentDecisionHash);
   applyProductionReadinessAmendment(openingTasks, closingTasks, productionAmendmentDecisionHash);
-  applyServicewareRouteAmendment(openingTasks, closingTasks, amendmentDecisionHash);
+  applyServicewareRouteAmendment(openingTasks, closingTasks, servicewareAmendmentDecisionHash);
+  applyRuntimeContractAlignment(openingTasks, closingTasks, amendmentDecisionHash);
   const doubleShiftSteps = parseDoubleShift(doubleShiftSource);
-  const allRelations = relations(closingTasks);
+  const allRelations = relations(closingTasks, amendmentDecisionHash);
   const pack = {
-    schemaVersion: "1.0", packKey: "mesh-routine-content", packVersion: "1.3R",
+    schemaVersion: "1.0", packKey: "mesh-routine-content", packVersion: "1.4R",
     name: "Mesh Opening and Closing operational content", description: "Editable Opening and Closing drafts plus Double Shift system-step copy. Installation never publishes or creates operative state.",
     sections: [...SECTION_CONFIG.O.map((value, sortOrder) => ({ ...value, routineKey: "opening", sortOrder })), ...SECTION_CONFIG.C.map((value, sortOrder) => ({ ...value, routineKey: "closing", sortOrder }))],
     locations: LOCATIONS, locationSets: LOCATION_SETS, standards: STANDARDS, references: REFERENCES,
-    opening: { routineKey: "opening", name: "Opening", description: "Mesh Opening content from the authoritative v1R source.", sections: SECTION_CONFIG.O.map((value, sortOrder) => ({ ...value, sortOrder })), tasks: openingTasks, dependencies: dependencies().filter((entry) => entry.predecessorTaskId.startsWith("O")), relations: allRelations.filter((entry) => entry.sourceTaskId.startsWith("O")) },
-    closing: { routineKey: "closing", name: "Closing", description: "Mesh Closing content from the authoritative v1R source.", sections: SECTION_CONFIG.C.map((value, sortOrder) => ({ ...value, sortOrder })), tasks: closingTasks, dependencies: dependencies().filter((entry) => entry.predecessorTaskId.startsWith("C")), relations: allRelations.filter((entry) => entry.sourceTaskId.startsWith("C")) },
+    opening: { routineKey: "opening", name: "Opening", description: "Mesh Opening content from the authoritative v1R source.", sections: SECTION_CONFIG.O.map((value, sortOrder) => ({ ...value, sortOrder })), tasks: openingTasks, dependencies: dependencies(amendmentDecisionHash).filter((entry) => entry.predecessorTaskId.startsWith("O")), relations: allRelations.filter((entry) => entry.sourceTaskId.startsWith("O")) },
+    closing: { routineKey: "closing", name: "Closing", description: "Mesh Closing content from the authoritative v1R source.", sections: SECTION_CONFIG.C.map((value, sortOrder) => ({ ...value, sortOrder })), tasks: closingTasks, dependencies: dependencies(amendmentDecisionHash).filter((entry) => entry.predecessorTaskId.startsWith("C")), relations: allRelations.filter((entry) => entry.sourceTaskId.startsWith("C")) },
     doubleShiftSteps, doubleShiftCopy: parseDoubleShiftCopy(doubleShiftSource), unresolvedRequirements: UNRESOLVED,
     sourceDocuments: [
       { kind: "opening", fileName: "mesh-opening-content-spec-v1R-combined.md", sha256: SOURCE_HASHES.opening },
@@ -876,7 +971,8 @@ function buildPack(openingSource, closingSource, doubleShiftSource, baseAmendmen
       { kind: "double_shift", fileName: "mesh-double-shift-content-spec-v1R.md", sha256: SOURCE_HASHES.doubleShift },
       { kind: "operational_standards_amendment", fileName: "routine-engine-v2-mesh-operational-standards-amendment-2026-08-07.md", sha256: baseAmendmentDecisionHash, hashScope: "content-before-generated-pack-metadata" },
       { kind: "production_readiness_amendment", fileName: "routine-engine-v2-production-readiness-amendment-2026-08-09.md", sha256: productionAmendmentDecisionHash, hashScope: "content-before-generated-pack-metadata" },
-      { kind: "serviceware_route_amendment", fileName: "routine-engine-v2-serviceware-route-amendment-2026-08-09.md", sha256: amendmentDecisionHash, hashScope: "content-before-generated-pack-metadata" },
+      { kind: "serviceware_route_amendment", fileName: "routine-engine-v2-serviceware-route-amendment-2026-08-09.md", sha256: servicewareAmendmentDecisionHash, hashScope: "content-before-generated-pack-metadata" },
+      { kind: "runtime_contract_alignment_amendment", fileName: "routine-engine-v2-runtime-contract-alignment-amendment-2026-08-09.md", sha256: amendmentDecisionHash, hashScope: "content-before-generated-pack-metadata" },
     ],
   };
   validatePack(pack);
@@ -886,13 +982,13 @@ function buildPack(openingSource, closingSource, doubleShiftSource, baseAmendmen
 function generatedAmendment(pack) {
   const source = readFileSync(AMENDMENT_PATH, "utf8");
   const body = amendmentDecisionBody(source);
-  const amendment = pack.sourceDocuments.find((entry) => entry.kind === "serviceware_route_amendment");
-  return `${body}\n${AMENDMENT_METADATA_HEADING}\n\nThis section is generated from the canonical pack and is excluded from the amendment decision-body hash.\n\n- Pack: \`${pack.packKey}@${pack.packVersion}\`\n- Canonical pack SHA-256: \`${pack.packHash}\`\n- Amendment decision-body SHA-256: \`${amendment.sha256}\`\n- Production action: supported draft amendment only; never installation or publication\n`;
+  const amendment = pack.sourceDocuments.find((entry) => entry.kind === "runtime_contract_alignment_amendment");
+  return `${body}\n${AMENDMENT_METADATA_HEADING}\n\nThis section is generated from the canonical pack and is excluded from the amendment decision-body hash.\n\n- Pack: \`${pack.packKey}@${pack.packVersion}\`\n- Canonical pack SHA-256: \`${pack.packHash}\`\n- Amendment decision-body SHA-256: \`${amendment.sha256}\`\n- Production action: none; this artifact is local implementation and review only\n`;
 }
 function syncAmendment(pack, checkOnly) {
   const expected = generatedAmendment(pack);
   const source = readFileSync(AMENDMENT_PATH, "utf8");
-  if (checkOnly) { if (source !== expected) throw new Error("Serviceware route amendment metadata is stale."); }
+  if (checkOnly) { if (source !== expected) throw new Error("Runtime-contract alignment amendment metadata is stale."); }
   else writeFileSync(AMENDMENT_PATH, expected);
 }
 function validatePack(pack, withHash = false) {
@@ -902,13 +998,18 @@ function validatePack(pack, withHash = false) {
   if (unknown.length) throw new Error(`Unknown top-level fields: ${unknown.join(", ")}`);
   for (const key of TOP_LEVEL_FIELDS.filter((key) => key !== "packHash")) if (!(key in pack)) throw new Error(`Missing top-level field: ${key}`);
   if (pack.opening.tasks.length !== 37 || pack.closing.tasks.length !== 46 || pack.doubleShiftSteps.length !== 4) throw new Error("Content counts must be Opening 37, Closing 46, Double Shift 4.");
-  if (pack.packVersion !== "1.3R") throw new Error("Serviceware-route pack version must be 1.3R.");
+  if (pack.locations.length !== 44 || pack.locationSets.length !== 12 || pack.standards.length !== 14 || pack.references.length !== 40) throw new Error("Foundation counts must be 44 locations, 12 sets, 14 standards, and 40 references.");
+  if (pack.packVersion !== "1.4R") throw new Error("Runtime-contract alignment pack version must be 1.4R.");
   for (const [tasks, prefix, count] of [[pack.opening.tasks, "O", 37], [pack.closing.tasks, "C", 46]]) {
     const expected = new Set(Array.from({ length: count }, (_, index) => `${prefix}${String(index + 1).padStart(2, "0")}`));
     for (const task of tasks) {
       expected.delete(task.id);
       for (const field of ["instructions", "structuredItemsText", "doneCriteriaText", "deviationRulesText", "referenceGuidanceText"]) if (!task[field]) throw new Error(`${task.id} missing ${field}.`);
       if (!task.items.length) throw new Error(`${task.id} has no structured items.`);
+      if (task.availabilityMode === "time_window" && !task.timing.startFromLocalTime) throw new Error(`${task.id}: every time-window task requires startFromLocalTime.`);
+      if (task.taskType === "checkpoint" && !task.timing.targetLocalTime) throw new Error(`${task.id}: every active checkpoint requires targetLocalTime.`);
+      if (task.condition.fact === "organization_flag" && !task.condition.key) throw new Error(`${task.id}: organization_flag requires key.`);
+      if (task.condition.fact === "organization_flag" && typeof task.condition.value === "string" && task.condition.value === task.condition.key) throw new Error(`${task.id}: organization flag name must not be placed in value.`);
     }
     if (expected.size) throw new Error(`Missing ${prefix} IDs: ${[...expected].join(", ")}`);
   }
@@ -926,7 +1027,86 @@ function validatePack(pack, withHash = false) {
   }
   if (canonical(pack.standards.find((standard) => standard.key === "coffee-cups-full-target")?.currentRevision?.value) !== canonical(pack.standards.find((standard) => standard.key === "coffee-cups-service-ready-target")?.currentRevision?.value)) throw new Error("Coffee-cup full and service-ready layouts must be semantically identical.");
   if (canonical(pack.standards.find((standard) => standard.key === "wine-glasses-full-target")?.currentRevision?.value) !== canonical(pack.standards.find((standard) => standard.key === "wine-glasses-service-ready-target")?.currentRevision?.value)) throw new Error("Wine-glass full and service-ready layouts must be semantically identical.");
-  if (pack.sourceDocuments.find((entry) => entry.kind === "operational_standards_amendment")?.hashScope !== "content-before-generated-pack-metadata") throw new Error("Operational standards amendment provenance is incomplete.");
+  if (pack.sourceDocuments.filter((entry) => entry.kind.endsWith("_amendment")).some((entry) => entry.hashScope !== "content-before-generated-pack-metadata")) throw new Error("Amendment provenance is incomplete.");
+  const allTasks = [...pack.opening.tasks, ...pack.closing.tasks];
+  const allDependencies = [...pack.opening.dependencies, ...pack.closing.dependencies];
+  for (const task of allTasks.filter((entry) => entry.taskType === "continuous")) {
+    const automaticSuccessors = allDependencies.filter((entry) => entry.predecessorTaskId === task.id && entry.dependencyType === "complete_predecessor_on_successor");
+    if (automaticSuccessors.length !== 1) throw new Error(`${task.id}: continuous task requires exactly one actual automatic-completion dependency.`);
+  }
+  if (pack.opening.tasks.find((task) => task.id === "O23")?.availabilityMode !== "immediate"
+    || pack.opening.tasks.find((task) => task.id === "O37")?.availabilityMode !== "after_task") {
+    throw new Error("Timing fields must not cause O23 or O37 to be assigned time_window.");
+  }
+  const o15 = pack.opening.tasks.find((task) => task.id === "O15");
+  if (o15?.taskType !== "measurement" || o15.availabilityMode !== "immediate"
+    || o15.timing.visibleFromLocalTime || o15.timing.startFromLocalTime
+    || o15.timing.targetLocalTime !== "10:45:00" || o15.timing.hardDeadlineLocalTime !== "10:45:00"
+    || !o15.items.some((item) => item.standardKey === "serviceware-office-recovery-route-confirmation")) {
+    throw new Error("O15 runtime timing and serviceware binding are not exact.");
+  }
+  const o22Condition = pack.opening.tasks.find((task) => task.id === "O22")?.condition;
+  const o22RelationCondition = pack.opening.relations.find((entry) => entry.sourceTaskId === "O22" && entry.targetTaskId === "C22")?.metadata?.condition;
+  if (canonical(o22Condition) !== canonical(CONDITIONS.O22) || canonical(o22RelationCondition) !== canonical(CONDITIONS.O22)) throw new Error("O22 condition wire format is not aligned with Phase 10F.");
+  const c05Automatic = pack.closing.dependencies.filter((entry) => entry.predecessorTaskId === "C05" && entry.dependencyType === "complete_predecessor_on_successor");
+  if (c05Automatic.length !== 1 || c05Automatic[0].successorTaskId !== "C15" || pack.closing.dependencies.some((entry) => entry.predecessorTaskId === "C05" && entry.successorTaskId === "C14")) throw new Error("C05 must have exactly one automatic successor, C15, and no C14 dependency.");
+  const canonicalInventoryConfig = canonical(WORKBAR_NON_ALCO_LOCATION_STANDARD_SOURCE);
+  const canonicalAssetConfig = canonical(REQUIRED_CLOSING_ASSET_SOURCE);
+  const inventoryPairs = [];
+  const assetPairs = [];
+  for (const task of allTasks) {
+    for (const item of task.items) {
+      const pair = `${task.id}/${item.key}`;
+      if (item.sourceKind === "inventory_readonly") {
+        inventoryPairs.push(pair);
+        if (canonical(item.sourceConfig) !== canonicalInventoryConfig
+          || item.standardKey || item.locationSetKey
+          || item.sourceConfig.locationCodes.some((code) => !/^[A-Z][A-Z0-9_]*$/.test(code))) {
+          throw new Error(`${pair}: inventory_readonly source does not match the canonical location_standards contract.`);
+        }
+      }
+      if (["O13", "C08", "C28"].includes(task.id) && ["eggs_present_and_to_standard", "fridge_clean_and_operating"].includes(item.key)
+        && (item.sourceKind !== "static" || canonical(item.sourceConfig) !== "{}" || item.standardKey || item.locationSetKey)) {
+        throw new Error(`${pair}: the explicit physical check must remain one static item.`);
+      }
+      if (["O13", "C08", "C28"].includes(task.id) && item.key === "inventory_standard_items" && item.sourceKind !== "inventory_readonly") {
+        throw new Error(`${pair}: inventory_standard_items must use the explicit inventory source binding.`);
+      }
+      if (item.sourceConfig?.locationCode !== undefined
+        || (item.sourceKind === "inventory_readonly" && item.sourceConfig?.access !== undefined)) {
+        throw new Error(`${pair}: legacy inventory source configuration is forbidden.`);
+      }
+      if (item.sourceKind === "asset_registry_readonly") {
+        assetPairs.push(pair);
+        if (canonical(item.sourceConfig) !== canonicalAssetConfig
+          || item.standardKey || item.locationSetKey
+          || item.sourceConfig?.venue !== undefined
+          || item.sourceConfig?.venues !== undefined
+          || item.sourceConfig?.assetTypes !== undefined
+          || item.sourceConfig?.access !== undefined) {
+          throw new Error(`${pair}: asset_registry_readonly source does not match the canonical active required-for-closing contract.`);
+        }
+      }
+      if (task.id === "C37" && item.key === "active_asset_registry_items" && item.sourceKind !== "asset_registry_readonly") {
+        throw new Error(`${pair}: active_asset_registry_items must use the explicit asset-registry source binding.`);
+      }
+      if (task.id === "C37" && [
+        "device_physically_accounted_for",
+        "correct_charging_position",
+        "charging_confirmed",
+        "damage_or_fault_recorded",
+        "event_transfer_evidence_when_required",
+      ].includes(item.key) && (item.sourceKind !== "static" || canonical(item.sourceConfig) !== "{}" || item.standardKey || item.locationSetKey)) {
+        throw new Error(`${pair}: the aggregate physical control must remain one static item.`);
+      }
+    }
+  }
+  if (canonical(inventoryPairs.sort()) !== canonical(["C08/inventory_standard_items", "C28/inventory_standard_items", "O13/inventory_standard_items"])) {
+    throw new Error("Only the three approved inventory_standard_items bindings may use inventory_readonly.");
+  }
+  if (canonical(assetPairs.sort()) !== canonical(["C37/active_asset_registry_items"])) {
+    throw new Error("Only C37/active_asset_registry_items may use asset_registry_readonly.");
+  }
   if (pack.opening.routineKey === "double_shift" || pack.closing.routineKey === "double_shift" || "doubleShiftTemplate" in pack) throw new Error("Double Shift must not be a third template.");
   if (pack.doubleShiftSteps.some((step, index) => step.id !== `DS${String(index + 1).padStart(2, "0")}` || !step.stepKey || !step.title || !step.mandatory || !step.structuredPayloadText || (step.id !== "DS04" && (!step.instructions || !step.structuredPayload.length || !step.doneCriteriaText || !step.blockingRulesText)))) throw new Error("Double Shift definitions are incomplete or out of order.");
   if (pack.doubleShiftSteps.find((step) => step.id === "DS03")?.mandatoryText !== "yes for a returning Double Shift participant") throw new Error("DS03 conditional mandatory semantics must remain exact.");
@@ -963,65 +1143,92 @@ function generatedDocBase(pack) {
 function generatedDoc(pack) {
   return generatedDocBase(pack)
     .replace("# Mesh Routine Content Pack v1", `# Mesh Routine Content Pack ${pack.packVersion}`)
-    .replace("content/routine-engine/mesh-routine-content-v1.json", "content/routine-engine/mesh-routine-content-v1-3r.json");
+    .replace("content/routine-engine/mesh-routine-content-v1.json", "content/routine-engine/mesh-routine-content-v1-4r.json");
 }
-function amendmentTaskProjection(task, routeItemKey) {
-  const routeItem = task.items.find((item) => item.key === routeItemKey);
-  if (!routeItem) throw new Error(`${task.id}/${routeItemKey} is missing from the amendment projection.`);
+function runtimeContractTaskProjection(task) {
   return {
     id: task.id,
     taskKey: task.taskKey,
-    title: task.title,
-    locationDescription: task.locationDescription,
-    instructions: task.instructions,
-    doneCriteriaText: task.doneCriteriaText,
-    metadata: {
-      timingSourceText: task.metadata.timingSourceText,
-      deviationRules: task.metadata.deviationRules,
-      referenceGuidance: task.metadata.referenceGuidance,
-    },
+    sourceType: task.sourceType,
+    taskType: task.taskType,
+    availabilityMode: task.availabilityMode,
+    condition: task.condition,
     timing: task.timing,
-    items: [{
-      key: routeItem.key,
-      label: routeItem.label,
-      sourceKind: routeItem.sourceKind,
-      standardKey: routeItem.standardKey || null,
-      locationSetKey: routeItem.locationSetKey || null,
-    }],
+    runtimeContractAlignment: task.metadata.runtimeContractAlignment || null,
   };
 }
-function amendmentPackProjection(pack) {
-  const standard = pack.standards.find((entry) => entry.key === "serviceware-office-recovery-route-confirmation");
-  const locationSet = pack.locationSets.find((entry) => entry.key === "serviceware-recovery-route");
-  if (!standard) throw new Error("Serviceware standard is missing from the amendment projection.");
-  if (!locationSet) throw new Error("Serviceware location-set scope anchor is missing from the amendment projection.");
+function runtimeContractInventoryProjection(pack) {
+  const taskIds = new Set(["O13", "C08", "C28"]);
+  const itemKeys = new Set(["inventory_standard_items", "eggs_present_and_to_standard", "fridge_clean_and_operating"]);
+  return [...pack.opening.tasks, ...pack.closing.tasks]
+    .filter((task) => taskIds.has(task.id))
+    .flatMap((task) => task.items
+      .filter((item) => itemKeys.has(item.key))
+      .map((item) => ({
+        taskId: task.id,
+        itemKey: item.key,
+        sourceKind: item.sourceKind,
+        sourceConfig: item.sourceConfig,
+        standardKey: item.standardKey || null,
+        locationSetKey: item.locationSetKey || null,
+      })))
+    .sort((left, right) => `${left.taskId}/${left.itemKey}`.localeCompare(`${right.taskId}/${right.itemKey}`));
+}
+function runtimeContractAssetProjection(pack) {
+  const task = pack.closing.tasks.find((entry) => entry.id === "C37");
+  if (!task) throw new Error("C37 is missing from the runtime-contract asset projection.");
+  const itemKeys = new Set([
+    "active_asset_registry_items",
+    "device_physically_accounted_for",
+    "correct_charging_position",
+    "charging_confirmed",
+    "damage_or_fault_recorded",
+    "event_transfer_evidence_when_required",
+  ]);
+  return task.items
+    .filter((item) => itemKeys.has(item.key))
+    .map((item) => ({
+      taskId: task.id,
+      itemKey: item.key,
+      sourceKind: item.sourceKind,
+      sourceConfig: item.sourceConfig,
+      standardKey: item.standardKey || null,
+      locationSetKey: item.locationSetKey || null,
+    }))
+    .sort((left, right) => `${left.taskId}/${left.itemKey}`.localeCompare(`${right.taskId}/${right.itemKey}`));
+}
+function runtimeContractPackProjection(pack) {
+  const tasks = new Map([...pack.opening.tasks, ...pack.closing.tasks].map((task) => [task.id, task]));
+  const selectedTasks = ["O15", "O22", "O23", "O37", "C14", "C15"].map((id) => {
+    const task = tasks.get(id);
+    if (!task) throw new Error(`${id} is missing from the runtime-contract projection.`);
+    return runtimeContractTaskProjection(task);
+  });
+  const selectedDependencies = [...pack.opening.dependencies, ...pack.closing.dependencies]
+    .filter((entry) => entry.predecessorTaskId === "C05" && ["C14", "C15"].includes(entry.successorTaskId));
+  const companion = [...pack.opening.relations, ...pack.closing.relations]
+    .find((entry) => entry.sourceTaskId === "O22" && entry.targetTaskId === "C22" && entry.relationType === "conditional_companion");
+  if (!companion) throw new Error("O22 → C22 is missing from the runtime-contract projection.");
   return {
     packVersion: pack.packVersion,
     packHash: pack.packHash,
-    standards: [{
-      key: standard.key,
-      label: standard.label,
-      sourceKind: standard.sourceKind,
-      ...(standard.currentRevision ? { currentRevision: standard.currentRevision } : {}),
-    }],
-    locationSets: [{ key: locationSet.key, name: locationSet.name, description: locationSet.description, metadata: locationSet.metadata }],
-    opening: { tasks: [amendmentTaskProjection(pack.opening.tasks.find((task) => task.id === "O15"), "recovery_route_checked")] },
-    closing: { tasks: [
-      amendmentTaskProjection(pack.closing.tasks.find((task) => task.id === "C03"), "recovery_locations_checked"),
-      amendmentTaskProjection(pack.closing.tasks.find((task) => task.id === "C27"), "full_recovery_route_checked"),
-    ] },
+    tasks: selectedTasks,
+    inventoryItems: runtimeContractInventoryProjection(pack),
+    assetItems: runtimeContractAssetProjection(pack),
+    dependencies: selectedDependencies,
+    relations: [companion],
   };
 }
-function generatedProductionAmendmentManifest(pack) {
+function generatedRuntimeContractManifest(pack) {
   const previous = JSON.parse(readFileSync(PREVIOUS_PACK_PATH, "utf8"));
-  const baseline = amendmentPackProjection(previous);
-  const target = amendmentPackProjection(pack);
-  return `// Generated byte-derived projection of the reviewed 1.2R → 1.3R serviceware-route amendment.\n// Canonical pack hashes remain authoritative; unrelated fields are deliberately absent.\nexport const productionAmendmentBaseline = Object.freeze(${JSON.stringify(baseline, null, 2)});\n\nexport const productionAmendmentTarget = Object.freeze(${JSON.stringify(target, null, 2)});\n`;
+  const baseline = runtimeContractPackProjection(previous);
+  const target = runtimeContractPackProjection(pack);
+  return `// Generated byte-derived projection of the reviewed 1.3R → 1.4R runtime-contract alignment.\n// Canonical pack hashes remain authoritative; unrelated fields are deliberately absent.\nexport const runtimeContractAlignmentBaseline = Object.freeze(${JSON.stringify(baseline, null, 2)});\n\nexport const runtimeContractAlignmentTarget = Object.freeze(${JSON.stringify(target, null, 2)});\n`;
 }
-function syncProductionAmendmentManifest(pack, checkOnly) {
-  const expected = generatedProductionAmendmentManifest(pack);
+function syncRuntimeContractManifest(pack, checkOnly) {
+  const expected = generatedRuntimeContractManifest(pack);
   if (checkOnly) {
-    if (readFileSync(MANIFEST_PATH, "utf8") !== expected) throw new Error("Generated production amendment manifest is stale.");
+    if (readFileSync(MANIFEST_PATH, "utf8") !== expected) throw new Error("Generated runtime-contract alignment manifest is stale.");
   } else writeFileSync(MANIFEST_PATH, expected);
 }
 function generatedSql(pack) {
@@ -1034,7 +1241,7 @@ function syncSql(pack, checkOnly) {
   const source = readFileSync(SQL_PATH, "utf8");
   const start = source.indexOf(PACK_START);
   const end = source.indexOf(PACK_END);
-  if (start < 0 || end < start) throw new Error("Phase 10R SQL is missing generated payload markers.");
+  if (start < 0 || end < start) throw new Error("Phase 10S SQL is missing generated payload markers.");
   const expected = `${source.slice(0, start)}${generatedSql(pack)}${source.slice(end + PACK_END.length)}`;
   if (checkOnly) { if (source !== expected) throw new Error("Generated SQL content payload is stale."); }
   else writeFileSync(SQL_PATH, expected);
@@ -1051,7 +1258,8 @@ if (args.has("--bootstrap") || args.has("--verify-sources")) {
   const closingPath = resolve(String(args.get("--closing")));
   const doubleShiftPath = resolve(String(args.get("--double-shift")));
   const pack = buildPack(readFileSync(openingPath, "utf8"), readFileSync(closingPath, "utf8"), readFileSync(doubleShiftPath, "utf8"),
-    readFileSync(BASE_AMENDMENT_PATH, "utf8"), readFileSync(PRODUCTION_AMENDMENT_PATH, "utf8"), readFileSync(AMENDMENT_PATH, "utf8"));
+    readFileSync(BASE_AMENDMENT_PATH, "utf8"), readFileSync(PRODUCTION_AMENDMENT_PATH, "utf8"),
+    readFileSync(SERVICEWARE_AMENDMENT_PATH, "utf8"), readFileSync(AMENDMENT_PATH, "utf8"));
   if (args.has("--verify-sources")) {
     const existing = JSON.parse(readFileSync(PACK_PATH, "utf8"));
     if (canonical(existing) !== canonical(pack)) throw new Error("Canonical pack differs from the three locked authoritative sources.");
@@ -1062,7 +1270,7 @@ if (args.has("--bootstrap") || args.has("--verify-sources")) {
     writeFileSync(DOC_PATH, generatedDoc(pack));
     syncSql(pack, false);
     syncAmendment(pack, false);
-    syncProductionAmendmentManifest(pack, false);
+    syncRuntimeContractManifest(pack, false);
     console.log(`Generated ${pack.packKey}@${pack.packVersion} ${pack.packHash}`);
   }
 } else {
@@ -1075,6 +1283,6 @@ if (args.has("--bootstrap") || args.has("--verify-sources")) {
   } else writeFileSync(DOC_PATH, expectedDoc);
   syncSql(pack, checkOnly);
   syncAmendment(pack, checkOnly);
-  syncProductionAmendmentManifest(pack, checkOnly);
+  syncRuntimeContractManifest(pack, checkOnly);
   console.log(`${checkOnly ? "Verified" : "Synchronized"} ${pack.packKey}@${pack.packVersion} ${pack.packHash}`);
 }
