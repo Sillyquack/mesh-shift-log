@@ -107,6 +107,12 @@ function sourceChecks() {
   check("history client performs no direct table DML", !/\.from\s*\(|\.(?:insert|update|delete)\s*\(/.test(historyClient));
   check("application roles receive no attestation table DML", /revoke all privileges on table public\.routine_release_attestations from public,anon,authenticated/.test(sql));
   check("public entry points are authenticated-only", /grant execute[\s\S]+to authenticated;/.test(sql));
+  const pilotHealth = readFileSync(absolute("src/features/routines-v2/history/RoutinePilotHealth.jsx"), "utf8");
+  const historyCss = readFileSync(absolute("src/features/routines-v2/history/RoutineHistory.css"), "utf8");
+  check("release readiness keeps native details/summary evidence disclosures", /<details><summary>Evidence<\/summary><pre>/.test(pilotHealth));
+  check("release evidence target is scoped to the readiness grid", historyCss.includes(".rh-readiness-grid details>summary{"));
+  check("release evidence target has a 48px minimum height", /\.rh-readiness-grid details>summary\{[^}]*min-height:48px/.test(historyCss));
+  check("release evidence target has an explicit focus-visible treatment", /\.rh-readiness-grid details>summary:focus-visible\{[^}]*outline:3px solid/.test(historyCss));
 }
 
 async function main() {

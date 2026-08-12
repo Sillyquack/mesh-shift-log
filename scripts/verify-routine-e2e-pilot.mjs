@@ -20,6 +20,7 @@ let passCount = 0;
 let shuttingDown = false;
 if (process.argv.length > 2) throw new Error("This verifier accepts no network, URL, host, project, or production arguments.");
 const check = (label, condition) => { if (!condition) throw new Error(`FAIL ${String(passCount + 1).padStart(3, "0")} ${label}`); passCount += 1; console.log(`PASS ${String(passCount).padStart(3, "0")} ${label}`); };
+const meetsTouchTarget = ({ width, height }) => width >= 47.5 && height >= 47.5;
 function command(name, args, options = {}) { const result = spawnSync(name, args, { cwd: ROOT, encoding: "utf8", timeout: options.timeout ?? 600_000, stdio: "pipe", env: { ...process.env, ...options.env } }); if (result.error) throw result.error; if (result.status !== 0) throw new Error(`${name} ${args.join(" ")} failed:\n${result.stdout}\n${result.stderr}`); return result; }
 const source = (path) => readFileSync(resolve(ROOT, path), "utf8");
 const delay = (ms) => new Promise((done) => setTimeout(done, ms));
@@ -85,6 +86,7 @@ function sourceChecks() {
   check("history fixture uses one fixed wall-clock-independent date contract", HISTORY_FIXTURE.operationalDate === "2026-08-06" && HISTORY_FIXTURE.dateFrom === HISTORY_FIXTURE.operationalDate && HISTORY_FIXTURE.dateTo === HISTORY_FIXTURE.operationalDate);
   check("history fixture contract is test-only", !source("src/App.jsx").includes("routineE2EFixtureContract") && !source("src/main.jsx").includes("routineE2EFixtureContract"));
   check("all 36 scenarios are declared exactly once", SCENARIOS.length === 36 && new Set(SCENARIOS.map(([id]) => id)).size === 36);
+  check("the previous 19px Evidence target fails the 48px regression threshold", !meetsTouchTarget({ width: 566, height: 19 }));
 }
 
 async function loadPlaywright() {
@@ -108,7 +110,7 @@ function stopServer() { if (server?.exitCode === null) server.kill("SIGTERM"); }
 async function auditPage(page) {
   return page.evaluate(() => {
     const visible = (node) => { const style = getComputedStyle(node); const rect = node.getBoundingClientRect(); return style.visibility !== "hidden" && style.display !== "none" && rect.width > 0 && rect.height > 0; };
-    const controls = [...document.querySelectorAll("button,a[href],input,select,textarea")].filter(visible);
+    const controls = [...document.querySelectorAll("button,a[href],input,select,textarea,summary")].filter(visible);
     const unnamed = controls.filter((node) => !(node.getAttribute("aria-label") || node.getAttribute("aria-labelledby") || node.labels?.length || node.textContent?.trim() || node.getAttribute("title"))).length;
     const unlabeledFields = controls.filter((node) => /^(INPUT|SELECT|TEXTAREA)$/.test(node.tagName) && node.type !== "hidden" && !(node.labels?.length || node.getAttribute("aria-label") || node.getAttribute("aria-labelledby"))).length;
     const smallTargetNodes = controls.filter((node) => { if (node.tagName === "INPUT" && ["checkbox", "radio"].includes(node.type) && node.labels?.length) return false; const rect = node.getBoundingClientRect(); return rect.height < 47.5 || rect.width < 47.5; });
@@ -122,7 +124,58 @@ async function auditPage(page) {
   });
 }
 
+async function exerciseReadinessSummaries(page, rpcStatuses, label = "scenario 18") {
+  const summaries = page.locator(".rh-pilot-health .rh-readiness-grid details > summary");
+  check(`${label} renders exactly 15 Evidence summaries`, await summaries.count() === 15);
+  const structure = await summaries.evaluateAll((nodes) => nodes.map((node) => ({
+    tag: node.tagName,
+    name: node.textContent?.trim(),
+    parentTag: node.parentElement?.tagName,
+    width: node.getBoundingClientRect().width,
+    height: node.getBoundingClientRect().height,
+  })));
+  check(`${label} preserves native details/summary semantics and accessible names`, structure.every((item) => item.tag === "SUMMARY" && item.parentTag === "DETAILS" && item.name === "Evidence"));
+  check(`${label} gives every Evidence summary an effective 48px target`, structure.every(meetsTouchTarget));
+
+  await page.evaluate(() => document.activeElement?.blur?.());
+  const keyboardOrder = [];
+  const focusTreatments = [];
+  for (let step = 0; step < 40 && keyboardOrder.length < 15; step += 1) {
+    await page.keyboard.press("Tab");
+    const active = await page.evaluate(() => {
+      const node = document.activeElement;
+      if (!node?.matches?.(".rh-pilot-health .rh-readiness-grid details > summary")) return null;
+      const style = getComputedStyle(node);
+      return { index: [...document.querySelectorAll(".rh-pilot-health .rh-readiness-grid details > summary")].indexOf(node), outlineStyle: style.outlineStyle, outlineWidth: Number.parseFloat(style.outlineWidth) || 0 };
+    });
+    if (active) { keyboardOrder.push(active.index); focusTreatments.push(active.outlineStyle !== "none" && active.outlineWidth >= 2); }
+  }
+  check(`${label} keyboard focus reaches every Evidence summary in logical order`, keyboardOrder.length === 15 && keyboardOrder.every((value, index) => value === index));
+  check(`${label} exposes visible focus treatment on every Evidence summary`, focusTreatments.length === 15 && focusTreatments.every(Boolean));
+
+  const rpcCountBefore = rpcStatuses.length;
+  const dialogCountBefore = await page.getByRole("dialog").count();
+  for (let index = 0; index < 15; index += 1) {
+    const summary = summaries.nth(index);
+    const details = summary.locator("xpath=..");
+    await summary.focus();
+    await summary.press("Enter");
+    check(`${label} Evidence ${index + 1} opens with Enter`, await details.getAttribute("open") !== null);
+    check(`${label} Evidence ${index + 1} exposes readable content`, await details.locator("pre").isVisible() && await details.locator("code").isVisible());
+    await summary.press("Enter");
+    check(`${label} Evidence ${index + 1} closes with Enter`, await details.getAttribute("open") === null);
+    await summary.press("Space");
+    check(`${label} Evidence ${index + 1} opens with Space`, await details.getAttribute("open") !== null);
+    await summary.press("Space");
+    check(`${label} Evidence ${index + 1} closes with Space`, await details.getAttribute("open") === null);
+  }
+  check(`${label} disclosure use activates no readiness action or dialog`, await page.getByRole("dialog").count() === dialogCountBefore);
+  check(`${label} disclosure use calls no manager mutation RPC`, rpcStatuses.length === rpcCountBefore);
+  console.log(`EVIDENCE TARGETS ${label} 15 native summaries ${Math.min(...structure.map((item) => item.width)).toFixed(1)}x${Math.min(...structure.map((item) => item.height)).toFixed(1)} minimum`);
+}
+
 async function exerciseScenario(page, id, rpcStatuses = []) {
+  if (id === 18) await exerciseReadinessSummaries(page, rpcStatuses);
   if ([3, 4, 35, 36].includes(id)) {
     try {
       await page.locator('[data-live-backend="passed"]').waitFor();
@@ -210,6 +263,26 @@ async function runVisuals() {
         minimumTouchTarget: audit.smallTargets === 0 ? ">=48px" : `${audit.smallTargets} below 48px`, screenshotPath });
       console.log(`VISUAL ${String(id).padStart(2, "0")} ${engine} ${width}x${height} PASS ${screenshotPath}`); await page.close();
     }
+    const webkitEvidence = await contexts.webkit[0].newPage();
+    const webkitRpcStatuses = []; const webkitErrors = [];
+    webkitEvidence.on("console", (message) => { if (message.type() === "error") webkitErrors.push(message.text()); });
+    webkitEvidence.on("pageerror", (error) => webkitErrors.push(error.message));
+    webkitEvidence.on("response", (response) => { if (response.url().includes("/rest/v1/")) webkitRpcStatuses.push({ status: response.status(), path: new URL(response.url()).pathname }); });
+    await webkitEvidence.addInitScript(({ storageKey, session }) => localStorage.setItem(storageKey, JSON.stringify(session)), {
+      storageKey: disposableBackend.storageKey,
+      session: disposableBackend.sessions.manager,
+    });
+    await webkitEvidence.setViewportSize({ width: 390, height: 844 });
+    await webkitEvidence.emulateMedia({ colorScheme: "dark", reducedMotion: "no-preference" });
+    await webkitEvidence.goto(`${BASE_URL}/routine-history-harness.html?scenario=readiness-details`, { waitUntil: "networkidle" });
+    await webkitEvidence.addStyleTag({ content: "html{font-size:200%!important}" });
+    await exerciseReadinessSummaries(webkitEvidence, webkitRpcStatuses, "authenticated disposable WebKit 390px/200%/dark");
+    const webkitAudit = await auditPage(webkitEvidence);
+    const oneColumn = await webkitEvidence.locator(".rh-readiness-grid").evaluate((node) => getComputedStyle(node).gridTemplateColumns.split(" ").filter(Boolean).length === 1);
+    check("authenticated disposable WebKit readiness uses the one-column mobile layout", oneColumn);
+    check("authenticated disposable WebKit readiness has no overflow or clipping at 390px/200%/dark", webkitAudit.overflow <= 1 && webkitAudit.smallTargets === 0);
+    check("authenticated disposable WebKit readiness has no console or page error", webkitErrors.length === 0);
+    await webkitEvidence.close();
     check("all 36 browser scenarios passed", results.length === 36 && results.every((result) => result.result === "PASS"));
     return results;
   } finally { for (const group of Object.values(contexts)) for (const context of group) await context.close().catch(() => {}); for (const browser of Object.values(browsers)) await browser.close().catch(() => {}); }
