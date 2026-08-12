@@ -344,7 +344,7 @@ textarea {
 
 .text-button {
   width: max-content;
-  min-height: 34px;
+  min-height: 48px;
   border: 0;
   background: transparent;
   color: var(--brand);
