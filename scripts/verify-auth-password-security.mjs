@@ -47,11 +47,65 @@ function explicitMinHeightPx(rule) {
   return match ? Number(match[1]) : null;
 }
 
+function selectorSpecificity(selector) {
+  const ids = (selector.match(/#[\w-]+/g) || []).length;
+  const classes = (selector.match(/\.[\w-]+|\[[^\]]+\]|:(?!:)[\w-]+/g) || []).length;
+  const elements = (selector
+    .replace(/#[\w-]+|\.[\w-]+|\[[^\]]+\]|::?[\w-]+(?:\([^)]*\))?/g, ' ')
+    .match(/(?:^|[\s>+~])(?:[a-z][\w-]*|\*)/gi) || [])
+    .filter((token) => !token.trim().endsWith('*')).length;
+  return ids * 100 + classes * 10 + elements;
+}
+
+function assertPasswordRecoveryTouchTarget(source) {
+  const rules = cssRules(source);
+  const targetRule = ruleWithExactSelectors(rules, ['.text-button']);
+  const targetMinimum = explicitMinHeightPx(targetRule);
+  assert.ok(targetRule, 'password recovery target requires the .text-button CSS contract');
+  assert.ok(targetMinimum >= 48, '.text-button must enforce at least a 48px target height');
+
+  const targetSpecificity = selectorSpecificity('.text-button');
+  const applicableHigherSpecificityOverrides = rules.flatMap((rule) =>
+    rule.selectors
+      .filter((selector) =>
+        selectorSpecificity(selector) > targetSpecificity &&
+        (selector.includes('.text-button') ||
+          /\.(?:login-shell|login-panel|login-form)\b[^,{}]*\bbutton\b/.test(selector))
+      )
+      .map((selector) => ({ selector, minimum: explicitMinHeightPx(rule) }))
+  ).filter(({ minimum }) => minimum !== null);
+
+  for (const { selector, minimum } of applicableHigherSpecificityOverrides) {
+    assert.ok(minimum >= 48, `${selector} lowers the password recovery target below 48px`);
+  }
+}
+
 test('login exposes a focused Forgot password flow without changing email normalization', () => {
   assert.match(login, /Forgot password\?/);
   assert.match(login, /mode === "password_recovery"/);
   assert.match(login, /normalizeAuthEmail\(email\)/);
   assert.equal(normalizeAuthEmail('  Bobby@Example.com  '), 'Bobby@Example.com');
+});
+
+test('password recovery control retains its Auth UI contract and a 48px effective target', () => {
+  assert.match(
+    login,
+    /<button\s+type="button"\s+className="text-button"[\s\S]*?>[\s\S]*?Forgot password\?[\s\S]*?<\/button>/,
+  );
+  assert.match(login, /<button[\s\S]*?>[\s\S]*?Email login[\s\S]*?<\/button>/);
+  assert.match(login, /<input[\s\S]*?id="auth-password"[\s\S]*?type="password"/);
+  assert.match(login, /<button\s+type="submit"\s+className="primary-button"[\s\S]*?Sign in with email/);
+  assert.doesNotThrow(() => assertPasswordRecoveryTouchTarget(styles));
+
+  const previous34pxState = styles.replace(
+    /(\.text-button\s*\{[\s\S]*?min-height:)\s*48px/,
+    '$1 34px',
+  );
+  assert.notEqual(previous34pxState, styles);
+  assert.throws(
+    () => assertPasswordRecoveryTouchTarget(previous34pxState),
+    /at least a 48px target height/,
+  );
 });
 
 test('recovery redirect uses the environment-aware application base URL', () => {
