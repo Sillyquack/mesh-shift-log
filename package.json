@@ -28,7 +28,7 @@
     "verify:phase9-security-db": "node scripts/verify-phase9-security-db.mjs",
     "verify:phase9-all": "node scripts/verify-phase9-all.mjs",
     "verify:event-operation-function-security": "node scripts/verify-event-operation-function-security.mjs",
-    "verify:event-operation-function-security-db": "node scripts/verify-event-operation-function-security-db.mjs",
+    "verify:event-operation-function-security-db": "node scripts/verify-event-operation-function-security-db-v2.mjs",
     "verify:routine-full-migration-reapply": "node scripts/verify-routine-full-migration-reapply.mjs",
     "verify:routine-foundation": "node scripts/verify-routine-foundation.mjs",
     "verify:routine-templates": "node scripts/verify-routine-templates.mjs",
