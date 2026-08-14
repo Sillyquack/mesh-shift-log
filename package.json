@@ -33,6 +33,7 @@
     "verify:routine-reference-images": "node scripts/verify-routine-reference-images.mjs",
     "verify:julie-event-routines": "node scripts/verify-julie-event-routines.mjs",
     "verify:event-operator-experience": "node scripts/verify-event-operator-experience.mjs",
+    "verify:event-visual-reference-bridge": "node scripts/verify-event-visual-reference-bridge.mjs",
     "verify:mesh-experience-system": "node scripts/verify-mesh-experience-system.mjs",
     "verify:production-candidate-experience": "node scripts/verify-production-candidate-experience.mjs",
     "verify:routine-runs": "node scripts/verify-routine-runs.mjs",
