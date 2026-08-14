@@ -74,11 +74,17 @@ assert.doesNotMatch(
 
 // The original Stock Count product promise: saved standards make a matching fridge a one-tap count.
 assert.match(experience, /function StandardMatchPanel/);
-assert.match(experience, /Done — \$\{locationKind\} matches standard/);
+assert.match(experience, /Done — count & next \$\{locationKind\}/);
 assert.match(experience, /No — count differences/);
 assert.match(experience, /By tapping Done, you confirm that you physically checked this entire \{locationKind\}/);
-assert.match(experience, /one tap counts this \{locationKind\} and opens Review/);
-assert.match(experience, /message: `\$\{assignment\.location\.name\} matches its saved standard and is counted\.`/);
+assert.match(experience, /one tap counts and sends this \{locationKind\} for manager review, then opens the next assigned location/);
+assert.match(experience, /const applied = await applyInventoryCounterRefrigeratorDefault/);
+assert.match(experience, /const workspace = await loadInventoryCounterWorkspace/);
+assert.match(experience, /const submitted = await submitInventoryCountAssignment/);
+assert.match(experience, /expectedAssignmentRevision: updatedAssignment\.revision/);
+assert.match(experience, /expectedSessionUpdatedAt: updatedAssignment\.session\.updatedAt/);
+assert.match(experience, /Your next location is ready/);
+assert.match(experience, /no count was lost/);
 assert.match(experience, /setView\('review'\)/);
 assert.match(experience, /Your next location is ready/);
 assert.match(experience, /setView\('home'\)/);

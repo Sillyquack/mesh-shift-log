@@ -121,9 +121,12 @@ test('all preserved Stock Count danger checkbox rows use explicit text wrappers'
   rows.forEach((row) => assert.match(row[0], /<span>[\s\S]*?<\/span>/));
 });
 
-test('focused Count Mode keeps physical confirmation explicit and readable', () => {
-  assert.match(counterExperience, /I physically checked this entire location/);
-  assert.match(counterExperience, /<label>[\s\S]*?<input[\s\S]*?type="checkbox"[\s\S]*?<span>I physically checked this entire location<\/span>/);
+test('focused Count Mode keeps one-tap physical confirmation explicit and readable', () => {
+  assert.match(counterExperience, /By tapping Done, you confirm that you physically checked this entire \{locationKind\}/);
+  assert.match(counterExperience, /This \{locationKind\} is counted at its saved standard and submitted for manager review/);
+  assert.match(counterExperience, /Done — count & next \$\{locationKind\}/);
+  assert.match(counterExperience, /physicalConfirmation: true/);
+  assert.doesNotMatch(counterExperience, /<StandardMatchPanel[\s\S]*?type="checkbox"/);
 });
 
 test('ordinary form inputs retain full sizing while checkbox overrides stay scoped', () => {

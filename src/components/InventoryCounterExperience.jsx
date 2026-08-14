@@ -544,7 +544,7 @@ function StandardMatchPanel({
           <h2>Does this {locationKind} match its saved standard?</h2>
           <p>
             Check every product in {locationName}. When everything is stocked exactly to its saved standard,
-            one tap counts this {locationKind} and opens Review.
+            one tap counts and sends this {locationKind} for manager review, then opens the next assigned location.
           </p>
         </div>
         <span className="counter-experience-standard-mark" aria-hidden="true">✓</span>
@@ -574,7 +574,7 @@ function StandardMatchPanel({
           disabled={!canApply}
           onClick={onApply}
         >
-          {busy ? 'Counting…' : `Done — ${locationKind} matches standard`}
+          {busy ? 'Counting & sending…' : `Done — count & next ${locationKind}`}
         </button>
         <button
           type="button"
@@ -586,7 +586,7 @@ function StandardMatchPanel({
         </button>
       </div>
       <small>
-        By tapping Done, you confirm that you physically checked this entire {locationKind}. The same product in another fridge remains a separate count.
+        By tapping Done, you confirm that you physically checked this entire {locationKind}. This {locationKind} is counted at its saved standard and submitted for manager review. The same product in another fridge remains a separate count.
         Existing saved values, notes and deviations are never overwritten.
       </small>
     </section>
@@ -979,23 +979,101 @@ export default function InventoryCounterExperience({ requestWriteAccess, onClose
   };
 
   const applyDefault = async () => {
-    const result = await run(
-      'default',
-      () => applyInventoryCounterRefrigeratorDefault({
-        assignmentId: assignment.id,
-        physicalConfirmation: true,
-        expectedAssignmentRevision: assignment.revision,
-      }),
-      { quietSuccess: true },
-    );
-    if (result?.ok) {
+  if (operationRef.current) return;
+  const operationId = 'default-submit';
+  operationRef.current = operationId;
+  setBusyId(operationId);
+  setStatus(null);
+  try {
+    if (!(await requestWriteAccess())) {
+      setStatus({
+        ok: false,
+        mode: 'auth_required',
+        message: 'Your Stock Count sign-in could not be verified. No refrigerator count was changed.',
+      });
+      return;
+    }
+
+    const applied = await applyInventoryCounterRefrigeratorDefault({
+      assignmentId: assignment.id,
+      physicalConfirmation: true,
+      expectedAssignmentRevision: assignment.revision,
+    });
+    if (!applied.ok) {
+      setStatus(applied);
+      return;
+    }
+
+    const workspace = await loadInventoryCounterWorkspace();
+    if (!workspace.ok) {
+      setStatus({
+        ok: false,
+        mode: workspace.mode || 'sync_error',
+        message: `${assignment.location.name} was counted from its saved standard, but the app could not confirm the handoff. Refresh safely before continuing; no count was lost.`,
+      });
+      setView('review');
+      return;
+    }
+
+    const updatedAssignment = workspace.assignments.find((item) => item.id === assignment.id);
+    if (!updatedAssignment) {
+      setStatus({
+        ok: false,
+        mode: 'sync_error',
+        message: `${assignment.location.name} was counted, but its refreshed assignment could not be found. Refresh safely before continuing; no count was lost.`,
+      });
+      setView('home');
+      return;
+    }
+
+    setAssignments(workspace.assignments);
+    setDrafts((current) => reconcileCounterDrafts(current, workspace.assignments));
+    setSelectedId(updatedAssignment.id);
+
+    const remaining = updatedAssignment.lines.filter((line) => line.countStatus !== 'counted');
+    if (remaining.length) {
+      setActiveLineId(remaining[0].id);
+      setStatus({
+        ok: true,
+        mode: 'manual_count_required',
+        message: `${remaining.length} ${remaining.length === 1 ? 'product does' : 'products do'} not use the saved exact standard. Count only the remaining differences.`,
+      });
+      setView('count');
+      return;
+    }
+
+    const submitted = await submitInventoryCountAssignment({
+      assignmentId: updatedAssignment.id,
+      expectedAssignmentRevision: updatedAssignment.revision,
+      expectedSessionUpdatedAt: updatedAssignment.session.updatedAt,
+    });
+    if (!submitted.ok) {
+      setStatus({
+        ...submitted,
+        message: `${updatedAssignment.location.name} is counted, but was not sent for manager review. Open Review and retry the handoff; no count was lost.`,
+      });
+      setView('review');
+      return;
+    }
+
+    await refresh();
+    setActiveLineId('');
     setStatus({
       ok: true,
-      message: `${assignment.location.name} matches its saved standard and is counted.`,
+      message: `${updatedAssignment.location.name} was counted and sent for manager review. Your next location is ready.`,
     });
-    setView('review');
+    setView('home');
+  } catch (error) {
+    setStatus({
+      ok: false,
+      mode: 'sync_error',
+      message: error?.message || 'The saved-standard count could not be completed. Refresh safely before retrying.',
+    });
+  } finally {
+    operationRef.current = '';
+    setBusyId('');
   }
-  };
+};
 
   const submit = async () => {
     const result = await run(

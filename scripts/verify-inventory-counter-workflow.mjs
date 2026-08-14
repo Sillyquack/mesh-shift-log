@@ -126,7 +126,12 @@ test('session completion is manager-owned and blocked until every assignment is 
 test('counter interface has only assigned counting, incomplete navigation, default confirmation, and exact submission semantics', () => {
   assert.match(counterExperience, /Next incomplete/);
   assert.match(counterExperience, /By tapping Done, you confirm that you physically checked this entire \{locationKind\}/);
-  assert.match(counterExperience, /Done — \$\{locationKind\} matches standard/);
+  assert.match(counterExperience, /Done — count & next \$\{locationKind\}/);
+  assert.match(counterExperience, /const applied = await applyInventoryCounterRefrigeratorDefault/);
+  assert.match(counterExperience, /const workspace = await loadInventoryCounterWorkspace/);
+  assert.match(counterExperience, /const submitted = await submitInventoryCountAssignment/);
+  assert.match(counterExperience, /expectedAssignmentRevision: updatedAssignment\.revision/);
+  assert.match(counterExperience, /expectedSessionUpdatedAt: updatedAssignment\.session\.updatedAt/);
   assert.match(counterExperience, /No — count differences/);
   assert.match(counterExperience, /physicalConfirmation: true/);
   assert.match(counterExperience, /Send location to Bobby/);
