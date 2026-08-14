@@ -10,7 +10,7 @@ permissions:
 
 jobs:
   upgrade:
-    if: "${{ github.event.head_commit.message == 'ci: run one-tap fridge standard upgrade' }}"
+    if: "${{ github.event.head_commit.message == 'ci: retry one-tap fridge standard upgrade' }}"
     runs-on: ubuntu-latest
     timeout-minutes: 15
     steps:
@@ -37,6 +37,8 @@ jobs:
           start = workflow.index(start_marker) + len(start_marker)
           end = workflow.index(end_marker, start)
           patch_code = textwrap.dedent(workflow[start:end])
+          patch_code = patch_code.replace("old_count_entry = r'''", "old_count_entry = '''")
+          patch_code = patch_code.replace("new_count_entry = r'''", "new_count_entry = '''")
           exec(compile(patch_code, 'one-tap-fridge-standard-patch', 'exec'))
           PY
 
