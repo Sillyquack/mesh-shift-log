@@ -1,0 +1,63 @@
+body.event-operator-session main.page:has(> .event-board-create-details) > .manager-list:has(> label > select) {
+  display: block !important;
+  margin: 0 0 14px;
+  padding: 0;
+  border: 0;
+  background: transparent;
+  box-shadow: none;
+}
+
+body.event-operator-session main.page:has(> .event-board-create-details) > .manager-list:has(> label > select) > :not(label) {
+  display: none !important;
+}
+
+body.event-operator-session main.page:has(> .event-board-create-details) > .manager-list:has(> label > select) > label {
+  display: flex;
+  align-items: center;
+  gap: 14px;
+  margin: 0;
+  padding: 10px 12px 10px 17px;
+  border: 1px solid rgba(255, 255, 255, 0.1);
+  border-radius: 19px;
+  background: linear-gradient(145deg, rgba(24, 23, 21, 0.96), rgba(39, 35, 29, 0.96));
+  color: rgba(255, 255, 255, 0.58);
+  font-size: 0.72rem;
+  font-weight: 900;
+  letter-spacing: 0.13em;
+  text-transform: uppercase;
+  box-shadow: 0 16px 44px rgba(24, 19, 12, 0.14);
+}
+
+body.event-operator-session main.page:has(> .event-board-create-details) > .manager-list:has(> label > select) select {
+  flex: 1;
+  min-width: 0;
+  min-height: 44px;
+  margin: 0;
+  padding: 0 42px 0 14px;
+  border: 1px solid rgba(214, 166, 93, 0.2);
+  border-radius: 14px;
+  background-color: rgba(255, 255, 255, 0.07);
+  color: #fffdf7;
+  font: inherit;
+  font-size: 0.9rem;
+  font-weight: 800;
+  letter-spacing: normal;
+  text-transform: none;
+  cursor: pointer;
+}
+
+body.event-operator-session main.page:has(> .event-board-create-details) > .manager-list:has(> label > select) select:focus-visible {
+  outline: 3px solid rgba(214, 166, 93, 0.32);
+  outline-offset: 2px;
+}
+
+@media (max-width: 620px) {
+  body.event-operator-session main.page:has(> .event-board-create-details) > .manager-list:has(> label > select) > label {
+    display: grid;
+    gap: 8px;
+  }
+
+  body.event-operator-session main.page:has(> .event-board-create-details) > .manager-list:has(> label > select) select {
+    width: 100%;
+  }
+}
