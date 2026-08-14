@@ -7,6 +7,7 @@ import './design-system/MeshExperienceSystem.css';
 import './components/EventOperatorExperience.css';
 import './components/EventOperatorEventPicker.css';
 import './experience/ProductionCandidateExperience.css';
+import './experience/RoutineStudioExperience.css';
 
 createRoot(document.getElementById('root')).render(
   <React.StrictMode>
