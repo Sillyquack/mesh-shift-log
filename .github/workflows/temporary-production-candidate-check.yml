@@ -11,7 +11,7 @@ permissions:
 jobs:
   verify-production-candidate:
     runs-on: ubuntu-latest
-    timeout-minutes: 30
+    timeout-minutes: 35
     steps:
       - name: Checkout
         uses: actions/checkout@v4
@@ -36,21 +36,17 @@ jobs:
           npm run verify:mesh-experience-system
           npm run verify:inventory-counter-experience
 
-      - name: Verify manager, visual and history contracts
-        shell: bash
+      - name: Provision disposable Supabase verifier image
         run: |
-          set +e
-          status=0
-          for check in \
-            verify:routine-manager-ui \
-            verify:routine-reference-images \
-            verify:routine-history-pilot \
-            verify:routine-content-pack \
-            verify:routine-content-visual
-          do
-            npm run "$check" || status=1
-          done
-          exit "$status"
+          docker pull supabase/postgres:17.6.1.141
+          docker tag supabase/postgres:17.6.1.141 public.ecr.aws/supabase/postgres:17.6.1.141
+
+      - name: Verify manager, visual and history contracts
+        run: |
+          npm run verify:routine-manager-ui
+          npm run verify:routine-reference-images
+          npm run verify:routine-history-pilot
+          npm run verify:routine-ui-foundation
 
       - name: Build production bundle
         run: npm run build
