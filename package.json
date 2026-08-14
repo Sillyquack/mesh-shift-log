@@ -17,6 +17,7 @@
     "verify:inventory-counter-workflow": "node scripts/verify-inventory-counter-workflow.mjs",
     "verify:inventory-counter-replacement": "node scripts/verify-inventory-counter-replacement.mjs",
     "verify:inventory-counter-mobile": "node scripts/verify-inventory-counter-mobile.mjs",
+    "verify:inventory-counter-experience": "node scripts/verify-inventory-counter-experience.mjs",
     "verify:inventory-session-location-scope": "node scripts/verify-inventory-session-location-scope.mjs",
     "verify:inventory-confirmation-dialog": "node scripts/verify-inventory-confirmation-dialog.mjs",
     "verify:inventory-variance-notes": "node scripts/verify-inventory-variance-notes.mjs",
