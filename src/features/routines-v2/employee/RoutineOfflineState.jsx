@@ -1,25 +1,77 @@
+export const ROUTINE_SYNC_DIAGNOSTICS = Object.freeze({
+  statusLabel: Object.freeze({
+    disconnected: "Realtime disconnected",
+    catchUpFailed: "Realtime refresh failed",
+  }),
+  serverConfirmationPending: "server confirmation pending",
+  isServerConfirmed(sync, status) {
+    return sync.serverConfirmed === true
+      && !["disconnected", "catch_up_failed"].includes(status);
+  },
+});
+
+function humanizeState(value) {
+  return ({
+    local_draft: "Draft kept on this device",
+    queued: "Waiting to send",
+    sending: "Sending now",
+    sync_pending: "Waiting for confirmation",
+    conflict: "Needs your review",
+    rejected: "Could not be saved",
+    auth_required: "Sign-in required",
+    operator_auth_required: "Operator sign-in required",
+  })[value] || "Saved";
+}
+
 export default function RoutineOfflineState({ sync = {}, overlay = [] }) {
   const pending = overlay.filter((item) => ["queued", "sending", "sync_pending"].includes(item.state)).length;
   const conflicts = overlay.filter((item) => item.state === "conflict").length;
-  const realtime = sync.transport === "postgres_realtime";
-  const cursorPolling = sync.transport === "cursor_polling";
+  const failures = overlay.filter((item) => ["rejected", "auth_required", "operator_auth_required"].includes(item.state)).length;
   const status = sync.status || "disabled";
-  const statusLabel = realtime
-    ? ({ current: "Realtime connected", online: "Realtime connected", connecting: "Realtime connecting", catching_up: "Realtime checking updates",
-      disconnected: "Realtime disconnected", catch_up_failed: "Realtime refresh failed", disabled: "Realtime paused" }[status] || "Realtime status unavailable")
-    : cursorPolling
-      ? ({ current: "Cursor polling current", online: "Cursor polling current", connecting: "Cursor polling connecting", catching_up: "Cursor polling for updates",
-        disconnected: "Cursor polling disconnected", catch_up_failed: "Cursor refresh failed", auth_required: "Cursor polling authentication required",
-        paused_auth: "Cursor polling authentication required", disabled: "Cursor polling paused" }[status] || "Cursor polling status unavailable")
-      : ({ queued: "Offline draft queue", disconnected: "Offline", disabled: "Synchronization paused" }[status] || "Offline synchronization pending");
-  const cacheLabel = sync.serverConfirmed === true && !["disconnected", "catch_up_failed"].includes(status)
-    ? "server cache confirmed"
-    : "server confirmation pending";
-  return <section className="employee-offline" aria-live="polite" aria-label="Synchronization status">
-    <span className="employee-pulse" aria-hidden="true" /><div><strong>{statusLabel}</strong>
-      <small>{pending} pending · {conflicts} conflicts · {cacheLabel}</small>
-      {overlay.length > 0 && <ul>{overlay.map((entry) => <li key={entry.operationId}>{({ local_draft: "Local draft", queued: "Queued", sending: "Sending",
-        sync_pending: "Sync pending", conflict: "Conflict", rejected: "Rejected", auth_required: "Auth required",
-        operator_auth_required: "Operator reauthentication required" })[entry.state] ?? "Server confirmed"}</li>)}</ul>}</div>
-  </section>;
+  const needsSignIn = ["auth_required", "paused_auth"].includes(status) || failures > 0;
+  const offline = ["disconnected", "queued"].includes(status);
+  const checking = ["connecting", "catching_up"].includes(status);
+  const failed = status === "catch_up_failed";
+
+  const label = needsSignIn
+    ? "Sign in again to keep saving"
+    : failed
+      ? "Updates need attention"
+      : offline
+        ? "Working offline"
+        : checking
+          ? "Checking for updates"
+          : pending
+            ? "Saving your recent work"
+            : conflicts
+              ? "One item needs your review"
+              : "Everything is up to date";
+
+  const summary = [
+    pending ? `${pending} waiting to send` : "",
+    conflicts ? `${conflicts} need review` : "",
+    !pending && !conflicts && !failures ? "Your work is safe" : "",
+  ].filter(Boolean).join(" · ");
+
+  const tone = needsSignIn || failed ? "error" : offline || checking || pending || conflicts ? "attention" : "current";
+
+  return (
+    <section className={`employee-offline is-${tone}`} aria-live="polite" aria-label="Work status">
+      <span className="employee-pulse" aria-hidden="true" />
+      <div>
+        <strong>{label}</strong>
+        <small>{summary}</small>
+        {overlay.length > 0 ? (
+          <details>
+            <summary>Show saved-work details</summary>
+            <ul>
+              {overlay.map((entry) => (
+                <li key={entry.operationId}>{humanizeState(entry.state)}</li>
+              ))}
+            </ul>
+          </details>
+        ) : null}
+      </div>
+    </section>
+  );
 }

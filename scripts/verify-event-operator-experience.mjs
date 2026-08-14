@@ -1,13 +1,14 @@
 import assert from "node:assert/strict";
 import { readFile } from "node:fs/promises";
 
-const [operator, router, managerCockpit, styles, pickerStyles, permissions] = await Promise.all([
+const [operator, router, managerCockpit, styles, pickerStyles, permissions, browserEntry] = await Promise.all([
   readFile(new URL("../src/components/EventOperatorExperience.jsx", import.meta.url), "utf8"),
   readFile(new URL("../src/components/EventOperationsCockpit.jsx", import.meta.url), "utf8"),
   readFile(new URL("../src/components/ManagerEventOperationsCockpit.jsx", import.meta.url), "utf8"),
   readFile(new URL("../src/components/EventOperatorExperience.css", import.meta.url), "utf8"),
   readFile(new URL("../src/components/EventOperatorEventPicker.css", import.meta.url), "utf8"),
   readFile(new URL("../src/lib/permissions.js", import.meta.url), "utf8"),
+  readFile(new URL("../src/main.jsx", import.meta.url), "utf8"),
 ]);
 
 assert.match(operator, /role\) === "event_floor_manager"/, "Event Mode must be role-gated");
@@ -60,8 +61,9 @@ assert.match(pickerStyles, /\.manager-list:has\(> label > select\)/, "Focused mu
 assert.match(pickerStyles, /> :not\(label\)/, "Event selector must hide the underlying board noise");
 assert.match(styles, /@media \(max-width: 760px\)/, "Mobile layout missing");
 assert.match(styles, /prefers-reduced-motion/, "Reduced-motion support missing");
-assert.match(permissions, /import "\.\.\/components\/EventOperatorExperience\.css"/, "Event Mode CSS must load before lazy views");
-assert.match(permissions, /import "\.\.\/components\/EventOperatorEventPicker\.css"/, "Event selector CSS must load before lazy views");
+assert.match(browserEntry, /import '\.\/components\/EventOperatorExperience\.css'/, "Event Mode CSS must load from the browser entry");
+assert.match(browserEntry, /import '\.\/components\/EventOperatorEventPicker\.css'/, "Event selector CSS must load from the browser entry");
+assert.doesNotMatch(permissions, /\.css["']/, "Permission logic must remain importable by Node verifiers");
 assert.match(permissions, /classList\.toggle\('event-operator-session'/, "Role class bridge missing");
 
 console.log("Verified the role-gated, English, low-noise Event Mode, focused event selector and preserved Manager Cockpit.");
