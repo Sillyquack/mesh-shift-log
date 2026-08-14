@@ -1,9 +1,11 @@
 import assert from "node:assert/strict";
 import { eventTaskTemplates } from "../src/data/eventTaskTemplates.js";
 import { eventRigGuides, rigGuidesForSignals } from "../src/data/eventRigGuides.js";
+import { knowledgeBase } from "../src/data/routines.js";
 
 const byTemplateId = new Map(eventTaskTemplates.map((template) => [template.id, template]));
 const guideIds = new Set(eventRigGuides.map((guide) => guide.id));
+const knowledgeGuideIds = new Set(knowledgeBase.map((guide) => guide.id));
 
 assert.equal(byTemplateId.size, eventTaskTemplates.length, "Template IDs must be unique");
 assert.equal(guideIds.size, eventRigGuides.length, "Rig guide IDs must be unique");
@@ -18,6 +20,7 @@ for (const template of eventTaskTemplates) {
     const hasEndTiming = Number.isFinite(item.offsetMinutesFromEnd);
     assert.notEqual(hasStartTiming, hasEndTiming, `${template.id}/${item.id} must have exactly one timing anchor`);
     if (item.rigRef) assert.ok(guideIds.has(item.rigRef), `${template.id}/${item.id} has unknown rigRef ${item.rigRef}`);
+    if (item.guideRef) assert.ok(knowledgeGuideIds.has(item.guideRef), `${template.id}/${item.id} has unknown guideRef ${item.guideRef}`);
     assert.ok(item.title && item.description && item.zone, `${template.id}/${item.id} is incomplete`);
   }
 }
