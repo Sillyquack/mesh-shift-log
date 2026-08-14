@@ -1,3 +1,15 @@
+export const ROUTINE_SYNC_DIAGNOSTICS = Object.freeze({
+  statusLabel: Object.freeze({
+    disconnected: "Realtime disconnected",
+    catchUpFailed: "Realtime refresh failed",
+  }),
+  serverConfirmationPending: "server confirmation pending",
+  isServerConfirmed(sync, status) {
+    return sync.serverConfirmed === true
+      && !["disconnected", "catch_up_failed"].includes(status);
+  },
+});
+
 function humanizeState(value) {
   return ({
     local_draft: "Draft kept on this device",
