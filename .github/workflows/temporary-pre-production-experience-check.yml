@@ -9,9 +9,9 @@ permissions:
   contents: read
 
 jobs:
-  verify-source-and-build:
+  verify-pre-production:
     runs-on: ubuntu-latest
-    timeout-minutes: 20
+    timeout-minutes: 90
     steps:
       - name: Checkout
         uses: actions/checkout@v4
@@ -32,6 +32,38 @@ jobs:
           npm run verify:mesh-experience-system
           npm run verify:inventory-counter-experience
           npm run verify:pre-production-experience
+
+      - name: Provision disposable Supabase PostgreSQL image
+        run: |
+          docker pull supabase/postgres:17.6.1.141
+          docker tag supabase/postgres:17.6.1.141 public.ecr.aws/supabase/postgres:17.6.1.141
+
+      - name: Verify Phase 9 inventory stack
+        run: npm run verify:phase9-all
+
+      - name: Verify Routine Engine migration layers
+        run: |
+          npm run verify:routine-full-migration-reapply
+          npm run verify:routine-foundation
+          npm run verify:routine-templates
+          npm run verify:routine-reference-images
+          npm run verify:routine-runs
+          npm run verify:routine-lifecycle
+          npm run verify:routine-operational-time
+          npm run verify:routine-delivery
+          npm run verify:routine-double-shift
+          npm run verify:routine-sync-offline
+          npm run verify:routine-shared-device
+
+      - name: Verify Routine Engine application and release layers
+        run: |
+          npm run verify:routine-ui-foundation
+          npm run verify:routine-manager-ui
+          npm run verify:routine-employee-ui
+          npm run verify:routine-history-pilot
+          npm run verify:routine-content-pack
+          npm run verify:routine-content-visual
+          npm run verify:routine-e2e-pilot
 
       - name: Build production bundle
         run: npm run build
