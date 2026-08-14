@@ -8,7 +8,10 @@ const replacementMigration = readFileSync(new URL('../supabase/phase9gb2_invento
 const mobileMigration = readFileSync(new URL('../supabase/phase9gc_inventory_counter_mobile.sql', import.meta.url), 'utf8');
 const terminalMigration = readFileSync(new URL('../supabase/phase9j_inventory_shelf_storage_guidance.sql', import.meta.url), 'utf8');
 const client = readFileSync(new URL('../src/lib/inventoryClient.js', import.meta.url), 'utf8');
-const workflows = readFileSync(new URL('../src/components/InventoryCounterWorkflows.jsx', import.meta.url), 'utf8');
+const router = readFileSync(new URL('../src/components/InventoryCounterWorkflows.jsx', import.meta.url), 'utf8');
+const legacyWorkflows = readFileSync(new URL('../src/components/InventoryCounterWorkflowsLegacy.jsx', import.meta.url), 'utf8');
+const counterExperience = readFileSync(new URL('../src/components/InventoryCounterExperience.jsx', import.meta.url), 'utf8');
+const workflows = `${router}\n${legacyWorkflows}\n${counterExperience}`;
 const workspace = readFileSync(new URL('../src/components/InventoryWorkspace.jsx', import.meta.url), 'utf8');
 const permissions = readFileSync(new URL('../src/lib/permissions.js', import.meta.url), 'utf8');
 const app = readFileSync(new URL('../src/App.jsx', import.meta.url), 'utf8');
@@ -120,17 +123,18 @@ test('session completion is manager-owned and blocked until every assignment is 
   assert.match(migration, /before update of status on public\.inventory_count_sessions/);
 });
 
-test('counter interface has only assigned counting, incomplete navigation, default confirmation, and exact submission label', () => {
-  assert.match(workflows, /Next incomplete/);
-  assert.match(workflows, /I physically checked this location/);
-  assert.match(workflows, /Ferdig – send til Bobby/);
-  assert.match(workflows, /It does not complete or approve the Stock Count/);
-  const counterUi = workflows.slice(workflows.indexOf('export function CounterInventoryWorkspace'), workflows.indexOf('function assignmentReview'));
-  assert.doesNotMatch(counterUi, /downloadCsv|Export CSV|History tab|Approve stock count|Create correction|Save current count as default/i);
+test('counter interface has only assigned counting, incomplete navigation, default confirmation, and exact submission semantics', () => {
+  assert.match(counterExperience, /Next incomplete/);
+  assert.match(counterExperience, /I physically checked this entire location/);
+  assert.match(counterExperience, /Send location to Bobby/);
+  assert.match(counterExperience, /Bobby still owns review and final session approval/);
+  assert.match(router, /InventoryCounterExperience/);
+  assert.doesNotMatch(counterExperience, /downloadCsv|Export CSV|History tab|Approve stock count|Create correction|Save current count as default/i);
 });
 
 test('manager review shows required operational evidence and generic location actions', () => {
-  for (const label of ['Counter authorization', 'Assign countable locations', 'Manager review', 'recorded', 'incomplete', 'deviations', 'extra products', 'Line notes', 'Submitted', 'Return message', 'Return for correction', 'Assign location']) assert.ok(workflows.includes(label), label);
+  for (const label of ['Counter authorization', 'Assign countable locations', 'Manager review', 'recorded', 'incomplete', 'deviations', 'extra products', 'Line notes', 'Submitted', 'Return message', 'Return for correction', 'Assign location']) assert.ok(legacyWorkflows.includes(label), label);
+  assert.match(router, /CounterAssignmentManager/);
   assert.match(workspace, /\['assignments', 'Counters', 'Assign a helper to one counting location\.'\]/);
 });
 

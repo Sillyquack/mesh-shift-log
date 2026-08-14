@@ -5,7 +5,9 @@ import { PHASE9_TERMINAL_MIGRATION, validatedPhase9MigrationEntries } from './ph
 
 const migration = readFileSync(new URL('../supabase/phase9gb2_inventory_counter_replacement.sql', import.meta.url), 'utf8');
 const client = readFileSync(new URL('../src/lib/inventoryClient.js', import.meta.url), 'utf8');
-const workflows = readFileSync(new URL('../src/components/InventoryCounterWorkflows.jsx', import.meta.url), 'utf8');
+const router = readFileSync(new URL('../src/components/InventoryCounterWorkflows.jsx', import.meta.url), 'utf8');
+const legacyWorkflows = readFileSync(new URL('../src/components/InventoryCounterWorkflowsLegacy.jsx', import.meta.url), 'utf8');
+const counterExperience = readFileSync(new URL('../src/components/InventoryCounterExperience.jsx', import.meta.url), 'utf8');
 const runner = readFileSync(new URL('./verify-phase9-security-db.mjs', import.meta.url), 'utf8');
 const assertions = readFileSync(new URL('../supabase/tests/phase9/counter-replacement-assertions.sql', import.meta.url), 'utf8');
 
@@ -107,9 +109,9 @@ test('client carries replacement audit fields and calls only the guarded RPC', (
 });
 
 test('manager UI shows replacement choice, reason, data treatment, and immediate-access warning', () => {
-  for (const label of ['Bytt teller', 'Replacement counter', 'Required replacement reason', 'Preserve quantities, notes, and original line audit', 'Clear never-submitted working data', 'Immediate access change', 'Replace counter', 'Superseded assignments']) assert.ok(workflows.includes(label), label);
-  const counterUi = workflows.slice(workflows.indexOf('export function CounterInventoryWorkspace'), workflows.indexOf('function assignmentReview'));
-  assert.doesNotMatch(counterUi, /Bytt teller|Replace counter|replacement reason/i);
+  for (const label of ['Bytt teller', 'Replacement counter', 'Required replacement reason', 'Preserve quantities, notes, and original line audit', 'Clear never-submitted working data', 'Immediate access change', 'Replace counter', 'Superseded assignments']) assert.ok(legacyWorkflows.includes(label), label);
+  assert.match(router, /CounterAssignmentManager/);
+  assert.doesNotMatch(counterExperience, /Bytt teller|Replace counter|replacement reason/i);
 });
 
 test('focused PostgreSQL assertions cover replacement authorization and immutable history', () => {

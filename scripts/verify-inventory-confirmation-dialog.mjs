@@ -3,7 +3,8 @@ import { readFileSync } from 'node:fs';
 import test from 'node:test';
 
 const workspace = readFileSync(new URL('../src/components/InventoryWorkspace.jsx', import.meta.url), 'utf8');
-const counterWorkflows = readFileSync(new URL('../src/components/InventoryCounterWorkflows.jsx', import.meta.url), 'utf8');
+const legacyCounterWorkflows = readFileSync(new URL('../src/components/InventoryCounterWorkflowsLegacy.jsx', import.meta.url), 'utf8');
+const counterExperience = readFileSync(new URL('../src/components/InventoryCounterExperience.jsx', import.meta.url), 'utf8');
 const styles = readFileSync(new URL('../src/styles.css', import.meta.url), 'utf8');
 
 const dialogStart = workspace.indexOf('{bulkReview && (');
@@ -111,10 +112,18 @@ test('desktop modal sizing and action layout remain intact', () => {
   assert.match(styles, /\.inventory-action-row[\s\S]*?display:\s*flex;/);
 });
 
-test('all Stock Count danger checkbox rows use explicit text wrappers', () => {
-  const rows = [...workspace.matchAll(/<label className="inventory-danger-option"[\s\S]*?<\/label>/g), ...counterWorkflows.matchAll(/<label className="inventory-danger-option"[\s\S]*?<\/label>/g)];
+test('all preserved Stock Count danger checkbox rows use explicit text wrappers', () => {
+  const rows = [
+    ...workspace.matchAll(/<label className="inventory-danger-option"[\s\S]*?<\/label>/g),
+    ...legacyCounterWorkflows.matchAll(/<label className="inventory-danger-option"[\s\S]*?<\/label>/g),
+  ];
   assert.ok(rows.length >= 5);
   rows.forEach((row) => assert.match(row[0], /<span>[\s\S]*?<\/span>/));
+});
+
+test('focused Count Mode keeps physical confirmation explicit and readable', () => {
+  assert.match(counterExperience, /I physically checked this entire location/);
+  assert.match(counterExperience, /<label>[\s\S]*?<input[\s\S]*?type="checkbox"[\s\S]*?<span>I physically checked this entire location<\/span>/);
 });
 
 test('ordinary form inputs retain full sizing while checkbox overrides stay scoped', () => {

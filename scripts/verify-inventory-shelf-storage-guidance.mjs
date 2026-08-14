@@ -22,7 +22,7 @@ import {
 const migration = readFileSync(new URL('../supabase/phase9j_inventory_shelf_storage_guidance.sql', import.meta.url), 'utf8');
 const assertions = readFileSync(new URL('../supabase/tests/phase9/shelf-storage-guidance-assertions.sql', import.meta.url), 'utf8');
 const workspace = readFileSync(new URL('../src/components/InventoryWorkspace.jsx', import.meta.url), 'utf8');
-const counterWorkspace = readFileSync(new URL('../src/components/InventoryCounterWorkflows.jsx', import.meta.url), 'utf8');
+const counterWorkspace = readFileSync(new URL('../src/components/InventoryCounterExperience.jsx', import.meta.url), 'utf8');
 const guidanceComponent = readFileSync(new URL('../src/components/LocationReferenceGuidance.jsx', import.meta.url), 'utf8');
 const client = readFileSync(new URL('../src/lib/inventoryClient.js', import.meta.url), 'utf8');
 const styles = readFileSync(new URL('../src/styles.css', import.meta.url), 'utf8');
