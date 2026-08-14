@@ -31,6 +31,7 @@
     "verify:routine-templates": "node scripts/verify-routine-templates.mjs",
     "verify:routine-reference-images": "node scripts/verify-routine-reference-images.mjs",
     "verify:julie-event-routines": "node scripts/verify-julie-event-routines.mjs",
+    "verify:event-operator-experience": "node scripts/verify-event-operator-experience.mjs",
     "verify:routine-runs": "node scripts/verify-routine-runs.mjs",
     "verify:routine-lifecycle": "node scripts/verify-routine-lifecycle.mjs",
     "verify:routine-operational-time": "node scripts/verify-routine-operational-time.mjs",
