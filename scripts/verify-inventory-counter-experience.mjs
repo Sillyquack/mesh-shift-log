@@ -71,6 +71,24 @@ assert.doesNotMatch(
   'Counter submission must remain assignment/location scoped, not global product or whole-session scoped.',
 );
 
+
+// The original Stock Count product promise: saved standards make a matching fridge a one-tap count.
+assert.match(experience, /function StandardMatchPanel/);
+assert.match(experience, /Done — \$\{locationKind\} matches standard/);
+assert.match(experience, /No — count differences/);
+assert.match(experience, /By tapping Done, you confirm that you physically checked this entire \{locationKind\}/);
+assert.match(experience, /one tap counts this \{locationKind\} and opens Review/);
+assert.match(experience, /message: `\$\{assignment\.location\.name\} matches its saved standard and is counted\.`/);
+assert.match(experience, /setView\('review'\)/);
+assert.match(experience, /Your next location is ready/);
+assert.match(experience, /setView\('home'\)/);
+assert.doesNotMatch(experience, /<ExactStandardPanel/);
+assert.doesNotMatch(experience, /I physically checked this entire location/);
+assert.doesNotMatch(experience, /Apply exact targets to eligible products/);
+assert.doesNotMatch(experience, /type="checkbox"[\s\S]*?saved standard/);
+assert.match(styles, /One-tap saved-standard decision/);
+assert.match(styles, /counter-experience-standard-actions/);
+
 assert.match(experience, /const operationRef = useRef\(''\)/);
 assert.match(experience, /if \(operationRef\.current\)/);
 assert.match(experience, /const savingRef = useRef\(false\)/);
@@ -116,4 +134,4 @@ assert.match(designSystem, /--mesh-gold/);
 assert.match(designSystem, /\.mesh-progress-ring/);
 assert.match(designSystem, /\.mesh-bottom-nav/);
 
-console.log('Verified location-scoped Count / Progress / Review experience and preserved inventory integrity controls.');
+console.log('Verified location-scoped, saved-standard-first Count Mode and preserved inventory integrity controls.');
