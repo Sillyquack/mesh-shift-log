@@ -10,6 +10,16 @@ function profileOrganizationOf(user) {
   return String(user?.profile?.organization_id || '');
 }
 
+function syncEventOperatorSessionClass(enabled) {
+  if (typeof document === 'undefined') return;
+  const apply = () => {
+    document.documentElement?.classList.toggle('event-operator-session', enabled);
+    document.body?.classList.toggle('event-operator-session', enabled);
+  };
+  if (document.body) apply();
+  else queueMicrotask(apply);
+}
+
 export function isSharedDeviceUser(user) {
   return Boolean(
     user?.isSharedDevice ||
@@ -23,7 +33,9 @@ export function isManager(user) {
 }
 
 export function canAccessManagerDashboard(user) {
-  return isManager(user);
+  const allowed = isManager(user);
+  if (allowed) syncEventOperatorSessionClass(false);
+  return allowed;
 }
 
 export function canAcknowledgeAlerts(user) {
@@ -47,7 +59,9 @@ export function canViewAuthProfiles(user) {
 }
 
 export function canUseEventFloorDashboard(user) {
-  return !isSharedDeviceUser(user) && roleOf(user) === 'event_floor_manager';
+  const allowed = !isSharedDeviceUser(user) && roleOf(user) === 'event_floor_manager';
+  syncEventOperatorSessionClass(allowed);
+  return allowed;
 }
 
 export function canGenerateEventCode(user) {
