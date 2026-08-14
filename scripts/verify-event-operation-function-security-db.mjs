@@ -48,9 +48,7 @@ const INTERNAL = [
 ];
 let started = false;
 
-if (process.argv.length > 2) {
-  throw new Error("This verifier accepts no database URL, host, project, or production arguments.");
-}
+if (process.argv.length > 2) throw new Error("This verifier accepts no database URL, host, project, or production arguments.");
 
 function command(name, args, options = {}) {
   const result = spawnSync(name, args, {
@@ -101,7 +99,7 @@ function sqlArray(values) {
   return `array[${values.map((value) => `'${value.replaceAll("'", "''")}'`).join(",")}]::text[]`;
 }
 
-const definitionFingerprintSql = String.raw`
+const definitions = String.raw`
   select md5(coalesce(string_agg(
     p.oid::regprocedure::text || ':' || md5(pg_get_functiondef(p.oid)),
     '|' order by p.oid::regprocedure::text
@@ -111,7 +109,7 @@ const definitionFingerprintSql = String.raw`
   where n.nspname = 'public'
     and ('public.' || p.oid::regprocedure::text) = any(${sqlArray([...AUTHENTICATED, ...INTERNAL])});
 `;
-const relationAclFingerprintSql = String.raw`
+const tableAcls = String.raw`
   select md5(coalesce(string_agg(c.relname || ':' || coalesce(c.relacl::text, ''), '|' order by c.relname), ''))
   from pg_class c
   join pg_namespace n on n.oid = c.relnamespace
@@ -119,105 +117,99 @@ const relationAclFingerprintSql = String.raw`
     and c.relkind in ('r','p')
     and (c.relname like 'event_%' or c.relname like 'external_calendar_%');
 `;
+const aclFingerprint = () => scalar(String.raw`
+  select md5(string_agg(
+    signature || ':' ||
+    has_function_privilege('anon', signature, 'execute')::text || ':' ||
+    has_function_privilege('authenticated', signature, 'execute')::text,
+    '|' order by signature
+  ))
+  from unnest(${sqlArray([...AUTHENTICATED, ...INTERNAL])}) signature;
+`);
 
 async function main() {
-  for (const path of [...BASELINE, MIGRATION]) absolute(path);
-  command("docker", ["--version"]);
-  docker(["image", "inspect", IMAGE]);
-  docker([
-    "run", "--detach", "--rm", "--pull", "never",
-    "--name", CONTAINER, "--network", "none",
-    "--env", `POSTGRES_PASSWORD=${PASSWORD}`,
-    "--env", `POSTGRES_DB=${DATABASE}`,
-    IMAGE,
-  ]);
-  started = true;
+  try {
+    for (const path of [...BASELINE, MIGRATION]) absolute(path);
+    command("docker", ["--version"]);
+    docker(["image", "inspect", IMAGE]);
+    docker([
+      "run", "--detach", "--rm", "--pull", "never",
+      "--name", CONTAINER, "--network", "none",
+      "--env", `POSTGRES_PASSWORD=${PASSWORD}`,
+      "--env", `POSTGRES_DB=${DATABASE}`,
+      IMAGE,
+    ]);
+    started = true;
 
-  let ready = false;
-  for (let attempt = 0; attempt < 80; attempt += 1) {
-    const status = docker(["exec", CONTAINER, "pg_isready", "--username=postgres", `--dbname=${DATABASE}`], { allowFailure: true, timeout: 10_000 });
-    if (status.status === 0) { ready = true; break; }
-    sleep(250);
+    let ready = false;
+    for (let attempt = 0; attempt < 80; attempt += 1) {
+      const status = docker(["exec", CONTAINER, "pg_isready", "--username=postgres", `--dbname=${DATABASE}`], { allowFailure: true, timeout: 10_000 });
+      if (status.status === 0) { ready = true; break; }
+      sleep(250);
+    }
+    if (!ready) throw new Error("Disposable PostgreSQL did not become ready.");
+
+    for (const path of BASELINE) apply(path);
+    const allFunctions = [...AUTHENTICATED, ...INTERNAL];
+    const missing = scalar(String.raw`
+      select coalesce(string_agg(signature, E'\n' order by signature), '')
+      from unnest(${sqlArray(allFunctions)}) signature
+      where to_regprocedure(signature) is null;
+    `);
+    if (missing) throw new Error(`Baseline is missing Phase 10W functions:\n${missing}`);
+    console.log(`PASS baseline contains ${allFunctions.length} exact function identities`);
+
+    const definitionBefore = scalar(definitions);
+    const relationAclBefore = scalar(tableAcls);
+    apply(MIGRATION);
+
+    const brokenAuthenticated = scalar(String.raw`
+      select coalesce(string_agg(signature, E'\n' order by signature), '')
+      from unnest(${sqlArray(AUTHENTICATED)}) signature
+      where has_function_privilege('anon', signature, 'execute')
+         or not has_function_privilege('authenticated', signature, 'execute');
+    `);
+    if (brokenAuthenticated) throw new Error(`Authenticated boundary failed:\n${brokenAuthenticated}`);
+    console.log(`PASS ${AUTHENTICATED.length} functions deny anon and retain authenticated EXECUTE`);
+
+    const exposedInternal = scalar(String.raw`
+      select coalesce(string_agg(signature, E'\n' order by signature), '')
+      from unnest(${sqlArray(INTERNAL)}) signature
+      where has_function_privilege('anon', signature, 'execute')
+         or has_function_privilege('authenticated', signature, 'execute');
+    `);
+    if (exposedInternal) throw new Error(`Internal helper remains exposed:\n${exposedInternal}`);
+    console.log(`PASS ${INTERNAL.length} trigger helpers are internal-only`);
+
+    const fixedPath = scalar(String.raw`
+      select coalesce(array_to_string(p.proconfig, '|'), '')
+      from pg_proc p
+      join pg_namespace n on n.oid = p.pronamespace
+      where n.nspname = 'public' and p.proname = 'set_updated_at';
+    `);
+    if (!fixedPath.includes("search_path=pg_catalog, public")) throw new Error(`Unexpected set_updated_at proconfig: ${fixedPath}`);
+    console.log("PASS set_updated_at has a fixed search_path");
+
+    if (scalar(definitions) !== definitionBefore) throw new Error("Function bodies changed during ACL hardening.");
+    if (scalar(tableAcls) !== relationAclBefore) throw new Error("Event/calendar relation ACLs changed during function hardening.");
+    console.log("PASS function bodies and event/calendar table ACLs are unchanged");
+
+    const anonCall = psql("set role anon; select public.current_user_is_active();", { allowFailure: true });
+    if (anonCall.status === 0 || !/permission denied for function current_user_is_active/i.test(`${anonCall.stdout}\n${anonCall.stderr}`)) {
+      throw new Error("Anon direct helper execution was not denied.");
+    }
+    const authenticatedPrivilege = scalar("set role authenticated; select has_function_privilege(current_user, 'public.current_user_is_active()', 'execute');");
+    if (authenticatedPrivilege !== "t") throw new Error("Authenticated policy helper privilege is missing.");
+    console.log("PASS runtime role probe denies anon and preserves authenticated policy execution");
+
+    const firstFingerprint = aclFingerprint();
+    apply(MIGRATION);
+    if (aclFingerprint() !== firstFingerprint) throw new Error("Phase 10W reapply changed the effective ACL fingerprint.");
+    console.log("PASS Phase 10W is idempotent under exact reapplication");
+  } finally {
+    cleanup();
+    console.log("Disposable database cleanup: complete");
   }
-  if (!ready) throw new Error("Disposable PostgreSQL did not become ready.");
-
-  for (const path of BASELINE) apply(path);
-
-  const missing = scalar(String.raw`
-    select coalesce(string_agg(signature, E'\n' order by signature), '')
-    from unnest(${sqlArray([...AUTHENTICATED, ...INTERNAL])}) signature
-    where to_regprocedure(signature) is null;
-  `);
-  if (missing) throw new Error(`Baseline is missing Phase 10W functions:\n${missing}`);
-  console.log(`PASS baseline contains ${AUTHENTICATED.length + INTERNAL.length} exact function identities`);
-
-  const definitionBefore = scalar(definitionFingerprintSql);
-  const relationAclBefore = scalar(relationAclFingerprintSql);
-  apply(MIGRATION);
-
-  const brokenAuthenticated = scalar(String.raw`
-    select coalesce(string_agg(signature, E'\n' order by signature), '')
-    from unnest(${sqlArray(AUTHENTICATED)}) signature
-    where has_function_privilege('anon', signature, 'execute')
-       or not has_function_privilege('authenticated', signature, 'execute');
-  `);
-  if (brokenAuthenticated) throw new Error(`Authenticated boundary failed:\n${brokenAuthenticated}`);
-  console.log(`PASS ${AUTHENTICATED.length} client/policy functions deny anon and retain authenticated EXECUTE`);
-
-  const exposedInternal = scalar(String.raw`
-    select coalesce(string_agg(signature, E'\n' order by signature), '')
-    from unnest(${sqlArray(INTERNAL)}) signature
-    where has_function_privilege('anon', signature, 'execute')
-       or has_function_privilege('authenticated', signature, 'execute');
-  `);
-  if (exposedInternal) throw new Error(`Internal helper remains exposed:\n${exposedInternal}`);
-  console.log(`PASS ${INTERNAL.length} trigger helpers are internal-only`);
-
-  const fixedPath = scalar(String.raw`
-    select coalesce(array_to_string(p.proconfig, '|'), '')
-    from pg_proc p
-    join pg_namespace n on n.oid = p.pronamespace
-    where n.nspname = 'public' and p.proname = 'set_updated_at';
-  `);
-  if (!fixedPath.includes("search_path=pg_catalog, public")) throw new Error(`Unexpected set_updated_at proconfig: ${fixedPath}`);
-  console.log("PASS set_updated_at has a fixed search_path");
-
-  if (scalar(definitionFingerprintSql) !== definitionBefore) throw new Error("Function bodies changed during ACL hardening.");
-  if (scalar(relationAclFingerprintSql) !== relationAclBefore) throw new Error("Event/calendar relation ACLs changed during function hardening.");
-  console.log("PASS function bodies and event/calendar table ACLs are unchanged");
-
-  const anonCall = psql("set role anon; select public.current_user_is_active();", { allowFailure: true });
-  if (anonCall.status === 0 || !/permission denied for function current_user_is_active/i.test(`${anonCall.stdout}\n${anonCall.stderr}`)) {
-    throw new Error("Anon direct helper execution was not denied.");
-  }
-  const authenticatedPrivilege = scalar("set role authenticated; select has_function_privilege(current_user, 'public.current_user_is_active()', 'execute');");
-  if (authenticatedPrivilege !== "t") throw new Error("Authenticated policy helper privilege is missing.");
-  console.log("PASS runtime role probe denies anon and preserves authenticated policy execution");
-
-  const aclFingerprint = scalar(String.raw`
-    select md5(string_agg(
-      signature || ':' ||
-      has_function_privilege('anon', signature, 'execute')::text || ':' ||
-      has_function_privilege('authenticated', signature, 'execute')::text,
-      '|' order by signature
-    ))
-    from unnest(${sqlArray([...AUTHENTICATED, ...INTERNAL])}) signature;
-  `);
-  apply(MIGRATION);
-  const reappliedFingerprint = scalar(String.raw`
-    select md5(string_agg(
-      signature || ':' ||
-      has_function_privilege('anon', signature, 'execute')::text || ':' ||
-      has_function_privilege('authenticated', signature, 'execute')::text,
-      '|' order by signature
-    ))
-    from unnest(${sqlArray([...AUTHENTICATED, ...INTERNAL])}) signature;
-  `);
-  if (reappliedFingerprint !== aclFingerprint) throw new Error("Phase 10W reapply changed the effective ACL fingerprint.");
-  console.log("PASS Phase 10W is idempotent under exact reapplication");
-} finally {
-  cleanup();
-  console.log("Disposable database cleanup: complete");
 }
 
 main().catch((error) => {
