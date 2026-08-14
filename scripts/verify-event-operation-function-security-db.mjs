@@ -6,7 +6,7 @@ import { spawnSync } from "node:child_process";
 
 const ROOT = resolve(dirname(fileURLToPath(import.meta.url)), "..");
 const IMAGE = "public.ecr.aws/supabase/postgres:17.6.1.141";
-const DATABASE = "postgres";
+const DATABASE = "phase10w_event_function_security_test";
 const CONTAINER = `mesh-shift-log-phase10w-${process.pid}-${randomUUID().slice(0, 8)}`;
 const PASSWORD = `phase10w-${randomUUID()}`;
 const MIGRATION = "supabase/phase10w_event_operations_authenticated_execute.sql";
@@ -145,21 +145,23 @@ async function main() {
       "run", "--detach", "--rm", "--pull", "never",
       "--name", CONTAINER, "--network", "none",
       "--env", `POSTGRES_PASSWORD=${PASSWORD}`,
+      "--env", `POSTGRES_DB=${DATABASE}`,
       IMAGE,
     ]);
     started = true;
 
     let ready = false;
     for (let attempt = 0; attempt < 80; attempt += 1) {
-      const status = docker(["exec", CONTAINER, "pg_isready", "--username=postgres", `--dbname=${DATABASE}`], { allowFailure: true, timeout: 10_000 });
-      if (status.status === 0) {
+      const logs = docker(["logs", CONTAINER], { allowFailure: true });
+      const state = docker(["exec", CONTAINER, "pg_isready", "--username=supabase_admin", `--dbname=${DATABASE}`], { allowFailure: true, timeout: 10_000 });
+      if (/PostgreSQL init process complete; ready for start up/i.test(`${logs.stdout}\n${logs.stderr}`) && state.status === 0) {
         ready = true;
         break;
       }
-      sleep(250);
+      sleep(500);
     }
-    if (!ready) throw new Error("Disposable PostgreSQL did not become ready.");
-    console.log("PASS using initialized, disposable Supabase postgres database");
+    if (!ready) throw new Error("Disposable Supabase PostgreSQL did not complete initialization.");
+    console.log("PASS completed isolated Supabase database initialization");
 
     for (const path of BASELINE) apply(path);
 
