@@ -8,6 +8,7 @@ import './components/EventOperatorExperience.css';
 import './components/EventOperatorEventPicker.css';
 import './experience/ProductionCandidateExperience.css';
 import './experience/RoutineStudioExperience.css';
+import './experience/VisualStandardsExperience.css';
 
 createRoot(document.getElementById('root')).render(
   <React.StrictMode>
