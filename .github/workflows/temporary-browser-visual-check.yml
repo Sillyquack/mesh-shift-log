@@ -1,0 +1,43 @@
+name: Temporary browser visual check
+
+on:
+  push:
+    branches:
+      - agent/production-candidate-experience
+
+permissions:
+  contents: read
+
+jobs:
+  verify-browser-matrix:
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: npm
+
+      - name: Install application dependencies
+        run: npm ci
+
+      - name: Install isolated Playwright runtime
+        run: |
+          npm install --no-save --no-package-lock playwright
+          npx playwright install --with-deps chromium webkit
+
+      - name: Run 70-scenario browser matrix
+        run: npm run verify:routine-content-visual
+
+      - name: Upload browser evidence
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: mesh-production-candidate-browser-evidence
+          path: /private/tmp/mesh-shift-log-phase10l-visual-*
+          if-no-files-found: warn
+          retention-days: 7
