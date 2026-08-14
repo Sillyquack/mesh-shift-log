@@ -11,7 +11,7 @@ permissions:
 jobs:
   verify-production-candidate:
     runs-on: ubuntu-latest
-    timeout-minutes: 35
+    timeout-minutes: 40
     steps:
       - name: Checkout
         uses: actions/checkout@v4
@@ -40,6 +40,9 @@ jobs:
         run: |
           docker pull supabase/postgres:17.6.1.141
           docker tag supabase/postgres:17.6.1.141 public.ecr.aws/supabase/postgres:17.6.1.141
+
+      - name: Verify Event Mode visual-reference bridge
+        run: npm run verify:event-visual-reference-bridge
 
       - name: Verify manager, visual and history contracts
         run: |
