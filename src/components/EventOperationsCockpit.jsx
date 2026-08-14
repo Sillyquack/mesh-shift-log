@@ -44,7 +44,7 @@ function taskProgress(eventTasks = []) {
   const completed = active.filter((task) => COMPLETE_STATUSES.has(normalized(task.status))).length;
   const next = active
     .filter((task) => !COMPLETE_STATUSES.has(normalized(task.status)))
-    .toSorted((left, right) => taskTime(left) - taskTime(right))[0] || null;
+    .sort((left, right) => taskTime(left) - taskTime(right))[0] || null;
   return {
     completed,
     total: active.length,
