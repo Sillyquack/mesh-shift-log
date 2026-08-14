@@ -65,24 +65,29 @@ function command(name, args, options = {}) {
   }
   return result;
 }
+
 const docker = (args, options) => command("docker", args, options);
-function psql(sql, { tuplesOnly = false, allowFailure = false } = {}) {
+
+function psql(sql, { tuplesOnly = false, allowFailure = false, database = DATABASE } = {}) {
   const args = [
     "exec", "-i", CONTAINER,
     "psql", "--no-psqlrc", "--set=ON_ERROR_STOP=1",
-    "--username=supabase_admin", `--dbname=${DATABASE}`,
+    "--username=supabase_admin", `--dbname=${database}`,
   ];
   if (tuplesOnly) args.push("--tuples-only", "--no-align", "--quiet");
   return docker(args, { input: sql.replace(/^\uFEFF/, ""), allowFailure });
 }
+
 const scalar = (sql) => psql(sql, { tuplesOnly: true }).stdout.trim();
 const sleep = (milliseconds) => Atomics.wait(new Int32Array(new SharedArrayBuffer(4)), 0, 0, milliseconds);
+
 function cleanup() {
   if (!started) return;
   if (!/^mesh-shift-log-phase10w-[0-9]+-[a-f0-9]{8}$/.test(CONTAINER)) throw new Error("Unsafe verifier container name.");
   docker(["rm", "--force", CONTAINER], { allowFailure: true, timeout: 30_000 });
   started = false;
 }
+
 process.once("SIGINT", () => { cleanup(); process.exit(130); });
 process.once("SIGTERM", () => { cleanup(); process.exit(143); });
 
@@ -91,10 +96,12 @@ function absolute(path) {
   if (!value.startsWith(`${ROOT}/`) || !existsSync(value)) throw new Error(`Missing or unsafe path: ${path}`);
   return value;
 }
+
 function apply(path) {
   psql(readFileSync(absolute(path), "utf8"));
   console.log(`PASS applied ${path}`);
 }
+
 function sqlArray(values) {
   return `array[${values.map((value) => `'${value.replaceAll("'", "''")}'`).join(",")}]::text[]`;
 }
@@ -109,6 +116,7 @@ const definitions = String.raw`
   where n.nspname = 'public'
     and ('public.' || p.oid::regprocedure::text) = any(${sqlArray([...AUTHENTICATED, ...INTERNAL])});
 `;
+
 const tableAcls = String.raw`
   select md5(coalesce(string_agg(c.relname || ':' || coalesce(c.relacl::text, ''), '|' order by c.relname), ''))
   from pg_class c
@@ -117,6 +125,7 @@ const tableAcls = String.raw`
     and c.relkind in ('r','p')
     and (c.relname like 'event_%' or c.relname like 'external_calendar_%');
 `;
+
 const aclFingerprint = () => scalar(String.raw`
   select md5(string_agg(
     signature || ':' ||
@@ -136,20 +145,26 @@ async function main() {
       "run", "--detach", "--rm", "--pull", "never",
       "--name", CONTAINER, "--network", "none",
       "--env", `POSTGRES_PASSWORD=${PASSWORD}`,
-      "--env", `POSTGRES_DB=${DATABASE}`,
       IMAGE,
     ]);
     started = true;
 
     let ready = false;
     for (let attempt = 0; attempt < 80; attempt += 1) {
-      const status = docker(["exec", CONTAINER, "pg_isready", "--username=postgres", `--dbname=${DATABASE}`], { allowFailure: true, timeout: 10_000 });
-      if (status.status === 0) { ready = true; break; }
+      const status = docker(["exec", CONTAINER, "pg_isready", "--username=postgres", "--dbname=postgres"], { allowFailure: true, timeout: 10_000 });
+      if (status.status === 0) {
+        ready = true;
+        break;
+      }
       sleep(250);
     }
     if (!ready) throw new Error("Disposable PostgreSQL did not become ready.");
 
+    docker(["exec", CONTAINER, "createdb", "--username=supabase_admin", DATABASE]);
+    console.log(`PASS created isolated database ${DATABASE}`);
+
     for (const path of BASELINE) apply(path);
+
     const allFunctions = [...AUTHENTICATED, ...INTERNAL];
     const missing = scalar(String.raw`
       select coalesce(string_agg(signature, E'\n' order by signature), '')
