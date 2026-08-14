@@ -151,7 +151,10 @@ test('Julie event image requirements become a concrete permanent upload queue', 
   assert.match(referenceManager, /JPEG, PNG or WebP/);
   assert.match(referenceManager, /Maximum 5 MB/);
   assert.match(referenceManager, /Image description/);
-  assert.match(referenceManager, /Version history/);
+  assert.match(referenceManager, /Required for an actual image/);
+  assert.match(referenceManager, /aria-required="true"/);
+  assert.match(referenceManager, /Immutable version history/);
+  assert.match(referenceManager, /warning, never a blocker/);
   assert.doesNotMatch(referenceManager, /notion\.so|amazonaws\.com|X-Amz-Signature/i);
 });
 
