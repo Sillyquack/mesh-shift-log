@@ -10,7 +10,7 @@ permissions:
 
 jobs:
   upgrade:
-    if: "${{ github.event.head_commit.message == 'ci: finalize standard done-and-next flow' }}"
+    if: "${{ github.event.head_commit.message == 'ci: complete standard done-and-next flow' }}"
     runs-on: ubuntu-latest
     timeout-minutes: 15
     steps:
@@ -217,6 +217,24 @@ jobs:
             'workflow Done-and-next assertions',
           )
           workflow_path.write_text(workflow)
+
+          confirmation_path = Path('scripts/verify-inventory-confirmation-dialog.mjs')
+          confirmation = confirmation_path.read_text()
+          old_test = r'''test('focused Count Mode keeps physical confirmation explicit and readable', () => {
+            assert.match(counterExperience, /I physically checked this entire location/);
+            assert.match(counterExperience, /<label>[\s\S]*?<input[\s\S]*?type="checkbox"[\s\S]*?<span>I physically checked this entire location<\/span>/);
+          });'''
+          new_test = r'''test('focused Count Mode keeps one-tap physical confirmation explicit and readable', () => {
+            assert.match(counterExperience, /By tapping Done, you confirm that you physically checked this entire \{locationKind\}/);
+            assert.match(counterExperience, /This \{locationKind\} is counted at its saved standard and submitted for manager review/);
+            assert.match(counterExperience, /Done — count & next \$\{locationKind\}/);
+            assert.match(counterExperience, /physicalConfirmation: true/);
+            assert.doesNotMatch(counterExperience, /<StandardMatchPanel[\s\S]*?type="checkbox"/);
+          });'''
+          if old_test not in confirmation:
+            raise SystemExit('Could not update the focused Count Mode physical-confirmation verifier')
+          confirmation = confirmation.replace(old_test, new_test, 1)
+          confirmation_path.write_text(confirmation)
           PY
 
       - run: npm ci
@@ -232,6 +250,6 @@ jobs:
           git config user.name "Bobby"
           git config user.email "118303001+Sillyquack@users.noreply.github.com"
           git rm .github/workflows/temporary-standard-done-next.yml
-          git add src/components/InventoryCounterExperience.jsx scripts/verify-inventory-counter-experience.mjs scripts/verify-inventory-counter-workflow.mjs
+          git add src/components/InventoryCounterExperience.jsx scripts/verify-inventory-counter-experience.mjs scripts/verify-inventory-counter-workflow.mjs scripts/verify-inventory-confirmation-dialog.mjs
           git commit -m "fix: count and advance matching refrigerators in one tap"
           git push origin HEAD:agent/production-candidate-experience
