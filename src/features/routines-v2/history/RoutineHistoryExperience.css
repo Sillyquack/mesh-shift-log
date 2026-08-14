@@ -1,0 +1,310 @@
+.rh-workspace.mesh-history-experience {
+  color: var(--mesh-cream-strong, #fffdf7);
+}
+
+.mesh-history-hero,
+.mesh-readiness-hero {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  align-items: center;
+  gap: clamp(22px, 5vw, 64px);
+  padding: clamp(28px, 5vw, 52px);
+  border: 1px solid rgba(255, 255, 255, 0.11);
+  border-radius: 32px;
+  background:
+    radial-gradient(circle at 86% 6%, rgba(214, 166, 93, 0.24), transparent 30%),
+    linear-gradient(145deg, #171716, #2b261e);
+  box-shadow: 0 24px 78px rgba(18, 14, 8, 0.22);
+}
+
+.mesh-history-hero h2,
+.mesh-readiness-hero h2 {
+  margin: 8px 0 0;
+  color: #fffdf7;
+  font-size: clamp(2.35rem, 6vw, 4.8rem);
+  line-height: 0.98;
+  letter-spacing: -0.065em;
+}
+
+.mesh-history-hero p,
+.mesh-readiness-hero p {
+  max-width: 680px;
+  margin: 18px 0 0;
+  color: rgba(255, 255, 255, 0.6);
+  line-height: 1.65;
+}
+
+.mesh-history-hero button,
+.mesh-readiness-hero button {
+  min-width: 150px;
+  min-height: 50px;
+  padding: 0 18px;
+  border: 1px solid rgba(255, 255, 255, 0.12);
+  border-radius: 14px;
+  background: rgba(255, 255, 255, 0.055);
+  color: #fffdf7;
+  font: inherit;
+  font-weight: 900;
+  cursor: pointer;
+}
+
+.mesh-history-nav {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 8px;
+  width: min(620px, 100%);
+  margin: 20px auto;
+  padding: 8px;
+  border: 1px solid rgba(255, 255, 255, 0.1);
+  border-radius: 22px;
+  background: rgba(20, 20, 18, 0.9);
+  backdrop-filter: blur(18px);
+}
+
+.mesh-history-nav button {
+  min-height: 50px;
+  border: 0;
+  border-radius: 15px;
+  background: transparent;
+  color: rgba(255, 255, 255, 0.58);
+  font: inherit;
+  font-size: 0.8rem;
+  font-weight: 900;
+  cursor: pointer;
+}
+
+.mesh-history-nav button[aria-selected="true"] {
+  background: var(--mesh-cream, #f5f0e7);
+  color: #1a1814;
+}
+
+.mesh-history-recent,
+.mesh-history-find,
+.mesh-history-review {
+  display: grid;
+  gap: 18px;
+}
+
+.mesh-history-intro {
+  display: flex;
+  align-items: flex-end;
+  justify-content: space-between;
+  gap: 18px;
+  padding: 20px 4px 0;
+}
+
+.mesh-history-intro h3 {
+  margin: 6px 0 0;
+  color: #fffdf7;
+  font-size: clamp(1.6rem, 4vw, 2.8rem);
+  letter-spacing: -0.05em;
+}
+
+.mesh-history-intro p {
+  max-width: 620px;
+  margin: 10px 0 0;
+  color: rgba(255, 255, 255, 0.58);
+  line-height: 1.55;
+}
+
+.mesh-history-review-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 16px;
+}
+
+.mesh-history-review-card {
+  min-height: 230px;
+  padding: 26px;
+  border: 1px solid rgba(255, 255, 255, 0.1);
+  border-radius: 26px;
+  background: rgba(28, 27, 24, 0.94);
+}
+
+.mesh-history-review-card h3 {
+  margin: 8px 0 0;
+  color: #fffdf7;
+  font-size: 1.8rem;
+  letter-spacing: -0.045em;
+}
+
+.mesh-history-review-card p {
+  color: rgba(255, 255, 255, 0.6);
+  line-height: 1.6;
+}
+
+.mesh-history-review-card button {
+  min-height: 48px;
+  padding: 0 16px;
+  border: 1px solid rgba(255, 255, 255, 0.12);
+  border-radius: 14px;
+  background: rgba(255, 255, 255, 0.055);
+  color: #fffdf7;
+  font: inherit;
+  font-weight: 900;
+  cursor: pointer;
+}
+
+.mesh-history-experience .rh-filters,
+.mesh-history-experience .rh-list,
+.mesh-history-experience .rh-source-guide,
+.mesh-history-experience .rh-section,
+.mesh-history-experience .rh-state {
+  border-color: rgba(255, 255, 255, 0.1);
+  background: rgba(28, 27, 24, 0.94);
+  color: rgba(255, 255, 255, 0.72);
+}
+
+.mesh-history-experience .rh-list button,
+.mesh-history-experience .rh-source-guide button,
+.mesh-history-experience .rh-filters button {
+  min-height: 48px;
+}
+
+.mesh-readiness-status {
+  display: grid;
+  place-items: center;
+  min-width: 160px;
+  min-height: 160px;
+  padding: 18px;
+  border: 1px solid rgba(255, 255, 255, 0.12);
+  border-radius: 50%;
+  background: rgba(255, 255, 255, 0.055);
+  text-align: center;
+}
+
+.mesh-readiness-status.is-ready {
+  border-color: rgba(110, 170, 141, 0.46);
+  background: rgba(110, 170, 141, 0.11);
+}
+
+.mesh-readiness-status.is-blocked {
+  border-color: rgba(213, 124, 109, 0.46);
+  background: rgba(213, 124, 109, 0.11);
+}
+
+.mesh-readiness-status strong,
+.mesh-readiness-status span {
+  display: block;
+}
+
+.mesh-readiness-status strong {
+  color: #fffdf7;
+  font-size: 1.55rem;
+  letter-spacing: -0.04em;
+}
+
+.mesh-readiness-status span {
+  margin-top: 5px;
+  color: rgba(255, 255, 255, 0.58);
+  font-size: 0.72rem;
+  font-weight: 800;
+}
+
+.mesh-readiness-facts {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 12px;
+  margin-top: 18px;
+}
+
+.mesh-readiness-facts article {
+  display: grid;
+  gap: 5px;
+  min-width: 0;
+  padding: 20px;
+  border: 1px solid rgba(255, 255, 255, 0.1);
+  border-radius: 20px;
+  background: rgba(28, 27, 24, 0.94);
+}
+
+.mesh-readiness-facts strong {
+  color: #fffdf7;
+  overflow-wrap: anywhere;
+}
+
+.mesh-readiness-facts span {
+  color: rgba(255, 255, 255, 0.56);
+  font-size: 0.74rem;
+  font-weight: 800;
+}
+
+.mesh-release-controls {
+  margin-top: 18px;
+  padding: 0;
+  overflow: hidden;
+  border: 1px solid rgba(255, 255, 255, 0.1);
+  border-radius: 24px;
+  background: rgba(28, 27, 24, 0.94);
+}
+
+.mesh-release-controls > summary {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  min-height: 72px;
+  padding: 18px 22px;
+  color: #fffdf7;
+  font-weight: 900;
+  cursor: pointer;
+  list-style: none;
+}
+
+.mesh-release-controls > summary::-webkit-details-marker {
+  display: none;
+}
+
+.mesh-release-controls > summary::after {
+  content: "+";
+  display: grid;
+  place-items: center;
+  width: 34px;
+  aspect-ratio: 1;
+  border: 1px solid rgba(255, 255, 255, 0.12);
+  border-radius: 50%;
+  color: var(--mesh-gold-soft, #efca8f);
+}
+
+.mesh-release-controls[open] > summary::after {
+  content: "−";
+}
+
+.mesh-release-controls > section {
+  margin: 0 18px 18px;
+}
+
+@media (max-width: 760px) {
+  .mesh-history-hero,
+  .mesh-readiness-hero {
+    grid-template-columns: 1fr;
+    padding: 28px 22px;
+    border-radius: 28px;
+  }
+
+  .mesh-history-hero button,
+  .mesh-readiness-hero button {
+    width: 100%;
+  }
+
+  .mesh-history-nav {
+    position: sticky;
+    bottom: max(10px, env(safe-area-inset-bottom));
+    z-index: 20;
+  }
+
+  .mesh-history-review-grid,
+  .mesh-readiness-facts {
+    grid-template-columns: 1fr;
+  }
+
+  .mesh-history-intro {
+    align-items: stretch;
+    flex-direction: column;
+  }
+
+  .mesh-readiness-status {
+    min-width: 138px;
+    min-height: 138px;
+    justify-self: start;
+  }
+}
