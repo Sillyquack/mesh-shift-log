@@ -36,6 +36,7 @@
     "verify:event-visual-reference-bridge": "node scripts/verify-event-visual-reference-bridge.mjs",
     "verify:mesh-experience-system": "node scripts/verify-mesh-experience-system.mjs",
     "verify:production-candidate-experience": "node scripts/verify-production-candidate-experience.mjs",
+    "verify:production-migration-plan": "node scripts/verify-production-migration-plan.mjs",
     "verify:routine-runs": "node scripts/verify-routine-runs.mjs",
     "verify:routine-lifecycle": "node scripts/verify-routine-lifecycle.mjs",
     "verify:routine-operational-time": "node scripts/verify-routine-operational-time.mjs",
