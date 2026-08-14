@@ -1,0 +1,56 @@
+name: Temporary production candidate check
+
+on:
+  push:
+    branches:
+      - agent/production-candidate-experience
+
+permissions:
+  contents: read
+
+jobs:
+  verify-production-candidate:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: npm
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Verify production candidate experience
+        run: npm run verify:production-candidate-experience
+
+      - name: Verify inherited frontline experiences
+        run: |
+          npm run verify:auth-password-security
+          npm run verify:julie-event-routines
+          npm run verify:event-operator-experience
+          npm run verify:mesh-experience-system
+          npm run verify:inventory-counter-experience
+
+      - name: Verify manager, visual and history contracts
+        shell: bash
+        run: |
+          set +e
+          status=0
+          for check in \
+            verify:routine-manager-ui \
+            verify:routine-reference-images \
+            verify:routine-history-pilot \
+            verify:routine-content-pack \
+            verify:routine-content-visual
+          do
+            npm run "$check" || status=1
+          done
+          exit "$status"
+
+      - name: Build production bundle
+        run: npm run build
