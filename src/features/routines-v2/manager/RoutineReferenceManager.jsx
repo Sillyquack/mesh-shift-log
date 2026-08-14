@@ -9,30 +9,40 @@ import {
 } from "../api/routineReferenceClient.js";
 import { createIdempotencyKey } from "../data/routineManagerModel.js";
 import { useRoutineReferenceManager } from "../hooks/useRoutineReferenceManager.js";
-import { EmptyState, Field, Modal, StatusPill } from "./RoutineManagerPrimitives.jsx";
+import {
+  EmptyState,
+  Field,
+  Modal,
+  StatusPill,
+} from "./RoutineManagerPrimitives.jsx";
 
 function eventVisualSlots() {
   const slots = new Map();
   eventRigGuides.forEach((guide) => {
     (guide.requiredImageSlots || []).forEach((slot) => {
-      if (!slots.has(slot.id)) {
-        slots.set(slot.id, {
-          ...slot,
-          guideIds: [guide.id],
-          guideTitles: [guide.title],
-        });
+      const current = slots.get(slot.id);
+      if (current) {
+        current.guideIds.push(guide.id);
+        current.guideTitles.push(guide.title);
         return;
       }
-      const current = slots.get(slot.id);
-      current.guideIds.push(guide.id);
-      current.guideTitles.push(guide.title);
+      slots.set(slot.id, {
+        ...slot,
+        guideIds: [guide.id],
+        guideTitles: [guide.title],
+      });
     });
   });
   return [...slots.values()];
 }
 
 function referenceKey(reference) {
-  return reference?.stableKey || reference?.referenceKey || reference?.reference_key || "";
+  return (
+    reference?.stableKey ||
+    reference?.referenceKey ||
+    reference?.reference_key ||
+    ""
+  );
 }
 
 function referenceState(reference) {
@@ -40,14 +50,17 @@ function referenceState(reference) {
 }
 
 function visualReadiness(slots, references) {
-  const byKey = new Map(references.map((reference) => [referenceKey(reference), reference]));
+  const byKey = new Map(
+    references.map((reference) => [referenceKey(reference), reference]),
+  );
   const rows = slots.map((slot) => {
     const reference = byKey.get(slot.id) || null;
+    const state = reference ? referenceState(reference) : "missing";
     return {
       ...slot,
       reference,
-      state: reference ? referenceState(reference) : "missing",
-      ready: referenceState(reference) === "active_image",
+      state,
+      ready: state === "active_image",
     };
   });
   return {
@@ -55,6 +68,15 @@ function visualReadiness(slots, references) {
     ready: rows.filter((row) => row.ready),
     placeholders: rows.filter((row) => row.state === "placeholder"),
     missing: rows.filter((row) => row.state === "missing"),
+  };
+}
+
+function initialDraft() {
+  return {
+    stableKey: "",
+    label: "",
+    description: "",
+    placeholderText: "Reference image coming soon",
   };
 }
 
@@ -71,9 +93,10 @@ export default function RoutineReferenceManager({ loader, uploader }) {
   const [creatingSlots, setCreatingSlots] = useState(false);
 
   const slots = useMemo(eventVisualSlots, []);
+  const references = manager.data.references || [];
   const readiness = useMemo(
-    () => visualReadiness(slots, manager.data.references || []),
-    [slots, manager.data.references],
+    () => visualReadiness(slots, references),
+    [slots, references],
   );
   const completion = readiness.rows.length
     ? Math.round((readiness.ready.length / readiness.rows.length) * 100)
@@ -81,14 +104,14 @@ export default function RoutineReferenceManager({ loader, uploader }) {
 
   const filteredReferences = useMemo(() => {
     const query = search.trim().toLowerCase();
-    if (!query) return manager.data.references || [];
-    return (manager.data.references || []).filter((reference) =>
+    if (!query) return references;
+    return references.filter((reference) =>
       [reference.label, referenceKey(reference), reference.description]
         .join(" ")
         .toLowerCase()
         .includes(query),
     );
-  }, [manager.data.references, search]);
+  }, [references, search]);
 
   useEffect(
     () => () => {
@@ -111,16 +134,17 @@ export default function RoutineReferenceManager({ loader, uploader }) {
       referenceKey: draft.stableKey,
       label: draft.label,
       description: draft.description,
-      placeholderText: draft.placeholderText || "Reference image coming soon",
+      placeholderText:
+        draft.placeholderText || "Reference image coming soon",
       idempotencyKey: createIdempotencyKey(),
     });
-    if (result.ok) {
-      await manager.refresh();
-      setMessage("Visual-standard placeholder created.");
-      setDraft(null);
-    } else {
+    if (!result.ok) {
       setMessage(result.message);
+      return;
     }
+    await manager.refresh();
+    setMessage("Visual-standard placeholder created.");
+    setDraft(null);
   };
 
   const createMissingEventSlots = async () => {
@@ -129,27 +153,40 @@ export default function RoutineReferenceManager({ loader, uploader }) {
     setMessage("");
     let created = 0;
     const failures = [];
-    for (const slot of readiness.missing) {
-      const result = await createRoutineReferenceImage({
-        referenceKey: slot.id,
-        label: slot.label,
-        description: `${slot.description} Used by: ${slot.guideTitles.join(", ")}.`,
-        placeholderText: "Reference image coming soon",
-        idempotencyKey: createIdempotencyKey(),
-      });
-      if (result.ok) created += 1;
-      else failures.push(`${slot.label}: ${result.message || "could not be created"}`);
+    try {
+      for (const slot of readiness.missing) {
+        const result = await createRoutineReferenceImage({
+          referenceKey: slot.id,
+          label: slot.label,
+          description: `${slot.description} Used by: ${slot.guideTitles.join(", ")}.`,
+          placeholderText: "Reference image coming soon",
+          idempotencyKey: createIdempotencyKey(),
+        });
+        if (result.ok) created += 1;
+        else {
+          failures.push(
+            `${slot.label}: ${result.message || "could not be created"}`,
+          );
+        }
+      }
+      await manager.refresh();
+      setMessage(
+        failures.length
+          ? `${created} placeholder${created === 1 ? "" : "s"} created. ${failures.length} need review: ${failures.join(" · ")}`
+          : `${created} event visual-standard placeholder${created === 1 ? "" : "s"} created.`,
+      );
+    } catch (error) {
+      setMessage(
+        error?.message ||
+          "The placeholder queue stopped safely. Existing references remain unchanged.",
+      );
+    } finally {
+      setCreatingSlots(false);
     }
-    await manager.refresh();
-    setCreatingSlots(false);
-    setMessage(
-      failures.length
-        ? `${created} placeholder${created === 1 ? "" : "s"} created. ${failures.length} need review: ${failures.join(" · ")}`
-        : `${created} event visual-standard placeholder${created === 1 ? "" : "s"} created.`,
-    );
   };
 
   const upload = async () => {
+    if (!file || !alt.trim()) return;
     const result = await manager.upload({
       referenceId: selected.id,
       expectedReferenceRevision: selected.revision,
@@ -167,15 +204,17 @@ export default function RoutineReferenceManager({ loader, uploader }) {
   };
 
   const open = async () => {
-    const result = await downloadRoutineCurrentReferenceImage(selected.current.objectPath);
-    if (result.ok) {
-      setPreview({
-        url: URL.createObjectURL(result.blob),
-        alt: selected.current.altText || selected.label,
-      });
-    } else {
+    const result = await downloadRoutineCurrentReferenceImage(
+      selected.current.objectPath,
+    );
+    if (!result.ok) {
       setMessage(result.message);
+      return;
     }
+    setPreview({
+      url: URL.createObjectURL(result.blob),
+      alt: selected.current.altText || selected.label,
+    });
   };
 
   return (
@@ -196,25 +235,37 @@ export default function RoutineReferenceManager({ loader, uploader }) {
         >
           <div>
             <strong>{completion}%</strong>
-            <span>{readiness.ready.length}/{readiness.rows.length} ready</span>
+            <span>
+              {readiness.ready.length}/{readiness.rows.length} ready
+            </span>
           </div>
         </div>
       </header>
 
-      <section className="rm-card rm-visual-readiness" aria-labelledby="event-visual-readiness-title">
+      <section
+        className="rm-card rm-visual-readiness"
+        aria-labelledby="event-visual-readiness-title"
+      >
         <div className="rm-visual-readiness-summary">
           <div>
             <p className="eyebrow">Julie’s event set</p>
             <h3 id="event-visual-readiness-title">Image upload queue</h3>
             <p>
-              Every slot below comes from the current event routines. Missing images
-              remain visible as honest placeholders; they never silently disappear.
+              Every slot below comes from the current event routines. A missing
+              image is a warning, never a blocker; the honest placeholder stays
+              visible until a permanent image is ready.
             </p>
           </div>
           <div className="rm-visual-readiness-counts">
-            <span><strong>{readiness.ready.length}</strong> ready</span>
-            <span><strong>{readiness.placeholders.length}</strong> awaiting image</span>
-            <span><strong>{readiness.missing.length}</strong> not created</span>
+            <span>
+              <strong>{readiness.ready.length}</strong> ready
+            </span>
+            <span>
+              <strong>{readiness.placeholders.length}</strong> awaiting image
+            </span>
+            <span>
+              <strong>{readiness.missing.length}</strong> not created
+            </span>
           </div>
         </div>
 
@@ -231,7 +282,8 @@ export default function RoutineReferenceManager({ loader, uploader }) {
           </button>
         ) : (
           <p className="mesh-status is-success" role="status">
-            Every required event image slot exists. Uploads can now be completed one by one.
+            Every required event image slot exists. Uploads can now be completed
+            one by one.
           </p>
         )}
 
@@ -244,7 +296,9 @@ export default function RoutineReferenceManager({ loader, uploader }) {
               disabled={!row.reference}
               onClick={() => row.reference && choose(row.reference)}
             >
-              <span>{row.ready ? "✓" : row.state === "missing" ? "+" : "○"}</span>
+              <span>
+                {row.ready ? "✓" : row.state === "missing" ? "+" : "○"}
+              </span>
               <strong>{row.label}</strong>
               <small>
                 {row.ready
@@ -269,12 +323,7 @@ export default function RoutineReferenceManager({ loader, uploader }) {
             className="ghost-button"
             onClick={() => {
               setSelected(null);
-              setDraft({
-                stableKey: "",
-                label: "",
-                description: "",
-                placeholderText: "Reference image coming soon",
-              });
+              setDraft(initialDraft());
             }}
           >
             Create custom standard
@@ -303,7 +352,9 @@ export default function RoutineReferenceManager({ loader, uploader }) {
                 key={reference.id}
                 onClick={() => choose(reference)}
               >
-                <span>{referenceState(reference) === "active_image" ? "✓" : "○"}</span>
+                <span>
+                  {referenceState(reference) === "active_image" ? "✓" : "○"}
+                </span>
                 {reference.label}
               </button>
             ))}
@@ -317,23 +368,23 @@ export default function RoutineReferenceManager({ loader, uploader }) {
             className="rm-card rm-form"
             onSubmit={async (event) => {
               event.preventDefault();
-              if (selected) {
-                const result = await updateRoutineReferenceImageMetadata({
-                  referenceId: selected.id,
-                  label: draft.label,
-                  description: draft.description,
-                  placeholderText: draft.placeholderText,
-                  expectedRevision: selected.revision,
-                  idempotencyKey: createIdempotencyKey(),
-                });
-                if (result.ok) {
-                  await manager.refresh();
-                  setMessage("Visual-standard details saved.");
-                } else {
-                  setMessage(result.message);
-                }
-              } else {
+              if (!selected) {
                 await create();
+                return;
+              }
+              const result = await updateRoutineReferenceImageMetadata({
+                referenceId: selected.id,
+                label: draft.label,
+                description: draft.description,
+                placeholderText: draft.placeholderText,
+                expectedRevision: selected.revision,
+                idempotencyKey: createIdempotencyKey(),
+              });
+              if (result.ok) {
+                await manager.refresh();
+                setMessage("Visual-standard details saved.");
+              } else {
+                setMessage(result.message);
               }
             }}
           >
@@ -342,37 +393,67 @@ export default function RoutineReferenceManager({ loader, uploader }) {
                 <p className="eyebrow">Details</p>
                 <h3>{selected ? draft.label : "New visual standard"}</h3>
               </div>
-              <StatusPill state={draft.current?.state === "active_image" ? "ready" : "warning"}>
-                {draft.current?.state === "active_image" ? "Ready" : "Awaiting image"}
+              <StatusPill
+                state={
+                  draft.current?.state === "active_image" ? "ready" : "warning"
+                }
+              >
+                {draft.current?.state === "active_image"
+                  ? "Ready"
+                  : "Awaiting image"}
               </StatusPill>
             </header>
-            <Field id="reference-key" label="Stable key" help="Permanent identifier; it cannot change after creation.">
+            <Field
+              id="reference-key"
+              label="Stable key"
+              help="Permanent identifier; it cannot change after creation."
+            >
               <input
                 id="reference-key"
                 readOnly={Boolean(selected)}
                 value={draft.stableKey || draft.referenceKey || ""}
-                onChange={(event) => setDraft({ ...draft, stableKey: event.target.value })}
+                onChange={(event) =>
+                  setDraft({ ...draft, stableKey: event.target.value })
+                }
               />
             </Field>
-            <Field id="reference-label" label="Name" help="The name managers and tasks will use.">
+            <Field
+              id="reference-label"
+              label="Name"
+              help="The name managers and tasks will use."
+            >
               <input
                 id="reference-label"
                 value={draft.label || ""}
-                onChange={(event) => setDraft({ ...draft, label: event.target.value })}
+                onChange={(event) =>
+                  setDraft({ ...draft, label: event.target.value })
+                }
               />
             </Field>
-            <Field id="reference-description" label="What this image proves" help="Describe the standard, not the photo itself.">
+            <Field
+              id="reference-description"
+              label="What this image proves"
+              help="Describe the standard, not the photo itself."
+            >
               <textarea
                 id="reference-description"
                 value={draft.description || ""}
-                onChange={(event) => setDraft({ ...draft, description: event.target.value })}
+                onChange={(event) =>
+                  setDraft({ ...draft, description: event.target.value })
+                }
               />
             </Field>
-            <Field id="reference-placeholder" label="Message before upload" help="Shown honestly while the image is missing.">
+            <Field
+              id="reference-placeholder"
+              label="Message before upload"
+              help="Shown honestly while the image is missing."
+            >
               <input
                 id="reference-placeholder"
                 value={draft.placeholderText || ""}
-                onChange={(event) => setDraft({ ...draft, placeholderText: event.target.value })}
+                onChange={(event) =>
+                  setDraft({ ...draft, placeholderText: event.target.value })
+                }
               />
             </Field>
             <div className="rm-actions">
@@ -415,7 +496,11 @@ export default function RoutineReferenceManager({ loader, uploader }) {
               <h3>Current standard</h3>
               {selected.current?.state === "active_image" ? (
                 <>
-                  <button type="button" className="rm-reference-preview" onClick={open}>
+                  <button
+                    type="button"
+                    className="rm-reference-preview"
+                    onClick={open}
+                  >
                     <span>Open current image</span>
                     <small>
                       {selected.current.mimeType} · {selected.current.byteSize} bytes
@@ -439,35 +524,52 @@ export default function RoutineReferenceManager({ loader, uploader }) {
                   </button>
                 </>
               ) : (
-                <div className="rm-placeholder">Reference image coming soon</div>
+                <div className="rm-placeholder">
+                  Reference image coming soon
+                </div>
               )}
-              <Field id="reference-file" label="Choose image" help="JPEG, PNG or WebP. Maximum 5 MB. File content is checked before upload.">
+              <Field
+                id="reference-file"
+                label="Choose image"
+                help="JPEG, PNG or WebP. Maximum 5 MB. File content is checked before upload."
+              >
                 <input
                   id="reference-file"
                   type="file"
                   accept="image/jpeg,image/png,image/webp"
-                  onChange={(event) => setFile(event.target.files?.[0] || null)}
+                  onChange={(event) =>
+                    setFile(event.target.files?.[0] || null)
+                  }
                 />
               </Field>
-              <Field id="reference-caption" label="Caption" help="Optional short context under the image.">
+              <Field
+                id="reference-caption"
+                label="Caption"
+                help="Optional short context under the image."
+              >
                 <input
                   id="reference-caption"
                   value={caption}
                   onChange={(event) => setCaption(event.target.value)}
                 />
               </Field>
-              <Field id="reference-alt" label="Image description" help="Required so the standard remains understandable with assistive technology.">
+              <Field
+                id="reference-alt"
+                label="Image description"
+                help="Required for an actual image so the standard remains understandable with assistive technology."
+              >
                 <input
                   id="reference-alt"
                   value={alt}
-                  onChange={(event) => setAlt(event.target.value)}
+                  required
                   aria-required="true"
+                  onChange={(event) => setAlt(event.target.value)}
                 />
               </Field>
               <button
                 type="button"
                 className="primary-button"
-                disabled={!file || !alt || manager.status === "uploading"}
+                disabled={!file || !alt.trim() || manager.status === "uploading"}
                 onClick={upload}
               >
                 {manager.status === "uploading"
@@ -483,12 +585,16 @@ export default function RoutineReferenceManager({ loader, uploader }) {
 
       {selected ? (
         <section className="rm-card rm-visual-history">
-          <h3>Version history</h3>
-          <p>Previous versions remain auditable and cannot be silently overwritten.</p>
+          <h3>Immutable version history</h3>
+          <p>
+            Previous versions remain auditable and cannot be silently overwritten.
+          </p>
           <ol className="rm-history">
             {selected.versions?.map((version) => (
               <li key={version.id}>
-                <strong>v{version.versionNumber} · {version.state}</strong>
+                <strong>
+                  v{version.versionNumber} · {version.state}
+                </strong>
                 <small>{version.caption || version.createdAt}</small>
               </li>
             ))}
@@ -500,7 +606,8 @@ export default function RoutineReferenceManager({ loader, uploader }) {
               .map((usage, index) => (
                 <li key={index}>
                   {usage.routineKey} · {usage.taskKey}
-                  {usage.itemKey ? ` · ${usage.itemKey}` : ""} · {usage.templateState}
+                  {usage.itemKey ? ` · ${usage.itemKey}` : ""} ·{" "}
+                  {usage.templateState}
                 </li>
               ))}
           </ul>
@@ -516,7 +623,11 @@ export default function RoutineReferenceManager({ loader, uploader }) {
           title="Visual standard"
           onClose={() => setPreview(null)}
           actions={(
-            <button type="button" className="primary-button" onClick={() => setPreview(null)}>
+            <button
+              type="button"
+              className="primary-button"
+              onClick={() => setPreview(null)}
+            >
               Close
             </button>
           )}
