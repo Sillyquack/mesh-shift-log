@@ -11,7 +11,7 @@ permissions:
 jobs:
   verify-production-candidate:
     runs-on: ubuntu-latest
-    timeout-minutes: 40
+    timeout-minutes: 60
     steps:
       - name: Checkout
         uses: actions/checkout@v4
@@ -26,7 +26,9 @@ jobs:
         run: npm ci
 
       - name: Verify production candidate experience
-        run: npm run verify:production-candidate-experience
+        run: |
+          npm run verify:production-candidate-experience
+          npm run verify:production-migration-plan
 
       - name: Verify inherited frontline experiences
         run: |
@@ -36,13 +38,23 @@ jobs:
           npm run verify:mesh-experience-system
           npm run verify:inventory-counter-experience
 
-      - name: Provision disposable Supabase verifier image
+      - name: Provision disposable Supabase verifier images
         run: |
           docker pull supabase/postgres:17.6.1.141
           docker tag supabase/postgres:17.6.1.141 public.ecr.aws/supabase/postgres:17.6.1.141
+          docker pull supabase/postgres:17.6.1.127
+          docker tag supabase/postgres:17.6.1.127 public.ecr.aws/supabase/postgres:17.6.1.127
 
       - name: Verify Event Mode visual-reference bridge
         run: npm run verify:event-visual-reference-bridge
+
+      - name: Verify complete Phase 10 stack in rehearsal owner context
+        run: npm run verify:routine-full-migration-reapply
+
+      - name: Verify complete Phase 10 stack in production owner context
+        env:
+          PHASE10O_OWNER_CONTEXT: production
+        run: npm run verify:routine-full-migration-reapply
 
       - name: Verify manager, visual and history contracts
         run: |
