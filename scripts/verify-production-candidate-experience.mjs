@@ -62,9 +62,10 @@ test('manager home exposes exactly Today, Attention and Control', () => {
     MANAGER_EXPERIENCE_VIEWS.map((view) => view.id),
     ['today', 'attention', 'control'],
   );
-  for (const label of ['Today', 'Attention', 'Control']) {
-    assert.ok(orchestrator.includes(label), label);
-  }
+  assert.deepEqual(
+    MANAGER_EXPERIENCE_VIEWS.map((view) => view.label),
+    ['Today', 'Attention', 'Control'],
+  );
   assert.match(orchestrator, /aria-label="Manager workspace sections"/);
   assert.match(orchestrator, /mesh-manager-experience-view-v1/);
 });
