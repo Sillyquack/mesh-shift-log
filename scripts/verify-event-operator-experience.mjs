@@ -1,18 +1,20 @@
 import assert from "node:assert/strict";
 import { readFile } from "node:fs/promises";
 
-const [operator, cockpit, styles, permissions] = await Promise.all([
+const [operator, router, managerCockpit, styles, permissions] = await Promise.all([
   readFile(new URL("../src/components/EventOperatorExperience.jsx", import.meta.url), "utf8"),
   readFile(new URL("../src/components/EventOperationsCockpit.jsx", import.meta.url), "utf8"),
+  readFile(new URL("../src/components/ManagerEventOperationsCockpit.jsx", import.meta.url), "utf8"),
   readFile(new URL("../src/components/EventOperatorExperience.css", import.meta.url), "utf8"),
   readFile(new URL("../src/lib/permissions.js", import.meta.url), "utf8"),
 ]);
 
 assert.match(operator, /role\) === "event_floor_manager"/, "Event Mode must be role-gated");
-assert.match(cockpit, /if \(operatorMode\)[\s\S]*<EventOperatorExperience/, "Operator role must branch away from the manager cockpit");
-assert.match(cockpit, /Event Operations Cockpit/, "Manager cockpit must remain available");
-assert.match(cockpit, /listImportedCalendarEvents/, "Manager planning integrations must remain available behind the operator view");
-assert.match(cockpit, /event-operator-launcher/, "Operator home must use the focused launcher");
+assert.match(router, /if \(!isEventOperator\(user\)\) return <ManagerEventOperationsCockpit/, "Non-operator roles must stay in the Manager Cockpit");
+assert.match(router, /<EventOperatorExperience/, "Event Floor Manager must route to Event Mode");
+assert.match(router, /event-operator-launcher/, "Operator home must use the focused launcher");
+assert.match(managerCockpit, /Event Operations Cockpit/, "Manager Cockpit must remain available");
+assert.match(managerCockpit, /listImportedCalendarEvents/, "Manager planning integrations must remain behind the operator view");
 
 for (const label of [
   "UP NEXT",
@@ -30,8 +32,10 @@ for (const label of [
 
 for (const action of ["onTaskStatus", "onCreateLiveUpdate", "onOpenGuide"]) {
   assert.ok(operator.includes(action), `Event Mode missing operational action: ${action}`);
+  assert.ok(router.includes(action), `Event Mode router missing action: ${action}`);
 }
 
+const operatorSurface = `${operator}\n${router}`.toLowerCase();
 const forbiddenOperatorTerms = [
   "calendar import",
   "database",
@@ -43,11 +47,11 @@ const forbiddenOperatorTerms = [
   "confidence",
 ];
 for (const term of forbiddenOperatorTerms) {
-  assert.ok(!operator.toLowerCase().includes(term), `Operator UI contains technical noise: ${term}`);
+  assert.ok(!operatorSurface.includes(term), `Operator UI contains technical noise: ${term}`);
 }
 
-assert.doesNotMatch(operator, /[æøå]/i, "Operator UI must remain English");
-assert.doesNotMatch(operator, /\b(?:pin|code|alarm code)\s*[:=-]\s*\d{4,8}\b/i, "Operator UI must not contain an alarm code");
+assert.doesNotMatch(operatorSurface, /[æøå]/i, "Operator UI must remain English");
+assert.doesNotMatch(operatorSurface, /\b(?:pin|code|alarm code)\s*[:=-]\s*\d{4,8}\b/i, "Operator UI must not contain an alarm code");
 assert.match(styles, /event-operator-session/, "Role-scoped home cleanup missing");
 assert.match(styles, /event-operator-active/, "Focused Event Mode cleanup missing");
 assert.match(styles, /:has\(> \.event-board-create-details\)/, "Event Floor Manager home must hide implementation surfaces");
