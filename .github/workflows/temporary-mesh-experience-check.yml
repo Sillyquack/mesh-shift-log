@@ -35,7 +35,9 @@ jobs:
         run: npm run verify:mesh-experience-system
 
       - name: Provision routine verifier database image
-        run: docker pull public.ecr.aws/supabase/postgres:17.6.1.141
+        run: |
+          docker pull supabase/postgres:17.6.1.141
+          docker tag supabase/postgres:17.6.1.141 public.ecr.aws/supabase/postgres:17.6.1.141
 
       - name: Verify routine employee UI contracts
         run: npm run verify:routine-employee-ui
