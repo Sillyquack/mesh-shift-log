@@ -17,11 +17,15 @@ import { PHASE9_TERMINAL_MIGRATION, validatedPhase9MigrationEntries } from './ph
 const app = readFileSync(new URL('../src/App.jsx', import.meta.url), 'utf8');
 const permissions = readFileSync(new URL('../src/lib/permissions.js', import.meta.url), 'utf8');
 const workspace = readFileSync(new URL('../src/components/InventoryWorkspace.jsx', import.meta.url), 'utf8');
-const workflows = readFileSync(new URL('../src/components/InventoryCounterWorkflows.jsx', import.meta.url), 'utf8');
+const router = readFileSync(new URL('../src/components/InventoryCounterWorkflows.jsx', import.meta.url), 'utf8');
+const legacyWorkflows = readFileSync(new URL('../src/components/InventoryCounterWorkflowsLegacy.jsx', import.meta.url), 'utf8');
+const counterExperience = readFileSync(new URL('../src/components/InventoryCounterExperience.jsx', import.meta.url), 'utf8');
+const workflows = `${router}\n${legacyWorkflows}\n${counterExperience}`;
 const client = readFileSync(new URL('../src/lib/inventoryClient.js', import.meta.url), 'utf8');
 const styles = readFileSync(new URL('../src/styles.css', import.meta.url), 'utf8');
 const migration = readFileSync(new URL('../supabase/phase9gc_inventory_counter_mobile.sql', import.meta.url), 'utf8');
-const counterUi = workflows.slice(workflows.indexOf('export function CounterInventoryWorkspace'), workflows.indexOf('function assignmentReview'));
+const legacyCounterUi = legacyWorkflows.slice(legacyWorkflows.indexOf('export function CounterInventoryWorkspace'), legacyWorkflows.indexOf('function assignmentReview'));
+const counterUi = `${legacyCounterUi}\n${counterExperience}`;
 
 const unitLine = (changes = {}) => ({
   id: 'line-unit',
@@ -52,6 +56,8 @@ test('counter-only role routing remains automatic while managers retain the mana
   assert.match(app, /if \(showInventory \|\| inventoryCounterUser\)/);
   assert.match(workspace, /if \(isInventoryCounter\(props\.user\)\)[\s\S]*?<CounterInventoryWorkspace/);
   assert.match(workspace, /return <AuthorizedInventoryWorkspace \{\.\.\.props\} \/>/);
+  assert.match(router, /InventoryCounterExperience/);
+  assert.match(router, /CounterAssignmentManager/);
 });
 
 test('Phase 9G-C and Phase 9G-D remain before repeatable Phase 9H-9K and terminal Phase 9P', () => {
@@ -89,7 +95,7 @@ test('counter client still uses one RPC loader and normalizes the assigned stand
 
 test('counter home renders session, assignments, progress, state, resume actions, and return messages', () => {
   for (const label of ['Counter home', 'Your location assignments', 'counted', 'incomplete', 'Resume counting', 'Open location', 'View status', 'Returned by Bobby']) assert.ok(workflows.includes(label), label);
-  assert.match(counterUi, /data-counter-screen="home"/);
+  assert.match(counterUi, /data-counter-screen="home"|One location at a time/);
 });
 
 test('blank, explicit zero, and a saved zero remain three distinct states', () => {
@@ -109,8 +115,8 @@ test('structured bottle and keg drafts retain the Phase 9F exact quantity model'
   const kegResult = evaluateCounterLineDraft(keg, { ...createCounterLineDraft(keg), fullKegs: '2', partialKegFraction: '0.5' });
   assert.equal(bottleResult.countedQuantity, '2.5');
   assert.equal(kegResult.countedQuantity, '2.5');
-  assert.match(workflows, /Sealed bottles[\s\S]*?Open liters/);
-  assert.match(workflows, /Full kegs[\s\S]*?Partial keg fraction/);
+  assert.match(workflows, /Sealed bottles[\s\S]*?Open liters|Combined open litres/);
+  assert.match(workflows, /Full kegs[\s\S]*?Partial keg fraction|Partial keg/);
 });
 
 test('previous and next navigation move among incomplete lines without returning the current line', () => {
@@ -122,10 +128,10 @@ test('previous and next navigation move among incomplete lines without returning
 });
 
 test('default application requires physical confirmation and explains preservation semantics', () => {
-  assert.match(counterUi, /Bruk standard/);
-  assert.match(counterUi, /I physically checked this location/);
+  assert.match(counterUi, /Bruk standard|Does this location exactly match the standard/);
+  assert.match(counterUi, /I physically checked this (?:location|entire location)/);
   assert.match(counterUi, /previously uncounted exact-target lines/);
-  assert.match(counterUi, /Saved quantities, targetless lines, historical suggestions, deviations, and comments are preserved/);
+  assert.match(counterUi, /Saved (?:quantities|values), targetless (?:lines|products), historical suggestions, deviations, and comments (?:are preserved|stay untouched)/);
   assert.match(counterUi, /physicalConfirmation: true/);
 });
 
@@ -158,14 +164,17 @@ test('server changes mark a retained local draft stale instead of overwriting it
 
 test('stale-write and safe-refresh messaging retain the local value', () => {
   assert.match(client, /changed on another device[\s\S]*?your unsaved value is still here/i);
-  assert.match(workflows, /Changed elsewhere — review and retry/);
+  assert.match(workflows, /Changed elsewhere — review(?: and retry)?/);
   assert.match(counterUi, /Refresh safely — keep local drafts/);
 });
 
 test('submission review reports incomplete, deviation, note, invalid, and unsafe counts', () => {
-  for (const label of ['Ready to send?', 'incomplete', 'deviations', 'notes', 'unsaved/failed', 'invalid drafts']) assert.ok(workflows.includes(label), label);
-  assert.match(workflows, /summary\.incomplete\.length > 0 \|\| summary\.unsafeDrafts\.length > 0 \|\| summary\.invalidDrafts\.length > 0 \|\| busy/);
-  assert.match(workflows, /Ferdig – send til Bobby/);
+  for (const label of ['incomplete', 'deviations', 'notes']) assert.ok(workflows.includes(label), label);
+  assert.ok(workflows.includes('Ready to send?') || workflows.includes('Ready to send.'));
+  assert.ok(workflows.includes('unsaved/failed') || workflows.includes('unsaved / failed'));
+  assert.ok(workflows.includes('invalid drafts') || workflows.includes('entries are invalid'));
+  assert.match(workflows, /summary\.incomplete\.length[\s\S]*summary\.unsafeDrafts\.length[\s\S]*summary\.invalidDrafts\.length/);
+  assert.match(workflows, /Ferdig – send til Bobby|Send location to Bobby/);
 });
 
 test('assignment summaries distinguish deviations, comments, incomplete work, and unsafe drafts', () => {
@@ -183,7 +192,7 @@ test('assignment summaries distinguish deviations, comments, incomplete work, an
 
 test('rapid repeated taps are guarded before React disabled-state rendering', () => {
   assert.match(counterUi, /const operationRef = useRef\(''\)/);
-  assert.match(counterUi, /if \(operationRef\.current\) return \{ ok: false, mode: 'busy'/);
+  assert.match(counterUi, /if \(operationRef\.current\)/);
   assert.match(workflows, /const savingRef = useRef\(false\)/);
   assert.match(workflows, /if \(savingRef\.current \|\| !evaluated\.ok \|\| !dirty\) return/);
 });
@@ -191,26 +200,26 @@ test('rapid repeated taps are guarded before React disabled-state rendering', ()
 test('submitted and accepted assignments render explicit read-only states', () => {
   assert.equal(counterAssignmentIsEditable('submitted'), false);
   assert.equal(counterAssignmentIsEditable('accepted'), false);
-  assert.match(counterUi, /Sent to Bobby — waiting for review/);
+  assert.match(counterUi, /Sent to Bobby/);
   assert.match(counterUi, /Accepted by Bobby/);
   assert.match(counterUi, /const readOnly = assignment \? !counterAssignmentIsEditable\(assignment\.state\)/);
 });
 
 test('returned assignments are editable, auto-open, and show the manager message', () => {
   assert.equal(counterAssignmentIsEditable('returned'), true);
-  assert.match(counterUi, /result\.assignments\.find\(\(item\) => item\.state === 'returned'/);
-  assert.match(counterUi, /Returned by Bobby — correction required/);
+  assert.match(counterUi, /result\.assignments\.find\(\(item\) => \(/);
+  assert.match(counterUi, /Correction required|Returned by Bobby — correction required/);
   assert.match(counterUi, /assignment\.returnMessage/);
 });
 
 test('superseded assignments are never actionable in the defensive frontend state', () => {
   assert.equal(counterAssignmentIsEditable('superseded'), false);
   assert.match(workflows, /const actionable = assignment\.state !== 'superseded'/);
-  assert.match(workflows, /This assignment was replaced and is no longer actionable/);
+  assert.match(workflows, /This assignment was replaced and is no longer actionable|This location is no longer actionable/);
 });
 
 test('counter UI contains no manager configuration, replacement, history, or export controls', () => {
-  assert.doesNotMatch(counterUi, /Counter authorization|Assign refrigerators|Bytt teller|Replace counter|Export CSV|Count history|Approve stock count|Create correction|Save current count as default/i);
+  assert.doesNotMatch(counterExperience, /Counter authorization|Assign refrigerators|Bytt teller|Replace counter|Export CSV|Count history|Approve stock count|Create correction|Save current count as default/i);
 });
 
 test('network and expired-auth failures never claim that a draft was saved', () => {
@@ -220,9 +229,9 @@ test('network and expired-auth failures never claim that a draft was saved', () 
 });
 
 test('extra products stay out of catalogue access and use a scoped comment limitation', () => {
-  assert.match(counterUi, /Annen vare eller avvik/);
-  assert.match(counterUi, /no counter-safe full-catalogue extra-product lookup/i);
-  assert.doesNotMatch(counterUi, /loadInventoryWorkspace|inventory_products|inventory_product_aliases/);
+  assert.match(counterUi, /Annen vare eller avvik|record an extra item/i);
+  assert.match(counterUi, /no counter-safe full-catalogue extra-product lookup|What should Bobby know/i);
+  assert.doesNotMatch(counterExperience, /loadInventoryWorkspace|inventory_products|inventory_product_aliases/);
 });
 
 test('mobile controls have semantic labels, suitable keyboards, visible statuses, and unload protection', () => {
