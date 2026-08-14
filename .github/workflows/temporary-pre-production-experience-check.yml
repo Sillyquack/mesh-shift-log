@@ -25,10 +25,10 @@ jobs:
       - name: Install dependencies
         run: npm ci
 
-      - name: Provision disposable Supabase PostgreSQL image
+      - name: Provision exact Routine Engine verifier image
         run: |
-          docker pull supabase/postgres:17.6.1.141
-          docker tag supabase/postgres:17.6.1.141 public.ecr.aws/supabase/postgres:17.6.1.141
+          docker pull supabase/postgres:17.6.1.127
+          docker tag supabase/postgres:17.6.1.127 public.ecr.aws/supabase/postgres:17.6.1.127
 
       - name: Verify complete Routine Engine migration reapply
         run: npm run verify:routine-full-migration-reapply
