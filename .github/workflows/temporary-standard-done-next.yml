@@ -10,7 +10,7 @@ permissions:
 
 jobs:
   upgrade:
-    if: "${{ github.event.head_commit.message == 'ci: retry standard done-and-next flow' }}"
+    if: "${{ github.event.head_commit.message == 'ci: finalize standard done-and-next flow' }}"
     runs-on: ubuntu-latest
     timeout-minutes: 15
     steps:
@@ -30,6 +30,12 @@ jobs:
           python <<'PY'
           from pathlib import Path
           import re
+
+          def replace_once(text, pattern, replacement, label):
+            updated, count = re.subn(pattern, lambda _match: replacement, text, count=1)
+            if count != 1:
+              raise SystemExit(f'Expected one {label} replacement, got {count}')
+            return updated
 
           experience_path = Path('src/components/InventoryCounterExperience.jsx')
           experience = experience_path.read_text()
@@ -161,56 +167,55 @@ jobs:
             }
           };'''
 
-          experience, count = re.subn(
+          experience = replace_once(
+            experience,
             r"  const applyDefault = async \(\) => \{[\s\S]*?\n  \};\n\n  const submit = async",
             replacement + "\n\n  const submit = async",
-            experience,
-            count=1,
+            'applyDefault flow',
           )
-          if count != 1:
-            raise SystemExit(f'Expected one applyDefault replacement, got {count}')
           experience_path.write_text(experience)
 
           verifier_path = Path('scripts/verify-inventory-counter-experience.mjs')
           verifier = verifier_path.read_text()
-          verifier_replacements = [
-            (
-              r'''assert.match(experience, /Done — \${locationKind} matches standard/);''',
-              r'''assert.match(experience, /Done — count & next \${locationKind}/);''',
-            ),
-            (
-              r'''assert.match(experience, /one tap counts this \{locationKind\} and opens Review/);''',
-              r'''assert.match(experience, /one tap counts and sends this \{locationKind\} for manager review, then opens the next assigned location/);''',
-            ),
-            (
-              r'''assert.match(experience, /message: `\${assignment\.location\.name} matches its saved standard and is counted\.`/);''',
-              r'''assert.match(experience, /const applied = await applyInventoryCounterRefrigeratorDefault/);
+          verifier = replace_once(
+            verifier,
+            r"assert\.match\(experience, /Done — [^\n]+matches standard/\);",
+            r'''assert.match(experience, /Done — count & next \$\{locationKind\}/);''',
+            'Count Mode Done assertion',
+          )
+          verifier = replace_once(
+            verifier,
+            r"assert\.match\(experience, /one tap counts this [^\n]+opens Review/\);",
+            r'''assert.match(experience, /one tap counts and sends this \{locationKind\} for manager review, then opens the next assigned location/);''',
+            'Count Mode one-tap assertion',
+          )
+          verifier = replace_once(
+            verifier,
+            r"assert\.match\(experience, /message: `[^\n]+is counted[^\n]+/\);",
+            r'''assert.match(experience, /const applied = await applyInventoryCounterRefrigeratorDefault/);
           assert.match(experience, /const workspace = await loadInventoryCounterWorkspace/);
           assert.match(experience, /const submitted = await submitInventoryCountAssignment/);
           assert.match(experience, /expectedAssignmentRevision: updatedAssignment\.revision/);
           assert.match(experience, /expectedSessionUpdatedAt: updatedAssignment\.session\.updatedAt/);
           assert.match(experience, /Your next location is ready/);
           assert.match(experience, /no count was lost/);''',
-            ),
-          ]
-          for old, new in verifier_replacements:
-            if old not in verifier:
-              raise SystemExit(f'Missing Count Mode verifier marker: {old}')
-            verifier = verifier.replace(old, new, 1)
+            'Count Mode standard-submit assertions',
+          )
           verifier_path.write_text(verifier)
 
           workflow_path = Path('scripts/verify-inventory-counter-workflow.mjs')
           workflow = workflow_path.read_text()
-          old_workflow_assertion = r'''  assert.match(counterExperience, /Done — \${locationKind} matches standard/);'''
-          new_workflow_assertions = r'''  assert.match(counterExperience, /Done — count & next \${locationKind}/);
+          workflow = replace_once(
+            workflow,
+            r"  assert\.match\(counterExperience, /Done — [^\n]+matches standard/\);",
+            r'''  assert.match(counterExperience, /Done — count & next \$\{locationKind\}/);
             assert.match(counterExperience, /const applied = await applyInventoryCounterRefrigeratorDefault/);
             assert.match(counterExperience, /const workspace = await loadInventoryCounterWorkspace/);
             assert.match(counterExperience, /const submitted = await submitInventoryCountAssignment/);
             assert.match(counterExperience, /expectedAssignmentRevision: updatedAssignment\.revision/);
-            assert.match(counterExperience, /expectedSessionUpdatedAt: updatedAssignment\.session\.updatedAt/);'''
-          if old_workflow_assertion not in workflow:
-            raise SystemExit(f'Missing workflow verifier marker: {old_workflow_assertion}')
-          workflow = workflow.replace(old_workflow_assertion, new_workflow_assertions, 1)
+            assert.match(counterExperience, /expectedSessionUpdatedAt: updatedAssignment\.session\.updatedAt/);''',
+            'workflow Done-and-next assertions',
+          )
           workflow_path.write_text(workflow)
           PY
 
