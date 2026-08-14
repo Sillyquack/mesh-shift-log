@@ -18,7 +18,7 @@ export default class RoutineEmployeeErrorBoundary extends Component {
           <p className="eyebrow">Your current work is safe</p>
           <h1>Shift Mode stopped safely</h1>
           <p>Your local draft was not submitted or discarded.</p>
-          <p>After returning, ask a shift lead or manager to create this run if the routine you need is still missing.</p>
+          <p>After returning: Ask a shift lead or manager to create this run if the routine you need is still missing.</p>
           <button
             type="button"
             onClick={() => {
