@@ -1,14 +1,14 @@
 export const MANAGER_TABS = Object.freeze([
-  { id: "overview", label: "Overview" },
-  { id: "foundation", label: "Foundation" },
-  { id: "content", label: "Operational content" },
-  { id: "templates", label: "Templates" },
-  { id: "references", label: "References" },
-  { id: "operators", label: "Operators" },
-  { id: "pilot", label: "Pilot access" },
-  { id: "history", label: "History" },
-  { id: "review", label: "Review" },
-  { id: "release", label: "Release gate" },
+  { id: "overview", label: "Today", group: "today" },
+  { id: "review", label: "Attention", group: "today" },
+  { id: "content", label: "Content", group: "build" },
+  { id: "templates", label: "Routines", group: "build" },
+  { id: "references", label: "Visual standards", group: "build" },
+  { id: "operators", label: "People & devices", group: "people" },
+  { id: "pilot", label: "Access", group: "people" },
+  { id: "history", label: "History", group: "history" },
+  { id: "foundation", label: "Places & standards", group: "system" },
+  { id: "release", label: "Publish", group: "system" },
 ]);
 
 export const READINESS_LABELS = Object.freeze({ ready: "Ready", warning: "Warning", blocked: "Blocked" });
@@ -25,12 +25,12 @@ export function classifyManagerError(error) {
 
 export function managerErrorMessage(kind) {
   return ({
-    stale: "The server revision changed. Your local draft has been preserved.",
-    auth: "Your sign-in expired. Your local draft has been preserved.",
-    network: "The server could not be reached. Your local draft has been preserved.",
-    validation: "The server rejected this draft. Review the highlighted fields; your values are preserved.",
-    forbidden: "Personal manager access is required.",
-    server: "The request failed. Your local draft has been preserved.",
+    stale: "The saved version changed. Your draft is still here — refresh before retrying.",
+    auth: "Your sign-in expired. Your draft is still here.",
+    network: "The server could not be reached. Your draft is still here.",
+    validation: "This draft needs a correction. Review the highlighted fields; your values are preserved.",
+    forbidden: "Manager access is required.",
+    server: "The request failed. Your draft is still here.",
   })[kind] || "The request failed.";
 }
 
