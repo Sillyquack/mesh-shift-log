@@ -31,13 +31,29 @@ jobs:
           npx playwright install --with-deps chromium webkit
 
       - name: Run 70-scenario browser matrix
-        run: npm run verify:routine-content-visual
+        shell: bash
+        run: |
+          set +e
+          npm run verify:routine-content-visual 2>&1 | tee browser-matrix.log
+          status=${PIPESTATUS[0]}
+          echo "$status" > browser-matrix-status.txt
+          exit "$status"
+
+      - name: Collect browser screenshots
+        if: always()
+        shell: bash
+        run: |
+          mkdir -p browser-evidence
+          cp -R /tmp/mesh-shift-log-phase10l-visual-* browser-evidence/ 2>/dev/null || true
+          cp -R /private/tmp/mesh-shift-log-phase10l-visual-* browser-evidence/ 2>/dev/null || true
+          cp browser-matrix.log browser-matrix-status.txt browser-evidence/ 2>/dev/null || true
+          find browser-evidence -maxdepth 3 -type f -print || true
 
       - name: Upload browser evidence
         if: always()
         uses: actions/upload-artifact@v4
         with:
           name: mesh-production-candidate-browser-evidence
-          path: /private/tmp/mesh-shift-log-phase10l-visual-*
-          if-no-files-found: warn
+          path: browser-evidence
+          if-no-files-found: error
           retention-days: 7
