@@ -41,29 +41,59 @@ jobs:
       - name: Verify Phase 9 inventory stack
         run: npm run verify:phase9-all
 
-      - name: Verify Routine Engine migration layers
-        run: |
-          npm run verify:routine-full-migration-reapply
-          npm run verify:routine-foundation
-          npm run verify:routine-templates
-          npm run verify:routine-reference-images
-          npm run verify:routine-runs
-          npm run verify:routine-lifecycle
-          npm run verify:routine-operational-time
-          npm run verify:routine-delivery
-          npm run verify:routine-double-shift
-          npm run verify:routine-sync-offline
-          npm run verify:routine-shared-device
+      - name: Verify complete Routine Engine migration reapply
+        run: npm run verify:routine-full-migration-reapply
 
-      - name: Verify Routine Engine application and release layers
-        run: |
-          npm run verify:routine-ui-foundation
-          npm run verify:routine-manager-ui
-          npm run verify:routine-employee-ui
-          npm run verify:routine-history-pilot
-          npm run verify:routine-content-pack
-          npm run verify:routine-content-visual
-          npm run verify:routine-e2e-pilot
+      - name: Verify Routine Engine foundation
+        run: npm run verify:routine-foundation
+
+      - name: Verify Routine Engine templates
+        run: npm run verify:routine-templates
+
+      - name: Verify Routine Engine reference images
+        run: npm run verify:routine-reference-images
+
+      - name: Verify Routine Engine runs
+        run: npm run verify:routine-runs
+
+      - name: Verify Routine Engine lifecycle
+        run: npm run verify:routine-lifecycle
+
+      - name: Verify Routine Engine operational time
+        run: npm run verify:routine-operational-time
+
+      - name: Verify Routine Engine delivery
+        run: npm run verify:routine-delivery
+
+      - name: Verify Routine Engine Double Shift
+        run: npm run verify:routine-double-shift
+
+      - name: Verify Routine Engine sync and offline
+        run: npm run verify:routine-sync-offline
+
+      - name: Verify Routine Engine shared device
+        run: npm run verify:routine-shared-device
+
+      - name: Verify Routine Engine UI foundation
+        run: npm run verify:routine-ui-foundation
+
+      - name: Verify Routine Engine manager UI
+        run: npm run verify:routine-manager-ui
+
+      - name: Verify Routine Engine employee UI
+        run: npm run verify:routine-employee-ui
+
+      - name: Verify Routine Engine history and pilot
+        run: npm run verify:routine-history-pilot
+
+      - name: Verify Routine Engine content pack
+        run: npm run verify:routine-content-pack
+
+      - name: Verify Routine Engine content visuals
+        run: npm run verify:routine-content-visual
+
+      - name: Verify Routine Engine end-to-end pilot
+        run: npm run verify:routine-e2e-pilot
 
       - name: Build production bundle
         run: npm run build
