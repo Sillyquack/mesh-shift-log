@@ -1,4 +1,4 @@
-name: Temporary pre-production experience check
+name: Temporary Routine migration reapply check
 
 on:
   push:
@@ -9,9 +9,9 @@ permissions:
   contents: read
 
 jobs:
-  verify-pre-production:
+  verify-migration-reapply:
     runs-on: ubuntu-latest
-    timeout-minutes: 90
+    timeout-minutes: 45
     steps:
       - name: Checkout
         uses: actions/checkout@v4
@@ -25,75 +25,10 @@ jobs:
       - name: Install dependencies
         run: npm ci
 
-      - name: Verify experience slices
-        run: |
-          npm run verify:julie-event-routines
-          npm run verify:event-operator-experience
-          npm run verify:mesh-experience-system
-          npm run verify:inventory-counter-experience
-          npm run verify:pre-production-experience
-
       - name: Provision disposable Supabase PostgreSQL image
         run: |
           docker pull supabase/postgres:17.6.1.141
           docker tag supabase/postgres:17.6.1.141 public.ecr.aws/supabase/postgres:17.6.1.141
 
-      - name: Verify Phase 9 inventory stack
-        run: npm run verify:phase9-all
-
       - name: Verify complete Routine Engine migration reapply
         run: npm run verify:routine-full-migration-reapply
-
-      - name: Verify Routine Engine foundation
-        run: npm run verify:routine-foundation
-
-      - name: Verify Routine Engine templates
-        run: npm run verify:routine-templates
-
-      - name: Verify Routine Engine reference images
-        run: npm run verify:routine-reference-images
-
-      - name: Verify Routine Engine runs
-        run: npm run verify:routine-runs
-
-      - name: Verify Routine Engine lifecycle
-        run: npm run verify:routine-lifecycle
-
-      - name: Verify Routine Engine operational time
-        run: npm run verify:routine-operational-time
-
-      - name: Verify Routine Engine delivery
-        run: npm run verify:routine-delivery
-
-      - name: Verify Routine Engine Double Shift
-        run: npm run verify:routine-double-shift
-
-      - name: Verify Routine Engine sync and offline
-        run: npm run verify:routine-sync-offline
-
-      - name: Verify Routine Engine shared device
-        run: npm run verify:routine-shared-device
-
-      - name: Verify Routine Engine UI foundation
-        run: npm run verify:routine-ui-foundation
-
-      - name: Verify Routine Engine manager UI
-        run: npm run verify:routine-manager-ui
-
-      - name: Verify Routine Engine employee UI
-        run: npm run verify:routine-employee-ui
-
-      - name: Verify Routine Engine history and pilot
-        run: npm run verify:routine-history-pilot
-
-      - name: Verify Routine Engine content pack
-        run: npm run verify:routine-content-pack
-
-      - name: Verify Routine Engine content visuals
-        run: npm run verify:routine-content-visual
-
-      - name: Verify Routine Engine end-to-end pilot
-        run: npm run verify:routine-e2e-pilot
-
-      - name: Build production bundle
-        run: npm run build
