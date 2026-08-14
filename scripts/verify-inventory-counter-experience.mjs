@@ -28,6 +28,7 @@ for (const label of [
   'Show how this location should look',
   'Ready to send.',
   'Send location to Bobby',
+  'Submitting sends only this location.',
 ]) {
   assert.ok(experience.includes(label), `Count Mode missing label: ${label}`);
 }
@@ -44,6 +45,31 @@ for (const capability of [
 ]) {
   assert.ok(experience.includes(capability), `Count Mode missing protected capability: ${capability}`);
 }
+
+// A Stock Count line is meaningful only inside its physical assignment/location.
+// The same product in two fridges must remain two separate lines and two separate saves.
+for (const scopedContract of [
+  /const assignment = assignments\.find\(\(item\) => item\.id === selectedId\) \|\| assignments\[0\] \|\| null/,
+  /summarizeCounterAssignment\(assignment, drafts\)/,
+  /const requestedLine = assignment\?\.lines\.find\(\(line\) => line\.id === activeLineId\) \|\| null/,
+  /findAdjacentIncompleteLineId\(assignment\?\.lines \|\| \[\], currentLineId, direction\)/,
+  /assignmentId: assignment\.id/,
+  /submitInventoryCountAssignment\(\{[\s\S]*?assignmentId: assignment\.id/,
+  /<strong>\{assignment\.location\.name\}<\/strong>/,
+  /<h1>\{assignment\.location\.name\}<\/h1>/,
+]) {
+  assert.match(experience, scopedContract, `Count Mode lost a location-scoping contract: ${scopedContract}`);
+}
+assert.doesNotMatch(
+  experience,
+  /findAdjacentIncompleteLineId\(assignments\.flatMap/,
+  'Product navigation must never cross from one location/fridge assignment into another.',
+);
+assert.doesNotMatch(
+  experience,
+  /submitInventoryCountAssignment\(\{[\s\S]*?(?:sessionId|productId):/,
+  'Counter submission must remain assignment/location scoped, not global product or whole-session scoped.',
+);
 
 assert.match(experience, /const operationRef = useRef\(''\)/);
 assert.match(experience, /if \(operationRef\.current\)/);
@@ -90,4 +116,4 @@ assert.match(designSystem, /--mesh-gold/);
 assert.match(designSystem, /\.mesh-progress-ring/);
 assert.match(designSystem, /\.mesh-bottom-nav/);
 
-console.log('Verified focused Count / Progress / Review experience and preserved inventory integrity controls.');
+console.log('Verified location-scoped Count / Progress / Review experience and preserved inventory integrity controls.');
