@@ -34,6 +34,27 @@ jobs:
       - name: Verify focused Count Mode
         run: npm run verify:inventory-counter-experience
 
+      - name: Collect routed inventory source verifier results
+        shell: bash
+        run: |
+          set +e
+          status=0
+          for check in \
+            verify:inventory-counter-workflow \
+            verify:inventory-counter-replacement \
+            verify:inventory-counter-mobile \
+            verify:inventory-session-location-scope \
+            verify:inventory-confirmation-dialog \
+            verify:inventory-variance-notes \
+            verify:inventory-millum-export \
+            verify:inventory-shelf-storage-guidance \
+            verify:inventory-history-detail \
+            verify:inventory-simplicity
+          do
+            npm run "$check" || status=1
+          done
+          exit "$status"
+
       - name: Provision Supabase verifier image
         run: |
           docker pull supabase/postgres:17.6.1.141
