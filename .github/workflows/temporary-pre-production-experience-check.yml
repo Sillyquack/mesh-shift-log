@@ -1,4 +1,4 @@
-name: Temporary Routine migration reapply check
+name: Temporary migration and security check
 
 on:
   push:
@@ -9,9 +9,9 @@ permissions:
   contents: read
 
 jobs:
-  verify-migration-reapply:
+  verify-migrations-and-security:
     runs-on: ubuntu-latest
-    timeout-minutes: 45
+    timeout-minutes: 60
     steps:
       - name: Checkout
         uses: actions/checkout@v4
@@ -25,10 +25,18 @@ jobs:
       - name: Install dependencies
         run: npm ci
 
-      - name: Provision exact Routine Engine verifier image
+      - name: Verify Event Operations security contract
+        run: npm run verify:event-operation-function-security
+
+      - name: Provision exact disposable PostgreSQL images
         run: |
           docker pull supabase/postgres:17.6.1.127
           docker tag supabase/postgres:17.6.1.127 public.ecr.aws/supabase/postgres:17.6.1.127
+          docker pull supabase/postgres:17.6.1.141
+          docker tag supabase/postgres:17.6.1.141 public.ecr.aws/supabase/postgres:17.6.1.141
+
+      - name: Verify Event Operations ACL migration in disposable database
+        run: npm run verify:event-operation-function-security-db
 
       - name: Verify complete Routine Engine migration reapply
         run: npm run verify:routine-full-migration-reapply
