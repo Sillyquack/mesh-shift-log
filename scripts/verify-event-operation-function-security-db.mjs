@@ -6,7 +6,7 @@ import { spawnSync } from "node:child_process";
 
 const ROOT = resolve(dirname(fileURLToPath(import.meta.url)), "..");
 const IMAGE = "public.ecr.aws/supabase/postgres:17.6.1.141";
-const DATABASE = "phase10w_event_function_security_test";
+const DATABASE = "postgres";
 const CONTAINER = `mesh-shift-log-phase10w-${process.pid}-${randomUUID().slice(0, 8)}`;
 const PASSWORD = `phase10w-${randomUUID()}`;
 const MIGRATION = "supabase/phase10w_event_operations_authenticated_execute.sql";
@@ -68,11 +68,11 @@ function command(name, args, options = {}) {
 
 const docker = (args, options) => command("docker", args, options);
 
-function psql(sql, { tuplesOnly = false, allowFailure = false, database = DATABASE } = {}) {
+function psql(sql, { tuplesOnly = false, allowFailure = false } = {}) {
   const args = [
     "exec", "-i", CONTAINER,
     "psql", "--no-psqlrc", "--set=ON_ERROR_STOP=1",
-    "--username=supabase_admin", `--dbname=${database}`,
+    "--username=supabase_admin", `--dbname=${DATABASE}`,
   ];
   if (tuplesOnly) args.push("--tuples-only", "--no-align", "--quiet");
   return docker(args, { input: sql.replace(/^\uFEFF/, ""), allowFailure });
@@ -151,7 +151,7 @@ async function main() {
 
     let ready = false;
     for (let attempt = 0; attempt < 80; attempt += 1) {
-      const status = docker(["exec", CONTAINER, "pg_isready", "--username=postgres", "--dbname=postgres"], { allowFailure: true, timeout: 10_000 });
+      const status = docker(["exec", CONTAINER, "pg_isready", "--username=postgres", `--dbname=${DATABASE}`], { allowFailure: true, timeout: 10_000 });
       if (status.status === 0) {
         ready = true;
         break;
@@ -159,9 +159,7 @@ async function main() {
       sleep(250);
     }
     if (!ready) throw new Error("Disposable PostgreSQL did not become ready.");
-
-    docker(["exec", CONTAINER, "createdb", "--username=supabase_admin", DATABASE]);
-    console.log(`PASS created isolated database ${DATABASE}`);
+    console.log("PASS using initialized, disposable Supabase postgres database");
 
     for (const path of BASELINE) apply(path);
 
