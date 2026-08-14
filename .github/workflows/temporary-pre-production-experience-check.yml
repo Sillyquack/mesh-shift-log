@@ -1,0 +1,37 @@
+name: Temporary pre-production experience check
+
+on:
+  push:
+    branches:
+      - agent/pre-production-experience
+
+permissions:
+  contents: read
+
+jobs:
+  verify-source-and-build:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: npm
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Verify experience slices
+        run: |
+          npm run verify:julie-event-routines
+          npm run verify:event-operator-experience
+          npm run verify:mesh-experience-system
+          npm run verify:inventory-counter-experience
+          npm run verify:pre-production-experience
+
+      - name: Build production bundle
+        run: npm run build
