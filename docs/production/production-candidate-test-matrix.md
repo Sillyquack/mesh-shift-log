@@ -8,6 +8,7 @@ This matrix separates four different kinds of evidence so that a missing local d
 |---|---|
 | Automated source / model | Deterministic assertions against code, data models and UI contracts |
 | Disposable database | Real PostgreSQL migrations, roles, RLS, grants, stale writes and concurrency in a network-isolated container |
+| Browser matrix | The actual Vite bundle exercised in Chromium and WebKit across required desktop, tablet and mobile viewports |
 | Production build | Clean dependency install and Vite production bundle |
 | Manual role journey | Human review of the complete experience at desktop and mobile widths |
 
@@ -29,6 +30,7 @@ A production go decision requires all applicable automated and database checks p
 | Routine history | `npm run verify:routine-history-pilot` | Atomic history, permissions and read-only detail pass |
 | Routine UI foundation | `npm run verify:routine-ui-foundation` | Role routing and shared UI contracts pass |
 | Full Phase 10 reapply | `npm run verify:routine-full-migration-reapply` | Exact ordered Phase 10 migration stack reapplies safely in disposable PostgreSQL |
+| Browser visual matrix | `npm run verify:routine-content-visual` | 70/70 scenarios pass in Chromium and WebKit at 1440, 1280, 1024, 430, 390, 375 and 360 px in light and dark modes |
 | Production bundle | `npm run build` | Vite build succeeds with no unresolved import or syntax error |
 
 ## Disposable database authorization matrix
@@ -58,6 +60,19 @@ The Event visual bridge must not modify the manager upload boundary or the exist
 - Offline queue conflicts require an explicit user decision.
 - Routine reference versions remain immutable after finalization.
 - Cross-organization reads and writes remain denied.
+
+## Browser matrix evidence
+
+The production-candidate bundle passed the isolated Playwright matrix in GitHub Actions on Friday 14 August 2026:
+
+- Chromium and WebKit.
+- Five operational scenarios: Opening, Closing, Double Shift, counter daily and manager preview.
+- Seven viewports: 1440, 1280, 1024, 430, 390, 375 and 360 CSS pixels.
+- Light and dark mode.
+- 70 scenarios in total.
+- Assertions include horizontal overflow, covered controls, 48 px operational targets, duplicate IDs, label relationships, English frontline copy and visual screenshots.
+
+The retained browser-evidence artifact contains the matrix log and generated screenshot set. This test exercises the actual Vite application bundle; it is separate from the static product walkthrough.
 
 ## Manual review journeys
 
@@ -141,31 +156,18 @@ Test at 390 px mobile width and desktop width.
 - Search and filters are reachable on mobile.
 - Legacy history remains clearly identified.
 
-## External-dependency review gates
-
-These tests are valid but cannot run in the generic GitHub Actions job without their explicit dependencies.
+## Remaining source-evidence gate
 
 ### Content-pack source verification
 
-`npm run verify:routine-content-pack` expects the approved source documents that currently live in Robert’s local Downloads paths. Before production:
+`npm run verify:routine-content-pack` expects the exact approved source documents currently referenced from Robert’s local Downloads paths. Before production:
 
 1. Put the exact approved source files in the expected local paths or update the verifier to a retained, reviewed fixture location.
-2. Confirm source hashes match the approved content pack.
+2. Confirm the source hashes match the approved content pack.
 3. Run the verifier locally.
 4. Save the output with the production evidence.
 
-Do not disable source-hash checks merely to make the command green.
-
-### Browser visual regression
-
-`npm run verify:routine-content-visual` requires Playwright/browser dependencies. Before production:
-
-1. Install the repository’s approved browser-test dependency set in an isolated environment.
-2. Run the visual verifier at the required desktop and mobile widths.
-3. Review screenshots for overflow, covered controls, unreadable text and stale admin noise.
-4. Save the screenshots and output with the production evidence.
-
-The combined interactive preview is useful for product review but does not replace the browser regression check against the actual application bundle.
+Expected source hashes remain pinned in the verifier. Do not disable or weaken the hash checks merely to make the command green. This is a provenance gate for the content source files, not an application, database or browser failure.
 
 ## Production smoke-test evidence template
 
