@@ -1,8 +1,11 @@
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { eventRigGuides } from "../data/eventRigGuides.js";
+import { loadEventVisualReferences } from "../lib/eventVisualReferenceClient.js";
 import EventOperatorExperience, {
   isEventOperator,
   readCurrentEventOperator,
 } from "./EventOperatorExperience.jsx";
+import EventVisualGuideModal from "./EventVisualGuideModal.jsx";
 import ManagerEventOperationsCockpit, {
   EventCockpitSummaryCard as ManagerEventCockpitSummaryCard,
 } from "./ManagerEventOperationsCockpit.jsx";
@@ -79,6 +82,12 @@ function eventGuideSelection(eventOperation, eventTasks = []) {
   );
 }
 
+function guideForId(guideId, guides = []) {
+  return guides.find((guide) => guide.id === guideId)
+    || eventRigGuides.find((guide) => guide.id === guideId)
+    || null;
+}
+
 export function EventCockpitSummaryCard(props) {
   const {
     eventOperation,
@@ -137,7 +146,7 @@ export function EventCockpitSummaryCard(props) {
   );
 }
 
-export default function EventOperationsCockpit(props) {
+function EventOperatorCockpit(props) {
   const {
     user,
     eventOperation,
@@ -147,28 +156,94 @@ export default function EventOperationsCockpit(props) {
     onRefresh,
     onTaskStatus,
     onCreateLiveUpdate,
-    onOpenGuide,
   } = props;
+  const guides = useMemo(
+    () => eventGuideSelection(eventOperation, eventTasks),
+    [eventOperation, eventTasks],
+  );
+  const [selectedGuide, setSelectedGuide] = useState(null);
+  const [visualReferences, setVisualReferences] = useState([]);
+  const [visualState, setVisualState] = useState({ loading: false, error: "" });
+  const requestRef = useRef(0);
 
-  if (!isEventOperator(user)) return <ManagerEventOperationsCockpit {...props} />;
+  useEffect(() => {
+    requestRef.current += 1;
+    setSelectedGuide(null);
+    setVisualReferences([]);
+    setVisualState({ loading: false, error: "" });
+  }, [eventOperation?.id]);
+
+  const openGuide = useCallback(async (guideId) => {
+    const guide = guideForId(guideId, guides);
+    if (!guide) return;
+    const requestId = requestRef.current + 1;
+    requestRef.current = requestId;
+    setSelectedGuide(guide);
+    setVisualReferences([]);
+    const keys = [...new Set(
+      (guide.requiredImageSlots || [])
+        .map((slot) => String(slot.id || "").trim())
+        .filter(Boolean),
+    )];
+    if (!keys.length) {
+      setVisualState({ loading: false, error: "" });
+      return;
+    }
+    setVisualState({ loading: true, error: "" });
+    const result = await loadEventVisualReferences(keys);
+    if (requestRef.current !== requestId) return;
+    if (!result.ok) {
+      setVisualState({
+        loading: false,
+        error: result.message || "The visual standards could not be opened.",
+      });
+      return;
+    }
+    setVisualReferences(result.references || []);
+    setVisualState({ loading: false, error: "" });
+  }, [guides]);
+
+  const closeGuide = useCallback(() => {
+    requestRef.current += 1;
+    setSelectedGuide(null);
+    setVisualReferences([]);
+    setVisualState({ loading: false, error: "" });
+  }, []);
 
   return (
-    <EventOperatorExperience
-      user={user}
-      eventOperation={eventOperation}
-      tasks={eventTasks}
-      openUpdates={liveUpdates.filter(
-        (update) =>
-          ["open", "acknowledged"].includes(normalized(update.status)) ||
-          normalized(update.priority) === "critical",
-      )}
-      guides={eventGuideSelection(eventOperation, eventTasks)}
-      now={new Date().toISOString()}
-      onBack={onClose}
-      onRefresh={onRefresh}
-      onTaskStatus={onTaskStatus}
-      onCreateLiveUpdate={onCreateLiveUpdate}
-      onOpenGuide={onOpenGuide}
-    />
+    <>
+      <EventOperatorExperience
+        user={user}
+        eventOperation={eventOperation}
+        tasks={eventTasks}
+        openUpdates={liveUpdates.filter(
+          (update) =>
+            ["open", "acknowledged"].includes(normalized(update.status)) ||
+            normalized(update.priority) === "critical",
+        )}
+        guides={guides}
+        now={new Date().toISOString()}
+        onBack={onClose}
+        onRefresh={onRefresh}
+        onTaskStatus={onTaskStatus}
+        onCreateLiveUpdate={onCreateLiveUpdate}
+        onOpenGuide={openGuide}
+      />
+      {selectedGuide ? (
+        <EventVisualGuideModal
+          guide={selectedGuide}
+          references={visualReferences}
+          loading={visualState.loading}
+          error={visualState.error}
+          onClose={closeGuide}
+        />
+      ) : null}
+    </>
   );
+}
+
+export default function EventOperationsCockpit(props) {
+  const { user } = props;
+  if (!isEventOperator(user)) return <ManagerEventOperationsCockpit {...props} />;
+  return <EventOperatorCockpit {...props} />;
 }

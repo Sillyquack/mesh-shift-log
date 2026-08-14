@@ -1,0 +1,853 @@
+/* Production-candidate experience layer.
+ *
+ * This stylesheet intentionally sits above the legacy application styles. It
+ * changes hierarchy and presentation, not operational contracts or form
+ * behavior. Role-specific modules retain their existing permissions, actions,
+ * drafts and error handling.
+ */
+
+html.mesh-surface-login,
+html.mesh-surface-role-launcher,
+html.mesh-surface-shift-launcher,
+html.mesh-surface-manager,
+html.mesh-surface-history,
+html.mesh-surface-routine-manager,
+body.mesh-surface-login,
+body.mesh-surface-role-launcher,
+body.mesh-surface-shift-launcher,
+body.mesh-surface-manager,
+body.mesh-surface-history,
+body.mesh-surface-routine-manager {
+  min-height: 100%;
+  background: var(--mesh-ink);
+}
+
+/* -------------------------------------------------------------------------- */
+/* Auth                                                                        */
+/* -------------------------------------------------------------------------- */
+
+.mesh-surface-login .login-shell,
+.mesh-surface-login .auth-gate-shell {
+  position: relative;
+  isolation: isolate;
+  display: grid;
+  place-items: center;
+  min-height: 100dvh;
+  padding: clamp(18px, 4vw, 56px);
+  overflow: hidden;
+  background:
+    radial-gradient(circle at 86% 8%, rgba(214, 166, 93, 0.25), transparent 27%),
+    radial-gradient(circle at 4% 72%, rgba(91, 134, 116, 0.18), transparent 30%),
+    linear-gradient(145deg, #11110f, #1d1a15 55%, #121210);
+}
+
+.mesh-surface-login .login-shell::before {
+  content: "MESH";
+  position: absolute;
+  inset: auto auto -0.18em -0.04em;
+  z-index: -1;
+  color: rgba(255, 255, 255, 0.025);
+  font-size: min(38vw, 38rem);
+  font-weight: 950;
+  line-height: 0.75;
+  letter-spacing: -0.11em;
+  pointer-events: none;
+}
+
+.mesh-surface-login .login-panel {
+  width: min(100%, 560px);
+  padding: clamp(28px, 5vw, 58px);
+  border: 1px solid rgba(255, 255, 255, 0.12);
+  border-radius: clamp(26px, 5vw, 42px);
+  background:
+    linear-gradient(145deg, rgba(255, 255, 255, 0.035), transparent 48%),
+    rgba(28, 27, 24, 0.94);
+  color: var(--mesh-cream-strong);
+  box-shadow: 0 42px 130px rgba(0, 0, 0, 0.38);
+  backdrop-filter: blur(24px);
+}
+
+.mesh-surface-login .login-panel > .eyebrow {
+  margin: 0;
+  color: var(--mesh-gold-soft);
+  font-size: 0.72rem;
+  font-weight: 900;
+  letter-spacing: 0.18em;
+}
+
+.mesh-surface-login .login-panel > h1 {
+  margin: 10px 0 0;
+  color: var(--mesh-cream-strong);
+  font-size: clamp(2.65rem, 10vw, 5.4rem);
+  line-height: 0.94;
+  letter-spacing: -0.07em;
+}
+
+.mesh-surface-login .login-panel > .muted {
+  max-width: 42ch;
+  margin: 20px 0 0;
+  color: rgba(255, 255, 255, 0.6);
+  font-size: 1rem;
+  line-height: 1.65;
+}
+
+.mesh-surface-login .login-mode-tabs {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 8px;
+  margin: 30px 0 0;
+  padding: 7px;
+  border: 1px solid rgba(255, 255, 255, 0.1);
+  border-radius: 18px;
+  background: rgba(255, 255, 255, 0.045);
+}
+
+.mesh-surface-login .login-mode-tabs button {
+  min-height: 48px;
+  padding: 0 14px;
+  border: 0;
+  border-radius: 12px;
+  background: transparent;
+  color: rgba(255, 255, 255, 0.55);
+  font: inherit;
+  font-size: 0.82rem;
+  font-weight: 850;
+  cursor: pointer;
+}
+
+.mesh-surface-login .login-mode-tabs button.active {
+  background: var(--mesh-cream);
+  color: #1b1814;
+  box-shadow: 0 12px 28px rgba(0, 0, 0, 0.23);
+}
+
+.mesh-surface-login .login-form {
+  display: grid;
+  gap: 10px;
+  margin-top: 25px;
+}
+
+.mesh-surface-login .login-form label {
+  margin-top: 8px;
+  color: rgba(255, 255, 255, 0.68);
+  font-size: 0.76rem;
+  font-weight: 850;
+  letter-spacing: 0.07em;
+  text-transform: uppercase;
+}
+
+.mesh-surface-login .login-form input {
+  width: 100%;
+  min-height: 58px;
+  padding: 0 18px;
+  border: 1px solid rgba(255, 255, 255, 0.13);
+  border-radius: 15px;
+  background: rgba(255, 255, 255, 0.07);
+  color: var(--mesh-cream-strong);
+  font: inherit;
+  font-size: max(16px, 1rem);
+  outline: none;
+  transition: border-color 160ms ease, box-shadow 160ms ease, background 160ms ease;
+}
+
+.mesh-surface-login .login-form input:focus {
+  border-color: rgba(239, 202, 143, 0.72);
+  background: rgba(255, 255, 255, 0.095);
+  box-shadow: 0 0 0 4px rgba(214, 166, 93, 0.12);
+}
+
+.mesh-surface-login .login-form .primary-button {
+  min-height: 58px;
+  margin-top: 14px;
+  border: 0;
+  border-radius: 15px;
+  background: var(--mesh-cream);
+  color: #1b1814;
+  font-weight: 900;
+  box-shadow: 0 18px 38px rgba(0, 0, 0, 0.25);
+}
+
+.mesh-surface-login .login-form .text-button,
+.mesh-surface-login .login-form .ghost-button {
+  min-height: 44px;
+  color: var(--mesh-gold-soft);
+}
+
+.mesh-surface-login .login-panel .status-message,
+.mesh-surface-login .login-panel .error {
+  padding: 13px 15px;
+  border-radius: 13px;
+  line-height: 1.45;
+}
+
+.mesh-surface-login .login-panel .status-message {
+  border: 1px solid rgba(110, 170, 141, 0.35);
+  background: rgba(110, 170, 141, 0.11);
+  color: #bfe4d1;
+}
+
+.mesh-surface-login .login-panel .error {
+  border: 1px solid rgba(213, 124, 109, 0.42);
+  background: rgba(213, 124, 109, 0.1);
+  color: #f0b4a9;
+}
+
+/* -------------------------------------------------------------------------- */
+/* Role and shift launchers                                                    */
+/* -------------------------------------------------------------------------- */
+
+.mesh-surface-role-launcher .page,
+.mesh-surface-shift-launcher .page {
+  min-height: calc(100dvh - 74px);
+  max-width: none;
+  padding: clamp(18px, 4vw, 52px);
+  background:
+    radial-gradient(circle at 90% 4%, rgba(214, 166, 93, 0.19), transparent 28%),
+    linear-gradient(180deg, #151513, #11110f 58%, #181510);
+  color: var(--mesh-cream-strong);
+}
+
+.mesh-surface-role-launcher .role-launcher-intro,
+.mesh-surface-shift-launcher .intro {
+  max-width: 1180px;
+  margin: 0 auto;
+  padding: clamp(34px, 6vw, 72px) 0 clamp(24px, 4vw, 44px);
+  border: 0;
+  background: transparent;
+  box-shadow: none;
+}
+
+.mesh-surface-role-launcher .role-launcher-intro .eyebrow,
+.mesh-surface-shift-launcher .intro .eyebrow {
+  color: var(--mesh-gold-soft);
+  font-size: 0.72rem;
+  font-weight: 900;
+  letter-spacing: 0.16em;
+}
+
+.mesh-surface-role-launcher .role-launcher-intro h1,
+.mesh-surface-shift-launcher .intro h1 {
+  max-width: 900px;
+  margin: 12px 0 0;
+  color: var(--mesh-cream-strong);
+  font-size: clamp(3rem, 8vw, 6.8rem);
+  line-height: 0.92;
+  letter-spacing: -0.075em;
+}
+
+.mesh-surface-role-launcher .role-launcher-intro .muted,
+.mesh-surface-shift-launcher .intro .muted {
+  max-width: 620px;
+  color: rgba(255, 255, 255, 0.58);
+  font-size: clamp(1rem, 2vw, 1.18rem);
+  line-height: 1.65;
+}
+
+.mesh-surface-role-launcher .role-launcher-grid,
+.mesh-surface-shift-launcher .shift-grid {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 16px;
+  width: min(1180px, 100%);
+  margin: 0 auto;
+}
+
+.mesh-surface-role-launcher [data-mesh-launch-card='true'],
+.mesh-surface-shift-launcher [data-mesh-launch-card='true'] {
+  position: relative;
+  isolation: isolate;
+  display: grid;
+  align-content: end;
+  min-height: 270px;
+  padding: clamp(24px, 4vw, 38px);
+  overflow: hidden;
+  border: 1px solid rgba(255, 255, 255, 0.12);
+  border-radius: 30px;
+  background:
+    radial-gradient(circle at 90% 0%, rgba(214, 166, 93, 0.19), transparent 34%),
+    rgba(28, 27, 24, 0.94);
+  color: var(--mesh-cream-strong);
+  text-align: left;
+  box-shadow: 0 20px 60px rgba(0, 0, 0, 0.24);
+  transition: transform 180ms ease, border-color 180ms ease, box-shadow 180ms ease;
+}
+
+.mesh-surface-role-launcher [data-mesh-launch-card='true']::before,
+.mesh-surface-shift-launcher [data-mesh-launch-card='true']::before {
+  content: counter(mesh-launch-card, decimal-leading-zero);
+  position: absolute;
+  top: 22px;
+  right: 24px;
+  color: rgba(255, 255, 255, 0.22);
+  font-size: 0.78rem;
+  font-weight: 900;
+  letter-spacing: 0.08em;
+}
+
+.mesh-surface-role-launcher .role-launcher-grid,
+.mesh-surface-shift-launcher .shift-grid {
+  counter-reset: mesh-launch-card;
+}
+
+.mesh-surface-role-launcher [data-mesh-launch-card='true'],
+.mesh-surface-shift-launcher [data-mesh-launch-card='true'] {
+  counter-increment: mesh-launch-card;
+}
+
+.mesh-surface-role-launcher [data-mesh-launch-card='true']:hover,
+.mesh-surface-role-launcher [data-mesh-launch-card='true']:focus-visible,
+.mesh-surface-shift-launcher [data-mesh-launch-card='true']:hover,
+.mesh-surface-shift-launcher [data-mesh-launch-card='true']:focus-visible {
+  transform: translateY(-5px);
+  border-color: rgba(239, 202, 143, 0.48);
+  box-shadow: 0 28px 80px rgba(0, 0, 0, 0.33);
+}
+
+.mesh-surface-role-launcher [data-mesh-launch-card='true'] > span,
+.mesh-surface-shift-launcher [data-mesh-launch-card='true'] > strong,
+.mesh-surface-shift-launcher [data-mesh-launch-card='true'] > span:first-child {
+  color: var(--mesh-cream-strong);
+  font-size: clamp(1.55rem, 3vw, 2.45rem);
+  font-weight: 900;
+  line-height: 1.05;
+  letter-spacing: -0.045em;
+}
+
+.mesh-surface-role-launcher [data-mesh-launch-card='true'] small,
+.mesh-surface-shift-launcher [data-mesh-launch-card='true'] small {
+  margin-top: 14px;
+  color: rgba(255, 255, 255, 0.56);
+  line-height: 1.55;
+}
+
+/* -------------------------------------------------------------------------- */
+/* Manager                                                                     */
+/* -------------------------------------------------------------------------- */
+
+.mesh-surface-manager .manager-page {
+  width: 100%;
+  max-width: none;
+  min-height: 100dvh;
+  padding: clamp(14px, 3vw, 34px) clamp(12px, 4vw, 56px) 90px;
+  background:
+    radial-gradient(circle at 92% 2%, rgba(214, 166, 93, 0.18), transparent 26%),
+    radial-gradient(circle at 4% 43%, rgba(91, 134, 116, 0.12), transparent 28%),
+    linear-gradient(180deg, #151513, #11110f 55%, #17140f);
+  color: var(--mesh-cream-strong);
+}
+
+.mesh-surface-manager .manager-page > .intro,
+.mesh-surface-manager .manager-page > .manager-jump-index,
+.mesh-surface-manager .manager-page > .manager-collapse-toolbar {
+  display: none !important;
+}
+
+.mesh-manager-experience-header {
+  position: relative;
+  isolation: isolate;
+  width: min(1280px, 100%);
+  margin: 0 auto 28px;
+}
+
+.mesh-manager-experience-ambient {
+  position: absolute;
+  inset: -80px -14vw auto;
+  z-index: -1;
+  height: 420px;
+  background: radial-gradient(circle, rgba(214, 166, 93, 0.14), transparent 68%);
+  pointer-events: none;
+}
+
+.mesh-manager-experience-hero {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) minmax(230px, 0.34fr);
+  align-items: center;
+  gap: clamp(28px, 6vw, 90px);
+  min-height: 390px;
+  padding: clamp(34px, 6vw, 72px);
+  border: 1px solid rgba(255, 255, 255, 0.12);
+  border-radius: 40px;
+  background:
+    radial-gradient(circle at 86% 8%, rgba(214, 166, 93, 0.25), transparent 31%),
+    linear-gradient(145deg, #171716, #2a251d);
+  box-shadow: 0 38px 110px rgba(0, 0, 0, 0.34);
+}
+
+.mesh-manager-experience-hero h1 {
+  max-width: 880px;
+  margin: 12px 0 0;
+  color: var(--mesh-cream-strong);
+  font-size: clamp(3.2rem, 7.5vw, 7rem);
+  line-height: 0.88;
+  letter-spacing: -0.08em;
+}
+
+.mesh-manager-experience-hero > div:first-child > p:not(.mesh-kicker) {
+  max-width: 650px;
+  margin: 24px 0 0;
+  color: rgba(255, 255, 255, 0.58);
+  font-size: clamp(1rem, 2vw, 1.18rem);
+  line-height: 1.65;
+}
+
+.mesh-manager-pulse {
+  display: grid;
+  place-items: center;
+  align-content: center;
+  min-height: 230px;
+  padding: 26px;
+  border: 1px solid rgba(255, 255, 255, 0.12);
+  border-radius: 50%;
+  background: rgba(255, 255, 255, 0.055);
+  text-align: center;
+  box-shadow: inset 0 0 0 10px rgba(255, 255, 255, 0.025);
+}
+
+.mesh-manager-pulse.is-clear {
+  border-color: rgba(110, 170, 141, 0.43);
+  background: rgba(110, 170, 141, 0.09);
+}
+
+.mesh-manager-pulse.is-review {
+  border-color: rgba(214, 166, 93, 0.48);
+  background: rgba(214, 166, 93, 0.1);
+}
+
+.mesh-manager-pulse.is-urgent {
+  border-color: rgba(213, 124, 109, 0.5);
+  background: rgba(213, 124, 109, 0.1);
+}
+
+.mesh-manager-pulse > span {
+  color: var(--mesh-gold-soft);
+  font-size: 0.68rem;
+  font-weight: 900;
+  letter-spacing: 0.16em;
+}
+
+.mesh-manager-pulse > strong {
+  max-width: 170px;
+  margin-top: 10px;
+  color: var(--mesh-cream-strong);
+  font-size: clamp(1.7rem, 3vw, 2.5rem);
+  line-height: 1;
+  letter-spacing: -0.05em;
+}
+
+.mesh-manager-pulse > small {
+  margin-top: 11px;
+  color: rgba(255, 255, 255, 0.55);
+}
+
+.mesh-manager-view-nav {
+  position: sticky;
+  top: 10px;
+  z-index: 25;
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 8px;
+  width: min(820px, calc(100% - 22px));
+  margin: -31px auto 0;
+  padding: 8px;
+  border: 1px solid rgba(255, 255, 255, 0.12);
+  border-radius: 23px;
+  background: rgba(18, 18, 16, 0.9);
+  backdrop-filter: blur(20px);
+  box-shadow: 0 22px 58px rgba(0, 0, 0, 0.32);
+}
+
+.mesh-manager-view-nav button {
+  position: relative;
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  gap: 2px 12px;
+  min-height: 66px;
+  padding: 11px 15px;
+  border: 0;
+  border-radius: 16px;
+  background: transparent;
+  color: rgba(255, 255, 255, 0.55);
+  text-align: left;
+  font: inherit;
+  cursor: pointer;
+}
+
+.mesh-manager-view-nav button > span {
+  color: inherit;
+  font-size: 0.95rem;
+  font-weight: 900;
+}
+
+.mesh-manager-view-nav button > small {
+  overflow: hidden;
+  color: inherit;
+  font-size: 0.68rem;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.mesh-manager-view-nav button > strong {
+  grid-row: 1 / span 2;
+  grid-column: 2;
+  align-self: center;
+  font-size: 1.2rem;
+}
+
+.mesh-manager-view-nav button.is-active {
+  background: var(--mesh-cream);
+  color: #1c1914;
+  box-shadow: 0 12px 28px rgba(0, 0, 0, 0.22);
+}
+
+.mesh-manager-attention-strip {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px 16px;
+  margin: 20px auto 0;
+  padding: 17px 20px;
+  border: 1px solid rgba(214, 166, 93, 0.34);
+  border-radius: 17px;
+  background: rgba(214, 166, 93, 0.09);
+  color: var(--mesh-gold-soft);
+}
+
+.mesh-manager-attention-strip span {
+  font-size: 0.72rem;
+  font-weight: 900;
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+}
+
+.mesh-manager-attention-strip strong {
+  color: var(--mesh-cream-strong);
+}
+
+.mesh-surface-manager .manager-page[data-mesh-manager-active-view='today']
+  section[data-mesh-manager-group]:not([data-mesh-manager-group='today']),
+.mesh-surface-manager .manager-page[data-mesh-manager-active-view='attention']
+  section[data-mesh-manager-group]:not([data-mesh-manager-group='attention']),
+.mesh-surface-manager .manager-page[data-mesh-manager-active-view='control']
+  section[data-mesh-manager-group]:not([data-mesh-manager-group='control']) {
+  display: none !important;
+}
+
+.mesh-surface-manager .manager-page .mesh-manager-section-card {
+  width: min(1280px, 100%);
+  margin: 18px auto 0;
+  padding: clamp(22px, 4vw, 38px);
+  border: 1px solid rgba(255, 255, 255, 0.11);
+  border-radius: 28px;
+  background: rgba(28, 27, 24, 0.92);
+  color: var(--mesh-cream-strong);
+  box-shadow: 0 20px 60px rgba(0, 0, 0, 0.2);
+}
+
+.mesh-surface-manager .manager-page .mesh-manager-section-card h2,
+.mesh-surface-manager .manager-page .mesh-manager-section-card h3,
+.mesh-surface-manager .manager-page .mesh-manager-section-card strong {
+  color: var(--mesh-cream-strong);
+}
+
+.mesh-surface-manager .manager-page .mesh-manager-section-card h2 {
+  margin: 0;
+  font-size: clamp(1.55rem, 3vw, 2.45rem);
+  letter-spacing: -0.045em;
+}
+
+.mesh-surface-manager .manager-page .mesh-manager-section-card p,
+.mesh-surface-manager .manager-page .mesh-manager-section-card small,
+.mesh-surface-manager .manager-page .mesh-manager-section-card span {
+  color: rgba(255, 255, 255, 0.6);
+}
+
+.mesh-surface-manager .manager-page .panel,
+.mesh-surface-manager .manager-page .log-row,
+.mesh-surface-manager .manager-page .empty-state,
+.mesh-surface-manager .manager-page .history-table,
+.mesh-surface-manager .manager-page .backend-details {
+  border-color: rgba(255, 255, 255, 0.1);
+  background: rgba(255, 255, 255, 0.045);
+  color: var(--mesh-cream-strong);
+}
+
+.mesh-surface-manager .manager-page input,
+.mesh-surface-manager .manager-page select,
+.mesh-surface-manager .manager-page textarea {
+  border-color: rgba(255, 255, 255, 0.13);
+  background: rgba(255, 255, 255, 0.07);
+  color: var(--mesh-cream-strong);
+}
+
+.mesh-surface-manager .manager-page option {
+  background: #1e1d19;
+  color: var(--mesh-cream-strong);
+}
+
+.mesh-surface-manager .manager-page .primary-button {
+  border: 0;
+  background: var(--mesh-cream);
+  color: #1b1814;
+}
+
+.mesh-surface-manager .manager-page .ghost-button,
+.mesh-surface-manager .manager-page .secondary-button {
+  border-color: rgba(255, 255, 255, 0.13);
+  background: rgba(255, 255, 255, 0.055);
+  color: var(--mesh-cream-strong);
+}
+
+/* -------------------------------------------------------------------------- */
+/* Routine manager and history                                                 */
+/* -------------------------------------------------------------------------- */
+
+.mesh-surface-routine-manager .rm-workspace,
+.mesh-surface-history .rh-workspace,
+.rm-workspace,
+.rh-workspace {
+  min-height: 100dvh;
+  padding-bottom: 90px;
+  background:
+    radial-gradient(circle at 90% 0%, rgba(214, 166, 93, 0.16), transparent 28%),
+    linear-gradient(180deg, #151513, #11110f 60%, #181510);
+  color: var(--mesh-cream-strong);
+}
+
+.rm-topbar,
+.rh-heading {
+  border-color: rgba(255, 255, 255, 0.1) !important;
+  background: rgba(18, 18, 16, 0.88) !important;
+  color: var(--mesh-cream-strong) !important;
+  backdrop-filter: blur(20px);
+}
+
+.rm-topbar h1,
+.rh-heading h2 {
+  color: var(--mesh-cream-strong) !important;
+  letter-spacing: -0.05em;
+}
+
+.rm-tabs {
+  position: sticky;
+  top: 0;
+  z-index: 18;
+  gap: 6px !important;
+  padding: 8px !important;
+  border: 1px solid rgba(255, 255, 255, 0.1) !important;
+  border-radius: 20px !important;
+  background: rgba(18, 18, 16, 0.9) !important;
+  backdrop-filter: blur(20px);
+}
+
+.rm-tabs button {
+  min-height: 48px;
+  border-radius: 13px !important;
+  color: rgba(255, 255, 255, 0.58) !important;
+}
+
+.rm-tabs button[aria-selected='true'] {
+  background: var(--mesh-cream) !important;
+  color: #1b1814 !important;
+}
+
+.rm-panel,
+.rm-card,
+.rm-placeholder,
+.rh-filters,
+.rh-list-item,
+.rh-source-guide,
+.rh-state,
+.rh-run-detail,
+.rh-task-detail,
+.rh-legacy-panel {
+  border-color: rgba(255, 255, 255, 0.11) !important;
+  background: rgba(28, 27, 24, 0.92) !important;
+  color: var(--mesh-cream-strong) !important;
+  box-shadow: 0 18px 54px rgba(0, 0, 0, 0.2);
+}
+
+.rm-card h2,
+.rm-card h3,
+.rm-panel h2,
+.rm-panel h3,
+.rh-workspace h2,
+.rh-workspace h3,
+.rh-workspace strong {
+  color: var(--mesh-cream-strong) !important;
+}
+
+.rm-card p,
+.rm-card small,
+.rm-panel p,
+.rm-panel small,
+.rh-workspace p,
+.rh-workspace small,
+.rh-workspace span:not(.rh-source) {
+  color: rgba(255, 255, 255, 0.58) !important;
+}
+
+.rm-workspace input,
+.rm-workspace select,
+.rm-workspace textarea,
+.rh-workspace input,
+.rh-workspace select,
+.rh-workspace textarea {
+  border-color: rgba(255, 255, 255, 0.13) !important;
+  background: rgba(255, 255, 255, 0.07) !important;
+  color: var(--mesh-cream-strong) !important;
+}
+
+.rm-reference-preview,
+.rm-chip-row button,
+.rh-list-item button,
+.rh-workspace button {
+  min-height: 48px;
+}
+
+.rm-full-image {
+  max-height: min(70dvh, 780px);
+  border-radius: 18px;
+  object-fit: contain;
+}
+
+/* Shared focus and accessibility ------------------------------------------ */
+
+.mesh-surface-login button:focus-visible,
+.mesh-surface-role-launcher button:focus-visible,
+.mesh-surface-shift-launcher button:focus-visible,
+.mesh-surface-manager button:focus-visible,
+.rm-workspace button:focus-visible,
+.rh-workspace button:focus-visible,
+.mesh-surface-login input:focus-visible,
+.mesh-surface-manager input:focus-visible,
+.rm-workspace input:focus-visible,
+.rh-workspace input:focus-visible {
+  outline: 3px solid var(--mesh-gold-soft);
+  outline-offset: 3px;
+}
+
+@media (max-width: 920px) {
+  .mesh-surface-role-launcher .role-launcher-grid,
+  .mesh-surface-shift-launcher .shift-grid {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+
+  .mesh-manager-experience-hero {
+    grid-template-columns: 1fr;
+    min-height: auto;
+  }
+
+  .mesh-manager-pulse {
+    width: 210px;
+    min-height: 210px;
+  }
+}
+
+@media (max-width: 640px) {
+  .mesh-surface-login .login-shell,
+  .mesh-surface-login .auth-gate-shell {
+    align-items: stretch;
+    padding: 0;
+  }
+
+  .mesh-surface-login .login-panel {
+    width: 100%;
+    min-height: 100dvh;
+    padding: calc(34px + env(safe-area-inset-top)) 22px
+      calc(34px + env(safe-area-inset-bottom));
+    border: 0;
+    border-radius: 0;
+    box-shadow: none;
+  }
+
+  .mesh-surface-role-launcher .page,
+  .mesh-surface-shift-launcher .page {
+    padding: 12px 10px 88px;
+  }
+
+  .mesh-surface-role-launcher .role-launcher-grid,
+  .mesh-surface-shift-launcher .shift-grid {
+    grid-template-columns: 1fr;
+  }
+
+  .mesh-surface-role-launcher [data-mesh-launch-card='true'],
+  .mesh-surface-shift-launcher [data-mesh-launch-card='true'] {
+    min-height: 210px;
+    border-radius: 25px;
+  }
+
+  .mesh-surface-manager .manager-page {
+    padding: 10px 9px 92px;
+  }
+
+  .mesh-manager-experience-hero {
+    gap: 26px;
+    min-height: auto;
+    padding: 30px 22px 60px;
+    border-radius: 29px;
+  }
+
+  .mesh-manager-experience-hero h1 {
+    font-size: clamp(3.2rem, 15vw, 5rem);
+  }
+
+  .mesh-manager-pulse {
+    width: 174px;
+    min-height: 174px;
+    padding: 20px;
+  }
+
+  .mesh-manager-view-nav {
+    position: fixed;
+    inset: auto 10px calc(10px + env(safe-area-inset-bottom));
+    width: auto;
+    margin: 0;
+  }
+
+  .mesh-manager-view-nav button {
+    display: grid;
+    place-items: center;
+    min-width: 0;
+    min-height: 58px;
+    padding: 8px 6px;
+    text-align: center;
+  }
+
+  .mesh-manager-view-nav button > small,
+  .mesh-manager-view-nav button > strong {
+    display: none;
+  }
+
+  .mesh-surface-manager .manager-page .mesh-manager-section-card {
+    margin-top: 12px;
+    padding: 22px 17px;
+    border-radius: 23px;
+  }
+
+  .rm-tabs {
+    overflow-x: auto;
+    overscroll-behavior-inline: contain;
+    scrollbar-width: none;
+  }
+
+  .rm-tabs::-webkit-scrollbar {
+    display: none;
+  }
+
+  .rm-tabs button {
+    flex: 0 0 auto;
+    white-space: nowrap;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .mesh-surface-role-launcher [data-mesh-launch-card='true'],
+  .mesh-surface-shift-launcher [data-mesh-launch-card='true'],
+  .mesh-surface-login input {
+    transition: none;
+  }
+
+  .mesh-surface-role-launcher [data-mesh-launch-card='true']:hover,
+  .mesh-surface-shift-launcher [data-mesh-launch-card='true']:hover {
+    transform: none;
+  }
+}

@@ -513,47 +513,83 @@ function LocationStateNotice({ assignment }) {
   return null;
 }
 
-function ExactStandardPanel({
+function StandardMatchPanel({
   assignment,
   summary,
-  physicalConfirmation,
   busy,
-  onPhysicalConfirmation,
   onApply,
+  onManualCount,
 }) {
+  const locationName = assignment?.location?.name || 'this location';
+  const locationKind = normalized(assignment?.location?.locationType) === 'fridge'
+    || /fridge/.test(normalized(locationName))
+    ? 'fridge'
+    : 'location';
+  const incompleteWithoutStandard = summary.incomplete.filter(
+    (line) => line.standardQuantityExact === null,
+  );
+  const hasSavedDeviation = summary.deviations.length > 0;
+  const hasUnsafeDrafts = summary.unsafeDrafts.length > 0;
+  const canApply = summary.incomplete.length > 0
+    && incompleteWithoutStandard.length === 0
+    && !hasSavedDeviation
+    && !hasUnsafeDrafts
+    && !busy;
+
   return (
-    <details className="counter-experience-standard-panel mesh-panel">
-      <summary>
-        <span>Fast path</span>
-        <strong>Does this location exactly match the standard?</strong>
-      </summary>
-      <div>
-        <p>
-          Physically check the location first. This fills only eligible, previously uncounted exact-target lines.
-          Saved values, targetless products, historical suggestions, deviations and comments stay untouched.
+    <section className="mesh-focus-card counter-experience-standard-decision" aria-label={`Fast count ${locationName}`}>
+      <div className="counter-experience-standard-decision-heading">
+        <div>
+          <span className="mesh-section-label">Fast count</span>
+          <h2>Does this {locationKind} match its saved standard?</h2>
+          <p>
+            Check every product in {locationName}. When everything is stocked exactly to its saved standard,
+            one tap counts and sends this {locationKind} for manager review, then opens the next assigned location.
+          </p>
+        </div>
+        <span className="counter-experience-standard-mark" aria-hidden="true">✓</span>
+      </div>
+
+      {incompleteWithoutStandard.length > 0 ? (
+        <p className="counter-experience-inline-warning">
+          {incompleteWithoutStandard.length} {incompleteWithoutStandard.length === 1 ? 'product has' : 'products have'} no saved standard.
+          Count manually or ask Bobby to complete this {locationKind} standard.
         </p>
-        <label>
-          <input
-            type="checkbox"
-            checked={physicalConfirmation}
-            disabled={busy || summary.unsafeDrafts.length > 0}
-            onChange={(event) => onPhysicalConfirmation(event.target.checked)}
-          />
-          <span>I physically checked this entire location</span>
-        </label>
-        {summary.unsafeDrafts.length > 0 ? (
-          <p className="counter-experience-inline-warning">Save or resolve local entries before applying the standard.</p>
-        ) : null}
+      ) : null}
+      {hasSavedDeviation ? (
+        <p className="counter-experience-inline-warning">
+          This {locationKind} already contains a saved deviation. Continue with the manual count so it is not hidden.
+        </p>
+      ) : null}
+      {hasUnsafeDrafts ? (
+        <p className="counter-experience-inline-warning">
+          Save or resolve the local entries before using the saved standard.
+        </p>
+      ) : null}
+
+      <div className="counter-experience-standard-actions">
+        <button
+          type="button"
+          className="mesh-primary-action"
+          disabled={!canApply}
+          onClick={onApply}
+        >
+          {busy ? 'Counting & sending…' : `Done — count & next ${locationKind}`}
+        </button>
         <button
           type="button"
           className="mesh-secondary-action"
-          disabled={!physicalConfirmation || busy || summary.unsafeDrafts.length > 0}
-          onClick={onApply}
+          disabled={busy}
+          onClick={onManualCount}
         >
-          {busy ? 'Applying…' : 'Apply exact targets to eligible products'}
+          No — count differences
         </button>
       </div>
-    </details>
+      <small>
+        By tapping Done, you confirm that you physically checked this entire {locationKind}. This {locationKind} is counted at its saved standard and submitted for manager review. The same product in another fridge remains a separate count.
+        Existing saved values, notes and deviations are never overwritten.
+      </small>
+    </section>
   );
 }
 
@@ -754,7 +790,6 @@ export default function InventoryCounterExperience({ requestWriteAccess, onClose
   const [status, setStatus] = useState(null);
   const [loading, setLoading] = useState(true);
   const [busyId, setBusyId] = useState('');
-  const [physicalConfirmation, setPhysicalConfirmation] = useState(false);
   const [activeLineId, setActiveLineId] = useState('');
   const mounted = useRef(true);
   const operationRef = useRef('');
@@ -925,7 +960,6 @@ export default function InventoryCounterExperience({ requestWriteAccess, onClose
   const openAssignment = (assignmentId) => {
     const target = assignments.find((item) => item.id === assignmentId);
     setSelectedId(assignmentId);
-    setPhysicalConfirmation(false);
     setActiveLineId('');
     setStatus(null);
     setView(target && counterAssignmentIsEditable(target.state) ? 'count' : 'progress');
@@ -945,23 +979,101 @@ export default function InventoryCounterExperience({ requestWriteAccess, onClose
   };
 
   const applyDefault = async () => {
-    const result = await run(
-      'default',
-      () => applyInventoryCounterRefrigeratorDefault({
-        assignmentId: assignment.id,
-        physicalConfirmation: true,
-        expectedAssignmentRevision: assignment.revision,
-      }),
-      { quietSuccess: true },
-    );
-    if (result?.ok) {
-      setPhysicalConfirmation(false);
+  if (operationRef.current) return;
+  const operationId = 'default-submit';
+  operationRef.current = operationId;
+  setBusyId(operationId);
+  setStatus(null);
+  try {
+    if (!(await requestWriteAccess())) {
+      setStatus({
+        ok: false,
+        mode: 'auth_required',
+        message: 'Your Stock Count sign-in could not be verified. No refrigerator count was changed.',
+      });
+      return;
+    }
+
+    const applied = await applyInventoryCounterRefrigeratorDefault({
+      assignmentId: assignment.id,
+      physicalConfirmation: true,
+      expectedAssignmentRevision: assignment.revision,
+    });
+    if (!applied.ok) {
+      setStatus(applied);
+      return;
+    }
+
+    const workspace = await loadInventoryCounterWorkspace();
+    if (!workspace.ok) {
+      setStatus({
+        ok: false,
+        mode: workspace.mode || 'sync_error',
+        message: `${assignment.location.name} was counted from its saved standard, but the app could not confirm the handoff. Refresh safely before continuing; no count was lost.`,
+      });
+      setView('review');
+      return;
+    }
+
+    const updatedAssignment = workspace.assignments.find((item) => item.id === assignment.id);
+    if (!updatedAssignment) {
+      setStatus({
+        ok: false,
+        mode: 'sync_error',
+        message: `${assignment.location.name} was counted, but its refreshed assignment could not be found. Refresh safely before continuing; no count was lost.`,
+      });
+      setView('home');
+      return;
+    }
+
+    setAssignments(workspace.assignments);
+    setDrafts((current) => reconcileCounterDrafts(current, workspace.assignments));
+    setSelectedId(updatedAssignment.id);
+
+    const remaining = updatedAssignment.lines.filter((line) => line.countStatus !== 'counted');
+    if (remaining.length) {
+      setActiveLineId(remaining[0].id);
       setStatus({
         ok: true,
-        message: `Standard applied to ${Number(result.data?.updated || 0)} eligible products. ${Number(result.data?.preserved || 0)} existing entries were preserved.`,
+        mode: 'manual_count_required',
+        message: `${remaining.length} ${remaining.length === 1 ? 'product does' : 'products do'} not use the saved exact standard. Count only the remaining differences.`,
       });
+      setView('count');
+      return;
     }
-  };
+
+    const submitted = await submitInventoryCountAssignment({
+      assignmentId: updatedAssignment.id,
+      expectedAssignmentRevision: updatedAssignment.revision,
+      expectedSessionUpdatedAt: updatedAssignment.session.updatedAt,
+    });
+    if (!submitted.ok) {
+      setStatus({
+        ...submitted,
+        message: `${updatedAssignment.location.name} is counted, but was not sent for manager review. Open Review and retry the handoff; no count was lost.`,
+      });
+      setView('review');
+      return;
+    }
+
+    await refresh();
+    setActiveLineId('');
+    setStatus({
+      ok: true,
+      message: `${updatedAssignment.location.name} was counted and sent for manager review. Your next location is ready.`,
+    });
+    setView('home');
+  } catch (error) {
+    setStatus({
+      ok: false,
+      mode: 'sync_error',
+      message: error?.message || 'The saved-standard count could not be completed. Refresh safely before retrying.',
+    });
+  } finally {
+    operationRef.current = '';
+    setBusyId('');
+  }
+};
 
   const submit = async () => {
     const result = await run(
@@ -974,8 +1086,8 @@ export default function InventoryCounterExperience({ requestWriteAccess, onClose
       { quietSuccess: true },
     );
     if (result?.ok) {
-      setStatus({ ok: true, message: `${assignment.location.name} was sent to Bobby and is now read-only.` });
-      setView('progress');
+      setStatus({ ok: true, message: `${assignment.location.name} was sent to Bobby. Your next location is ready.` });
+      setView('home');
     }
   };
 
@@ -1014,7 +1126,7 @@ export default function InventoryCounterExperience({ requestWriteAccess, onClose
               <h1>{assignments.length ? 'One location at a time.' : 'Nothing assigned yet.'}</h1>
               <p>
                 {assignments.length
-                  ? 'Count what is physically in front of you. Save one product, then move to the next.'
+                  ? 'Open one location, check it against its saved standard first, and tap Done when it matches. Count products manually only when something is different.'
                   : 'Ask Bobby to authorize and assign a location in the active Stock Count.'}
               </p>
               <div className="mesh-facts">
@@ -1129,27 +1241,35 @@ export default function InventoryCounterExperience({ requestWriteAccess, onClose
 
         {view === 'count' ? (
           <section className="counter-experience-count-view">
-            <details className="counter-experience-location-guide mesh-panel">
-              <summary>
-                <span>Visual standard</span>
-                <strong>Show how this location should look</strong>
-              </summary>
-              <LocationReferenceViewer
-                locationName={assignment.location.name}
-                guidance={assignment.referenceGuidance || { locationId: assignment.location.id }}
-              />
-            </details>
+            {!readOnly && !countComplete ? (
+    <StandardMatchPanel
+      assignment={assignment}
+      summary={summary}
+      busy={Boolean(busyId)}
+      onApply={applyDefault}
+      onManualCount={() => {
+        const targetId = summary.incomplete[0]?.id || '';
+        setActiveLineId(targetId);
+        window.requestAnimationFrame(() => {
+          document.getElementById(`counter-line-${targetId}`)?.scrollIntoView({
+            behavior: 'smooth',
+            block: 'center',
+          });
+        });
+      }}
+    />
+  ) : null}
 
-            {!readOnly ? (
-              <ExactStandardPanel
-                assignment={assignment}
-                summary={summary}
-                physicalConfirmation={physicalConfirmation}
-                busy={Boolean(busyId)}
-                onPhysicalConfirmation={setPhysicalConfirmation}
-                onApply={applyDefault}
-              />
-            ) : null}
+  <details className="counter-experience-location-guide mesh-panel">
+    <summary>
+      <span>Visual standard</span>
+      <strong>Show how this location should look</strong>
+    </summary>
+    <LocationReferenceViewer
+      locationName={assignment.location.name}
+      guidance={assignment.referenceGuidance || { locationId: assignment.location.id }}
+    />
+  </details>
 
             {countComplete ? (
               <section className="mesh-focus-card counter-experience-complete-card">
