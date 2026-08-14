@@ -10,7 +10,7 @@ permissions:
 
 jobs:
   upgrade:
-    if: "${{ github.event.head_commit.message == 'ci: verify standard done-and-next flow' }}"
+    if: "${{ github.event.head_commit.message == 'ci: retry standard done-and-next flow' }}"
     runs-on: ubuntu-latest
     timeout-minutes: 15
     steps:
@@ -34,17 +34,34 @@ jobs:
           experience_path = Path('src/components/InventoryCounterExperience.jsx')
           experience = experience_path.read_text()
 
+          old_copy = 'one tap counts this {locationKind} and opens Review.'
+          old_button = "{busy ? 'Counting…' : `Done — ${locationKind} matches standard`}"
+          old_attestation = (
+            'By tapping Done, you confirm that you physically checked this entire {locationKind}. '
+            'The same product in another fridge remains a separate count.\n'
+            '        Existing saved values, notes and deviations are never overwritten.'
+          )
+          for marker in [old_copy, old_button, old_attestation]:
+            if marker not in experience:
+              raise SystemExit(f'Missing Count Mode source marker: {marker}')
+
           experience = experience.replace(
-            'one tap counts this {locationKind} and opens Review.',
+            old_copy,
             'one tap counts and sends this {locationKind} for manager review, then opens the next assigned location.',
+            1,
           )
           experience = experience.replace(
-            "{busy ? 'Counting…' : `Done — ${locationKind} matches standard`}",
+            old_button,
             "{busy ? 'Counting & sending…' : `Done — count & next ${locationKind}`}",
+            1,
           )
           experience = experience.replace(
-            'By tapping Done, you confirm that you physically checked this entire {locationKind}. The same product in another fridge remains a separate count.\n        Existing saved values, notes and deviations are never overwritten.',
-            'By tapping Done, you confirm that you physically checked this entire {locationKind}. This {locationKind} is counted at its saved standard and submitted for manager review. The same product in another fridge remains a separate count.\n        Existing saved values, notes and deviations are never overwritten.',
+            old_attestation,
+            'By tapping Done, you confirm that you physically checked this entire {locationKind}. '
+            'This {locationKind} is counted at its saved standard and submitted for manager review. '
+            'The same product in another fridge remains a separate count.\n'
+            '        Existing saved values, notes and deviations are never overwritten.',
+            1,
           )
 
           replacement = r'''  const applyDefault = async () => {
@@ -156,29 +173,44 @@ jobs:
 
           verifier_path = Path('scripts/verify-inventory-counter-experience.mjs')
           verifier = verifier_path.read_text()
-          replacements = {
-            r"assert.match(experience, /Done — \\$\\{locationKind\\} matches standard/);": r"assert.match(experience, /Done — count & next \\$\\{locationKind\\}/);",
-            r"assert.match(experience, /one tap counts this \\{locationKind\\} and opens Review/);": r"assert.match(experience, /one tap counts and sends this \\{locationKind\\} for manager review, then opens the next assigned location/);",
-            r"assert.match(experience, /message: `\\$\\{assignment\\.location\\.name\\} matches its saved standard and is counted\\.`/);": r"assert.match(experience, /const applied = await applyInventoryCounterRefrigeratorDefault/);\nassert.match(experience, /const workspace = await loadInventoryCounterWorkspace/);\nassert.match(experience, /const submitted = await submitInventoryCountAssignment/);\nassert.match(experience, /expectedAssignmentRevision: updatedAssignment\\.revision/);\nassert.match(experience, /expectedSessionUpdatedAt: updatedAssignment\\.session\\.updatedAt/);\nassert.match(experience, /Your next location is ready/);\nassert.match(experience, /no count was lost/);",
-          }
-          for old, new in replacements.items():
+          verifier_replacements = [
+            (
+              r'''assert.match(experience, /Done — \${locationKind} matches standard/);''',
+              r'''assert.match(experience, /Done — count & next \${locationKind}/);''',
+            ),
+            (
+              r'''assert.match(experience, /one tap counts this \{locationKind\} and opens Review/);''',
+              r'''assert.match(experience, /one tap counts and sends this \{locationKind\} for manager review, then opens the next assigned location/);''',
+            ),
+            (
+              r'''assert.match(experience, /message: `\${assignment\.location\.name} matches its saved standard and is counted\.`/);''',
+              r'''assert.match(experience, /const applied = await applyInventoryCounterRefrigeratorDefault/);
+          assert.match(experience, /const workspace = await loadInventoryCounterWorkspace/);
+          assert.match(experience, /const submitted = await submitInventoryCountAssignment/);
+          assert.match(experience, /expectedAssignmentRevision: updatedAssignment\.revision/);
+          assert.match(experience, /expectedSessionUpdatedAt: updatedAssignment\.session\.updatedAt/);
+          assert.match(experience, /Your next location is ready/);
+          assert.match(experience, /no count was lost/);''',
+            ),
+          ]
+          for old, new in verifier_replacements:
             if old not in verifier:
-              raise SystemExit(f'Missing verifier marker: {old}')
+              raise SystemExit(f'Missing Count Mode verifier marker: {old}')
             verifier = verifier.replace(old, new, 1)
           verifier_path.write_text(verifier)
 
           workflow_path = Path('scripts/verify-inventory-counter-workflow.mjs')
           workflow = workflow_path.read_text()
-          old = "  assert.match(counterExperience, /Done — \\$\\{locationKind\\} matches standard/);"
-          new = """  assert.match(counterExperience, /Done — count & next \\$\\{locationKind\\}/);
+          old_workflow_assertion = r'''  assert.match(counterExperience, /Done — \${locationKind} matches standard/);'''
+          new_workflow_assertions = r'''  assert.match(counterExperience, /Done — count & next \${locationKind}/);
             assert.match(counterExperience, /const applied = await applyInventoryCounterRefrigeratorDefault/);
             assert.match(counterExperience, /const workspace = await loadInventoryCounterWorkspace/);
             assert.match(counterExperience, /const submitted = await submitInventoryCountAssignment/);
-            assert.match(counterExperience, /expectedAssignmentRevision: updatedAssignment\\.revision/);
-            assert.match(counterExperience, /expectedSessionUpdatedAt: updatedAssignment\\.session\\.updatedAt/);"""
-          if old not in workflow:
-            raise SystemExit('Missing workflow verifier Done assertion')
-          workflow = workflow.replace(old, new, 1)
+            assert.match(counterExperience, /expectedAssignmentRevision: updatedAssignment\.revision/);
+            assert.match(counterExperience, /expectedSessionUpdatedAt: updatedAssignment\.session\.updatedAt/);'''
+          if old_workflow_assertion not in workflow:
+            raise SystemExit(f'Missing workflow verifier marker: {old_workflow_assertion}')
+          workflow = workflow.replace(old_workflow_assertion, new_workflow_assertions, 1)
           workflow_path.write_text(workflow)
           PY
 
