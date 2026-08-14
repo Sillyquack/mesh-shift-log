@@ -1,0 +1,93 @@
+import assert from 'node:assert/strict';
+import { readFile } from 'node:fs/promises';
+
+const [router, legacy, experience, styles, designSystem, workspace] = await Promise.all([
+  readFile(new URL('../src/components/InventoryCounterWorkflows.jsx', import.meta.url), 'utf8'),
+  readFile(new URL('../src/components/InventoryCounterWorkflowsLegacy.jsx', import.meta.url), 'utf8'),
+  readFile(new URL('../src/components/InventoryCounterExperience.jsx', import.meta.url), 'utf8'),
+  readFile(new URL('../src/components/InventoryCounterExperience.css', import.meta.url), 'utf8'),
+  readFile(new URL('../src/design-system/MeshExperienceSystem.css', import.meta.url), 'utf8'),
+  readFile(new URL('../src/components/InventoryWorkspace.jsx', import.meta.url), 'utf8'),
+]);
+
+assert.match(router, /InventoryCounterExperience/);
+assert.match(router, /export \{ CounterAssignmentManager \} from '\.\/InventoryCounterWorkflowsLegacy\.jsx'/);
+assert.match(router, /export function CounterInventoryWorkspace/);
+assert.match(workspace, /if \(isInventoryCounter\(props\.user\)\)[\s\S]*?<CounterInventoryWorkspace/);
+assert.match(legacy, /export function CounterInventoryWorkspace/);
+assert.match(legacy, /export function CounterAssignmentManager/);
+
+for (const label of [
+  'COUNT MODE',
+  'One location at a time.',
+  'Count',
+  'Progress',
+  'Review',
+  'Current product',
+  'Save & next product',
+  'Show how this location should look',
+  'Ready to send.',
+  'Send location to Bobby',
+]) {
+  assert.ok(experience.includes(label), `Count Mode missing label: ${label}`);
+}
+
+for (const capability of [
+  'loadInventoryCounterWorkspace',
+  'setInventoryCounterLineQuantity',
+  'setInventoryCounterLineStructuredQuantity',
+  'applyInventoryCounterRefrigeratorDefault',
+  'submitInventoryCountAssignment',
+  'reconcileCounterDrafts',
+  'findAdjacentIncompleteLineId',
+  'counterAssignmentIsEditable',
+]) {
+  assert.ok(experience.includes(capability), `Count Mode missing protected capability: ${capability}`);
+}
+
+assert.match(experience, /const operationRef = useRef\(''\)/);
+assert.match(experience, /if \(operationRef\.current\)/);
+assert.match(experience, /const savingRef = useRef\(false\)/);
+assert.match(experience, /beforeunload/);
+assert.match(experience, /window\.confirm\('Unsaved or failed Stock Count values/);
+assert.match(experience, /physicalConfirmation: true/);
+assert.match(experience, /expectedAssignmentRevision/);
+assert.match(experience, /expectedLineUpdatedAt/);
+assert.match(experience, /summary\.incomplete\.length[\s\S]*summary\.unsafeDrafts\.length[\s\S]*summary\.invalidDrafts\.length/);
+assert.match(experience, /Your entry is still here/);
+assert.match(experience, /Refresh safely — keep local drafts/);
+assert.match(experience, /LocationReferenceViewer/);
+assert.match(experience, /inputMode="decimal"/);
+assert.match(experience, /inputMode="numeric"/);
+assert.match(experience, /aria-live="polite"/);
+assert.match(experience, /role="progressbar"/);
+assert.match(experience, /autoComplete="off"/);
+assert.doesNotMatch(experience, /\b(?:alarm|safe|salto)\s*(?:pin|code)\b/i);
+assert.doesNotMatch(experience, /[æøå]/i);
+
+for (const noisyLabel of [
+  'Supabase',
+  'database',
+  'backend',
+  'realtime',
+  'RPC',
+  'Millum export',
+  'manager configuration',
+]) {
+  assert.ok(!experience.includes(noisyLabel), `Frontline Count Mode exposes implementation noise: ${noisyLabel}`);
+}
+
+assert.match(styles, /\.counter-experience/);
+assert.match(styles, /\.counter-experience-nav/);
+assert.match(styles, /position: fixed/);
+assert.match(styles, /env\(safe-area-inset-bottom\)/);
+assert.match(styles, /min-height: var\(--mesh-touch-target\)/);
+assert.match(styles, /@media \(max-width: 760px\)/);
+assert.match(styles, /@media \(max-width: 430px\)/);
+assert.match(styles, /prefers-reduced-motion/);
+assert.match(styles, /overflow-x: clip/);
+assert.match(designSystem, /--mesh-gold/);
+assert.match(designSystem, /\.mesh-progress-ring/);
+assert.match(designSystem, /\.mesh-bottom-nav/);
+
+console.log('Verified focused Count / Progress / Review experience and preserved inventory integrity controls.');
