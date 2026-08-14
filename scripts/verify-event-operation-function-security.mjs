@@ -53,7 +53,7 @@ for (const signature of internal) {
 
 assert.match(migration, /alter function public\.set_updated_at\(\) set search_path = pg_catalog, public;/i);
 assert.match(migration, /p\.proconfig @> array\['search_path=pg_catalog, public'\]::text\[\]/i);
-assert.doesNotMatch(migration, /grant\s+(?:all|execute)[\s\S]*?\b(?:public|anon)\s*;/i);
+assert.doesNotMatch(migration, /grant\s+(?:all|execute)\s+on\s+function[\s\S]*?\bto\s+(?:public|anon)\s*;/i);
 assert.doesNotMatch(migration, /revoke\s+all\s+on\s+all\s+functions/i);
 assert.doesNotMatch(migration, /\b(?:insert\s+into|update\s+public\.|delete\s+from|alter\s+table|create\s+table|drop\s+table|truncate)\b/i);
 assert.doesNotMatch(migration, /service_role|authorization:\s*bearer|eyJ[A-Za-z0-9_-]{20,}\./i);
