@@ -31,7 +31,7 @@ A production go decision requires all applicable automated and database checks p
 | Routine history | `npm run verify:routine-history-pilot` | Atomic history, permissions and read-only detail pass |
 | Routine UI foundation | `npm run verify:routine-ui-foundation` | Role routing and shared UI contracts pass |
 | Full Phase 10 reapply | `npm run verify:routine-full-migration-reapply` | Exact ordered Phase 10 migration stack reapplies safely in disposable PostgreSQL |
-| Event visual browser matrix | `npm run verify:event-visual-library-browser` | 56/56 checks across 10 Chromium/WebKit scenarios at 1440, 1280, 1180, 1024, 430, 390, 375 and 360 px |
+| Event visual browser matrix | `npm run verify:event-visual-library-browser` | 71/71 checks across 13 Chromium/WebKit scenarios at 1440, 1280, 1180, 1024, 430, 390, 375 and 360 px |
 | Count Mode browser flow | `npm run verify:inventory-count-mode-browser` | 11/11 checks: the saved-standard action submits once, preserves separate-location/no-overwrite copy and opens the next fridge |
 | Routine content browser matrix | `npm run verify:routine-content-visual` | 365/365 checks across 70 Chromium/WebKit scenarios |
 | Shift/History end-to-end browser matrix | `npm run verify:routine-e2e-pilot` | 411/411 checks across 36 scenarios with a disposable PostgREST/PostgreSQL backend |

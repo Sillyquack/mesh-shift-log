@@ -19,6 +19,9 @@ const scenarios = [
   ["atrium-mobile", "atrium", "webkit", 375, 812],
   ["atrium-narrow", "atrium", "chromium", 360, 800],
   ["cornerbar-tablet", "cornerbar", "webkit", 1024, 900],
+  ["cornerbar-group", "cornerbar-group", "chromium", 1180, 900],
+  ["cornerbar-horseshoe", "cornerbar-horseshoe", "webkit", 390, 844],
+  ["cornerbar-coffee", "cornerbar-coffee", "chromium", 430, 932],
   ["workbar-written-only", "workbar", "chromium", 390, 844],
   ["image-error-fallback", "error", "webkit", 1180, 900],
   ["keyboard-reduced-motion", "atrium", "chromium", 1024, 900],
@@ -114,7 +117,7 @@ async function main() {
       await page.screenshot({ path: resolve(EVIDENCE, `${name}-${engine}-${width}x${height}.png`), fullPage: true });
       await page.close();
     }
-    check("Chromium and WebKit cover desktop, tablet, 430/390/375/360 mobile, placeholder, error, keyboard and reduced-motion states", scenarios.length === 10 && new Set(scenarios.map((entry) => entry[2])).size === 2);
+    check("Chromium and WebKit cover desktop, tablet, 430/390/375/360 mobile, all Cornerbar preview variants, placeholder, error, keyboard and reduced-motion states", scenarios.length === 13 && new Set(scenarios.map((entry) => entry[2])).size === 2);
     console.log(`Event visual browser verification: ${passed}/${passed} passed; evidence ${EVIDENCE}`);
   } finally {
     await browsers.chromium.close().catch(() => {});

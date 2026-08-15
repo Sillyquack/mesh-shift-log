@@ -42,6 +42,9 @@ function Harness() {
   const guideByScenario = {
     atrium: guide("atrium-cafe-default"),
     cornerbar: guide("cornerbar-default-restore"),
+    "cornerbar-group": guide("cornerbar-group-tables"),
+    "cornerbar-horseshoe": guide("cornerbar-horseshoe"),
+    "cornerbar-coffee": guide("coffee-water-tea"),
     workbar: guide("workbar-conference-setup"),
     error: guide("atrium-stage-tech-default"),
   };
