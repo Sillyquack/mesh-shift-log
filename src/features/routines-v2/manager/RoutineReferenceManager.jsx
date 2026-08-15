@@ -33,8 +33,33 @@ function readinessProgress(rows) {
   return {
     ready,
     total: required.length,
-    percent: required.length ? Math.round((ready / required.length) * 100) : 100,
+    percent: required.length ? Math.round((ready / required.length) * 100) : null,
   };
+}
+
+const GUIDE_TYPE_LABELS = Object.freeze({
+  default_restore: "Default restore",
+  customer_layout: "Customer layout",
+  service_station: "Service station",
+  stage_tech: "Stage & tech",
+  bar_ready: "Bar ready",
+  closing_reset: "Closing reset",
+});
+
+function guideTypeLabel(value) {
+  return GUIDE_TYPE_LABELS[value] || String(value || "Visual guide").replaceAll("_", " ");
+}
+
+function progressCopy(progress) {
+  if (!progress.total) return "Written standard only";
+  return `${progress.ready} of ${progress.total} required ready`;
+}
+
+function progressState(progress) {
+  if (!progress.total) return "written";
+  if (progress.ready === progress.total) return "ready";
+  if (progress.ready > 0) return "progress";
+  return "missing";
 }
 
 function referenceKey(reference) {
@@ -92,6 +117,7 @@ export default function RoutineReferenceManager({ loader, uploader }) {
   const [message, setMessage] = useState("");
   const [search, setSearch] = useState("");
   const [creatingSlots, setCreatingSlots] = useState(false);
+  const [confirmMissing, setConfirmMissing] = useState(false);
 
   const slots = useMemo(eventVisualSlots, []);
   const references = manager.data.references || [];
@@ -103,7 +129,11 @@ export default function RoutineReferenceManager({ loader, uploader }) {
     () => readinessProgress(readiness.rows),
     [readiness.rows],
   );
-  const completion = requiredReadiness.percent;
+  const completion = requiredReadiness.percent ?? 0;
+  const requiredRows = readiness.rows.filter((row) => row.required !== false);
+  const optionalRows = readiness.rows.filter((row) => row.required === false);
+  const requiredAwaiting = requiredRows.filter((row) => row.state === "placeholder");
+  const requiredMissing = requiredRows.filter((row) => row.state === "missing");
   const readinessTree = useMemo(() => {
     const rowsByKey = new Map(readiness.rows.map((row) => [row.stableKey, row]));
     return eventVisualVenues.map((venue) => {
@@ -193,6 +223,7 @@ export default function RoutineReferenceManager({ loader, uploader }) {
           ? `${created} placeholder${created === 1 ? "" : "s"} created. ${failures.length} need review: ${failures.join(" · ")}`
           : `${created} event visual-standard placeholder${created === 1 ? "" : "s"} created.`,
       );
+      setConfirmMissing(false);
     } catch (error) {
       setMessage(
         error?.message ||
@@ -201,6 +232,23 @@ export default function RoutineReferenceManager({ loader, uploader }) {
     } finally {
       setCreatingSlots(false);
     }
+  };
+
+  const createEventSlot = async (slot) => {
+    setMessage("");
+    const result = await createRoutineReferenceImage({
+      referenceKey: slot.id,
+      label: slot.label,
+      description: slot.description,
+      placeholderText: slot.placeholderText,
+      idempotencyKey: createIdempotencyKey(),
+    });
+    if (!result.ok) {
+      setMessage(result.message || `${slot.label} could not be created.`);
+      return;
+    }
+    await manager.refresh();
+    setMessage(`${slot.label} placeholder created. Production upload remains separate.`);
   };
 
   const upload = async () => {
@@ -274,30 +322,38 @@ export default function RoutineReferenceManager({ loader, uploader }) {
               visible until a permanent image is ready.
             </p>
           </div>
-          <div className="rm-visual-readiness-counts">
-            <span>
-              <strong>{readiness.ready.length}</strong> ready
-            </span>
-            <span>
-              <strong>{readiness.placeholders.length}</strong> awaiting image
-            </span>
-            <span>
-              <strong>{readiness.missing.length}</strong> not created
-            </span>
+          <div className="rm-visual-readiness-counts" aria-label="Required visual-standard progress">
+            <span><strong>{requiredReadiness.ready}</strong><b>ready</b></span>
+            <i aria-hidden="true">·</i>
+            <span><strong>{requiredAwaiting.length}</strong><b>awaiting upload</b></span>
+            <i aria-hidden="true">·</i>
+            <span><strong>{requiredMissing.length}</strong><b>not created</b></span>
+            <span className="is-optional"><strong>{optionalRows.length}</strong><b>optional angles</b></span>
           </div>
         </div>
 
         {readiness.missing.length ? (
-          <button
-            type="button"
-            className="primary-button"
-            disabled={creatingSlots}
-            onClick={createMissingEventSlots}
-          >
-            {creatingSlots
-              ? "Creating safe placeholders…"
-              : `Create ${readiness.missing.length} missing event placeholder${readiness.missing.length === 1 ? "" : "s"}`}
-          </button>
+          <aside className="rm-visual-bulk-plan" aria-label="Missing placeholder plan">
+            <div>
+              <p className="eyebrow">Guarded library setup</p>
+              <h4>{readiness.missing.length} visual slot{readiness.missing.length === 1 ? "" : "s"} do not exist yet</h4>
+              <p>
+                {requiredMissing.length} required and {readiness.missing.length - requiredMissing.length} optional slot{readiness.missing.length === 1 ? "" : "s"} can receive honest placeholders. No image is uploaded or activated.
+              </p>
+            </div>
+            {!confirmMissing ? (
+              <button type="button" className="ghost-button" onClick={() => setConfirmMissing(true)}>
+                Review placeholder plan
+              </button>
+            ) : (
+              <div className="rm-actions" role="group" aria-label="Confirm placeholder creation">
+                <button type="button" className="ghost-button" disabled={creatingSlots} onClick={() => setConfirmMissing(false)}>Cancel</button>
+                <button type="button" className="primary-button" disabled={creatingSlots} onClick={createMissingEventSlots}>
+                  {creatingSlots ? "Creating safe placeholders…" : `Create ${readiness.missing.length} missing event placeholders`}
+                </button>
+              </div>
+            )}
+          </aside>
         ) : (
           <p className="mesh-status is-success" role="status">
             Every required event image slot exists. Uploads can now be completed
@@ -306,54 +362,73 @@ export default function RoutineReferenceManager({ loader, uploader }) {
         )}
 
         <div className="rm-visual-tree" aria-label="Visual standards grouped by venue, guide, zone and angle">
-          {readinessTree.map((venue) => (
-            <section key={venue.key} className="rm-visual-venue">
-              <header>
-                <div><p className="eyebrow">Venue</p><h4>{venue.label}</h4></div>
-                <strong>{venue.progress.ready}/{venue.progress.total} · {venue.progress.percent}%</strong>
-              </header>
+          {readinessTree.map((venue, venueIndex) => (
+            <details key={venue.key} className={`rm-visual-venue is-${progressState(venue.progress)}`} open={venueIndex === 0}>
+              <summary>
+                <div>
+                  <p className="eyebrow">Venue standard</p>
+                  <h4>{venue.label}</h4>
+                  <small>{venue.guides.length} guide{venue.guides.length === 1 ? "" : "s"} · {progressCopy(venue.progress)}</small>
+                </div>
+                <span className="rm-visual-venue-progress" aria-label={progressCopy(venue.progress)}>
+                  {venue.progress.total ? <><strong>{venue.progress.percent}%</strong><i style={{ "--rm-venue-progress": `${venue.progress.percent}%` }} /></> : <strong>Written</strong>}
+                </span>
+              </summary>
+              {!venue.progress.total ? (
+                <p className="rm-visual-written-state"><strong>Written standard only</strong><span>No image is currently required or sourced.</span></p>
+              ) : null}
               <div className="rm-visual-guide-list">
-                {venue.guides.map((guide) => (
-                  <details key={guide.key} className="rm-visual-guide" open={guide.selectionKind === "default_target"}>
+                {venue.guides.map((guide, guideIndex) => (
+                  <details key={guide.key} className={`rm-visual-guide is-${progressState(guide.progress)}`} open={venueIndex === 0 && guideIndex === 0}>
                     <summary>
-                      <span><small>{guide.guideType.replaceAll("_", " ")}</small><strong>{guide.title}</strong></span>
-                      <b>{guide.progress.ready}/{guide.progress.total} required</b>
+                      <span><small>{guideTypeLabel(guide.guideType)}</small><strong>{guide.title}</strong><em>{guide.summary}</em></span>
+                      <b>{progressCopy(guide.progress)}</b>
                     </summary>
-                    <p>{guide.summary}</p>
                     <div className="rm-visual-zone-list">
-                      {guide.zones.map((zone) => (
-                        <section key={zone.key} className="rm-visual-zone">
-                          <header><strong>{zone.label}</strong><span>{zone.progress.ready}/{zone.progress.total}</span></header>
-                          <p>{zone.description}</p>
+                      {guide.zones.map((zone, zoneIndex) => (
+                        <details key={zone.key} className="rm-visual-zone" open={venueIndex === 0 && guideIndex === 0 && zoneIndex === 0}>
+                          <summary>
+                            <span>{String(zoneIndex + 1).padStart(2, "0")}</span>
+                            <div><strong>{zone.label}</strong><p>{zone.description}</p></div>
+                            <b>{progressCopy(zone.progress)}</b>
+                          </summary>
                           {zone.rows.length ? (
                             <div className="rm-visual-angle-list">
                               {zone.rows.map((row) => (
                                 <button
                                   key={row.id}
                                   type="button"
-                                  className={`rm-visual-slot is-${row.state}`}
-                                  disabled={!row.reference}
-                                  onClick={() => row.reference && choose(row.reference)}
+                                  className={`rm-visual-angle-card is-${row.state}`}
+                                  onClick={() => row.reference ? choose(row.reference) : createEventSlot(row)}
                                 >
-                                  <span>{row.ready ? "✓" : row.state === "missing" ? "+" : "○"}</span>
-                                  <strong>{row.label}</strong>
-                                  <small>{row.required === false ? "Optional · " : "Required · "}{row.ready ? "Ready" : row.state === "missing" ? "Create placeholder" : "Awaiting production upload"}</small>
+                                  <span className="rm-visual-angle-media" aria-hidden="true">{row.ready ? "✓" : row.state === "missing" ? "+" : "◎"}</span>
+                                  <span className="rm-visual-angle-copy">
+                                    <span className="rm-visual-angle-chips"><i>{row.imageRole || "zone"}</i><i>{row.required === false ? "Optional" : "Required"}</i></span>
+                                    <strong>{row.label}</strong>
+                                    <small>{row.description}</small>
+                                    <b>{row.ready ? "Ready · open details" : row.state === "missing" ? "Create placeholder" : "Awaiting upload · open details"}</b>
+                                  </span>
                                 </button>
                               ))}
                             </div>
-                          ) : <p className="mesh-status is-warning">Written standard preserved; source image set is empty.</p>}
-                        </section>
+                          ) : <p className="rm-visual-written-state"><strong>Written standard only</strong><span>No image is currently required or sourced.</span></p>}
+                        </details>
                       ))}
                     </div>
                   </details>
                 ))}
               </div>
-            </section>
+            </details>
           ))}
         </div>
       </section>
 
-      <section className="rm-card rm-visual-library">
+      <details className="rm-card rm-visual-library">
+        <summary className="rm-visual-library-summary">
+          <span><small>Advanced</small><strong>Library search and custom standards</strong></span>
+          <b>{references.length} standards</b>
+        </summary>
+        <div className="rm-visual-library-body">
         <div className="rm-section-heading">
           <div>
             <p className="eyebrow">Permanent library</p>
@@ -401,7 +476,8 @@ export default function RoutineReferenceManager({ loader, uploader }) {
             ))}
           </div>
         )}
-      </section>
+        </div>
+      </details>
 
       {draft ? (
         <div className="rm-split rm-visual-editor">
@@ -444,20 +520,23 @@ export default function RoutineReferenceManager({ loader, uploader }) {
                   : "Awaiting image"}
               </StatusPill>
             </header>
-            <Field
-              id="reference-key"
-              label="Stable key"
-              help="Permanent identifier; it cannot change after creation."
-            >
-              <input
+            <details className="rm-advanced">
+              <summary>Advanced technical details</summary>
+              <Field
                 id="reference-key"
-                readOnly={Boolean(selected)}
-                value={draft.stableKey || draft.referenceKey || ""}
-                onChange={(event) =>
-                  setDraft({ ...draft, stableKey: event.target.value })
-                }
-              />
-            </Field>
+                label="Stable key"
+                help="Permanent identifier; it cannot change after creation."
+              >
+                <input
+                  id="reference-key"
+                  readOnly={Boolean(selected)}
+                  value={draft.stableKey || draft.referenceKey || ""}
+                  onChange={(event) =>
+                    setDraft({ ...draft, stableKey: event.target.value })
+                  }
+                />
+              </Field>
+            </details>
             <Field
               id="reference-label"
               label="Name"

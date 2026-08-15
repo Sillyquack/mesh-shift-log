@@ -11,20 +11,26 @@ const PLAYWRIGHT_CANDIDATES = [
   resolve(ROOT, "node_modules/playwright/index.mjs"),
   "/Users/robert/.cache/codex-runtimes/codex-primary-runtime/dependencies/node/node_modules/playwright/index.mjs",
 ];
-const scenarios = [
+const VIEWPORTS = [
+  [1440, 1000],
+  [1280, 900],
+  [1024, 900],
+  [430, 932],
+  [390, 844],
+  [375, 812],
+  [360, 800],
+];
+const GUIDE_SCENARIOS = ["atrium", "cornerbar", "cornerbar-group", "cornerbar-horseshoe", "cornerbar-coffee", "workbar", "error"];
+const scenarios = ["chromium", "webkit"].flatMap((engine) => VIEWPORTS.map(([width, height], index) => [
+  `${GUIDE_SCENARIOS[index]}-${engine}-${width}`,
+  GUIDE_SCENARIOS[index],
+  engine,
+  width,
+  height,
+]));
+const managerScenarios = [
   ["manager-desktop", "manager", "chromium", 1440, 1000],
-  ["manager-compact", "manager", "chromium", 430, 932],
   ["manager-mobile", "manager", "webkit", 390, 844],
-  ["atrium-desktop", "atrium", "chromium", 1280, 1000],
-  ["atrium-mobile", "atrium", "webkit", 375, 812],
-  ["atrium-narrow", "atrium", "chromium", 360, 800],
-  ["cornerbar-tablet", "cornerbar", "webkit", 1024, 900],
-  ["cornerbar-group", "cornerbar-group", "chromium", 1180, 900],
-  ["cornerbar-horseshoe", "cornerbar-horseshoe", "webkit", 390, 844],
-  ["cornerbar-coffee", "cornerbar-coffee", "chromium", 430, 932],
-  ["workbar-written-only", "workbar", "chromium", 390, 844],
-  ["image-error-fallback", "error", "webkit", 1180, 900],
-  ["keyboard-reduced-motion", "atrium", "chromium", 1024, 900],
 ];
 let server;
 let passed = 0;
@@ -69,11 +75,63 @@ async function audit(page) {
       const rect = node.getBoundingClientRect();
       return `${node.tagName}:${node.textContent?.trim() || node.getAttribute("aria-label") || node.type}:${rect.width.toFixed(1)}x${rect.height.toFixed(1)}`;
     });
+    const dialog = document.querySelector('[role="dialog"]');
+    const body = dialog?.querySelector(".event-visual-guide-body");
+    const journey = dialog?.querySelector(".event-visual-guide-journey");
+    const rail = dialog?.querySelector(".event-visual-guide-checklist");
+    const footer = dialog?.querySelector(".event-visual-guide-footer");
+    const dialogRect = dialog?.getBoundingClientRect();
+    const bodyRect = body?.getBoundingClientRect();
+    const journeyRect = journey?.getBoundingClientRect();
+    const railRect = rail?.getBoundingClientRect();
+    const footerRect = footer?.getBoundingClientRect();
+    const sideBySide = Boolean(journeyRect && railRect && Math.abs(journeyRect.top - railRect.top) <= 2 && railRect.left > journeyRect.left);
+    const wrapOffenders = dialog ? [...dialog.querySelectorAll("h2,h3,h4,p,li,strong,small")].filter((node) => {
+      if (!visible(node)) return false;
+      const style = getComputedStyle(node);
+      return style.wordBreak === "break-all" || style.hyphens === "auto" || node.scrollWidth > node.clientWidth + 1;
+    }).map((node) => `${node.tagName}:${node.textContent?.trim().slice(0, 48)}`) : [];
+    const visibleCards = dialog && footerRect ? [...dialog.querySelectorAll(".event-visual-guide-card")].filter((node) => {
+      const rect = node.getBoundingClientRect();
+      return visible(node) && rect.bottom > (bodyRect?.top || 0) && rect.top < (bodyRect?.bottom || innerHeight);
+    }) : [];
+    const footerCardOverlap = visibleCards.some((node) => Math.min(node.getBoundingClientRect().bottom, bodyRect?.bottom || innerHeight) > footerRect.top + 1);
+    const zoneActions = dialog ? [...dialog.querySelectorAll(".event-visual-guide-zone > header button")].filter(visible) : [];
     return {
       unnamed,
       smallTargets,
       duplicateIds: [...document.querySelectorAll("[id]")].map((node) => node.id).filter((id, index, ids) => ids.indexOf(id) !== index).length,
       overflow: Math.max(document.documentElement.scrollWidth, document.body.scrollWidth) - innerWidth,
+      dialogWithinViewport: !dialogRect || (dialogRect.left >= -1 && dialogRect.right <= innerWidth + 1 && dialogRect.top >= -1 && dialogRect.bottom <= innerHeight + 1),
+      bodyFooterSeparated: !bodyRect || !footerRect || bodyRect.bottom <= footerRect.top + 1,
+      footerCardOverlap,
+      sideBySide,
+      railWidth: railRect?.width || 0,
+      wrapOffenders,
+      zoneActionCount: zoneActions.length,
+      disabledZoneActions: zoneActions.filter((node) => node.disabled).length,
+    };
+  });
+}
+
+async function auditScrolledEnd(page) {
+  return page.evaluate(() => {
+    const body = document.querySelector(".event-visual-guide-body");
+    const footer = document.querySelector(".event-visual-guide-footer");
+    const lastCard = [...document.querySelectorAll(".event-visual-guide-card")].at(-1);
+    if (!body || !footer || !lastCard) return { clear: true };
+    body.scrollTop = body.scrollHeight;
+    const cardRect = lastCard.getBoundingClientRect();
+    const bodyRect = body.getBoundingClientRect();
+    const footerRect = footer.getBoundingClientRect();
+    return {
+      clear: cardRect.bottom <= bodyRect.bottom + 1 && cardRect.bottom <= footerRect.top + 1,
+      cardBottom: cardRect.bottom,
+      bodyBottom: bodyRect.bottom,
+      footerTop: footerRect.top,
+      scrollTop: body.scrollTop,
+      scrollHeight: body.scrollHeight,
+      clientHeight: body.clientHeight,
     };
   });
 }
@@ -87,7 +145,7 @@ async function main() {
   await startServer();
   const browsers = { chromium: await chromium.launch({ headless: true }), webkit: await webkit.launch({ headless: true }) };
   try {
-    for (const [name, scenario, engine, width, height] of scenarios) {
+    for (const [name, scenario, engine, width, height] of [...scenarios, ...managerScenarios]) {
       const page = await browsers[engine].newPage({ viewport: { width, height }, reducedMotion: "reduce" });
       const consoleErrors = [];
       const pageErrors = [];
@@ -98,26 +156,48 @@ async function main() {
       if (scenario === "manager") {
         await page.getByRole("heading", { name: "Visual standards", exact: true }).waitFor();
         check(`${name} exposes venue hierarchy`, await page.getByText("Atrium", { exact: true }).first().isVisible() && await page.getByText("Cornerbar", { exact: true }).first().isVisible());
+        check(`${name} exposes honest readiness states`, await page.getByText(/required ready/i).first().isVisible() && await page.getByText(/awaiting upload/i).first().isVisible() && await page.getByText(/not created/i).first().isVisible() && await page.getByText(/optional angles/i).first().isVisible());
+        check(`${name} does not fabricate a zero-item perfect score`, await page.getByText(/0\/0.*100%/).count() === 0 && await page.getByText("Written standard only", { exact: true }).count() > 0);
       } else {
         await page.getByRole("dialog").waitFor();
         check(`${name} exposes reconstruction sequence`, await page.getByText(/KNOW THE TARGET/).isVisible() && await page.getByText(/FINAL WALK-THROUGH/).isVisible());
         if (scenario === "workbar") check(`${name} preserves written-only source`, await page.getByText(/Written standard only/).isVisible());
         if (scenario === "error") check(`${name} keeps written fallback after image error`, await page.getByText(/complete written reconstruction remains available/i).isVisible());
-        if (name === "keyboard-reduced-motion") {
-          await page.getByRole("button", { name: "Close visual guide" }).focus();
-          await page.keyboard.press("Shift+Tab");
-          check(`${name} keeps keyboard focus inside modal`, await page.evaluate(() => document.querySelector('[role="dialog"]')?.contains(document.activeElement)));
-        }
+        await page.getByRole("button", { name: "Close visual guide" }).focus();
+        await page.keyboard.press("Shift+Tab");
+        check(`${name} keeps keyboard focus inside modal`, await page.evaluate(() => document.querySelector('[role="dialog"]')?.contains(document.activeElement)));
       }
       const result = await audit(page);
       check(`${name} has no runtime errors`, consoleErrors.length === 0 && pageErrors.length === 0 && await page.locator("vite-error-overlay").count() === 0);
       check(`${name} has no horizontal overflow`, result.overflow <= 1);
       check(`${name} has named controls and unique IDs`, result.unnamed === 0 && result.duplicateIds === 0);
       check(`${name} has 48 px operational touch targets${result.smallTargets.length ? ` (${result.smallTargets.join(", ")})` : ""}`, result.smallTargets.length === 0);
+      check(`${name} keeps the review surface inside the viewport`, result.dialogWithinViewport);
+      if (scenario !== "manager") {
+        check(`${name} preserves normal wrapping${result.wrapOffenders.length ? ` (${result.wrapOffenders.join(", ")})` : ""}`, result.wrapOffenders.length === 0);
+        const endState = await auditScrolledEnd(page);
+        check(`${name} keeps the body and cards clear of the footer ${JSON.stringify({ bodyFooterSeparated: result.bodyFooterSeparated, footerCardOverlap: result.footerCardOverlap, endState })}`, result.bodyFooterSeparated && !result.footerCardOverlap && endState.clear);
+        check(`${name} provides visible enabled zone actions`, result.zoneActionCount > 0 && result.disabledZoneActions === 0);
+        check(`${name} uses a 280 px minimum rail when side-by-side`, !result.sideBySide || result.railWidth >= 279.5);
+        await page.evaluate(() => {
+          const body = document.querySelector(".event-visual-guide-body");
+          if (body) body.scrollTop = 0;
+        });
+      }
       await page.screenshot({ path: resolve(EVIDENCE, `${name}-${engine}-${width}x${height}.png`), fullPage: true });
+      if (scenario !== "manager") {
+        await page.getByRole("button", { name: "Close visual guide" }).click();
+        await page.getByRole("dialog").waitFor({ state: "detached" });
+        await page.locator("#return-focus").focus();
+        await page.keyboard.press("Enter");
+        await page.getByRole("dialog").waitFor();
+        await page.getByRole("button", { name: "Close visual guide" }).click();
+        await page.getByRole("dialog").waitFor({ state: "detached" });
+        check(`${name} returns focus to its launcher`, await page.evaluate(() => document.activeElement?.id === "return-focus"));
+      }
       await page.close();
     }
-    check("Chromium and WebKit cover desktop, tablet, 430/390/375/360 mobile, all Cornerbar preview variants, placeholder, error, keyboard and reduced-motion states", scenarios.length === 13 && new Set(scenarios.map((entry) => entry[2])).size === 2);
+    check("Chromium and WebKit each cover 1440, 1280, 1024, 430, 390, 375 and 360 widths plus manager states", scenarios.length === 14 && managerScenarios.length === 2 && new Set(scenarios.map((entry) => entry[2])).size === 2);
     console.log(`Event visual browser verification: ${passed}/${passed} passed; evidence ${EVIDENCE}`);
   } finally {
     await browsers.chromium.close().catch(() => {});

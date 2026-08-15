@@ -38,6 +38,7 @@ function ManagerFixture() {
       <ProductionCandidateOrchestrator />
       <main className="manager-page">
         <section className="intro"><p>Review fixture · no backend writes</p></section>
+        <aside className="mesh-review-context" role="note"><strong>Review fixture</strong><span>Deterministic manager data · no backend writes</span></aside>
         <section><h2>Today&apos;s event board</h2><p>Atrium breakfast is prepared and ready for client arrival.</p></section>
         <section><h2>Needs attention</h2><p>One visual upload batch remains pending approval.</p></section>
         <section><h2>Shift progress</h2><p>Opening work is on schedule.</p></section>
@@ -50,7 +51,7 @@ function ManagerFixture() {
 
 function EventFixture() {
   return (
-    <EventOperatorExperience
+    <><aside className="mesh-review-context is-floating" role="note"><strong>Review fixture</strong><span>Final target Event Mode · no backend writes</span></aside><EventOperatorExperience
       user={{ name: "Julie Bolid", role: "event_floor_manager" }}
       eventOperation={eventOperation}
       tasks={tasks}
@@ -62,7 +63,7 @@ function EventFixture() {
       onTaskStatus={async () => ({ ok: true })}
       onCreateLiveUpdate={async () => ({ ok: true })}
       onOpenGuide={noop}
-    />
+    /></>
   );
 }
 

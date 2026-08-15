@@ -1,6 +1,8 @@
 import React from "react";
 import { createRoot } from "react-dom/client";
 import "../../../styles.css";
+import "../../../design-system/MeshExperienceSystem.css";
+import "../../../experience/RoutineStudioExperience.css";
 import "../components/RoutineEngineShell.css";
 import "../manager/RoutineManager.css";
 import RoutineChunkErrorBoundary from "../components/RoutineChunkErrorBoundary.jsx";
@@ -42,7 +44,7 @@ const readyReadiness = { ...blockedReadiness, ready: true, blockers: [], categor
 const noop = () => {};
 const success = async () => ({ ok: true });
 
-function Shell({ title, children }) { return <div className="routine-shell"><main className="rm-workspace"><header className="rm-topbar"><div><p className="eyebrow">Phase 10K4 visual harness · {scenario}</p><h1>{title}</h1></div><button type="button">Back to preview home</button></header><section className="rm-panel">{children}</section></main></div>; }
+function Shell({ title, children }) { return <div className="routine-shell"><aside className="rm-review-fixture" role="note"><strong>Review fixture</strong><span>Deterministic local evidence. No production data or controls are active.</span></aside><main className="rm-workspace rm-experience-workspace"><header className="rm-topbar"><div><p className="eyebrow">Release review fixture · {scenario}</p><h1>{title}</h1></div><button type="button">Back to preview home</button></header><section className="rm-panel">{children}</section></main></div>; }
 function History({ manager = true, source = entries }) { return <Shell title={manager ? "Manager Control Center" : "Operations Preview"}><RoutineHistoryWorkspace manager={manager} loader={async () => ({ sourceSystem: "routine_engine_v2", items: source, hasMore: false })} runLoader={async () => runDetail} taskLoader={async () => taskDetail} legacySummaryLoader={async () => legacySummary} legacyLoader={async () => ({ items: legacyItems })} /></Shell>; }
 function Run({ mismatch = false, doubleShift = false }) { const value = { ...runDetail, comparisons: mismatch ? runDetail.comparisons : [{ ...runDetail.comparisons[0], comparison_result: "matched", reconciliation_status: "not_required" }], doubleShift: doubleShift ? runDetail.doubleShift : [] }; return <Shell title="Routine History"><RoutineHistoryRunDetail detail={value} mutations={new Proxy({}, { get: () => success })} onBack={noop} onOpenTask={noop} onCorrection={noop} onOverride={noop} /></Shell>; }
 function Dialog({ type }) { const [open, setOpen] = React.useState(false); const label = type === "override" ? "Open manager override dialog" : "Open history correction dialog"; return <Shell title="Manager History"><button type="button" onClick={() => setOpen(true)}>{label}</button>{open && (type === "override" ? <RoutineManagerOverrideDialog run={runDetail.run} participants={participants} api={success} onClose={() => setOpen(false)} /> : <RoutineHistoryCorrectionDialog runId={runDetail.run.id} entity={{ type: "task", id: uuid(21) }} api={success} onClose={() => setOpen(false)} />)}</Shell>; }

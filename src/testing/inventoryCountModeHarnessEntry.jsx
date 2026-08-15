@@ -21,6 +21,7 @@ const summary = {
 
 function Harness() {
   const [submitted, setSubmitted] = useState(false);
+  const [manual, setManual] = useState(new URLSearchParams(window.location.search).get("scenario") === "manual-differences");
   const [submitCount, setSubmitCount] = useState(0);
 
   return (
@@ -40,6 +41,13 @@ function Harness() {
             <h1>Workbar Fridge 2 is next.</h1>
             <p>Only Cornerbar Fridge 1 was submitted. The next physical location is now ready to check.</p>
           </section>
+        ) : manual ? (
+          <section className="mesh-focus-card" aria-label="Manual differences for current fridge">
+            <span className="mesh-section-label">Current refrigerator only</span>
+            <h1>Count differences in Cornerbar Fridge 1.</h1>
+            <p>Only this refrigerator is open. Existing quantities, blank values, zeros, notes and deviations remain visible and are never overwritten.</p>
+            <button type="button" className="mesh-secondary-action" onClick={() => setManual(false)}>Back to saved-standard check</button>
+          </section>
         ) : (
           <StandardMatchPanel
             assignment={firstAssignment}
@@ -49,7 +57,7 @@ function Harness() {
               setSubmitCount((count) => count + 1);
               setSubmitted(true);
             }}
-            onManualCount={() => {}}
+            onManualCount={() => setManual(true)}
           />
         )}
       </div>

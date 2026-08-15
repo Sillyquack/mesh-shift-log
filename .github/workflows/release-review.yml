@@ -27,6 +27,9 @@ jobs:
       - name: Install locked dependencies
         run: npm ci
 
+      - name: Install pinned review browsers
+        run: npx playwright install --with-deps chromium webkit
+
       - name: Pull pinned disposable PostgreSQL image
         run: docker pull public.ecr.aws/supabase/postgres:17.6.1.141
 
@@ -35,6 +38,12 @@ jobs:
 
       - name: Verify combined production experience
         run: npm run verify:production-candidate-experience
+
+      - name: Verify Mesh experience system
+        run: npm run verify:mesh-experience-system
+
+      - name: Verify Event operator experience
+        run: npm run verify:event-operator-experience
 
       - name: Verify Event visual library
         run: npm run verify:event-visual-library
@@ -60,5 +69,35 @@ jobs:
       - name: Verify pinned Routine content provenance
         run: npm run verify:routine-content-pack
 
+      - name: Verify Routine manager experience
+        run: npm run verify:routine-manager-ui
+
+      - name: Verify Routine employee experience
+        run: npm run verify:routine-employee-ui
+
+      - name: Verify Routine history and pilot controls
+        run: npm run verify:routine-history-pilot
+
+      - name: Run Event visual Chromium and WebKit matrix
+        run: npm run verify:event-visual-library-browser
+
+      - name: Run release review Chromium and WebKit matrix
+        run: npm run verify:release-review-browser
+
+      - name: Run Inventory Count Chromium and WebKit matrix
+        run: npm run verify:inventory-count-mode-browser
+
       - name: Build production bundle
         run: npm run build
+
+      - name: Upload read-only browser review evidence
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: release-review-browser-evidence
+          path: |
+            docs/production/artifacts/event-visual-browser
+            docs/production/artifacts/release-review-browser
+            docs/production/artifacts/count-mode-browser
+          if-no-files-found: error
+          retention-days: 14

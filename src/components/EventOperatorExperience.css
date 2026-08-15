@@ -303,6 +303,7 @@ body.event-operator-active main.page:has(> .event-operator-experience) > :not(.e
 .event-operator-avatar {
   border-radius: 50%;
   background: linear-gradient(145deg, #e0b977, #95703a);
+  background-color: #d6a65d;
   color: #17140f;
   font-size: 0.78rem;
 }

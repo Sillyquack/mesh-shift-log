@@ -21440,6 +21440,12 @@ function App() {
           <RoutineEngineLauncher user={user} onOpen={() => setShowRoutineEngine(true)} />
         </RoutineEngineErrorBoundary>
       </Suspense>
+      {isLocalhostRuntime() && new URLSearchParams(window.location.search).get("review") === "1" && (
+        <aside className="review-context-banner" role="note">
+          <strong>Current stage-gated legacy experience</strong>
+          <span>The final role-aware target is reviewed through the labelled release fixtures. No release stage or Routine Engine mode is changed here.</span>
+        </aside>
+      )}
       {siteSettings.locationCheckEnabled &&
         !hasSiteCoordinates(siteSettings) && (
           <p className="status-message page-status">
@@ -21484,7 +21490,7 @@ function App() {
           setEventTaskAlerts((current) => current.filter((alert) => alert.id !== alertId))
         }
       />
-      {isLocalhostRuntime() && user && (
+      {isLocalhostRuntime() && user && new URLSearchParams(window.location.search).get("debug") === "1" && (
         <p className="muted page-status">
           Event alert debug: operator {currentOperator?.name || "none"} | shift {activeShift || "none"} | event code{" "}
           {eventAccessIsValid ? "valid" : "not valid"} | ready {eventActorReadyForAlerts ? "true" : "false"} | realtime{" "}

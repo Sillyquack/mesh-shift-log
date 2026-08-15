@@ -1,4 +1,4 @@
-import { lazy, Suspense, useMemo, useRef, useState } from "react";
+import { lazy, Suspense, useEffect, useMemo, useRef, useState } from "react";
 import { MANAGER_TABS } from "../data/routineManagerModel.js";
 import { useRoutineManagerWorkspace } from "../hooks/useRoutineManagerWorkspace.js";
 import RoutineManagerOverview from "./RoutineManagerOverview.jsx";
@@ -34,15 +34,37 @@ export default function RoutineManagerWorkspace({
   referenceUploader,
   operatorLoader,
   operatorApi,
+  contentPackProps = {},
+  reviewProps = {},
+  historyProps = {},
+  releaseProps = {},
 }) {
   const workspace = useRoutineManagerWorkspace({ loader });
   const [tab, setTab] = useState(initialTab);
   const tabs = useRef([]);
+  const groupTabs = useRef([]);
   const activeGroup = groupForTab(tab);
   const visibleTabs = useMemo(
     () => MANAGER_TABS.filter((item) => item.group === activeGroup),
     [activeGroup],
   );
+
+  useEffect(() => {
+    const index = GROUPS.findIndex((group) => group.id === activeGroup);
+    const active = groupTabs.current[index];
+    const navigation = active?.parentElement;
+    if (!active || !navigation) return undefined;
+    const revealActiveGroup = () => {
+      const maximum = navigation.scrollWidth - navigation.clientWidth;
+      if (maximum <= 0) return;
+      const padding = Number.parseFloat(getComputedStyle(navigation).paddingRight) || 0;
+      const target = active.offsetLeft + active.offsetWidth + padding - navigation.clientWidth;
+      navigation.scrollLeft = Math.max(0, Math.min(maximum, target));
+    };
+    revealActiveGroup();
+    const frame = requestAnimationFrame(revealActiveGroup);
+    return () => cancelAnimationFrame(frame);
+  }, [activeGroup, workspace.status]);
 
   if (workspace.status === "loading" && !workspace.data) {
     return (
@@ -73,8 +95,8 @@ export default function RoutineManagerWorkspace({
   const data = workspace.data;
   const panels = {
     overview: <RoutineManagerOverview data={data} onRefresh={workspace.refresh} />,
-    review: <RoutineManagerReviewDashboard />,
-    content: <RoutineContentPackManager onOpenTemplates={() => setTab("templates")} />,
+    review: <RoutineManagerReviewDashboard {...reviewProps} />,
+    content: <RoutineContentPackManager {...contentPackProps} onOpenTemplates={() => setTab("templates")} />,
     templates: <RoutineTemplatesManager templates={data.templates} onRefresh={workspace.refresh} />,
     references: <RoutineReferenceManager loader={referenceLoader} uploader={referenceUploader} />,
     operators: (
@@ -91,9 +113,9 @@ export default function RoutineManagerWorkspace({
         onRefresh={workspace.refresh}
       />
     ),
-    history: <RoutineHistoryWorkspace manager />,
+    history: <RoutineHistoryWorkspace manager {...historyProps} />,
     foundation: <RoutineFoundationManager data={data} onRefresh={workspace.refresh} />,
-    release: <RoutineReleaseGate />,
+    release: <RoutineReleaseGate {...releaseProps} />,
   };
 
   const selectGroup = (groupId) => {
@@ -121,9 +143,12 @@ export default function RoutineManagerWorkspace({
       </header>
 
       <nav className="rm-experience-groups" aria-label="Operations Studio areas">
-        {GROUPS.map((group) => (
+        {GROUPS.map((group, index) => (
           <button
             key={group.id}
+            ref={(node) => {
+              groupTabs.current[index] = node;
+            }}
             type="button"
             className={activeGroup === group.id ? "is-active" : ""}
             aria-current={activeGroup === group.id ? "page" : undefined}

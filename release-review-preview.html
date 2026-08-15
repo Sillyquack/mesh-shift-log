@@ -5,21 +5,26 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
     <title>Mesh Shift Log · 17 August release review</title>
     <style>
-      :root { color-scheme: light dark; font-family: Inter, ui-sans-serif, system-ui, sans-serif; background: #0d1720; color: #eef4f7; }
+      :root { color-scheme: dark; font-family: Inter, ui-sans-serif, system-ui, sans-serif; background: #11110f; color: #fffdf7; }
       body { margin: 0; }
-      main { width: min(1080px, calc(100% - 32px)); margin: 0 auto; padding: 48px 0 72px; }
-      header { max-width: 760px; margin-bottom: 32px; }
-      .eyebrow { color: #e7b456; font-size: .78rem; font-weight: 750; letter-spacing: .12em; text-transform: uppercase; }
-      h1 { margin: 8px 0 12px; font-size: clamp(2rem, 5vw, 4rem); line-height: 1; }
-      p { color: #b9c8d1; line-height: 1.55; }
-      .notice { padding: 16px 18px; border: 1px solid #39505e; border-radius: 14px; background: #13232e; }
+      body { background: radial-gradient(circle at 90% 0, #d6a65d2b, transparent 28%), linear-gradient(180deg, #151513, #11110f 62%, #181510); }
+      main { width: min(1180px, calc(100% - 32px)); margin: 0 auto; padding: 48px 0 80px; }
+      header { max-width: 900px; margin-bottom: 38px; padding: clamp(28px, 5vw, 58px); border: 1px solid #ffffff1f; border-radius: 34px; background: linear-gradient(145deg, #1a1917, #2b261e); box-shadow: 0 30px 90px #0006; }
+      .eyebrow, .tag { color: #efca8f; font-size: .72rem; font-weight: 850; letter-spacing: .14em; text-transform: uppercase; }
+      h1 { margin: 10px 0 16px; font-size: clamp(2.7rem, 7vw, 6rem); line-height: .92; letter-spacing: -.065em; }
+      p { color: #c9c2b7; line-height: 1.6; }
+      .notice { padding: 16px 18px; border: 1px solid #d6a65d70; border-radius: 14px; background: #d6a65d16; color: #f7e2c2; }
       section { margin-top: 32px; }
-      h2 { font-size: 1.1rem; }
+      h2 { margin-bottom: 14px; font-size: clamp(1.25rem, 3vw, 1.8rem); }
       .grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(245px, 1fr)); gap: 14px; }
-      a { min-height: 112px; display: flex; flex-direction: column; justify-content: center; gap: 6px; padding: 18px; border: 1px solid #344d5c; border-radius: 16px; background: #152733; color: #fff; text-decoration: none; }
-      a:hover, a:focus-visible { border-color: #e7b456; outline: 3px solid #e7b45655; }
+      a { min-height: 124px; display: flex; flex-direction: column; justify-content: center; gap: 7px; padding: 20px; border: 1px solid #ffffff20; border-radius: 18px; background: #ffffff0b; color: #fffdf7; text-decoration: none; box-shadow: 0 14px 38px #0003; }
+      a:hover, a:focus-visible { border-color: #efca8f; outline: 3px solid #efca8f55; transform: translateY(-2px); }
       a strong { font-size: 1rem; }
-      a span { color: #b9c8d1; font-size: .9rem; line-height: 1.4; }
+      a span { color: #c5beb2; font-size: .9rem; line-height: 1.45; }
+      a .tag { color: #efca8f; font-size: .62rem; }
+      .legacy a { border-color: #d6a65d66; background: #d6a65d12; }
+      .simulation a { border-color: #d57c6d66; background: #d57c6d12; }
+      @media(max-width:560px){main{width:min(100% - 18px,1180px);padding-top:10px}header{padding:30px 22px;border-radius:26px}.grid{grid-template-columns:1fr}}
     </style>
   </head>
   <body>
@@ -32,30 +37,50 @@
       </header>
 
       <section>
-        <h2>Role-aware experience</h2>
+        <h2>Final target experience</h2>
         <div class="grid">
-          <a href="/"><strong>Application entry</strong><span>Role-aware login and current release shell.</span></a>
-          <a href="/release-review-harness.html?surface=manager"><strong>Manager home</strong><span>Today, Attention and Control with deterministic review data.</span></a>
-          <a href="/routine-manager-harness.html?scenario=manager-desktop"><strong>Operations Studio</strong><span>Grouped manager workspace and release controls.</span></a>
-          <a href="/release-review-harness.html?surface=event"><strong>Event Mode</strong><span>Focus, Journey and Help with a fixture event and no backend writes.</span></a>
-          <a href="/routine-employee-harness.html?scenario=employee-home-shared"><strong>Shift Mode</strong><span>Shared-device operator home and assigned work.</span></a>
-          <a href="/routine-history-harness.html?scenario=manager-history-desktop"><strong>History</strong><span>Manager history and audit trail.</span></a>
-          <a href="/routine-history-harness.html?scenario=release-readiness-blocked"><strong>Launch readiness</strong><span>Explicit blockers and staged release controls.</span></a>
-          <a href="/inventory-count-mode-harness.html"><strong>Inventory Count Mode</strong><span>One-tap count, next-fridge progression and protected locations.</span></a>
+          <a href="/release-review-harness.html?surface=manager"><span class="tag">Final target experience</span><strong>Manager home</strong><span>Today, Attention and Control with deterministic review data.</span></a>
+          <a href="/routine-manager-harness.html?scenario=review-today"><span class="tag">Final target experience</span><strong>Operations Studio · Today</strong><span>Grouped navigation with separately rendered labels and descriptions.</span></a>
+          <a href="/routine-manager-harness.html?scenario=review-content"><span class="tag">Final target experience</span><strong>Operations Studio · Content</strong><span>Content-pack review and controlled publishing preparation.</span></a>
+          <a href="/routine-manager-harness.html?scenario=review-routines"><span class="tag">Final target experience</span><strong>Operations Studio · Routines</strong><span>Routine structure and operational assignments.</span></a>
+          <a href="/routine-manager-harness.html?scenario=review-visual-standards"><span class="tag">Final target experience</span><strong>Visual Standards</strong><span>Venue → guide → zone → angle hierarchy and honest completeness.</span></a>
+          <a href="/routine-manager-harness.html?scenario=review-places-standards"><span class="tag">Final target experience</span><strong>Places &amp; Standards</strong><span>Operational places, standards and readiness context.</span></a>
+          <a href="/routine-manager-harness.html?scenario=review-people-devices"><span class="tag">Final target experience</span><strong>People &amp; Devices</strong><span>Staff, shared devices and operational identity.</span></a>
+          <a href="/routine-manager-harness.html?scenario=review-access"><span class="tag">Final target experience</span><strong>Access</strong><span>Roles, permissions and safe stage controls.</span></a>
+          <a href="/routine-manager-harness.html?scenario=review-history"><span class="tag">Final target experience</span><strong>History</strong><span>Recent, Find and Review audit workflows.</span></a>
+          <a href="/routine-manager-harness.html?scenario=review-release-readiness"><span class="tag">Final target experience</span><strong>Release Readiness</strong><span>Explicit blockers and staged release controls.</span></a>
+          <a href="/release-review-harness.html?surface=event"><span class="tag">Final target experience</span><strong>Event Mode</strong><span>Focus, Journey and Help with a fixture event and no backend writes.</span></a>
+          <a href="/routine-employee-harness.html?scenario=employee-home-shared"><span class="tag">Final target experience</span><strong>Shift Mode</strong><span>Shared-device operator home and assigned work.</span></a>
+          <a href="/inventory-count-mode-harness.html"><span class="tag">Final target experience</span><strong>Inventory Count Mode</strong><span>One-tap count, next-fridge progression and protected locations.</span></a>
+          <a href="/inventory-count-mode-harness.html?scenario=manual-differences"><span class="tag">Final target experience</span><strong>Manual difference count</strong><span>Visible “No — count differences” path and current-fridge context.</span></a>
         </div>
       </section>
 
       <section>
-        <h2>Visual standards</h2>
+        <h2>Event reconstruction standards</h2>
         <div class="grid">
-          <a href="/event-visual-library-harness.html?scenario=manager"><strong>Visual library manager</strong><span>Venue → guide → zone → angle hierarchy and completeness.</span></a>
-          <a href="/event-visual-library-harness.html?scenario=atrium"><strong>Atrium default</strong><span>Reconstruction journey with written fallback.</span></a>
-          <a href="/event-visual-library-harness.html?scenario=cornerbar"><strong>Cornerbar default</strong><span>Default restore guide.</span></a>
-          <a href="/event-visual-library-harness.html?scenario=cornerbar-group"><strong>Cornerbar group tables</strong><span>Group-table layout preview.</span></a>
-          <a href="/event-visual-library-harness.html?scenario=cornerbar-horseshoe"><strong>Cornerbar horseshoe</strong><span>Horseshoe layout preview.</span></a>
-          <a href="/event-visual-library-harness.html?scenario=cornerbar-coffee"><strong>Coffee, water and tea</strong><span>Serving-station visual standard.</span></a>
-          <a href="/event-visual-library-harness.html?scenario=workbar"><strong>Workbar written-only</strong><span>Honest source state with no fabricated image slot.</span></a>
-          <a href="/event-visual-library-harness.html?scenario=error"><strong>Image failure fallback</strong><span>Complete written reconstruction when image service fails.</span></a>
+          <a href="/event-visual-library-harness.html?scenario=manager"><span class="tag">Final target experience</span><strong>Visual library manager</strong><span>Required, awaiting, missing and optional standards by venue.</span></a>
+          <a href="/event-visual-library-harness.html?scenario=atrium"><span class="tag">Final target experience</span><strong>Atrium default</strong><span>Reconstruction journey with written fallback.</span></a>
+          <a href="/event-visual-library-harness.html?scenario=cornerbar"><span class="tag">Final target experience</span><strong>Cornerbar default</strong><span>Default restore guide.</span></a>
+          <a href="/event-visual-library-harness.html?scenario=cornerbar-group"><span class="tag">Final target experience</span><strong>Cornerbar group tables</strong><span>Group-table layout preview.</span></a>
+          <a href="/event-visual-library-harness.html?scenario=cornerbar-horseshoe"><span class="tag">Final target experience</span><strong>Cornerbar horseshoe</strong><span>Horseshoe layout preview.</span></a>
+          <a href="/event-visual-library-harness.html?scenario=cornerbar-coffee"><span class="tag">Final target experience</span><strong>Coffee, water and tea</strong><span>Serving-station visual standard.</span></a>
+          <a href="/event-visual-library-harness.html?scenario=workbar"><span class="tag">Final target experience</span><strong>Workbar written-only</strong><span>Written standard only; no fabricated 0/0 image score.</span></a>
+        </div>
+      </section>
+
+      <section class="legacy">
+        <h2>Current stage-gated legacy experience</h2>
+        <div class="grid">
+          <a href="/?review=1"><span class="tag">Current legacy experience</span><strong>Application entry before cutover</strong><span>Existing production shell, clearly separated from the final target experience.</span></a>
+          <a href="/routine-history-harness.html?scenario=release-readiness-blocked"><span class="tag">Current pre-cutover state</span><strong>Blocked release evidence</strong><span>Staff-preview and shadow-mode context with controlled gates.</span></a>
+        </div>
+      </section>
+
+      <section class="simulation">
+        <h2>Simulated review states</h2>
+        <div class="grid">
+          <a href="/event-visual-library-harness.html?scenario=error"><span class="tag">Simulated failure state</span><strong>Image service unavailable</strong><span>Fixture-only image failure with complete written reconstruction.</span></a>
         </div>
       </section>
     </main>

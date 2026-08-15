@@ -32,6 +32,7 @@ function guide(key) {
 }
 
 function Harness() {
+  const [open, setOpen] = React.useState(true);
   if (scenario === "manager") {
     return (
       <main className="rm-workspace rm-experience-workspace">
@@ -51,13 +52,18 @@ function Harness() {
   const selected = guideByScenario[scenario] || guideByScenario.atrium;
   return (
     <main>
-      <button type="button" id="return-focus">Open visual guide</button>
-      <EventVisualGuideModal
-        guide={selected}
-        references={references}
-        error={scenario === "error" ? "The current image service is unavailable." : ""}
-        onClose={() => { document.body.dataset.closed = "true"; }}
-      />
+      <button type="button" id="return-focus" onClick={() => setOpen(true)}>Open visual guide</button>
+      {open ? (
+        <EventVisualGuideModal
+          guide={selected}
+          references={references}
+          error={scenario === "error" ? "The current image service is unavailable." : ""}
+          onClose={() => {
+            document.body.dataset.closed = "true";
+            setOpen(false);
+          }}
+        />
+      ) : null}
     </main>
   );
 }
