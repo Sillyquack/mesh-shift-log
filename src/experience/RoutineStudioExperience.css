@@ -52,6 +52,7 @@
 
 .rm-experience-topbar h1 {
   margin: 8px 0 0;
+  color: var(--mesh-cream-strong);
   font-size: clamp(2.7rem, 7vw, 6.2rem);
   line-height: 0.92;
   letter-spacing: -0.075em;
