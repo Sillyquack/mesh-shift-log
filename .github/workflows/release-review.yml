@@ -36,6 +36,9 @@ jobs:
       - name: Verify production migration plan
         run: npm run verify:production-migration-plan
 
+      - name: Verify full migration reapply in rehearsal and production-shaped owner contexts
+        run: npm run verify:routine-full-migration-reapply
+
       - name: Verify combined production experience
         run: npm run verify:production-candidate-experience
 
@@ -69,6 +72,9 @@ jobs:
       - name: Verify Millum export integrity
         run: npm run verify:inventory-millum-export
 
+      - name: Verify inventory location alignment
+        run: npm run verify:inventory-location-alignment
+
       - name: Verify pinned Routine content provenance
         run: npm run verify:routine-content-pack
 
@@ -90,6 +96,9 @@ jobs:
       - name: Run Inventory Count Chromium and WebKit matrix
         run: npm run verify:inventory-count-mode-browser
 
+      - name: Run inventory location Chromium and WebKit matrix
+        run: npm run verify:inventory-location-alignment-browser
+
       - name: Build production bundle
         run: npm run build
 
@@ -102,5 +111,6 @@ jobs:
             docs/production/artifacts/event-visual-browser
             docs/production/artifacts/release-review-browser
             docs/production/artifacts/count-mode-browser
+            docs/production/artifacts/inventory-location-browser
           if-no-files-found: error
           retention-days: 14

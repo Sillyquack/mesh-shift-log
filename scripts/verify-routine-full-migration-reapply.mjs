@@ -5,7 +5,7 @@ import { fileURLToPath } from "node:url";
 import { spawnSync } from "node:child_process";
 
 const ROOT = resolve(dirname(fileURLToPath(import.meta.url)), "..");
-const IMAGE = "public.ecr.aws/supabase/postgres:17.6.1.127";
+const IMAGE = "public.ecr.aws/supabase/postgres:17.6.1.141";
 const OWNER_CONTEXT = process.env.PHASE10O_OWNER_CONTEXT === "production" ? "production" : "rehearsal";
 const DATABASE = `phase10_full_reapply_${OWNER_CONTEXT}_test`;
 const ROLE = OWNER_CONTEXT === "production" ? "postgres" : "supabase_admin";
@@ -13,6 +13,8 @@ const SESSION_ROLE = OWNER_CONTEXT === "production" ? "postgres" : "phase10o_reh
 const CONNECTION_ROLE = OWNER_CONTEXT === "production" ? "postgres" : "supabase_admin";
 const CONTAINER = `mesh-shift-log-phase10-full-reapply-${process.pid}-${randomUUID().slice(0, 8)}`;
 const PASSWORD = `phase10-full-reapply-${randomUUID()}`;
+const PHASE9_SECURITY_FIXTURE = "supabase/tests/phase9/security-fixtures.sql";
+const PHASE9_TERMINAL_FIXTURE = "supabase/tests/phase9/terminal-migration-production-shape.sql";
 const MANAGER_ID = "aa100000-0000-4000-8000-000000000001";
 const STAFF_ID = "aa100000-0000-4000-8000-000000000002";
 const SHARED_DEVICE_ID = "aa100000-0000-4000-8000-000000000003";
@@ -25,7 +27,7 @@ const PRESERVED_ORGANIZATION_ID = "ab000000-0000-4000-8000-000000000001";
 const SECONDARY_ORGANIZATION_ID = "ac000000-0000-4000-8000-000000000001";
 const FUTURE_ORGANIZATION_ID = "ad000000-0000-4000-8000-000000000001";
 const EXPECTED_PACK_HASH = "48b7c4dfdb1340ddff14748a3c6d57df504f33fe822f25b6dde0d4ab48a6caf8";
-const EXPECTED_FRIDGE_PACK_HASH = "66af45ecb1afa2b432b95ed0e1d5425c39ed0cc67becacbb386bd43489db1e02";
+const EXPECTED_FRIDGE_PACK_HASH = "710c9412eabc8f2e9c5a6488499ac4654cd7c94b62138eaed9563ab5f0203c9c";
 const EXPECTED_PHASE10R_PACK_HASH = "b416001c2885bbf54bdb029b8e7164cbb903a76b8344396a4e9fcffa26107fe1";
 const EXPECTED_PREVIOUS_PACK_HASH = "2dcfc69b822f973c23e54934b6799faa5b9400ae0529096f049067811a417f25";
 const EXPECTED_SOURCE_HASHES = [
@@ -39,10 +41,10 @@ const EXPECTED_SOURCE_HASHES = [
 ];
 const EXPECTED_FRIDGE_SOURCE_HASHES = [
   ...EXPECTED_SOURCE_HASHES,
-  "be724431080fdbbb5fb598d52d3b01357ea2d3c778f94268166318064f5dfba1",
+  "2a57f578128b6a6b696bf4f93d721fd6c56837ae413c9599a2845885c6c7a834",
 ];
 const EXPECTED_ARGUMENT_NAMES = ["input_version_id", "input_publication_version_ids"];
-const EXPECTED_PORTABLE_SCHEMA_FINGERPRINT = "0ed08a69a1d9ea0f30fbc1cb411b42acfe7a140f53ad611c9669f3e5d99c7cbe";
+const EXPECTED_PORTABLE_SCHEMA_FINGERPRINT = "3bd0a3227b56a64a4f4b5a3ccc3e810c74758458e426d30ddbc8a8a0053d7024";
 const EXPECTED_AUTHENTICATED_FUNCTION_COUNT = 218;
 const EXPECTED_AUTHENTICATED_FUNCTION_HASH = "61446c15b10333748c65a652f01f6c9e91df67b81593f4db65bc7f0c2bee2a0e";
 const EXPECTED_AUTHENTICATED_RELATION_SELECT_COUNT = 65;
@@ -130,6 +132,12 @@ function psql(sql, { tuplesOnly = false, transaction = false, allowFailure = fal
     : `set session authorization ${SESSION_ROLE};\nset role ${ROLE};\n`;
   return docker(args, { input: `${roleSql}${sql.replace(/^\uFEFF/, "")}`, allowFailure, timeout: 300_000 });
 }
+function psqlAsConnectionOwner(sql) {
+  return docker([
+    "exec", "-i", CONTAINER, "psql", "--no-psqlrc", "--set=ON_ERROR_STOP=1",
+    `--username=${CONNECTION_ROLE}`, `--dbname=${DATABASE}`,
+  ], { input: sql.replace(/^\uFEFF/, ""), timeout: 300_000 });
+}
 const scalar = (sql) => psql(sql, { tuplesOnly: true }).stdout.trim();
 const fingerprint = (value) => createHash("sha256").update(JSON.stringify(value)).digest("hex");
 function cleanup() {
@@ -156,7 +164,26 @@ const baseline = [
   "supabase/phase8h3_smart_staffing_permissions.sql",
   "supabase/phase8i_event_live_updates.sql",
   "supabase/phase9a_inventory_stocktaking.sql",
+  "supabase/phase9a4_inventory_location_template.sql",
   "supabase/phase9b_stock_policies.sql",
+  "supabase/phase9c_inventory_security_hardening.sql",
+  "supabase/phase9d_inventory_session_integrity.sql",
+  "supabase/phase9e_inventory_product_identity_csv.sql",
+  "supabase/phase9f_inventory_structured_quantities.sql",
+  "supabase/phase9g_inventory_operational_scope.sql",
+  "supabase/phase9gb_inventory_counter_assignments.sql",
+  "supabase/phase9gb2_inventory_counter_replacement.sql",
+  "supabase/phase9gc_inventory_counter_mobile.sql",
+  "supabase/phase9gd_inventory_product_mappings.sql",
+  "supabase/phase9h_inventory_session_location_scope.sql",
+  "supabase/phase9i_millum_stock_count_exports.sql",
+  "supabase/phase9j_inventory_shelf_storage_guidance.sql",
+  "supabase/phase9k_millum_complete_count_export.sql",
+  "supabase/20260804123921_phase9l_millum_august_carry_forward_and_future_scope.sql",
+  "supabase/20260804151500_phase9m_millum_snapshot_supplement.sql",
+  "supabase/20260804180000_phase9n_millum_single_authoritative_session.sql",
+  "supabase/20260804200000_phase9o_millum_wine_value_conversion.sql",
+  "supabase/20260805035957_phase9p_millum_export_explanations.sql",
 ];
 const migrations = [
   "supabase/phase10a_routine_engine_foundation.sql",
@@ -186,6 +213,7 @@ const migrations = [
   "supabase/phase10w_event_visual_reference_bridge.sql",
   "supabase/phase10x_event_visual_library_expansion.sql",
   "supabase/phase10y_mesh_routine_content_pack_1_5r.sql",
+  "supabase/phase10z_inventory_location_and_express_shelf_alignment.sql",
 ];
 const phase10Sql = () => migrations.map((path) => readFileSync(absolute(path), "utf8")).join("\n");
 
@@ -277,7 +305,7 @@ function sourceChecks() {
   const audit = auditRepeatedFunctionArguments();
   console.log(`Static function audit: ${audit.definitions.length} definitions, ${audit.repeated.length} repeated identities, ${audit.drifts.length} drifts`);
   check("all repeated Phase 10 function identities have stable input argument names", audit.drifts.length === 0);
-  check("function argument audit covers the full Phase 10 definition set", audit.definitions.length === 563 && audit.repeated.length === 94);
+  check("function argument audit covers the full Phase 10 definition set", audit.definitions.length === 570 && audit.repeated.length === 94);
   check("validator has six layered public definitions", audit.target.length === 6);
   check("every validator definition uses the canonical input names", audit.target.every((entry) => JSON.stringify(entry.names) === JSON.stringify(EXPECTED_ARGUMENT_NAMES)));
   check("ACL hardening inventory contains the reproduced 17 signatures", REPRODUCED_ACL_SIGNATURES.length === 17);
@@ -291,21 +319,22 @@ function sourceChecks() {
     verifierSource.indexOf("function applySequence("),
     verifierSource.indexOf("function futureOrganizationChecks("),
   );
-  check("full Phase 10 manifest contains 27 ordered migrations through 10Y", migrations.length === 27
+  check("full Phase 10 manifest contains 28 ordered migrations through 10Z", migrations.length === 28
     && migrations[0].endsWith("phase10a_routine_engine_foundation.sql")
     && migrations[1].endsWith("phase10a1_routine_organization_settings_bootstrap.sql")
-    && migrations.at(-12).endsWith("phase10l_mesh_routine_content_pack.sql")
-    && migrations.at(-11).endsWith("phase10p_routine_readiness_finalization.sql")
-    && migrations.at(-10).endsWith("phase10q_mesh_routine_content_pack_1_2r.sql")
-    && migrations.at(-9).endsWith("phase10o_routine_default_privilege_hardening.sql")
-    && migrations.at(-8).endsWith("phase10r_mesh_routine_content_pack_1_3r.sql")
-    && migrations.at(-7).endsWith("phase10s_mesh_routine_content_pack_1_4r.sql")
-    && migrations.at(-6).endsWith("phase10t_routine_participant_identity_conflict_alignment.sql")
-    && migrations.at(-5).endsWith("phase10u_routine_operation_idempotency_convergence.sql")
-    && migrations.at(-4).endsWith("phase10v_routine_creation_idempotency_provenance_alignment.sql")
-    && migrations.at(-3).endsWith("phase10w_event_visual_reference_bridge.sql")
-    && migrations.at(-2).endsWith("phase10x_event_visual_library_expansion.sql")
-    && migrations.at(-1).endsWith("phase10y_mesh_routine_content_pack_1_5r.sql"));
+    && migrations.at(-13).endsWith("phase10l_mesh_routine_content_pack.sql")
+    && migrations.at(-12).endsWith("phase10p_routine_readiness_finalization.sql")
+    && migrations.at(-11).endsWith("phase10q_mesh_routine_content_pack_1_2r.sql")
+    && migrations.at(-10).endsWith("phase10o_routine_default_privilege_hardening.sql")
+    && migrations.at(-9).endsWith("phase10r_mesh_routine_content_pack_1_3r.sql")
+    && migrations.at(-8).endsWith("phase10s_mesh_routine_content_pack_1_4r.sql")
+    && migrations.at(-7).endsWith("phase10t_routine_participant_identity_conflict_alignment.sql")
+    && migrations.at(-6).endsWith("phase10u_routine_operation_idempotency_convergence.sql")
+    && migrations.at(-5).endsWith("phase10v_routine_creation_idempotency_provenance_alignment.sql")
+    && migrations.at(-4).endsWith("phase10w_event_visual_reference_bridge.sql")
+    && migrations.at(-3).endsWith("phase10x_event_visual_library_expansion.sql")
+    && migrations.at(-2).endsWith("phase10y_mesh_routine_content_pack_1_5r.sql")
+    && migrations.at(-1).endsWith("phase10z_inventory_location_and_express_shelf_alignment.sql"));
   check("10A1 is a system bootstrap with no manager RPC installation step",
     !/create_or_update_routine_organization_settings|auth\.uid\s*\(|\bgrant\b|\bcreate\s+(?:or\s+replace\s+)?function\b/i.test(bootstrapSql));
   check("full-reapply migration sequence contains no out-of-band settings manager bootstrap",
@@ -481,16 +510,16 @@ insert into public.task_completions(
 
 insert into storage.buckets(id,name,public,file_size_limit,allowed_mime_types) values(
   'inventory-location-reference-images','inventory-location-reference-images',false,5242880,array['image/jpeg','image/png','image/webp']
-);
+) on conflict(id) do update set
+  name=excluded.name,
+  public=excluded.public,
+  file_size_limit=excluded.file_size_limit,
+  allowed_mime_types=excluded.allowed_mime_types;
 insert into storage.objects(id,bucket_id,name,owner_id,metadata) values(
   'aa920000-0000-4000-8000-000000000001','inventory-location-reference-images',
   '${ORGANIZATION_ID}/fixture/reference.webp','${MANAGER_ID}',
   '{"size":128,"mimetype":"image/webp","fixture":true}'
 );
-create policy inventory_reference_images_select on storage.objects for select to authenticated
-  using (bucket_id='inventory-location-reference-images');
-create policy inventory_reference_images_insert on storage.objects for insert to authenticated
-  with check (bucket_id='inventory-location-reference-images');
 `;
 
 const publicationBootstrapSql = String.raw`
@@ -549,6 +578,26 @@ with protected_relations as (
       procedure.proname like 'inventory_%' or procedure.proname like 'asset_%' or procedure.proname like 'event_%'
     ) and procedure.proname not like 'event_visual_%')
 ) select encode(extensions.digest(convert_to(coalesce(string_agg(entry,E'\n' order by entry),''),'UTF8'),'sha256'),'hex') from entries;
+`;
+const protectedSchemaStableFingerprintSql = protectedSchemaFingerprintSql.replace(
+  "and procedure.proname not like 'event_visual_%')",
+  "and procedure.proname not like 'event_visual_%' and procedure.proname <> 'inventory_validate_reference_guidance')",
+);
+const guidanceValidatorContractSql = String.raw`
+select (
+  procedure.prorettype='pg_catalog.trigger'::regtype
+  and not procedure.prosecdef
+  and procedure.provolatile='v'
+  and procedure.proconfig=array['search_path=pg_catalog']
+  and position('location.active' in pg_get_functiondef(procedure.oid))>0
+  and position('location.countable' in pg_get_functiondef(procedure.oid))>0
+  and position('referenceGuidanceEnabled' in pg_get_functiondef(procedure.oid))>0
+  and position('inventory_reference_image_path_valid' in pg_get_functiondef(procedure.oid))>0
+)
+from pg_catalog.pg_proc procedure
+join pg_catalog.pg_namespace namespace on namespace.oid=procedure.pronamespace
+where namespace.nspname='public' and procedure.proname='inventory_validate_reference_guidance'
+  and pg_get_function_identity_arguments(procedure.oid)='';
 `;
 
 const protectedDataFingerprintSql = String.raw`
@@ -1068,6 +1117,8 @@ function captureState() {
   const portable = portableCatalog(catalog);
   return {
     protectedSchema: scalar(protectedSchemaFingerprintSql),
+    protectedSchemaStable: scalar(protectedSchemaStableFingerprintSql),
+    guidanceValidatorContract: scalar(guidanceValidatorContractSql),
     protectedData: scalar(protectedDataFingerprintSql),
     protectedRealtime: scalar(protectedRealtimeFingerprintSql),
     routineSchema: scalar(routineSchemaFingerprintSql),
@@ -1088,7 +1139,10 @@ function captureState() {
 }
 
 function assertEndState(label, state, protectedBaseline) {
-  check(`${label}: protected schema fingerprint is unchanged`, state.protectedSchema === protectedBaseline.schema);
+  check(`${label}: protected schema outside the exact 10Z guidance validator is unchanged`,
+    state.protectedSchemaStable === protectedBaseline.schemaStable);
+  check(`${label}: 10Z guidance validator has the exact active countable-or-enabled contract`,
+    state.guidanceValidatorContract === "t");
   check(`${label}: protected data fingerprint is unchanged`, state.protectedData === protectedBaseline.data);
   check(`${label}: protected Realtime membership is unchanged`, state.protectedRealtime === protectedBaseline.realtime);
   check(`${label}: validator argument names are canonical`, JSON.stringify(state.validator.argumentNames) === JSON.stringify(EXPECTED_ARGUMENT_NAMES));
@@ -1134,7 +1188,7 @@ function assertEndState(label, state, protectedBaseline) {
   const primarySettings = settingsRow(settings, ORGANIZATION_ID);
   const secondarySettings = settingsRow(settings, SECONDARY_ORGANIZATION_ID);
   const preservedSettings = settingsRow(settings, PRESERVED_ORGANIZATION_ID);
-  check(`${label}: one isolated settings row exists per synthetic organization`, settings.length === 3
+  check(`${label}: one isolated settings row exists per synthetic organization`, settings.length === Number(scalar("select count(*) from public.organizations;"))
     && primarySettings && secondarySettings && preservedSettings);
   check(`${label}: bootstrapped modes remain legacy and release stage remains staff_preview`,
     primarySettings.mode === "legacy" && secondarySettings.mode === "legacy"
@@ -1216,7 +1270,8 @@ function applySequence(sequenceNumber) {
       const state = settingsState();
       if (sequenceNumber === 1) {
         check("10A1 creates exactly one settings row per existing organization",
-          state.length === 3 && scalar("select count(*)=count(distinct organization_id) from public.routine_organization_settings;") === "t");
+          state.length === Number(scalar("select count(*) from public.organizations;"))
+            && scalar("select count(*)=count(distinct organization_id) from public.routine_organization_settings;") === "t");
         check("10A1 runs before UI release columns exist",
           scalar("select count(*) from information_schema.columns where table_schema='public' and table_name='routine_organization_settings' and column_name in('ui_release_stage','ui_contract_version');") === "0");
         assertBootstrappedSettings("after 10A1", state, undefined, undefined, 1);
@@ -1399,6 +1454,26 @@ function applySequence(sequenceNumber) {
           and (select count(*) from public.routine_bundles)=0;
       `) === "t" && JSON.stringify(settingsState()) === JSON.stringify(stateAfterK4));
     }
+    if (path.endsWith("phase10z_inventory_location_and_express_shelf_alignment.sql")) {
+      check(`sequence ${sequenceNumber}: 10Z installs guarded inventory attention functions`, scalar(String.raw`
+        select
+          to_regprocedure('public.report_inventory_counter_unlisted_wine(uuid,text,text,bigint,timestamp with time zone)') is not null
+          and to_regprocedure('public.resolve_inventory_unlisted_wine_attention(uuid,uuid,text,bigint,timestamp with time zone)') is not null
+          and has_function_privilege('authenticated','public.report_inventory_counter_unlisted_wine(uuid,text,text,bigint,timestamp with time zone)','EXECUTE')
+          and has_function_privilege('authenticated','public.resolve_inventory_unlisted_wine_attention(uuid,uuid,text,bigint,timestamp with time zone)','EXECUTE')
+          and not has_function_privilege('anon','public.report_inventory_counter_unlisted_wine(uuid,text,text,bigint,timestamp with time zone)','EXECUTE');
+      `) === "t");
+      check(`sequence ${sequenceNumber}: generic organizations do not opt into production-shaped location changes`, scalar(String.raw`
+        select count(*)=0 from public.inventory_locations
+        where code in('WORKBAR_MILK_FRIDGE','MAIN_STORAGE_EXPRESS_SHELF');
+      `) === "t");
+      check(`sequence ${sequenceNumber}: 10Z installs no content or operational runs`, scalar(String.raw`
+        select (select count(*) from public.routine_content_pack_installations)=0
+          and (select count(*) from public.routine_templates)=0
+          and (select count(*) from public.routine_runs)=0
+          and (select count(*) from public.routine_bundles)=0;
+      `) === "t" && JSON.stringify(settingsState()) === JSON.stringify(stateAfterK4));
+    }
     if (path.endsWith("phase10o_routine_default_privilege_hardening.sql")) {
       check(`sequence ${sequenceNumber}: 10O changes only pg_default_acl`,
         existingObjectSnapshot() === before10O);
@@ -1559,6 +1634,134 @@ function namedArgumentChecks() {
   }
 }
 
+function productionShapedLocationAlignmentChecks() {
+  const organizationId = "fa000000-0000-4000-8000-000000000001";
+  const actorId = "fa100000-0000-4000-8000-000000000001";
+  const mainStorageId = "bcdbe191-e65a-4134-be3b-349ef73c6963";
+  const milkFridgeCode = "WORKBAR_MILK_FRIDGE";
+  const planetaId = "73054357-e1af-423b-bf8a-1c32968275f5";
+  const expectedProductIds = [
+    "6bc1e704-9a6a-440d-81ff-9ee6c4b9b284",
+    "c4b469cb-498a-474d-874f-e65558071d50",
+    "bcf2dcbd-db37-481b-b1d4-1028bc57f8c1",
+    "bf0e5c33-f877-46ef-b88f-69d6bf691f8d",
+    "79df4e73-8b8f-4b90-8ad4-163897663331",
+    "de5a5358-9f7f-4bad-afe9-2e11473cc8b9",
+    "ca6eed4f-775d-41ff-96d2-edcafb2a1ecb",
+    "430bac91-ffd8-4d07-957b-73f1e2372e22",
+    "ba83b551-f408-40d1-8325-22b5f2edafe9",
+    "b9895c67-32ab-41f3-85bb-8266fd0a31cd",
+  ];
+  const productIdSql = expectedProductIds.map((id) => `'${id}'::uuid`).join(",");
+  psql(String.raw`
+    insert into auth.users(id) values('${actorId}');
+    insert into public.organizations(id,name,slug) values(
+      '${organizationId}','Phase 10Z production-shape fixture','phase10z-production-shape-fixture'
+    );
+    insert into public.user_profiles(id,organization_id,display_name,role,active,is_shared_device)
+    values('${actorId}','${organizationId}','Phase 10Z Manager','manager',true,false);
+    insert into public.inventory_locations(
+      id,organization_id,name,code,location_type,parent_location_id,description,
+      active,countable,sort_order,metadata,created_by_auth_user_id,updated_by_auth_user_id
+    ) values
+      ('fa200000-0000-4000-8000-000000000001','${organizationId}','Workbar','WORKBAR','area',null,null,true,false,1,'{}','${actorId}','${actorId}'),
+      ('${mainStorageId}','${organizationId}','Main Storage','MAIN_STORAGE','storage',null,'Existing identity',true,true,40,'{"fixture":"preserve-id"}','${actorId}','${actorId}'),
+      ('fa200000-0000-4000-8000-000000000003','${organizationId}','Coffee','WORKBAR_COFFEE','station','fa200000-0000-4000-8000-000000000001',null,true,false,20,'{}','${actorId}','${actorId}'),
+      ('fa200000-0000-4000-8000-000000000004','${organizationId}','Snacks','WORKBAR_SNACKS','shelf','fa200000-0000-4000-8000-000000000001',null,true,false,21,'{}','${actorId}','${actorId}'),
+      ('fa200000-0000-4000-8000-000000000005','${organizationId}','Dry Storage','DRY_STORAGE','storage',null,'Must remain unchanged',true,true,50,'{"preserve":true}','${actorId}','${actorId}'),
+      ('fa200000-0000-4000-8000-000000000006','${organizationId}','Beverage Storage','BEVERAGE_STORAGE','storage',null,'Dependency-free legacy placeholder',true,true,60,'{}','${actorId}','${actorId}');
+    insert into public.inventory_products(
+      id,organization_id,name,category,unit_label,active,sort_order,count_mode,
+      millum_item_ref,ownership_status,created_by_auth_user_id,updated_by_auth_user_id
+    ) values
+      ('6bc1e704-9a6a-440d-81ff-9ee6c4b9b284','${organizationId}','20.000 Leguas','Wine','bottle',true,1,'unit','9082081','owned','${actorId}','${actorId}'),
+      ('c4b469cb-498a-474d-874f-e65558071d50','${organizationId}','Abbazia Prosecco Extra Dry','Wine','bottle',true,2,'unit','4000232','owned','${actorId}','${actorId}'),
+      ('bcf2dcbd-db37-481b-b1d4-1028bc57f8c1','${organizationId}','Casamatta Bianco','Wine','bottle',true,3,'unit','9020587','owned','${actorId}','${actorId}'),
+      ('bf0e5c33-f877-46ef-b88f-69d6bf691f8d','${organizationId}','Casamatta Rosso','Wine','bottle',true,4,'unit','9031232','owned','${actorId}','${actorId}'),
+      ('79df4e73-8b8f-4b90-8ad4-163897663331','${organizationId}','Castellroig Reserva Brut Nature','Wine','bottle',true,5,'unit','9078232','owned','${actorId}','${actorId}'),
+      ('de5a5358-9f7f-4bad-afe9-2e11473cc8b9','${organizationId}','Lanzando Pet-Nat White Wine','Wine','bottle',true,6,'unit','9082082','owned','${actorId}','${actorId}'),
+      ('ca6eed4f-775d-41ff-96d2-edcafb2a1ecb','${organizationId}','Maschio Prosecco Ca''Bertaldo','Wine','bottle',true,7,'unit','4026939','owned','${actorId}','${actorId}'),
+      ('430bac91-ffd8-4d07-957b-73f1e2372e22','${organizationId}','Nugues Beaujolais Lancie','Wine','bottle',true,8,'unit','9082515','owned','${actorId}','${actorId}'),
+      ('ba83b551-f408-40d1-8325-22b5f2edafe9','${organizationId}','Ca''N Verdura Negre','Wine','bottle',true,9,'unit','4004935','owned','${actorId}','${actorId}'),
+      ('b9895c67-32ab-41f3-85bb-8266fd0a31cd','${organizationId}','Ca''Di Rajo Pinot Grigio','Wine','bottle',true,10,'unit','4057913','owned','${actorId}','${actorId}'),
+      ('${planetaId}','${organizationId}','PLANETA CHARDONNAY. (0.75 ltr)','Wine','bottle',true,11,'unit','2295798','owned','${actorId}','${actorId}');
+    select inventory_private.inventory_install_millum_profile_v1('${organizationId}','${actorId}');
+    select inventory_private.inventory_install_millum_profile_v2('${organizationId}','${actorId}');
+  `, { transaction: true });
+
+  const profileFingerprint = () => scalar(String.raw`
+    select md5(coalesce(string_agg(value,E'\n' order by value),'')) from (
+      select 'profile|'||to_jsonb(profile)::text value from public.inventory_millum_export_profiles profile where profile.organization_id='${organizationId}'
+      union all select 'row|'||to_jsonb(export_row)::text from public.inventory_millum_export_rows export_row where export_row.organization_id='${organizationId}'
+      union all select 'transform|'||to_jsonb(transform)::text from inventory_private.inventory_millum_export_transforms transform
+        join public.inventory_millum_export_profiles profile on profile.id=transform.profile_id where profile.organization_id='${organizationId}'
+    ) immutable_profile;
+  `);
+  const alignedDataFingerprint = () => scalar(String.raw`
+    with entries(value) as (
+      select 'location|'||to_jsonb(location)::text from public.inventory_locations location where location.organization_id='${organizationId}'
+      union all select 'standard|'||to_jsonb(standard)::text from public.inventory_location_products standard where standard.organization_id='${organizationId}'
+      union all select 'guidance|'||to_jsonb(guidance)::text from public.inventory_location_reference_guidance guidance where guidance.organization_id='${organizationId}'
+    ) select md5(coalesce(string_agg(value,E'\n' order by value),'')) from entries;
+  `);
+  const planetaBefore = scalar(`select to_jsonb(product)::text from public.inventory_products product where product.id='${planetaId}';`);
+  const dryStorageBefore = scalar(`select to_jsonb(location)::text from public.inventory_locations location where location.organization_id='${organizationId}' and location.code='DRY_STORAGE';`);
+  const profilesBefore = profileFingerprint();
+  const exportFunctionBefore = scalar("select md5(pg_get_functiondef('public.get_inventory_millum_export(uuid)'::regprocedure));");
+
+  const migrationSql = readFileSync(absolute("supabase/phase10z_inventory_location_and_express_shelf_alignment.sql"), "utf8");
+  psql(migrationSql, { transaction: true });
+  check("production-shape 10Z preserves the exact Main Storage UUID and applies the approved name",
+    scalar(`select count(*)=1 from public.inventory_locations where organization_id='${organizationId}' and id='${mainStorageId}' and code='MAIN_STORAGE' and name='Main Storage Fridge';`) === "t");
+  check("production-shape 10Z creates one non-countable targetless Express Shelf",
+    scalar(`select count(*)=1 from public.inventory_locations location where location.organization_id='${organizationId}' and location.code='MAIN_STORAGE_EXPRESS_SHELF' and location.active and not location.countable and location.parent_location_id='${mainStorageId}' and not exists(select 1 from public.inventory_location_products standard where standard.location_id=location.id);`) === "t");
+  check("production-shape 10Z creates one countable Workbar Milk Fridge with exactly ten reviewed links",
+    scalar(`select count(*)=1 from public.inventory_locations location where location.organization_id='${organizationId}' and location.code='${milkFridgeCode}' and location.active and location.countable and (select count(*) from public.inventory_location_products standard where standard.location_id=location.id and standard.active)=10;`) === "t");
+  check("production-shape ten wine links use the exact stable UUID set and targetless physical-count policy",
+    scalar(`select count(*)=10 and count(*) filter(where standard.product_id=any(array[${productIdSql}]))=10 and bool_and(standard.stock_policy='physical_count_only' and standard.par_quantity=0 and not standard.contributes_to_storage_target and standard.historical_suggestion_quantity is null) from public.inventory_location_products standard join public.inventory_locations location on location.id=standard.location_id where location.organization_id='${organizationId}' and location.code='${milkFridgeCode}' and standard.active;`) === "t");
+  check("production-shape ten wines each retain exactly one enabled published profile-v2 row",
+    scalar(`select count(*)=10 and count(distinct export_row.mapped_product_id)=10 from public.inventory_millum_export_rows export_row join public.inventory_millum_export_profiles profile on profile.id=export_row.profile_id where profile.organization_id='${organizationId}' and profile.profile_version=2 and profile.status='published' and export_row.enabled and export_row.mapped_product_id=any(array[${productIdSql}]);`) === "t");
+  check("production-shape Planeta remains byte-identical, unlinked, uncounted, and outside profile v2",
+    scalar(`select to_jsonb(product)::text from public.inventory_products product where product.id='${planetaId}';`) === planetaBefore
+      && scalar(`select count(*) from public.inventory_location_products where organization_id='${organizationId}' and product_id='${planetaId}';`) === "0"
+      && scalar(`select count(*) from public.inventory_count_lines where organization_id='${organizationId}' and product_id='${planetaId}';`) === "0"
+      && scalar(`select count(*) from public.inventory_millum_export_rows export_row join public.inventory_millum_export_profiles profile on profile.id=export_row.profile_id where profile.organization_id='${organizationId}' and profile.profile_version=2 and export_row.mapped_product_id='${planetaId}';`) === "0");
+  check("production-shape Millum profiles and export function remain byte-stable with no profile v3",
+    profileFingerprint() === profilesBefore
+      && scalar("select md5(pg_get_functiondef('public.get_inventory_millum_export(uuid)'::regprocedure));") === exportFunctionBefore
+      && scalar(`select count(*) from public.inventory_millum_export_profiles where organization_id='${organizationId}' and profile_version>=3;`) === "0");
+  check("production-shape protected wine value conversions remain present",
+    scalar("select pg_get_functiondef('public.get_inventory_millum_export(uuid)'::regprocedure) like '%4000232%111.89%' and pg_get_functiondef('public.get_inventory_millum_export(uuid)'::regprocedure) like '%4057913%154%' and pg_get_functiondef('public.get_inventory_millum_export(uuid)'::regprocedure) like '%4004935%208.87%';") === "t");
+  check("production-shape fixture creates no milk, Oatly, Test Oatly, or generic Other Wine product/count scope",
+    scalar(`select count(*) from public.inventory_products where organization_id='${organizationId}' and lower(name) ~ '(milk|oatly|oat milk|other wine)';`) === "0");
+  check("production-shape coffee/snack names align, Dry Storage is unchanged, and dependency-free legacy storage retires",
+    scalar(`select count(*) from public.inventory_locations where organization_id='${organizationId}' and ((code='WORKBAR_COFFEE' and name='Workbar Coffee Station') or (code='WORKBAR_SNACKS' and name='Workbar Snack Shelf' and not countable));`) === "2"
+      && scalar(`select to_jsonb(location)::text from public.inventory_locations location where organization_id='${organizationId}' and code='DRY_STORAGE';`) === dryStorageBefore
+      && scalar(`select count(*) from public.inventory_locations where organization_id='${organizationId}' and code='BEVERAGE_STORAGE' and not active and not countable and metadata->>'retiredBy'='phase10z';`) === "1");
+  check("production-shape Express Shelf keeps manager-maintained live-image guidance without an uploaded object",
+    scalar(`select count(*)=1 from public.inventory_location_reference_guidance guidance join public.inventory_locations location on location.id=guidance.location_id where location.organization_id='${organizationId}' and location.code='MAIN_STORAGE_EXPRESS_SHELF' and guidance.object_path is null and guidance.caption like 'Fill the service fridge from Express Shelf%';`) === "t");
+
+  const onceAligned = alignedDataFingerprint();
+  psql(migrationSql, { transaction: true });
+  check("production-shape 10Z reapply is fully idempotent for aligned location data", alignedDataFingerprint() === onceAligned);
+  check("production-shape 10Z reapply still preserves Planeta and immutable Millum profile v2",
+    scalar(`select to_jsonb(product)::text from public.inventory_products product where product.id='${planetaId}';`) === planetaBefore
+      && profileFingerprint() === profilesBefore);
+
+  psql(String.raw`
+    begin;
+    select set_config('request.jwt.claim.sub','${actorId}',true);
+    set local role authenticated;
+    select public.create_inventory_count_session(
+      'Workbar Milk Fridge proof','monthly','fa300000-0000-4000-8000-000000000001',current_date,
+      array[(select id from public.inventory_locations where organization_id='${organizationId}' and code='${milkFridgeCode}')],null
+    );
+    commit;
+  `);
+  check("production-shape Stock Count creates exactly ten wine lines with blank quantities and no Planeta/milk line",
+    scalar(`select count(*)=10 and count(*) filter(where product_id=any(array[${productIdSql}]))=10 and bool_and(counted_quantity is null and count_status='not_counted') and count(*) filter(where product_id='${planetaId}')=0 from public.inventory_count_lines line join public.inventory_count_sessions session on session.id=line.session_id where session.organization_id='${organizationId}' and session.idempotency_key='fa300000-0000-4000-8000-000000000001';`) === "t");
+}
+
 async function main() {
   sourceChecks();
   command("docker", ["--version"]);
@@ -1597,12 +1800,19 @@ async function main() {
   console.log(`PostgreSQL ${serverVersion}; Docker network mode: none`);
 
   psql(storageBootstrapSql);
-  for (const path of baseline) psql(readFileSync(absolute(path), "utf8"), { transaction: true });
+  for (const path of baseline) {
+    if (path.endsWith("20260804123921_phase9l_millum_august_carry_forward_and_future_scope.sql")) {
+      psqlAsConnectionOwner(readFileSync(absolute(PHASE9_SECURITY_FIXTURE), "utf8"));
+      psqlAsConnectionOwner(readFileSync(absolute(PHASE9_TERMINAL_FIXTURE), "utf8"));
+    }
+    psql(readFileSync(absolute(path), "utf8"), { transaction: true });
+  }
   psql(baselineFixtureSql, { transaction: true });
   psql(publicationBootstrapSql, { transaction: true });
   psql(fingerprintHelperSql);
   const protectedBaseline = {
     schema: scalar(protectedSchemaFingerprintSql),
+    schemaStable: scalar(protectedSchemaStableFingerprintSql),
     data: scalar(protectedDataFingerprintSql),
     realtime: scalar(protectedRealtimeFingerprintSql),
   };
@@ -1617,7 +1827,7 @@ async function main() {
     assertEndState(`sequence ${sequence}`, state, protectedBaseline);
     console.log(`Sequence ${sequence} fingerprints: protected-schema=${state.protectedSchema} protected-data=${state.protectedData} protected-realtime=${state.protectedRealtime} routine-schema=${state.routineSchema} raw-acl=${state.rawAclFingerprint} effective-acl=${state.effectiveAclFingerprint}`);
   }
-  check("three complete 27-migration sequences apply exactly 81 migrations", migrationApplications === 81);
+  check("three complete 28-migration sequences apply exactly 84 migrations", migrationApplications === 84);
 
   const aclDrift = [...new Set([
     ...Object.keys(states[0].routineFunctions),
@@ -1660,6 +1870,7 @@ async function main() {
   check("third complete sequence is fully schema/data/state stable", JSON.stringify(states[2]) === JSON.stringify(states[0]));
   check("published/content/run/timing/delivery/bundle hashes are stable", JSON.stringify(states[0].operational.hashes) === JSON.stringify(states[2].operational.hashes));
   check("validation blockers, warnings, and content hash are stable", JSON.stringify(states[0].validationProbe) === JSON.stringify(states[2].validationProbe));
+  productionShapedLocationAlignmentChecks();
   futureOrganizationChecks();
   namedArgumentChecks();
   const mutationFingerprints = semanticMutationProbes();

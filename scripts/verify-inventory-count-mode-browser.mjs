@@ -14,8 +14,10 @@ const PLAYWRIGHT_CANDIDATES = [
 const scenarios = [
   ["standard", "chromium", 430, 932],
   ["manual", "chromium", 390, 844],
+  ["milk-fridge", "chromium", 430, 932],
   ["standard", "webkit", 430, 932],
   ["manual", "webkit", 360, 800],
+  ["milk-fridge", "webkit", 390, 844],
 ];
 let server;
 let passed = 0;
@@ -87,12 +89,19 @@ async function main() {
       const pageErrors = [];
       page.on("console", (message) => { if (message.type() === "error") consoleErrors.push(message.text()); });
       page.on("pageerror", (error) => pageErrors.push(error.message));
-      await page.goto(`${BASE_URL}/inventory-count-mode-harness.html${mode === "manual" ? "?scenario=manual-differences" : ""}`, { waitUntil: "networkidle" });
+      const scenarioQuery = mode === "manual" ? "?scenario=manual-differences" : mode === "milk-fridge" ? "?scenario=milk-fridge" : "";
+      await page.goto(`${BASE_URL}/inventory-count-mode-harness.html${scenarioQuery}`, { waitUntil: "networkidle" });
       if (mode === "standard") {
         check(`${engine} ${width}px shows the saved-standard decision`, await page.getByRole("heading", { name: "Does this fridge match its saved standard?" }).isVisible());
         check(`${engine} ${width}px preserves separate-location and no-overwrite copy`, await page.getByText(/same product in another fridge remains a separate count/i).isVisible() && await page.getByText(/never overwritten/i).isVisible());
-      } else {
+      } else if (mode === "manual") {
         check(`${engine} ${width}px opens the manual path for the current refrigerator`, await page.getByRole("heading", { name: "Count differences in Cornerbar Fridge 1." }).isVisible() && await page.getByText(/Only this refrigerator is open/).isVisible());
+      } else {
+        check(`${engine} ${width}px requires actual physical wine counts`, await page.getByRole("heading", { name: "Count every configured wine. No quantity is predetermined." }).isVisible());
+        check(`${engine} ${width}px separates permanent setup from Stock Count`, await page.getByText(/exactly 2 regular milk and 2 Oatly/i).isVisible() && await page.getByText(/Routine completion never completes this Stock Count/i).isVisible());
+        check(`${engine} ${width}px preserves zero and blank semantics`, await page.getByText(/explicit zero when none is present; blank remains uncounted/i).isVisible());
+        check(`${engine} ${width}px exposes the unlisted-wine manager path`, await page.getByRole("heading", { name: "Opened wine not listed" }).isVisible() && await page.getByText(/Do not count it under another product/i).isVisible());
+        check(`${engine} ${width}px never shows the fixed-par completion shortcut`, await page.getByRole("button", { name: "Done — count & next fridge" }).count() === 0);
       }
       const result = await audit(page);
       check(`${engine} ${width}px has no errors, overflow or accessibility defects`, consoleErrors.length === 0 && pageErrors.length === 0 && result.unnamed === 0 && result.duplicateIds === 0 && result.smallTargets === 0 && result.overflow <= 1);
@@ -107,7 +116,7 @@ async function main() {
       }
       await page.close();
     }
-    check("Chromium and WebKit cover the standard, manual-difference and one-tap refrigerator handoff paths", scenarios.length === 4);
+    check("Chromium and WebKit cover standard, manual-difference, one-tap handoff and Workbar Milk Fridge physical-count paths", scenarios.length === 6);
     console.log(`Count Mode browser verification: ${passed}/${passed} passed; evidence ${EVIDENCE}`);
   } finally {
     await browsers.chromium.close().catch(() => {});

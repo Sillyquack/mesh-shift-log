@@ -4,11 +4,11 @@
 
 - Pack: `mesh-routine-content@1.5R`
 - Schema: `1.0`
-- SHA-256: `66af45ecb1afa2b432b95ed0e1d5425c39ed0cc67becacbb386bd43489db1e02`
+- SHA-256: `710c9412eabc8f2e9c5a6488499ac4654cd7c94b62138eaed9563ab5f0203c9c`
 - Opening: 37 tasks in 3 sections
 - Closing: 46 tasks in 2 sections
 - Double Shift: 4 system steps; no third template
-- Locations / sets / standards / references: 44 / 12 / 14 / 40
+- Locations / sets / standards / references: 48 / 12 / 15 / 42
 - Unresolved publication/readiness blockers: 0
 
 The task audit below records the exact locked-source plus amendment provenance hash for all 83 O/C tasks. Each canonical task also retains its full instruction, structured-item text, done criteria, deviation/blocking rules and reference guidance in the JSON manifest.
@@ -22,7 +22,7 @@ The task audit below records the exact locked-source plus amendment provenance h
 - `production_readiness_amendment` — `routine-engine-v2-production-readiness-amendment-2026-08-09.md`: `d0280ca6e780f8f6876ad8747f0ee80693ebb1aa0a15761b63962376f8e54224` (content-before-generated-pack-metadata)
 - `serviceware_route_amendment` — `routine-engine-v2-serviceware-route-amendment-2026-08-09.md`: `7ee5032edc7518e80aec18e5f4ce50a3c7a12e48aa9e560727c87d672c3c72f1` (content-before-generated-pack-metadata)
 - `runtime_contract_alignment_amendment` — `routine-engine-v2-runtime-contract-alignment-amendment-2026-08-09.md`: `56cc1ac9b6fc1cdc89586f8539e185dfef6e6a5d54d483bbdffcbb1d7ff4c2af` (content-before-generated-pack-metadata)
-- `fridge_standards_amendment` — `routine-engine-v2-fridge-standards-amendment-2026-08-15.md`: `be724431080fdbbb5fb598d52d3b01357ea2d3c778f94268166318064f5dfba1` (content-before-generated-pack-metadata)
+- `fridge_standards_amendment` — `routine-engine-v2-fridge-standards-amendment-2026-08-15.md`: `2a57f578128b6a6b696bf4f93d721fd6c56837ae413c9599a2845885c6c7a834` (content-before-generated-pack-metadata)
 
 ## Opening
 
@@ -35,12 +35,12 @@ The task audit below records the exact locked-source plus amendment provenance h
 | O05 | Turn on the kitchen dishwashers | opening-07-08 | procedure | important | yes | none | standard_required | forbidden | none | once_per_run | 4 | 0 | 0 | 1 | — | kitchen-dishwashers | — | 971e1cd1b171e84c11c5d48e6bc0af8303af5bde5c61fa21b6e4c1192cbd5844 |
 | O06 | Brew four Coffee Canisters | opening-07-08 | procedure | important | yes | none | standard_required | forbidden | none | once_per_run | 4 | 0 | 1 | 1 | — | — | — | 5634d3af6f89a18cbdfaa5ec7734c3d54fcd494d7bb8569452c8425314e3bff9 |
 | O07 | Set up the cleaning station | opening-07-08 | control | important | yes | ready_on_arrival | standard_required | forbidden | none | once_per_run | 6 | 0 | 1 | 1 | — | cleaning-station | — | dd35677bebdc962bf4e56a0fdfcd175dd843ad7540e511f0a7beab00a3d3f83e |
-| O08 | Refill milk and oat milk in the coffee machine | opening-07-08 | procedure | important | yes | none | standard_required | forbidden | none | once_per_run | 5 | 0 | 0 | 0 | — | — | — | 25ed5c6cef5666db9649bcbda2d692d31eb357ed6b244dcd5c8339a2df09830c |
-| O09 | Verify and restore the Workbar milk fridge to standard | opening-07-08 | measurement | important | yes | ready_on_arrival | standard_required | forbidden | none | once_per_run | 7 | 0 | 1 | 1 | — | workbar-milk-fridge | — | 2ecefcddf2800bf1dc2f5ef76d390b1ead26ac65ad8ddd0c838bb249a0154e46 |
+| O08 | Refill milk and oat milk in the coffee machine | opening-07-08 | procedure | important | yes | none | standard_required | forbidden | none | once_per_run | 5 | 0 | 0 | 0 | — | — | — | 01f71a76485b48fcba51d4e59fbc4003205d7e2f480ed638b7c0626a37ca320f |
+| O09 | Verify and restore the Workbar milk fridge to standard | opening-07-08 | measurement | important | yes | ready_on_arrival | standard_required | forbidden | none | once_per_run | 7 | 0 | 1 | 1 | — | workbar-milk-fridge | — | eee6c38531c27d753b70539cb7df086fcf190787edcf1f726dd9ba8afec92a55 |
 | O10 | Remove used cups and glasses from the members lounge | opening-07-08 | action | normal | yes | none | standard_required | forbidden | none | once_per_run | 4 | 0 | 1 | 0 | — | members-lounge | — | 509a7de6e926dcbada2473fc70976c75ab504da8bb98af3003d1bb14e73a4e38 |
 | O11 | Set out one fresh Coffee Canister in the members lounge | opening-07-08 | action | important | yes | none | standard_required | forbidden | none | once_per_run | 4 | 0 | 1 | 0 | — | members-lounge | — | ffba354bd376a782cf9bdeb5e1434fe6a7ddba10d435fbda950bb591f595ab8d |
 | O12 | Set out baked goods, fruit and snacks | opening-07-08 | procedure | important | yes | none | standard_required | forbidden | none | once_per_run | 5 | 0 | 0 | 0 | — | — | — | 356ac244c5bb41a7c15d89db5d175c591fd3335efb0b8597fda8f2e4209a420c |
-| O13 | Verify and restore the Workbar Non-Alco Fridge | opening-07-08 | measurement | important | yes | ready_on_arrival | standard_required | forbidden | none | once_per_run | 9 | 0 | 1 | 1 | — | workbar-non-alcoholic-fridge | — | 771a760fa58e80d879064c1b03661538e2ca4d1340226e5e5eea3956b66be838 |
+| O13 | Verify and restore the Workbar Non-Alco Fridge | opening-07-08 | measurement | important | yes | ready_on_arrival | standard_required | forbidden | none | once_per_run | 10 | 0 | 3 | 1 | — | workbar-non-alcoholic-fridge | — | 087bf6fccc3dafc0212a02f49f32f7ba33a385f982b3133a60120f36c10a1cc8 |
 | O14 | Set up the self-service counter to standard | opening-07-08 | control | important | yes | ready_on_arrival | standard_required | forbidden | none | once_per_run | 23 | 0 | 1 | 1 | — | self-service-counter | — | 4da68db37e9429304c7194a2f709f9263f714654af5862f8a4f0a9d7426198a2 |
 | O15 | Restore coffee cups and wine glasses to their full visual layouts | opening-07-08 | measurement | important | yes | ready_on_arrival | standard_required | forbidden | none | once_per_run | 12 | 0 | 4 | 2 | — | serviceware-recovery-route | 10:45:00 / 10:45:00 | 21f4d7f4775269638c5fdefbc960507cda500e01f67b912ff32ebca46d8eceb2 |
 | O16 | Prepare project rooms 001, 002, 003, 004, 006 and the Boardroom | opening-07-08 | control | important | yes | ready_on_arrival | standard_required | forbidden | none | once_per_run | 6 | 0 | 1 | 2 | — | opening-project-rooms | — | f153edaa885dfae5fa822087acabc8d816cd9f3b13057ed5901775c491bc550d |
@@ -50,19 +50,19 @@ The task audit below records the exact locked-source plus amendment provenance h
 | O20 | Verify that the Workbar screen is showing its automatic slides | opening-07-08 | control | normal | yes | control_result | control_allows_deviation | forbidden | none | once_per_run | 5 | 0 | 0 | 1 | — | workbar-screen | — | 5ef88495b1da3643e34282ef84ef86f79aaf336b2c4b112d317c06b35c30f6f1 |
 | O21 | Set the lights to Café mode | opening-07-08 | action | important | yes | none | standard_required | forbidden | none | once_per_run | 4 | 0 | 0 | 1 | — | — | — | ed7aee45776e3d4fe8df14ee02dd621b888663aa61868ed1d30bfa1304a1bef6 |
 | O22 | Set out candles when the seasonal candle rule is active | opening-07-08 | action | normal | yes | none | standard_required | system_only | none | conditional | 3 | 0 | 0 | 1 | — | — | — | 93e82228d7cdc188a6bd288e13ef26f5d1ea4d7b6106f5fde685e27b56d0698a |
-| O23 | Complete the final opening readiness check | opening-07-08 | checkpoint | important | yes | none | standard_required | forbidden | none | once_per_run | 18 | 0 | 2 | 0 | — | — | 08:00:00 | 46e185dc42dc8fdbe42e2fe1a834f061e2ad2399bd7d1014cfaee362ca8c80b4 |
+| O23 | Complete the final opening readiness check | opening-07-08 | checkpoint | important | yes | none | standard_required | forbidden | none | once_per_run | 18 | 0 | 2 | 0 | — | — | 08:00:00 | 19da26c01a88bec2e3bc5553f186f08adb6cd0a58471e4e4ed0d0512a3ef97af |
 | O24 | Recheck bookings and events for changes | opening-08-10 | control | important | yes | control_result | control_allows_deviation | forbidden | none | once_per_run | 5 | 0 | 0 | 0 | — | — | — | 51327606338e2a4dd6df44d333af263216e06c2f970f8338dcc1699bc51f92a5 |
 | O25 | Verify venue and furniture setup against the current booking plan | opening-08-10 | control | important | yes | control_result | control_allows_deviation | forbidden | none | once_per_run | 5 | 0 | 2 | 0 | — | — | — | c31b687466af635e388109ae2cbe5775be82cf92ef32fd02bfecc572e656b8c1 |
 | O26 | Clear and reset the members lounge coffee point | opening-08-10 | control | important | yes | ready_on_arrival | standard_required | forbidden | none | once_per_run | 5 | 0 | 1 | 0 | — | — | — | 4b4efb780e07047e9b55c6bcea1a3f3a38cd096c41486c06256c6e604480d123 |
 | O27 | Maintain the Workbar guest-service zone until the 09:45 checkpoint | opening-08-10 | continuous | important | yes | none | standard_required | forbidden | none | continuous | 6 | 1 | 0 | 0 | — | — | — | 57bf0102a2c4dbf17685174df41485f73fc7172ef5bafff274ef4ee6e3447b91 |
 | O28 | Restore the lunch coffee reserve to four ready Coffee Canisters | opening-08-10 | measurement | important | yes | none | standard_required | forbidden | none | once_per_run | 4 | 0 | 1 | 0 | — | — | — | f8ccfcdf6b7a8e735f18f48964253075742cddfad7bf5514311d826b7f7cece0 |
-| O29 | Complete the 09:45 full restock checkpoint | opening-08-10 | checkpoint | important | yes | control_result | standard_required | forbidden | none | once_per_phase | 11 | 1 | 5 | 0 | — | — | 09:35:00 / 09:40:00 / 09:45:00 / 09:55:00 | c658bffa706608fcb009b0ee7b49e3b685b980b3c06e56ab597017577a26c6b8 |
+| O29 | Complete the 09:45 full restock checkpoint | opening-08-10 | checkpoint | important | yes | control_result | standard_required | forbidden | none | once_per_phase | 11 | 1 | 5 | 0 | — | — | 09:35:00 / 09:40:00 / 09:45:00 / 09:55:00 | 07b88be442147a11ab067dbe8fd68260da3ef6d20188e274e68748d2a3fada2f |
 | O30 | Recheck lunch bookings, events and coffee orders | opening-10-11 | control | important | yes | control_result | control_allows_deviation | forbidden | none | once_per_run | 5 | 1 | 0 | 0 | — | — | — | d91a05c1a2db3416e60589dc6b9aad8899d37b6718de0339dac996de1fde05b7 |
 | O31 | Reset project rooms 001, 002, 003, 004, 006 and the Boardroom | opening-10-11 | control | important | yes | ready_on_arrival | standard_required | forbidden | none | once_per_run | 6 | 1 | 1 | 0 | — | opening-project-rooms | — | a65a3cdd2c3df974df63d09610cd92e675ba8f113ffe10c68031d306c40af39c |
 | O32 | Complete the Workbar toilet readiness check | opening-10-11 | control | important | yes | control_result | control_allows_deviation | forbidden | none | once_per_run | 5 | 1 | 0 | 0 | — | workbar-public-toilets | — | 46dbd4e3004d0272a5d72480daf6e907bbbfbf6f19c5db127aeff11a90cc848b |
 | O33 | Maintain the Workbar guest-service zone until the 10:45 checkpoint | opening-10-11 | continuous | important | yes | none | standard_required | forbidden | none | continuous | 6 | 2 | 0 | 0 | — | — | — | 0852723f6913d446155ec431f910d09dc76d79e2180e18aa188eef97bbb1a4aa |
 | O34 | Restore four ready Coffee Canisters before the final lunch check | opening-10-11 | measurement | important | yes | none | standard_required | forbidden | none | once_per_run | 4 | 1 | 1 | 0 | — | — | — | 6cfe0254065a329dfab8709ab8830d07fbdeb04496fd09c4be2286f220f98903 |
-| O35 | Complete the final 10:45 full restock checkpoint | opening-10-11 | checkpoint | important | yes | control_result | standard_required | forbidden | none | once_per_phase | 11 | 2 | 5 | 0 | — | — | 10:35:00 / 10:40:00 / 10:45:00 / 10:50:00 / 10:55:00 | d4321b826bbb61a061877f6f3eebadee8c217f1f9f74949b337ae844cf3da625 |
+| O35 | Complete the final 10:45 full restock checkpoint | opening-10-11 | checkpoint | important | yes | control_result | standard_required | forbidden | none | once_per_phase | 11 | 2 | 5 | 0 | — | — | 10:35:00 / 10:40:00 / 10:45:00 / 10:50:00 / 10:55:00 | 95f523f35cf63205fe82bb22151fc4f060651ec95102bf1a48355aea6d070e71 |
 | O36 | Verify lunch product availability in POS and Weorder | opening-10-11 | control | important | yes | control_result | control_allows_deviation | forbidden | none | once_per_run | 6 | 1 | 0 | 0 | — | — | — | 5a589c078953ace614c9a9e8461602d4b9ddc7ef8ca7dce344016f1f93f3ef18 |
 | O37 | Confirm lunch readiness for 11:00 | opening-10-11 | gate | important | yes | none | standard_required | forbidden | none | once_per_run | 11 | 7 | 0 | 0 | — | — | 11:00:00 | 1b7673ad7f435ab853c68809affb6b755764218dfec764ccf9cfddd18d723bc0 |
 
@@ -77,9 +77,9 @@ The task audit below records the exact locked-source plus amendment provenance h
 | C05 | Clear and clean available Workbar and Atrium tables | closing-15-18 | continuous | important | yes | none | standard_required | forbidden | none | continuous | 7 | 1 | 2 | 0 | — | — | — | 9cc659fad48d6ed44b3445de5261d9bf94f531508d1a5616111f14c91bcdd556 |
 | C06 | Rinse empty Coffee Canisters and preserve service capacity | closing-15-18 | measurement | important | yes | control_result | standard_required | forbidden | none | once_per_run | 7 | 1 | 1 | 0 | — | — | — | 956a620c13b22f2c4277d40df8366563df8786ff81ef81b464b9963133ed8953 |
 | C07 | Pre-restock the self-service counter to standard | closing-15-18 | control | important | yes | ready_on_arrival | standard_required | forbidden | none | once_per_run | 9 | 1 | 1 | 0 | — | — | — | 5f0bc1c1868cab7e876dcf941b6c0cbacad9923791a56728c8f6f394350f2581 |
-| C08 | Pre-restore the Workbar Non-Alco Fridge | closing-15-18 | measurement | important | yes | ready_on_arrival | standard_required | forbidden | none | once_per_run | 6 | 1 | 1 | 0 | — | workbar-non-alcoholic-fridge | — | 076d55013e9468b6d4ab57585755f70ad06bceb91a26ac474e64ecd3226205d4 |
-| C09 | Pre-restock the Workbar milk fridge | closing-15-18 | measurement | important | yes | ready_on_arrival | standard_required | forbidden | none | once_per_run | 7 | 1 | 1 | 0 | — | — | — | acfcee82e45e67d366997b4b36a8392d859d20f80d524d78253a54efd5a0580c |
-| C10 | Pre-restock all active beverage and bar fridges | closing-15-18 | measurement | important | yes | ready_on_arrival | standard_required | forbidden | none | once_per_run | 8 | 1 | 5 | 0 | — | all-operational-fridges | — | ded5923b71894e0b6a913e7726b21fba8449c7406a26786a58a6b00521e21c74 |
+| C08 | Pre-restore the Workbar Non-Alco Fridge | closing-15-18 | measurement | important | yes | ready_on_arrival | standard_required | forbidden | none | once_per_run | 7 | 1 | 3 | 0 | — | workbar-non-alcoholic-fridge | — | 9e41a8d56439ed69062e6604a13d66886358ba3357e3f9009e6541bf800a3014 |
+| C09 | Pre-restock the Workbar milk fridge | closing-15-18 | measurement | important | yes | ready_on_arrival | standard_required | forbidden | none | once_per_run | 7 | 1 | 1 | 0 | — | — | — | 97d5da36484c7c2353772506ea319fa04789eca0ddd229f7bdd167494ceef6e5 |
+| C10 | Pre-restock all active beverage and bar fridges | closing-15-18 | measurement | important | yes | ready_on_arrival | standard_required | forbidden | none | once_per_run | 8 | 1 | 5 | 0 | — | all-operational-fridges | — | 7cc430d65ac4625d023ef57507f574bf2bae005f85f94092bfcf3c30ba6f00b7 |
 | C11 | Check and date every opened wine and prosecco bottle | closing-15-18 | control | important | yes | control_result | standard_required | forbidden | none | once_per_run | 6 | 1 | 1 | 0 | — | — | — | 4eee4baa33746a7b37e4f3cb1279f892cf4e3d97b4471a6b2ca258abacd9b92a |
 | C12 | Prepare Too Good To Go and SVINN without ending sales early | closing-15-18 | procedure | important | yes | control_result | standard_required | forbidden | none | once_per_run | 6 | 1 | 0 | 0 | — | — | — | 0a75b72ed1ff01ec9a66ebe3ab4db5767a7b724c73c4f082c43ea2a33089a6ac |
 | C13 | Clean and reset the cleaning station for final close | closing-15-18 | control | important | yes | ready_on_arrival | standard_required | forbidden | none | once_per_run | 6 | 1 | 1 | 1 | — | cleaning-station | — | b097c91cafb4d63a73dc5568527ee79f3799a4ff33a26c70b05056086522c1b0 |
@@ -97,12 +97,12 @@ The task audit below records the exact locked-source plus amendment provenance h
 | C25 | Return all dirty cloths and rags to cleaning storage | closing-18-19 | action | normal | yes | none | standard_required | forbidden | none | once_per_run | 7 | 0 | 0 | 0 | — | — | — | 14141638a339b02b0cdac973591f03166403017d9e455c132dc2f77d50efdbf4 |
 | C26 | Remove all waste, PANT, glass and cardboard and rinse the bins | closing-18-19 | procedure | important | yes | none | standard_required | forbidden | none | once_per_run | 8 | 0 | 0 | 0 | — | — | — | 1f6d8d01c561b21249eb919f7f02e5dc74e96c78afdf7ac4b55b4b9e6d2c3326 |
 | C27 | Complete final serviceware recovery and visual-layout accountability | closing-18-19 | measurement | critical | yes | control_result | standard_required | forbidden | none | once_per_run | 12 | 1 | 4 | 2 | — | serviceware-recovery-route | — | a7cee6e1b5152ac96b592ebf8a31d1b1c4b651b3530ba418d6e01670ede9eecf |
-| C28 | Final-restore the Workbar Non-Alco Fridge | closing-18-19 | measurement | critical | yes | ready_on_arrival | standard_required | forbidden | none | once_per_run | 9 | 1 | 1 | 1 | — | workbar-non-alcoholic-fridge | — | 2a8a90e20e0c7d25814d55325a85ae669c495576e31f87aae52211fc831f0057 |
-| C29 | Final-restock the Workbar milk fridge | closing-18-19 | measurement | critical | yes | ready_on_arrival | standard_required | forbidden | none | once_per_run | 7 | 1 | 1 | 1 | — | workbar-milk-fridge | — | a2779e658dd59f1c73cabbaad859303a3aa006dee21b60d3928fd11f2ec338ce |
-| C30 | Final-restock every required beverage and bar fridge | closing-18-19 | measurement | critical | yes | ready_on_arrival | standard_required | forbidden | none | once_per_run | 9 | 1 | 5 | 0 | — | all-operational-fridges | — | ac196c5d1c3283d67ec417a24b5278ae6ac84e444a51091cec129d8b06e49756 |
+| C28 | Final-restore the Workbar Non-Alco Fridge | closing-18-19 | measurement | critical | yes | ready_on_arrival | standard_required | forbidden | none | once_per_run | 10 | 1 | 3 | 1 | — | workbar-non-alcoholic-fridge | — | aaabddea8da7e9b26ef9b23e6dd43e81d846b9898f00e18fe5990c6f24d9530d |
+| C29 | Final-restock the Workbar milk fridge | closing-18-19 | measurement | critical | yes | ready_on_arrival | standard_required | forbidden | none | once_per_run | 7 | 1 | 1 | 1 | — | workbar-milk-fridge | — | 7f0a209d4abdbe26d55dc9958e997f09788d3acc7094645b9c4890e18174369c |
+| C30 | Final-restock every required beverage and bar fridge | closing-18-19 | measurement | critical | yes | ready_on_arrival | standard_required | forbidden | none | once_per_run | 9 | 1 | 5 | 0 | — | all-operational-fridges | — | 1f914a519c2a60832e563e1da6b1c4a90426a99ae1826c4795d5c609fea247cc |
 | C31 | Complete the final opened-wine and prosecco check | closing-18-19 | control | important | yes | control_result | standard_required | forbidden | none | once_per_run | 6 | 1 | 1 | 0 | — | — | — | f45c78e3018793ee7e8b3beb215ba348625319b5c4883db403cdd84419962b95 |
 | C32 | Reset and restock the self-service counter to the overnight standard | closing-18-19 | control | critical | yes | ready_on_arrival | standard_required | forbidden | none | once_per_run | 13 | 1 | 1 | 1 | — | self-service-counter | — | f9cc8f8eba918f02effb6e15ce83bb9aab5788e23971b840b306959b5d3af54c |
-| C33 | Close and lock every required fridge | closing-18-19 | control | critical | yes | control_result | standard_required | forbidden | none | once_per_run | 10 | 1 | 5 | 0 | — | all-operational-fridges | — | e96cdd63258520a8b96c47126ddd5029ba493a8df90ea61d95aef7bdc7f674f7 |
+| C33 | Close and lock every required fridge | closing-18-19 | control | critical | yes | control_result | standard_required | forbidden | none | once_per_run | 10 | 1 | 5 | 0 | — | all-operational-fridges | — | c8114b251c5b1098c484f8665cdd53e22b0c32ec986fe434741408abc776dcad |
 | C34 | Close every open POS table and customer account | closing-18-19 | control | critical | yes | control_result | standard_required | forbidden | none | once_per_run | 6 | 1 | 0 | 0 | — | — | — | 8904264cf769aa5363a61b7b2ff90b10e5608939dc34f22cfec40804dfbca0e4 |
 | C35 | Close the register and complete settlement | closing-18-19 | procedure | critical | yes | none | standard_required | forbidden | self_recheck | once_per_run | 7 | 2 | 0 | 1 | — | register | — | abc93941152a088adce54850c421227057fadbdd57ddbc840b8520d006bbfb77 |
 | C36 | Secure the till and all required keys in the safe | closing-18-19 | procedure | critical | yes | none | standard_required | forbidden | closing_responsible | once_per_run | 6 | 2 | 0 | 0 | — | — | — | 508bf35b6bce189bf0d7caa636252e1c53e386306ff818af1f0a11c03b54067e |
@@ -120,7 +120,7 @@ The task audit below records the exact locked-source plus amendment provenance h
 ## Double Shift system steps
 
 - DS01 / `ds01_confirm_plan` — Confirm the Double Shift plan; source `aef348c12a8ab1ff90d2455dc7b9f5c57398dbfdd0df3d11f09d21238cd752b3`
-- DS02 / `ds02_opening_transition` — Complete the Opening-to-Closing transition; source `b0c6e07c4dffd926497e0cec38dbe2ea255307dbd96155fc0e179393d78ebb96`
+- DS02 / `ds02_opening_transition` — Complete the Opening-to-Closing transition; source `7422f8dfc4ee3cceb9d7eb844bd5a769e096b2e18d1654d7a8f2a59fb2a5383e`
 - DS03 / `ds03_return_review` — Return and review changes before Closing; source `0f0b322f0f774352739ab030310f922abf658f41bfc0d5bb670754e98c6de6cc`
 - DS04 / `ds04_bundle_finalized` — Finalize the Double Shift assignment (system-generated); source `fccba664f9f909a2915854463ad8e61da74d8d258cd6cfd97fe94ecac7e9f674`
 
@@ -173,6 +173,8 @@ The task audit below records the exact locked-source plus amendment provenance h
 
 ## Logical references
 
+- `main-storage-fridge` — Main Storage Fridge orientation and combined count; tasks O13, C08, C28
+- `main-storage-express-shelf` — Express Shelf current saved standard; tasks O13, C08, C28
 - `workbar-cleaning-station-opening` — Workbar cleaning station opening; tasks O07
 - `members-lounge-coffee-point` — Members lounge coffee point; tasks O10, O11, O26
 - `workbar-food-non-alcoholic-fridge` — Workbar food and non-alcoholic fridge; tasks O13, C08, C28

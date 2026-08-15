@@ -18,6 +18,7 @@ The production candidate consists of:
 6. Operations Studio with grouped manager tools.
 7. Permanent Visual Standards upload queue.
 8. Least-privilege Event Mode access to current allowlisted event images.
+9. Main Storage Fridge / Express Shelf alignment and targetless Workbar Milk Fridge wine counting.
 
 ## Proposed deployment windows
 
@@ -74,8 +75,9 @@ The production preflight must first establish the exact migration currently inst
 25. `phase10w_event_visual_reference_bridge.sql`
 26. `phase10x_event_visual_library_expansion.sql`
 27. `phase10y_mesh_routine_content_pack_1_5r.sql`
+28. `phase10z_inventory_location_and_express_shelf_alignment.sql`
 
-Phase 10W creates the least-privilege Event visual metadata and private Storage bridge for current allowlisted images. Phase 10X expands that bridge to the canonical visual allowlist, fixes `set_updated_at()` search-path configuration, and removes unintended anonymous Event Ops execution while preserving the existing authenticated RPC boundaries. Phase 10Y replaces only the private canonical provider with the additive 1.5R draft containing the confirmed refrigerator standards; it does not install that provider. Security-advisor and privilege readback acceptance is evaluated after Phase 10X, not after Phase 10W alone. None of these migrations installs or publishes content, changes Routine Engine mode or UI release stage, uploads a file, or grants manager access to Event Floor Managers.
+Phase 10W creates the least-privilege Event visual metadata and private Storage bridge for current allowlisted images. Phase 10X expands that bridge to the canonical visual allowlist, fixes `set_updated_at()` search-path configuration, and removes unintended anonymous Event Ops execution while preserving the existing authenticated RPC boundaries. Phase 10Y replaces only the private canonical provider with the additive 1.5R draft containing the confirmed refrigerator standards; it does not install that provider. This is the corrected 1.5R provider, not a new pack version. Phase 10Z performs the guarded physical-location alignment: it preserves the existing Main Storage identity, creates non-countable Express Shelf, creates Workbar Milk Fridge with exactly ten targetless profile-v2-mapped wine lines, leaves Planeta unlinked, and adds the manager-attention path for unlisted opened wine. Security-advisor and privilege readback acceptance is evaluated after Phase 10X, not after Phase 10W alone. None of these migrations installs or publishes content, changes Routine Engine mode or UI release stage, uploads a file, or grants manager access to Event Floor Managers. Phase 10Z fingerprints and preserves immutable Millum profile v2 and creates no profile v3.
 
 ## Required evidence before the first window
 
@@ -137,7 +139,7 @@ Complete before 23:00:
 - After the immediate S–V readback is an exact match, perform only the separately approved S–V migration-ledger reconciliation.
 - Do not reapply S–V DDL, replace matching functions, or re-drop matching constraints.
 - If the S–V ledger reconciliation is not explicitly approved, stop before any write.
-- Only after the ledger is coherent, apply the genuinely pending migrations in order: Phase 10W, then Phase 10X, then Phase 10Y.
+- Only after the ledger is coherent, apply the genuinely pending migrations in order: Phase 10W, then Phase 10X, then Phase 10Y, then Phase 10Z.
 - Capture output for every migration separately.
 - After each logical group, run its minimal readback rather than waiting until the end.
 - Do not manually edit production rows to “help” a migration pass.
@@ -150,6 +152,7 @@ Suggested checkpoints:
 - After content-provider and hardening phases: provider and schema fingerprints match the approved candidate; content installation remains separately controlled, publication is unchanged, and mode/stage are unchanged.
 - After 10W–10X: manager and Event Floor Manager can read only the intended visual-standard paths; anonymous Event Ops execution is absent; `set_updated_at()` has the approved fixed search path; authenticated Event Ops behavior and ordinary staff behavior remain unchanged.
 - After 10Y: the private provider exposes the exact reviewed 1.5R hash; no installation, template, publication, run, mode, stage or other operational row changed.
+- After 10Z: Main Storage Fridge retains its existing UUID; Express Shelf is active and non-countable with no invented standard rows; Workbar Milk Fridge has exactly ten `physical_count_only` wines, all mapped once in published profile v2; Planeta remains byte-identical and unlinked; profile v2 fingerprint is unchanged and no profile v3 exists.
 - Evaluate the final security-advisor/readback acceptance only after Phase 10X has completed.
 
 Migration completion is not operational activation. The following require distinct, explicit approvals and must not be combined implicitly with the migration step:
@@ -226,6 +229,10 @@ Run with real production identities but non-destructive reads wherever possible:
 - Blank and explicit zero remain distinct.
 - Existing notes, counts, deviations and targetless rows are never overwritten by either path.
 - The three protected wines remain stored as physical units; only the final Millum export applies their value-equivalent conversion.
+- Workbar Milk Fridge does not show “Done — count & next fridge”; staff separately confirm the permanent 2 regular milk + 2 Oatly setup and then enter actual quantities for all ten configured wines.
+- Milk and Oatly create no inventory product, Stock Count line, reserve-target contribution or Millum row. Blank remains uncounted and explicit zero means none is present.
+- “Opened wine not listed” records the visible product name for manager review without guessing or creating a Millum value. The assignment may be submitted with the visible attention flag, but the manager cannot accept it until every record is resolved.
+- Main Storage Fridge is one combined count across Left Reserve, Express Shelf and Keg Storage; Express Shelf is never a separate count assignment or duplicate target/export contribution.
 
 ### 7. Upload production Visual Standards
 
@@ -284,7 +291,7 @@ Stop and use the next window for any of the following:
 The database work is additive and hardening-oriented. Do not improvise destructive reverse SQL.
 
 1. **Application regression with healthy database:** roll the app back to the previous known-good deployment. Leave additive database objects in place while the frontend is corrected.
-2. **New Phase 10W–10X permission defect:** disable use of Event visual guides in the app and apply a reviewed forward-fix migration that narrows the affected function or grant. Do not broadly disable RLS. A Phase 10Y provider defect must remain uninstalled and be corrected through a new reviewed provider-only migration.
+2. **New Phase 10W–10Z defect:** disable the affected new UI path and apply a reviewed forward-fix migration that narrows the defect. Do not broadly disable RLS. A Phase 10Y provider defect must remain uninstalled; a Phase 10Z location defect must not be repaired with ad-hoc product/profile edits.
 3. **Migration stopped before commit:** keep the transaction rolled back and diagnose before retrying.
 4. **Migration committed but readback fails:** freeze affected actions, capture state, and use a forward repair. Restore from backup only when integrity cannot be recovered safely through a reviewed forward fix.
 5. **Content or image error:** restore the previous current image through the versioned manager workflow or return the reference to an honest placeholder. Do not delete immutable history.

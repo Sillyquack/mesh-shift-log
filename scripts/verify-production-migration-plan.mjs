@@ -24,22 +24,26 @@ const fridgeProvider = readFileSync(
   absolute('supabase/phase10y_mesh_routine_content_pack_1_5r.sql'),
   'utf8',
 );
+const locationAlignment = readFileSync(
+  absolute('supabase/phase10z_inventory_location_and_express_shelf_alignment.sql'),
+  'utf8',
+);
 const reviewWorkflow = readFileSync(
   absolute('.github/workflows/release-review.yml'),
   'utf8',
 );
 
-test('production migration manifest is unique, complete on disk and terminal at Phase 10Y', () => {
-  assert.equal(PHASE10_PRODUCTION_MIGRATIONS.length, 27);
-  assert.equal(new Set(PHASE10_PRODUCTION_MIGRATIONS).size, 27);
+test('production migration manifest is unique, complete on disk and terminal at Phase 10Z', () => {
+  assert.equal(PHASE10_PRODUCTION_MIGRATIONS.length, 28);
+  assert.equal(new Set(PHASE10_PRODUCTION_MIGRATIONS).size, 28);
   assert.ok(PHASE10_PRODUCTION_MIGRATIONS.every((path) => existsSync(absolute(path))));
   assert.equal(
     PHASE10_PRODUCTION_TERMINAL_MIGRATION,
-    'supabase/phase10y_mesh_routine_content_pack_1_5r.sql',
+    'supabase/phase10z_inventory_location_and_express_shelf_alignment.sql',
   );
   assert.equal(
     PHASE10_PRODUCTION_MIGRATIONS.at(-2),
-    'supabase/phase10x_event_visual_library_expansion.sql',
+    'supabase/phase10y_mesh_routine_content_pack_1_5r.sql',
   );
 });
 
@@ -92,6 +96,18 @@ test('Phase 10Y is a provider-only additive 1.5R replacement', () => {
   assert.doesNotMatch(fridgeProvider, /set\s+(?:mode|ui_release_stage)\s*=/i);
 });
 
+test('Phase 10Z is a guarded location-only terminal alignment', () => {
+  assert.match(locationAlignment, /^-- Phase 10Z:/);
+  assert.match(locationAlignment, /begin;[\s\S]*commit;\s*$/i);
+  assert.match(locationAlignment, /WORKBAR_MILK_FRIDGE/);
+  assert.match(locationAlignment, /MAIN_STORAGE_EXPRESS_SHELF/);
+  assert.match(locationAlignment, /physical_count_only/);
+  assert.match(locationAlignment, /Resolve every unlisted opened wine manager-attention record before accepting/i);
+  assert.doesNotMatch(locationAlignment, /insert into public\.inventory_millum_export_(?:profiles|rows)/i);
+  assert.doesNotMatch(locationAlignment, /install_mesh_routine_content_pack|publish_routine_template_versions|ui_release_stage\s*=|mode\s*=/i);
+  assert.doesNotMatch(locationAlignment, /storage\.objects|\.upload\(/i);
+});
+
 test('runbook declares the authorized Oslo cutover windows and Monday go/no-go', () => {
   for (const phrase of [
     'Saturday 15 August 23:30',
@@ -119,13 +135,13 @@ test('runbook names PR #17 as the only combined release merge', () => {
   assert.doesNotMatch(runbook, /Each PR is stacked|PR stack is conflict-free|Production-candidate PR/i);
 });
 
-test('runbook fails closed on S–V and sequences genuine W/X/Y migrations', () => {
+test('runbook fails closed on S–V and sequences genuine W/X/Y/Z migrations', () => {
   for (const phrase of [
     'immediately before the maintenance write',
     'stop on any mismatch or unknown',
     'separately approved S–V migration-ledger reconciliation',
     'Do not reapply S–V DDL, replace matching functions, or re-drop matching constraints',
-    'Phase 10W, then Phase 10X, then Phase 10Y',
+    'Phase 10W, then Phase 10X, then Phase 10Y, then Phase 10Z',
   ]) {
     assert.ok(runbook.includes(phrase), phrase);
   }
@@ -190,6 +206,7 @@ test('review-only GitHub Actions workflow runs every required release check with
     'npm run verify:inventory-counter-mobile',
     'npm run verify:inventory-confirmation-dialog',
     'npm run verify:inventory-millum-export',
+    'npm run verify:inventory-location-alignment',
     'npm run verify:routine-content-pack',
     'npm run build',
   ];

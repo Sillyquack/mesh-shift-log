@@ -23,6 +23,7 @@ import {
   createInventoryCountAssignment,
   loadInventoryCounterWorkspace,
   replaceInventoryCountAssignment,
+  resolveInventoryUnlistedWineAttention,
   returnInventoryCountAssignment,
   setInventoryCounterLineQuantity,
   setInventoryCounterLineStructuredQuantity,
@@ -30,6 +31,7 @@ import {
   submitInventoryCountAssignment,
 } from '../lib/inventoryClient.js';
 import { LocationReferenceViewer } from './LocationReferenceGuidance.jsx';
+import { inventoryAttentionRecords } from '../data/inventoryLocationAlignment.js';
 
 function formatDateTime(value) {
   if (!value) return '';
@@ -400,6 +402,35 @@ function assignmentReview(assignment, lines, standards) {
   };
 }
 
+function UnlistedWineAttentionManager({ assignment, activeSession, busy, run }) {
+  const [drafts, setDrafts] = useState({});
+  const records = inventoryAttentionRecords(activeSession, assignment.id);
+  if (!records.length) return null;
+  return (
+    <details open={records.some((record) => record.status === 'open')} className="inventory-warning">
+      <summary>Opened wine not listed ({records.filter((record) => record.status === 'open').length} open)</summary>
+      {records.map((record) => (
+        <div key={record.id} className="inventory-stack">
+          <p><strong>{record.visibleProductName}</strong>{record.note ? ` — ${record.note}` : ''}</p>
+          <p className="inventory-audit">Reported {formatDateTime(record.reportedAt)} by {record.reportedByName || 'counter'} · {record.status}</p>
+          {record.status === 'open' ? (
+            <>
+              <label>Required resolution note<textarea rows="2" value={drafts[record.id] || ''} onChange={(event) => setDrafts((current) => ({ ...current, [record.id]: event.target.value }))} /></label>
+              <button type="button" className="secondary-button" disabled={busy || !(drafts[record.id] || '').trim()} onClick={() => run(`resolve-${record.id}`, () => resolveInventoryUnlistedWineAttention({
+                assignmentId: assignment.id,
+                attentionId: record.id,
+                resolutionNote: drafts[record.id],
+                expectedAssignmentRevision: assignment.revision,
+                expectedSessionUpdatedAt: activeSession.updatedAt,
+              }))}>Resolve manager attention</button>
+            </>
+          ) : <p><strong>Resolution:</strong> {record.resolutionNote} · {record.resolvedByName}</p>}
+        </div>
+      ))}
+    </details>
+  );
+}
+
 export function CounterAssignmentManager({ data, activeSession, lines, requestWriteAccess, refresh, setStatus }) {
   const [counterMembershipId, setCounterMembershipId] = useState('');
   const [locationId, setLocationId] = useState('');
@@ -455,6 +486,7 @@ export function CounterAssignmentManager({ data, activeSession, lines, requestWr
       <section className="inventory-panel">
         <div className="inventory-panel-heading"><div><p className="eyebrow">Manager review</p><h2>Assigned locations</h2></div></div>
         {!currentAssignments.length && <p>No current location assignments exist in this Stock Count.</p>}
+        {currentAssignments.map((assignment) => <UnlistedWineAttentionManager key={`attention-${assignment.id}`} assignment={assignment} activeSession={activeSession} busy={Boolean(busyId)} run={run} />)}
         <div className="inventory-line-list">{currentAssignments.map((assignment) => { const membership = data.counterMemberships.find((item) => item.id === assignment.counterMembershipId); const counter = profilesById.get(membership?.counterAuthUserId); const location = data.locations.find((item) => item.id === assignment.locationId); const review = assignmentReview(assignment, lines, data.standards); const replacementDraft = { dataAction: 'preserve', confirmClear: false, ...(replacementDrafts[assignment.id] || {}) }; const replacementCandidates = activeMemberships.filter((item) => item.id !== assignment.counterMembershipId); const clearEligible = assignment.state === 'assigned' && !assignment.submittedAt; return <article className="inventory-line-card" key={assignment.id}><div className="inventory-line-heading"><div><h3>{location?.name || 'Location'}</h3><p>{counter?.displayName || 'Counter'} · revision {assignment.revision}</p></div><StateBadge state={assignment.state} /></div><div className="inventory-summary-grid"><div><strong>{review.lines.length - review.incomplete.length}/{review.lines.length}</strong><span>recorded</span></div><div><strong>{review.incomplete.length}</strong><span>incomplete</span></div><div><strong>{review.deviations.length}</strong><span>deviations</span></div><div><strong>{review.extras.length}</strong><span>extra products</span></div></div>{review.incomplete.length > 0 && <details><summary>Incomplete lines</summary>{review.incomplete.map((line) => <p key={line.id}>{line.productName}</p>)}</details>}{review.deviations.length > 0 && <details open={assignment.state === 'submitted'}><summary>Deviations from configured target</summary>{review.deviations.map((line) => <p key={line.id}><strong>{line.productName}</strong>: {quantity(line.countedQuantityExact)} / {quantity(line.parQuantityExact)} {line.unitLabel}</p>)}</details>}{review.extras.length > 0 && <details><summary>Extra products</summary>{review.extras.map((line) => <p key={line.id}>{line.productName}</p>)}</details>}{review.notes.length > 0 && <details open={assignment.state === 'submitted'}><summary>Line notes</summary>{review.notes.map((line) => <p key={line.id}><strong>{line.productName}</strong>: {line.note}</p>)}</details>}{assignment.submittedAt && <p className="inventory-audit">Submitted {formatDateTime(assignment.submittedAt)} by {assignment.submittedByName || counter?.displayName}</p>}{assignment.returnMessage && <div className="inventory-warning"><strong>Return message</strong><p>{assignment.returnMessage}</p></div>}{assignment.state === 'submitted' && <div className="inventory-stack"><label>Message required when returning<textarea rows="2" value={returnMessages[assignment.id] || ''} onChange={(event) => setReturnMessages((current) => ({ ...current, [assignment.id]: event.target.value }))} /></label><div className="inventory-action-row"><button type="button" className="secondary-button" disabled={Boolean(busyId) || !(returnMessages[assignment.id] || '').trim()} onClick={() => run(`return-${assignment.id}`, () => returnInventoryCountAssignment({ assignmentId: assignment.id, returnMessage: returnMessages[assignment.id], expectedAssignmentRevision: assignment.revision }))}>Return for correction</button><button type="button" className="primary-button" disabled={Boolean(busyId) || review.incomplete.length > 0} onClick={() => run(`accept-${assignment.id}`, () => acceptInventoryCountAssignment({ assignmentId: assignment.id, expectedAssignmentRevision: assignment.revision }))}>Accept location</button></div><p className="inventory-policy-note">Return submitted work before replacing its counter.</p></div>}{['assigned', 'returned'].includes(assignment.state) && <details className="inventory-replacement-panel"><summary>Bytt teller</summary><div className="inventory-stack"><p className="inventory-warning"><strong>Immediate access change</strong><br />The former counter immediately loses access to this location. The replacement receives only this current assignment.</p><label>Replacement counter<select value={replacementDraft.replacementCounterMembershipId || ''} onChange={(event) => updateReplacementDraft(assignment.id, { replacementCounterMembershipId: event.target.value })}><option value="">Choose authorized counter</option>{replacementCandidates.map((item) => <option key={item.id} value={item.id}>{profilesById.get(item.counterAuthUserId)?.displayName || 'Counter'}</option>)}</select></label><label>Required replacement reason<textarea rows="2" value={replacementDraft.reason || ''} onChange={(event) => updateReplacementDraft(assignment.id, { reason: event.target.value })} /></label><fieldset><legend>Existing working data</legend><label><input type="radio" name={`replacement-data-${assignment.id}`} checked={replacementDraft.dataAction === 'preserve'} onChange={() => updateReplacementDraft(assignment.id, { dataAction: 'preserve', confirmClear: false })} />Preserve quantities, notes, and original line audit</label><label><input type="radio" name={`replacement-data-${assignment.id}`} disabled={!clearEligible} checked={replacementDraft.dataAction === 'clear_unsubmitted'} onChange={() => updateReplacementDraft(assignment.id, { dataAction: 'clear_unsubmitted' })} />Clear never-submitted working data</label>{!clearEligible && <p className="inventory-policy-note">Clear is unavailable because this assignment has already been submitted.</p>}</fieldset>{replacementDraft.dataAction === 'clear_unsubmitted' && <label className="inventory-danger-option"><input type="checkbox" checked={replacementDraft.confirmClear === true} onChange={(event) => updateReplacementDraft(assignment.id, { confirmClear: event.target.checked })} /><span>I understand the entered working values will be cleared after their audit snapshot is retained</span></label>}<button type="button" className="secondary-button" disabled={Boolean(busyId) || !replacementDraft.replacementCounterMembershipId || !(replacementDraft.reason || '').trim() || (replacementDraft.dataAction === 'clear_unsubmitted' && replacementDraft.confirmClear !== true)} onClick={() => run(`replace-${assignment.id}`, () => replaceInventoryCountAssignment({ assignmentId: assignment.id, replacementCounterMembershipId: replacementDraft.replacementCounterMembershipId, reason: replacementDraft.reason, dataAction: replacementDraft.dataAction, confirmClear: replacementDraft.confirmClear, expectedAssignmentRevision: assignment.revision }))}>{busyId === `replace-${assignment.id}` ? 'Replacing...' : 'Replace counter'}</button></div></details>}</article>; })}</div>
         {supersededAssignments.length > 0 && <><div className="inventory-panel-heading"><div><p className="eyebrow">Audit history</p><h3>Superseded assignments</h3></div></div><div className="inventory-line-list">{supersededAssignments.map((assignment) => { const membership = data.counterMemberships.find((item) => item.id === assignment.counterMembershipId); const counter = profilesById.get(membership?.counterAuthUserId); const replacement = assignments.find((item) => item.id === assignment.supersededByAssignmentId); const replacementMembership = data.counterMemberships.find((item) => item.id === replacement?.counterMembershipId); const replacementCounter = profilesById.get(replacementMembership?.counterAuthUserId); const location = data.locations.find((item) => item.id === assignment.locationId); return <article className="inventory-line-card inventory-superseded-assignment" key={assignment.id}><div className="inventory-line-heading"><div><h3>{location?.name || 'Location'}</h3><p>{counter?.displayName || 'Counter'} → {replacementCounter?.displayName || 'Replacement counter'}</p></div><StateBadge state="superseded" /></div><p><strong>{assignment.supersededRecordedLineCount ?? 0}/{assignment.supersededTotalLineCount ?? 0}</strong> recorded when replaced · revision {assignment.revision}</p><p><strong>Reason:</strong> {assignment.supersessionReason}</p><p><strong>Working data:</strong> {assignment.replacementDataAction === 'clear_unsubmitted' ? 'Cleared after audit snapshot' : 'Preserved'}</p><p className="inventory-audit">Replaced {formatDateTime(assignment.supersededAt)} by {assignment.supersededByName}</p></article>; })}</div></>}
       </section>

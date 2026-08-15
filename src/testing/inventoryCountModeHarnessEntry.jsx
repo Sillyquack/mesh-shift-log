@@ -1,6 +1,6 @@
 import React, { useState } from "react";
 import { createRoot } from "react-dom/client";
-import { StandardMatchPanel } from "../components/InventoryCounterExperience.jsx";
+import { PhysicalCountOnlyPanel, StandardMatchPanel } from "../components/InventoryCounterExperience.jsx";
 import "../styles.css";
 import "../design-system/MeshExperienceSystem.css";
 import "../components/InventoryCounterExperience.css";
@@ -8,6 +8,11 @@ import "../components/InventoryCounterExperience.css";
 const firstAssignment = {
   id: "count-review-cornerbar-fridge-1",
   location: { name: "Cornerbar Fridge 1", locationType: "fridge" },
+};
+
+const milkAssignment = {
+  id: "count-review-workbar-milk-fridge",
+  location: { name: "Workbar Milk Fridge", code: "WORKBAR_MILK_FRIDGE", locationType: "fridge" },
 };
 
 const summary = {
@@ -20,6 +25,7 @@ const summary = {
 };
 
 function Harness() {
+  const milkFridge = new URLSearchParams(window.location.search).get("scenario") === "milk-fridge";
   const [submitted, setSubmitted] = useState(false);
   const [manual, setManual] = useState(new URLSearchParams(window.location.search).get("scenario") === "manual-differences");
   const [submitCount, setSubmitCount] = useState(0);
@@ -35,7 +41,17 @@ function Harness() {
         <span aria-hidden="true" />
       </header>
       <div className="mesh-experience-content">
-        {submitted ? (
+        {milkFridge ? (
+          <>
+            <PhysicalCountOnlyPanel assignment={milkAssignment} remaining={10} />
+            <section className="mesh-focus-card" aria-label="Opened wine not listed">
+              <span className="mesh-section-label">Manager attention</span>
+              <h2>Opened wine not listed</h2>
+              <p>This wine is not configured for Stock Count. Record it for manager review. Do not count it under another product.</p>
+              <button type="button" className="mesh-secondary-action">Record unlisted opened wine</button>
+            </section>
+          </>
+        ) : submitted ? (
           <section className="mesh-focus-card" aria-label="Next assigned fridge">
             <span className="mesh-section-label">Sent for manager review</span>
             <h1>Workbar Fridge 2 is next.</h1>

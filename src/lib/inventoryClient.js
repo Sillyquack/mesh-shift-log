@@ -8,7 +8,7 @@ import {
 } from '../data/inventoryLocationGuidance.js';
 
 const PRODUCT_COLUMNS = 'id,name,short_name,sku,barcode,category,unit_label,default_pack_size,count_mode,container_capacity_liters,supplier_name,notes,active,sort_order,millum_item_ref,ownership_status,reserve_target_override';
-const LOCATION_COLUMNS = 'id,name,code,location_type,parent_location_id,zone,description,active,countable,sort_order';
+const LOCATION_COLUMNS = 'id,name,code,location_type,parent_location_id,zone,description,active,countable,sort_order,metadata';
 const STANDARD_COLUMNS = 'id,location_id,product_id,par_quantity,minimum_quantity,default_restock_quantity,count_order,active,notes,stock_policy,target_mode,reserve_multiplier,case_size,target_cases,target_loose_quantity,physical_recount_interval_days,contributes_to_storage_target,historical_suggestion_quantity,historical_suggestion_note,historical_suggestion_source';
 const ALIAS_COLUMNS = 'id,product_id,alias,alias_source,active';
 const CATALOGUE_GROUP_COLUMNS = 'id,product_id,millum_group,group_sort_order,item_sort_order,millum_count_unit,source_occurrence_count';
@@ -20,7 +20,7 @@ const REFERENCE_GUIDANCE_COLUMNS = 'id,location_id,object_path,caption,mime_type
 const COUNTER_PROFILE_COLUMNS = 'id,display_name,role,active,is_shared_device';
 const COUNTER_MEMBERSHIP_COLUMNS = 'id,counter_auth_user_id,active,authorized_at,authorized_by_name,revoked_at,revoked_by_name,updated_at';
 const COUNT_ASSIGNMENT_COLUMNS = 'id,session_id,location_id,counter_membership_id,state,revision,assigned_at,assigned_by_name,submitted_at,submitted_by_name,returned_at,returned_by_name,return_message,accepted_at,accepted_by_name,replaces_assignment_id,superseded_by_assignment_id,superseded_at,superseded_by_name,supersession_reason,replacement_data_action,superseded_recorded_line_count,superseded_total_line_count,updated_at';
-const SESSION_COLUMNS = 'id,title,count_type,status,count_date,started_at,completed_at,approved_at,started_by_name,completed_by_name,approved_by_name,completion_note,approval_note,session_kind,original_session_id,correction_reason,correction_created_by_name,correction_created_at,finalized_with_exceptions,exception_reason,exception_skipped_count,exception_uncounted_count,exception_needs_review_count,exception_incomplete_location_count,exception_location_ids,finalized_by_name,finalized_at,updated_at';
+const SESSION_COLUMNS = 'id,title,count_type,status,count_date,started_at,completed_at,approved_at,started_by_name,completed_by_name,approved_by_name,completion_note,approval_note,session_kind,original_session_id,correction_reason,correction_created_by_name,correction_created_at,finalized_with_exceptions,exception_reason,exception_skipped_count,exception_uncounted_count,exception_needs_review_count,exception_incomplete_location_count,exception_location_ids,finalized_by_name,finalized_at,metadata,updated_at';
 const LINE_COLUMNS = 'id,location_id,product_id,product_name_snapshot,location_name_snapshot,unit_label_snapshot,category_snapshot,location_sort_order_snapshot,count_order_snapshot,product_sort_order_snapshot,par_quantity_snapshot,minimum_quantity_snapshot,stock_policy_snapshot,target_mode_snapshot,effective_target_quantity_snapshot,service_target_basis_snapshot,reserve_multiplier_snapshot,case_size_snapshot,target_cases_snapshot,target_loose_quantity_snapshot,physical_recount_interval_days_snapshot,previous_physical_count_quantity_snapshot,previous_physical_counted_at_snapshot,historical_suggestion_quantity_snapshot,historical_suggestion_note_snapshot,historical_suggestion_source_snapshot,storage_rule_version_snapshot,count_mode_snapshot,container_capacity_liters_snapshot,counted_whole_units,counted_open_volume_liters,counted_full_kegs,counted_partial_keg_fraction,count_full_cases,count_loose_quantity,counted_quantity,count_method,count_status,variance_quantity,restock_quantity,note,counted_at,counted_by_name,updated_at';
 
 function exactDecimal(value) {
@@ -110,6 +110,7 @@ function normalizeLocation(row) {
     active: row.active !== false,
     countable: row.countable === true,
     sortOrder: row.sort_order || 0,
+    metadata: row.metadata || {},
   };
 }
 
@@ -327,9 +328,17 @@ function normalizeCounterAssignment(row) {
       title: row.session?.title || '',
       countDate: row.session?.count_date || '',
       status: row.session?.status || '',
+      metadata: row.session?.metadata || {},
       updatedAt: row.session?.updated_at || '',
     },
-    location: { id: row.location?.id || '', name: row.location?.name || '' },
+    location: {
+      id: row.location?.id || '',
+      name: row.location?.name || '',
+      code: row.location?.code || '',
+      locationType: row.location?.location_type || '',
+      description: row.location?.description || '',
+      metadata: row.location?.metadata || {},
+    },
     referenceGuidance: normalizeReferenceGuidance(row.reference_guidance),
     lines: (row.lines || []).map(normalizeCounterLine),
   };
@@ -899,6 +908,26 @@ export function acceptInventoryCountAssignment(payload) {
   return callRpc('accept_inventory_count_assignment', {
     input_assignment_id: payload.assignmentId,
     input_expected_assignment_revision: payload.expectedAssignmentRevision,
+  });
+}
+
+export function reportInventoryCounterUnlistedWine(payload) {
+  return callRpc('report_inventory_counter_unlisted_wine', {
+    input_assignment_id: payload.assignmentId,
+    input_visible_product_name: payload.visibleProductName,
+    input_note: payload.note || null,
+    input_expected_assignment_revision: payload.expectedAssignmentRevision,
+    input_expected_session_updated_at: payload.expectedSessionUpdatedAt,
+  });
+}
+
+export function resolveInventoryUnlistedWineAttention(payload) {
+  return callRpc('resolve_inventory_unlisted_wine_attention', {
+    input_assignment_id: payload.assignmentId,
+    input_attention_id: payload.attentionId,
+    input_resolution_note: payload.resolutionNote,
+    input_expected_assignment_revision: payload.expectedAssignmentRevision,
+    input_expected_session_updated_at: payload.expectedSessionUpdatedAt,
   });
 }
 

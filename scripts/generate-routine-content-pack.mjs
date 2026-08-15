@@ -13,6 +13,11 @@ import {
   workbarNonAlcoSavedLocationStandardBinding,
   workbarMilkFridgeStandard,
 } from "../src/data/fridgeOperationalStandards.js";
+import {
+  EXPRESS_SHELF_STANDARD,
+  MAIN_STORAGE_ORIENTATION,
+  MAIN_STORAGE_ZONES,
+} from "../src/data/inventoryLocationAlignment.js";
 
 const ROOT = resolve(dirname(fileURLToPath(import.meta.url)), "..");
 const PACK_PATH = resolve(ROOT, "content/routine-engine/mesh-routine-content-v1-5r.json");
@@ -77,6 +82,10 @@ const DOOR_KEYS = ["front-door", "vindfang-door", "kitchen-atrium-door", "atrium
 
 const LOCATIONS = [
   ["workbar", "Workbar", "zone"], ["atrium", "Atrium", "zone"], ["cornerbar", "Cornerbar", "zone"],
+  ["main-storage-fridge", "Main Storage Fridge", "storage"],
+  ["main-storage-left-reserve", "Left Reserve", "storage_zone"],
+  ["main-storage-express-shelf", "Express Shelf", "shelf"],
+  ["main-storage-keg-storage", "Keg Storage", "storage_zone"],
   ["members-lounge", "Members lounge", "zone"], ["kitchen", "Kitchen", "zone"],
   ["cleaning-station", "Cleaning station", "station"], ["self-service-counter", "Self-service counter", "station"],
   ["coffee-machine", "Coffee machine", "equipment"], ["coffee-canister-kitchen-reserve", "Coffee Canisters kitchen reserve", "storage"],
@@ -268,6 +277,14 @@ const SERVICEWARE_RECOVERY_ROUTE = Object.freeze({
 
 const STANDARDS = [
   [WORKBAR_MILK_FRIDGE_STANDARD_KEY, workbarMilkFridgeStandard.displayName, "object", "manual", workbarMilkFridgeStandard, workbarMilkFridgeStandard.provenance],
+  ["main-storage-express-shelf-refill", "Main Storage Fridge and Express Shelf refill", "object", "location_standards", {
+    orientation: MAIN_STORAGE_ORIENTATION,
+    zones: MAIN_STORAGE_ZONES,
+    serviceFridgeChain: ["Service fridge", "Express Shelf", "Left Reserve"],
+    expressShelf: EXPRESS_SHELF_STANDARD,
+    kegStorageInRefillChain: false,
+    stockCountScope: "one combined Main Storage Fridge count",
+  }, "Operations-approved final location alignment · confirmed 15 August 2026."],
   ["workbar-coffee-canister-assigned-target", "Workbar-assigned Coffee Canisters target", "object", "manual", WORKBAR_CANISTER_TARGET],
   ["baked-goods-daily", "Baked goods daily", "object", "manual", { requiredEveryDay: true }],
   ["self-service-fixed-components", "Self-service fixed components", "list", "manual", SELF_SERVICE_COMPONENTS],
@@ -287,6 +304,8 @@ const STANDARDS = [
 }));
 
 const REFERENCES = [
+  ["main-storage-fridge", "Main Storage Fridge orientation and combined count", ["O13", "C08", "C28"]],
+  ["main-storage-express-shelf", "Express Shelf current saved standard", ["O13", "C08", "C28"]],
   ["workbar-cleaning-station-opening", "Workbar cleaning station opening", ["O07"]],
   ["members-lounge-coffee-point", "Members lounge coffee point", ["O10", "O11", "O26"]],
   ["workbar-food-non-alcoholic-fridge", "Workbar food and non-alcoholic fridge", ["O13", "C08", "C28"]],
@@ -994,6 +1013,14 @@ function applyFridgeStandardsAmendment(openingTasks, closingTasks, doubleShiftSt
     value.deviationRulesText = workbarNonAlcoDeviations;
     value.referenceGuidanceText = "- `workbar-non-alcoholic-fridge` — canonical saved-location reference; image awaiting upload.";
   }
+  for (const id of ["O13", "C08", "C28"]) {
+    const value = task(id);
+    appendTaskText(value, "instructions", `${EXPRESS_SHELF_STANDARD.chain.join(" ")} ${EXPRESS_SHELF_STANDARD.doneWhen}`);
+    addTaskItem(value, "express_shelf_refill_chain", "service fridge is filled from Express Shelf, then Express Shelf is restored from Left Reserve", { standardKey: "main-storage-express-shelf-refill" });
+    appendTaskText(value, "doneCriteriaText", `- ${EXPRESS_SHELF_STANDARD.doneWhen}`);
+    appendTaskText(value, "deviationRulesText", `- ${EXPRESS_SHELF_STANDARD.incomplete}\n- ${EXPRESS_SHELF_STANDARD.frontlineIncomplete}`);
+    appendTaskText(value, "referenceGuidanceText", "- `main-storage-express-shelf` — current manager-maintained standard and live reference image; image initially awaiting upload.\n- `main-storage-fridge` — Left Reserve left, Express Shelf middle and Keg Storage right while facing the refrigerator.");
+  }
 
   {
     const value = task("O08");
@@ -1094,6 +1121,8 @@ function applyFridgeStandardsAmendment(openingTasks, closingTasks, doubleShiftSt
     "- Workbar Non-Alco Fridge actual saved-standard status, including shortages, date/FIFO issues and incomplete-standard escalation",
   );
   transition.doneCriteriaText = `${transition.doneCriteriaText}\n- The handover reports actual Workbar Non-Alco Fridge saved-standard status, shortages, date/FIFO issues and incomplete-standard escalation without duplicating product quantities.\n- The handover reports espresso reservoirs, self-service milk jug, Workbar Milk Fridge top shelf and lower shelves separately.\n- A 2 + 2 top shelf alone never reports the full refrigerator standard as compliant.`;
+  transition.instructions = `${transition.instructions}\n- Service refrigerator refill follows Service fridge ← Express Shelf ← Left Reserve; restore Express Shelf after the service-fridge refill. Keg Storage is outside this chain.`;
+  transition.doneCriteriaText = `${transition.doneCriteriaText}\n- Express Shelf is restored to its current saved standard after the service-fridge refill; incomplete setup is handed over to the manager.`;
   transition.sourceHash = sha256(canonical({ priorSourceHash: transition.sourceHash, instructions: transition.instructions, doneCriteriaText: transition.doneCriteriaText, amendmentDecisionHash }));
   transition.fridgeStandardsAmendment = { date: "2026-08-15", decisionHash: amendmentDecisionHash, ownership: "organization" };
 
@@ -1241,7 +1270,7 @@ function validatePack(pack, withHash = false) {
   if (unknown.length) throw new Error(`Unknown top-level fields: ${unknown.join(", ")}`);
   for (const key of TOP_LEVEL_FIELDS.filter((key) => key !== "packHash")) if (!(key in pack)) throw new Error(`Missing top-level field: ${key}`);
   if (pack.opening.tasks.length !== 37 || pack.closing.tasks.length !== 46 || pack.doubleShiftSteps.length !== 4) throw new Error("Content counts must be Opening 37, Closing 46, Double Shift 4.");
-  if (pack.locations.length !== 44 || pack.locationSets.length !== 12 || pack.standards.length !== 14 || pack.references.length !== 40) throw new Error("Foundation counts must be 44 locations, 12 sets, 14 standards, and 40 references.");
+  if (pack.locations.length !== 48 || pack.locationSets.length !== 12 || pack.standards.length !== 15 || pack.references.length !== 42) throw new Error(`Foundation counts must be 48 locations, 12 sets, 15 standards, and 42 references; got ${pack.locations.length}/${pack.locationSets.length}/${pack.standards.length}/${pack.references.length}.`);
   if (pack.packVersion !== "1.5R") throw new Error("Fridge-standards pack version must be 1.5R.");
   for (const [tasks, prefix, count] of [[pack.opening.tasks, "O", 37], [pack.closing.tasks, "C", 46]]) {
     const expected = new Set(Array.from({ length: count }, (_, index) => `${prefix}${String(index + 1).padStart(2, "0")}`));

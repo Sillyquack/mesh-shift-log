@@ -74,7 +74,9 @@ check("1.5R adds exactly one focused source amendment", pack.sourceDocuments.len
 
 const changedOpening = ["O08", "O09", "O13", "O23", "O29", "O35"];
 const changedClosing = ["C08", "C09", "C10", "C28", "C29", "C30", "C33"];
-const changedStandards = [WORKBAR_MILK_FRIDGE_STANDARD_KEY, "fridge-closing-rules", "cornerbar-operating-standard"];
+const changedStandards = [WORKBAR_MILK_FRIDGE_STANDARD_KEY, "fridge-closing-rules", "cornerbar-operating-standard", "main-storage-express-shelf-refill"];
+const addedLocations = ["main-storage-fridge", "main-storage-left-reserve", "main-storage-express-shelf", "main-storage-keg-storage"];
+const addedReferences = ["main-storage-fridge", "main-storage-express-shelf"];
 const topLevel14 = clone(historical);
 const topLevel15 = clone(pack);
 for (const candidate of [topLevel14, topLevel15]) {
@@ -88,14 +90,22 @@ for (const candidate of [topLevel14, topLevel15]) {
 }
 const nonAlcoLocation14 = topLevel14.locations.find((entry) => entry.key === WORKBAR_NON_ALCO_LOCATION_KEY);
 const nonAlcoLocation15 = topLevel15.locations.find((entry) => entry.key === WORKBAR_NON_ALCO_LOCATION_KEY);
+const stableLocations = (locations) => locations
+  .filter((entry) => !addedLocations.includes(entry.key))
+  .map((entry) => ({ ...entry, sortOrder: 0, ...(entry.key === WORKBAR_NON_ALCO_LOCATION_KEY ? { name: "Workbar Non-Alco Fridge" } : {}) }));
+const stableReferences = (references) => references.filter((entry) => !addedReferences.includes(entry.key));
 delete topLevel14.locations;
 delete topLevel15.locations;
+const references14 = topLevel14.references;
+const references15 = topLevel15.references;
+delete topLevel14.references;
+delete topLevel15.references;
 check("1.4R to 1.5R top-level delta is refrigerator-only", canonical(topLevel14) === canonical(topLevel15)
   && nonAlcoLocation14?.name === "Workbar Non-Alcoholic Fridge"
   && nonAlcoLocation15?.name === "Workbar Non-Alco Fridge"
-  && canonical(historical.locations.filter((entry) => entry.key !== WORKBAR_NON_ALCO_LOCATION_KEY))
-    === canonical(pack.locations.filter((entry) => entry.key !== WORKBAR_NON_ALCO_LOCATION_KEY)));
-check("only three operational standards change", canonical(historical.standards.filter((entry) => !changedStandards.includes(entry.key)))
+  && canonical(stableLocations(historical.locations)) === canonical(stableLocations(pack.locations))
+  && canonical(stableReferences(references14)) === canonical(stableReferences(references15)));
+check("only four operational standards change", canonical(historical.standards.filter((entry) => !changedStandards.includes(entry.key)))
   === canonical(pack.standards.filter((entry) => !changedStandards.includes(entry.key))));
 check("only the six approved Opening tasks change", canonical(historical.opening.tasks.filter((entry) => !changedOpening.includes(entry.id)))
   === canonical(pack.opening.tasks.filter((entry) => !changedOpening.includes(entry.id))));
@@ -228,13 +238,18 @@ const nonAlcoOperationalCopy = text({
 check("Workbar Non-Alco routine, handover and Event copy embeds no product quantities", !/\b\d+\s+(?:bottles?|cans?|cartons?|units?|beers?|wines?|milks?|oatly|products?)\b/i.test(nonAlcoOperationalCopy));
 check("Workbar Non-Alco routines cannot switch off the refrigerator or light", !/(?:turn|switch)(?:ing)? off[^.\n]{0,80}(?:Workbar Non-Alco Fridge|refrigerator|internal light)/i.test(nonAlcoOperationalCopy));
 check("routine compliance and Stock Count completion remain separate", canonicalStandard.stockCount.routineCompletionCompletesStockCount === false
+  && canonicalStandard.stockCount.regularMilk.policy === "routine_only"
   && canonicalStandard.stockCount.regularMilk.quantity === 2
+  && canonicalStandard.stockCount.regularMilk.createsStockCountLine === false
+  && canonicalStandard.stockCount.oatly.policy === "routine_only"
   && canonicalStandard.stockCount.oatly.quantity === 2
+  && canonicalStandard.stockCount.oatly.createsStockCountLine === false
   && canonicalStandard.stockCount.openedWine.policy === "actual_physical_quantity"
+  && canonicalStandard.stockCount.openedWine.configuredLineCount === 10
   && canonicalStandard.stockCount.openedWine.exactStandardQuantity === null
   && canonicalStandard.stockCount.openedWine.partialBottleRulesRemainAuthoritative
   && canonicalStandard.stockCount.preserveCountsNotesAndDeviations
-  && canonicalStandard.stockCount.fastStandardPathRequiresEveryApplicableLineEligible
+  && canonicalStandard.stockCount.fastStandardPathAllowed === false
   && canonicalStandard.stockCount.protectedBelowMarketWinesRemainPhysicalUnitsUntilMillumExport);
 check("Workbar Non-Alco completion preserves location-scoped Stock Count state", ["O13", "C08", "C28"].every((id) => /does not complete Stock Count/i.test(tasks[id].doneCriteriaText))
   && ["O13", "C08", "C28"].every((id) => /Counts, notes, zeroes, deviations and targetless Stock Count lines remain separate and must never be overwritten/i.test(tasks[id].deviationRulesText)));

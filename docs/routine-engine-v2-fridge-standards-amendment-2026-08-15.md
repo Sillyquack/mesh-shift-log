@@ -62,7 +62,15 @@ Opening, Daytime, Double Shift, Closing and relevant Workbar Event paths use thi
 
 ## Stock Count boundary
 
-Regular milk and Oatly may use exact-standard quantity 2. Opened wine remains actual physical inventory and has no fabricated exact quantity. Partial/open-bottle rules, counts, notes, deviations and the protected below-market wine export rules remain authoritative. Routine completion never completes a Stock Count assignment, and the fast standard path remains restricted to safely eligible inventory lines.
+Regular milk and Oatly are routine-standard items only. They create no inventory products, Stock Count lines, Millum rows or reserve-target contributions. The initial Workbar Milk Fridge Stock Count contains exactly ten approved profile-v2-mapped wines, each as `physical_count_only` with actual physical quantity and no fabricated exact quantity. Blank remains uncounted; explicit zero means none is present. Partial/open-bottle rules, counts, notes, deviations and the protected below-market wine export rules remain authoritative. Routine completion never completes a Stock Count assignment, and Workbar Milk Fridge has no one-tap exact-standard count shortcut.
+
+Planeta Chardonnay item `2295798` is deferred from the initial scope because immutable Millum profile v2 has no enabled row for it. It remains unchanged and unlinked. An unlisted opened wine is recorded by visible product name for manager attention and is never guessed, mapped to another product or assigned a Millum value.
+
+## Main Storage Fridge and Express Shelf refill chain
+
+While standing in front of and facing Main Storage Fridge: Left Reserve is left, Express Shelf is middle and Keg Storage is right. These zones remain one combined Main Storage Fridge Stock Count. Express Shelf is an active, non-countable manager-maintained pick face with an initially incomplete saved standard and an image initially awaiting upload.
+
+The canonical replenishment flow is `Service fridge ← Express Shelf ← Left Reserve`. Fill the service fridge from Express Shelf first, restore Express Shelf from Left Reserve, then confirm both current saved standards. Keg Storage is outside this refill chain. When the Express Shelf standard is incomplete, finish the service-fridge refill where possible and notify the manager; no product or quantity is invented.
 
 ## Explicit exclusions and unresolved review items
 
@@ -76,6 +84,6 @@ Regular milk and Oatly may use exact-standard quantity 2. Opened wine remains ac
 This section is generated from the canonical pack and is excluded from the amendment decision-body hash.
 
 - Pack: `mesh-routine-content@1.5R`
-- Canonical pack SHA-256: `66af45ecb1afa2b432b95ed0e1d5425c39ed0cc67becacbb386bd43489db1e02`
-- Amendment decision-body SHA-256: `be724431080fdbbb5fb598d52d3b01357ea2d3c778f94268166318064f5dfba1`
+- Canonical pack SHA-256: `710c9412eabc8f2e9c5a6488499ac4654cd7c94b62138eaed9563ab5f0203c9c`
+- Amendment decision-body SHA-256: `2a57f578128b6a6b696bf4f93d721fd6c56837ae413c9599a2845885c6c7a834`
 - Production action: none; this artifact is local implementation and review only

@@ -23,6 +23,8 @@
     "verify:inventory-variance-notes": "node scripts/verify-inventory-variance-notes.mjs",
     "verify:inventory-millum-export": "node scripts/verify-inventory-millum-export.mjs",
     "verify:inventory-shelf-storage-guidance": "node scripts/verify-inventory-shelf-storage-guidance.mjs",
+    "verify:inventory-location-alignment": "node scripts/verify-inventory-location-alignment.mjs",
+    "verify:inventory-location-alignment-browser": "node scripts/verify-inventory-location-alignment-browser.mjs",
     "verify:inventory-history-detail": "node scripts/verify-inventory-history-detail.mjs",
     "verify:inventory-simplicity": "node scripts/verify-inventory-simplicity.mjs",
     "verify:phase9-security-db": "node scripts/verify-phase9-security-db.mjs",

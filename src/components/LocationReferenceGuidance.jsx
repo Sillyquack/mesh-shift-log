@@ -1,5 +1,6 @@
 import { useEffect, useRef, useState } from 'react';
 import { inventoryReferencePlaceholder } from '../data/inventoryLocationGuidance.js';
+import { locationSupportsReferenceGuidance } from '../data/inventoryLocationAlignment.js';
 import {
   cleanupInventoryReferenceImages,
   loadInventoryReferenceImage,
@@ -160,7 +161,7 @@ export function LocationReferenceGuidanceManager({ data, requestWriteAccess, ref
     cleanupStarted.current = true;
     cleanupInventoryReferenceImages().catch(() => {});
   }, []);
-  const locations = data.locations.filter((location) => location.countable === true)
+  const locations = data.locations.filter(locationSupportsReferenceGuidance)
     .sort((left, right) => Number(left.sortOrder || 0) - Number(right.sortOrder || 0) || left.name.localeCompare(right.name));
   const guidanceByLocation = new Map(data.referenceGuidance.map((guidance) => [guidance.locationId, guidance]));
   return (
@@ -181,7 +182,7 @@ export function LocationReferenceGuidanceManager({ data, requestWriteAccess, ref
           setStatus={setStatus}
         />
       ))}
-      {!locations.length && <section className="inventory-panel inventory-empty"><h2>No countable locations</h2><p>Mark a location as countable before adding setup guidance.</p></section>}
+      {!locations.length && <section className="inventory-panel inventory-empty"><h2>No eligible locations</h2><p>Enable reference guidance for an active location before adding setup guidance.</p></section>}
     </section>
   );
 }

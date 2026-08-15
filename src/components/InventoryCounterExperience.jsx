@@ -19,10 +19,16 @@ import {
 import {
   applyInventoryCounterRefrigeratorDefault,
   loadInventoryCounterWorkspace,
+  reportInventoryCounterUnlistedWine,
   setInventoryCounterLineQuantity,
   setInventoryCounterLineStructuredQuantity,
   submitInventoryCountAssignment,
 } from '../lib/inventoryClient.js';
+import {
+  INVENTORY_LOCATION_CODES,
+  UNLISTED_OPENED_WINE,
+  inventoryAttentionRecords,
+} from '../data/inventoryLocationAlignment.js';
 import { LocationReferenceViewer } from './LocationReferenceGuidance.jsx';
 import './InventoryCounterExperience.css';
 
@@ -593,6 +599,61 @@ export function StandardMatchPanel({
   );
 }
 
+export function PhysicalCountOnlyPanel({ assignment, remaining }) {
+  const isMilkFridge = assignment?.location?.code === INVENTORY_LOCATION_CODES.workbarMilkFridge;
+  return (
+    <section className="mesh-focus-card counter-experience-standard-decision" aria-label={`Physical count ${assignment?.location?.name || 'location'}`}>
+      <div className="counter-experience-standard-decision-heading">
+        <div>
+          <span className="mesh-section-label">Actual physical count</span>
+          <h2>Count every configured wine. No quantity is predetermined.</h2>
+          {isMilkFridge ? (
+            <p>First confirm the permanent setup: exactly 2 regular milk and 2 Oatly on the top shelf, with opened and visibly date-labelled wine only below. Then enter the actual quantity for each configured wine.</p>
+          ) : (
+            <p>Enter the actual physical quantity for every configured product in this location.</p>
+          )}
+        </div>
+      </div>
+      <p><strong>{remaining}</strong> product{remaining === 1 ? '' : 's'} still blank. Enter an explicit zero when none is present; blank remains uncounted.</p>
+      {isMilkFridge && <p className="inventory-policy-note">Routine completion never completes this Stock Count. Milk and Oatly are operational-standard items only and are not count lines.</p>}
+    </section>
+  );
+}
+
+function UnlistedOpenedWinePanel({ assignment, busy, attention, onReport }) {
+  const [open, setOpen] = useState(false);
+  const [name, setName] = useState('');
+  const [note, setNote] = useState('');
+  if (assignment?.location?.code !== INVENTORY_LOCATION_CODES.workbarMilkFridge) return null;
+  const active = attention.filter((record) => record.status === 'open');
+  const report = async () => {
+    const result = await onReport({ visibleProductName: name, note });
+    if (result?.ok) {
+      setName('');
+      setNote('');
+      setOpen(false);
+    }
+  };
+  return (
+    <section className="mesh-panel counter-experience-unlisted-wine" aria-label={UNLISTED_OPENED_WINE.title}>
+      <div className="mesh-section-heading">
+        <div><span className="mesh-section-label">Manager attention</span><h2>{UNLISTED_OPENED_WINE.title}</h2></div>
+        {active.length > 0 && <strong>{active.length} open</strong>}
+      </div>
+      <p>{UNLISTED_OPENED_WINE.frontline}</p>
+      {active.map((record) => <p className="counter-experience-inline-warning" key={record.id}><strong>{record.visibleProductName}</strong>{record.note ? ` — ${record.note}` : ''} · awaiting manager resolution</p>)}
+      {!open ? <button type="button" className="mesh-secondary-action" disabled={busy} onClick={() => setOpen(true)}>Record unlisted opened wine</button> : (
+        <div className="counter-experience-standard-actions">
+          <label>Visible product name<input maxLength="160" value={name} onChange={(event) => setName(event.target.value)} /></label>
+          <label>Note (optional)<textarea rows="2" maxLength="1000" value={note} onChange={(event) => setNote(event.target.value)} /></label>
+          <button type="button" className="mesh-primary-action" disabled={busy || !name.trim()} onClick={report}>{busy ? 'Recording…' : 'Notify manager'}</button>
+          <button type="button" className="mesh-secondary-action" disabled={busy} onClick={() => setOpen(false)}>Cancel</button>
+        </div>
+      )}
+    </section>
+  );
+}
+
 function CountNavigation({ view, onView }) {
   return (
     <nav className="mesh-bottom-nav counter-experience-nav" aria-label="Stock Count sections">
@@ -835,6 +896,12 @@ export default function InventoryCounterExperience({ requestWriteAccess, onClose
 
   const assignment = assignments.find((item) => item.id === selectedId) || assignments[0] || null;
   const summary = useMemo(() => summarizeCounterAssignment(assignment, drafts), [assignment, drafts]);
+  const attention = useMemo(
+    () => inventoryAttentionRecords(assignment?.session, assignment?.id),
+    [assignment?.id, assignment?.session?.metadata],
+  );
+  const openAttention = attention.filter((record) => record.status === 'open');
+  const physicalCountOnly = assignment?.lines.some((line) => line.stockPolicy === 'physical_count_only') === true;
   const hasUnsafeDrafts = useMemo(
     () => assignments.some((item) => summarizeCounterAssignment(item, drafts).unsafeDrafts.length > 0),
     [assignments, drafts],
@@ -944,6 +1011,17 @@ export default function InventoryCounterExperience({ requestWriteAccess, onClose
       { quietSuccess: true },
     );
   };
+
+  const reportUnlistedWine = ({ visibleProductName, note }) => run(
+    'unlisted-wine',
+    () => reportInventoryCounterUnlistedWine({
+      assignmentId: assignment.id,
+      visibleProductName,
+      note,
+      expectedAssignmentRevision: assignment.revision,
+      expectedSessionUpdatedAt: assignment.session.updatedAt,
+    }),
+  );
 
   const moveIncomplete = (currentLineId = activeLineId, direction = 1) => {
     const targetId = findAdjacentIncompleteLineId(assignment?.lines || [], currentLineId, direction);
@@ -1241,7 +1319,9 @@ export default function InventoryCounterExperience({ requestWriteAccess, onClose
 
         {view === 'count' ? (
           <section className="counter-experience-count-view">
-            {!readOnly && !countComplete ? (
+            {!readOnly && !countComplete ? physicalCountOnly ? (
+    <PhysicalCountOnlyPanel assignment={assignment} remaining={summary.incomplete.length} />
+  ) : (
     <StandardMatchPanel
       assignment={assignment}
       summary={summary}
@@ -1260,6 +1340,13 @@ export default function InventoryCounterExperience({ requestWriteAccess, onClose
     />
   ) : null}
 
+  <UnlistedOpenedWinePanel
+    assignment={assignment}
+    busy={busyId === 'unlisted-wine'}
+    attention={attention}
+    onReport={reportUnlistedWine}
+  />
+
   <details className="counter-experience-location-guide mesh-panel">
     <summary>
       <span>Visual standard</span>
@@ -1273,10 +1360,10 @@ export default function InventoryCounterExperience({ requestWriteAccess, onClose
 
             {countComplete ? (
               <section className="mesh-focus-card counter-experience-complete-card">
-                <span className="counter-experience-complete-mark" aria-hidden="true">✓</span>
-                <span className="mesh-section-label">Count complete</span>
-                <h2>Every product is saved.</h2>
-                <p>Do one calm physical walk-through, then review the location before sending.</p>
+                <span className="counter-experience-complete-mark" aria-hidden="true">{openAttention.length ? '!' : '✓'}</span>
+                <span className="mesh-section-label">{openAttention.length ? 'Manager attention recorded' : 'Count complete'}</span>
+                <h2>{openAttention.length ? 'Every configured product is saved; the location is not clean yet.' : 'Every product is saved.'}</h2>
+                <p>{openAttention.length ? `${openAttention.length} unlisted opened wine ${openAttention.length === 1 ? 'record needs' : 'records need'} manager resolution before acceptance.` : 'Do one calm physical walk-through, then review the location before sending.'}</p>
                 <button type="button" className="mesh-primary-action" onClick={() => setView('review')}>Open Review →</button>
               </section>
             ) : activeLine ? (

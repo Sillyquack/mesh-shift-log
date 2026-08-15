@@ -84,290 +84,318 @@
       "metadata": {}
     },
     {
+      "key": "main-storage-fridge",
+      "name": "Main Storage Fridge",
+      "type": "storage",
+      "sortOrder": 3,
+      "metadata": {}
+    },
+    {
+      "key": "main-storage-left-reserve",
+      "name": "Left Reserve",
+      "type": "storage_zone",
+      "sortOrder": 4,
+      "metadata": {}
+    },
+    {
+      "key": "main-storage-express-shelf",
+      "name": "Express Shelf",
+      "type": "shelf",
+      "sortOrder": 5,
+      "metadata": {}
+    },
+    {
+      "key": "main-storage-keg-storage",
+      "name": "Keg Storage",
+      "type": "storage_zone",
+      "sortOrder": 6,
+      "metadata": {}
+    },
+    {
       "key": "members-lounge",
       "name": "Members lounge",
       "type": "zone",
-      "sortOrder": 3,
+      "sortOrder": 7,
       "metadata": {}
     },
     {
       "key": "kitchen",
       "name": "Kitchen",
       "type": "zone",
-      "sortOrder": 4,
+      "sortOrder": 8,
       "metadata": {}
     },
     {
       "key": "cleaning-station",
       "name": "Cleaning station",
       "type": "station",
-      "sortOrder": 5,
+      "sortOrder": 9,
       "metadata": {}
     },
     {
       "key": "self-service-counter",
       "name": "Self-service counter",
       "type": "station",
-      "sortOrder": 6,
+      "sortOrder": 10,
       "metadata": {}
     },
     {
       "key": "coffee-machine",
       "name": "Coffee machine",
       "type": "equipment",
-      "sortOrder": 7,
+      "sortOrder": 11,
       "metadata": {}
     },
     {
       "key": "coffee-canister-kitchen-reserve",
       "name": "Coffee Canisters kitchen reserve",
       "type": "storage",
-      "sortOrder": 8,
+      "sortOrder": 12,
       "metadata": {}
     },
     {
       "key": "workbar-bar-coffee-canister-cupboard",
       "name": "Workbar bar Coffee Canisters cupboard",
       "type": "storage",
-      "sortOrder": 9,
+      "sortOrder": 13,
       "metadata": {}
     },
     {
       "key": "register",
       "name": "Register",
       "type": "station",
-      "sortOrder": 10,
+      "sortOrder": 14,
       "metadata": {}
     },
     {
       "key": "workbar-screen",
       "name": "Workbar screen",
       "type": "equipment",
-      "sortOrder": 11,
+      "sortOrder": 15,
       "metadata": {}
     },
     {
       "key": "serviceware-storage",
       "name": "Serviceware storage",
       "type": "storage",
-      "sortOrder": 12,
+      "sortOrder": 16,
       "metadata": {}
     },
     {
       "key": "waste-room-route",
       "name": "Waste room / waste route",
       "type": "collection_point",
-      "sortOrder": 13,
+      "sortOrder": 17,
       "metadata": {}
     },
     {
       "key": "project-room-001",
       "name": "001",
       "type": "room",
-      "sortOrder": 14,
+      "sortOrder": 18,
       "metadata": {}
     },
     {
       "key": "project-room-002",
       "name": "002",
       "type": "room",
-      "sortOrder": 15,
+      "sortOrder": 19,
       "metadata": {}
     },
     {
       "key": "project-room-003",
       "name": "003",
       "type": "room",
-      "sortOrder": 16,
+      "sortOrder": 20,
       "metadata": {}
     },
     {
       "key": "project-room-004",
       "name": "004",
       "type": "room",
-      "sortOrder": 17,
+      "sortOrder": 21,
       "metadata": {}
     },
     {
       "key": "project-room-006",
       "name": "006",
       "type": "room",
-      "sortOrder": 18,
+      "sortOrder": 22,
       "metadata": {}
     },
     {
       "key": "boardroom",
       "name": "Boardroom",
       "type": "room",
-      "sortOrder": 19,
+      "sortOrder": 23,
       "metadata": {}
     },
     {
       "key": "workbar-bar-left-fridge",
       "name": "Workbar Bar Left",
       "type": "fridge",
-      "sortOrder": 20,
+      "sortOrder": 24,
       "metadata": {}
     },
     {
       "key": "workbar-bar-right-fridge",
       "name": "Workbar Bar Right",
       "type": "fridge",
-      "sortOrder": 21,
+      "sortOrder": 25,
       "metadata": {}
     },
     {
       "key": "workbar-non-alcoholic-fridge",
       "name": "Workbar Non-Alco Fridge",
       "type": "fridge",
-      "sortOrder": 22,
+      "sortOrder": 26,
       "metadata": {}
     },
     {
       "key": "workbar-milk-fridge",
       "name": "Workbar Milk Fridge",
       "type": "fridge",
-      "sortOrder": 23,
+      "sortOrder": 27,
       "metadata": {}
     },
     {
       "key": "cornerbar-left-fridge",
       "name": "Cornerbar Left",
       "type": "fridge",
-      "sortOrder": 24,
+      "sortOrder": 28,
       "metadata": {}
     },
     {
       "key": "cornerbar-middle-fridge",
       "name": "Cornerbar Middle",
       "type": "fridge",
-      "sortOrder": 25,
+      "sortOrder": 29,
       "metadata": {}
     },
     {
       "key": "cornerbar-right-fridge",
       "name": "Cornerbar Right",
       "type": "fridge",
-      "sortOrder": 26,
+      "sortOrder": 30,
       "metadata": {}
     },
     {
       "key": "workbar-toilets",
       "name": "Workbar toilets",
       "type": "toilet",
-      "sortOrder": 27,
+      "sortOrder": 31,
       "metadata": {}
     },
     {
       "key": "basement-toilets",
       "name": "Basement toilets",
       "type": "toilet",
-      "sortOrder": 28,
+      "sortOrder": 32,
       "metadata": {}
     },
     {
       "key": "cornerbar-toilets",
       "name": "Cornerbar toilets",
       "type": "toilet",
-      "sortOrder": 29,
+      "sortOrder": 33,
       "metadata": {}
     },
     {
       "key": "front-door",
       "name": "Front door",
       "type": "door",
-      "sortOrder": 30,
+      "sortOrder": 34,
       "metadata": {}
     },
     {
       "key": "vindfang-door",
       "name": "Vindfang door",
       "type": "door",
-      "sortOrder": 31,
+      "sortOrder": 35,
       "metadata": {}
     },
     {
       "key": "kitchen-atrium-door",
       "name": "Kitchen / Atrium door",
       "type": "door",
-      "sortOrder": 32,
+      "sortOrder": 36,
       "metadata": {}
     },
     {
       "key": "atrium-workbar-door",
       "name": "Atrium / Workbar door",
       "type": "door",
-      "sortOrder": 33,
+      "sortOrder": 37,
       "metadata": {}
     },
     {
       "key": "cornerbar-atrium-door",
       "name": "Cornerbar / Atrium door",
       "type": "door",
-      "sortOrder": 34,
+      "sortOrder": 38,
       "metadata": {}
     },
     {
       "key": "garbage-hallway-atrium-door",
       "name": "Garbage hallway / Atrium door",
       "type": "door",
-      "sortOrder": 35,
+      "sortOrder": 39,
       "metadata": {}
     },
     {
       "key": "cornerbar-street-door",
       "name": "Cornerbar street door",
       "type": "door",
-      "sortOrder": 36,
+      "sortOrder": 40,
       "metadata": {}
     },
     {
       "key": "cornerbar-street-upper-security-lock",
       "name": "Cornerbar street upper security lock",
       "type": "door",
-      "sortOrder": 37,
+      "sortOrder": 41,
       "metadata": {}
     },
     {
       "key": "workbar-dishwashers",
       "name": "Workbar dishwashers",
       "type": "equipment",
-      "sortOrder": 38,
+      "sortOrder": 42,
       "metadata": {}
     },
     {
       "key": "kitchen-dishwashers",
       "name": "Kitchen dishwashers",
       "type": "equipment",
-      "sortOrder": 39,
+      "sortOrder": 43,
       "metadata": {}
     },
     {
       "key": "device-charging-station",
       "name": "Device charging station",
       "type": "equipment",
-      "sortOrder": 40,
+      "sortOrder": 44,
       "metadata": {}
     },
     {
       "key": "music-control",
       "name": "Music control",
       "type": "equipment",
-      "sortOrder": 41,
+      "sortOrder": 45,
       "metadata": {}
     },
     {
       "key": "lighting-control",
       "name": "Lighting control",
       "type": "equipment",
-      "sortOrder": 42,
+      "sortOrder": 46,
       "metadata": {}
     },
     {
       "key": "salto-control",
       "name": "Salto control",
       "type": "equipment",
-      "sortOrder": 43,
+      "sortOrder": 47,
       "metadata": {}
     }
   ],
@@ -623,19 +651,22 @@
           ],
           "stockCount": {
             "regularMilk": {
-              "policy": "exact_standard",
-              "quantity": 2
+              "policy": "routine_only",
+              "quantity": 2,
+              "createsStockCountLine": false
             },
             "oatly": {
-              "policy": "exact_standard",
-              "quantity": 2
+              "policy": "routine_only",
+              "quantity": 2,
+              "createsStockCountLine": false
             },
             "openedWine": {
               "policy": "actual_physical_quantity",
+              "configuredLineCount": 10,
               "exactStandardQuantity": null,
               "partialBottleRulesRemainAuthoritative": true
             },
-            "fastStandardPathRequiresEveryApplicableLineEligible": true,
+            "fastStandardPathAllowed": false,
             "preserveCountsNotesAndDeviations": true,
             "routineCompletionCompletesStockCount": false,
             "protectedBelowMarketWinesRemainPhysicalUnitsUntilMillumExport": true
@@ -643,6 +674,59 @@
           "provenance": "Operations-approved standard · confirmed 15 August 2026"
         },
         "reason": "Operations-approved standard · confirmed 15 August 2026"
+      }
+    },
+    {
+      "key": "main-storage-express-shelf-refill",
+      "label": "Main Storage Fridge and Express Shelf refill",
+      "description": null,
+      "valueType": "object",
+      "sourceKind": "location_standards",
+      "currentRevision": {
+        "value": {
+          "orientation": "Left and right are always described while standing in front of and facing the Main Storage Fridge.",
+          "zones": [
+            {
+              "key": "left-reserve",
+              "name": "Left Reserve",
+              "position": "left",
+              "countScope": "combined-main-storage"
+            },
+            {
+              "key": "express-shelf",
+              "name": "Express Shelf",
+              "position": "middle",
+              "countScope": "combined-main-storage"
+            },
+            {
+              "key": "keg-storage",
+              "name": "Keg Storage",
+              "position": "right",
+              "countScope": "combined-main-storage"
+            }
+          ],
+          "serviceFridgeChain": [
+            "Service fridge",
+            "Express Shelf",
+            "Left Reserve"
+          ],
+          "expressShelf": {
+            "subtitle": "Fast pick-up point for daily fridge replenishment",
+            "incompleteStatus": "Saved standard incomplete — manager setup required.",
+            "imageStatus": "Default image awaiting upload.",
+            "doneWhen": "Done when the service refrigerator matches its current saved location standard and Express Shelf has been restored to its current saved standard.",
+            "incomplete": "Express Shelf standard incomplete — manager setup required.",
+            "frontlineIncomplete": "Use Express Shelf first where possible. The saved Express Shelf standard is incomplete. Finish the service-fridge refill and notify the manager.",
+            "chain": [
+              "Fill this fridge from Express Shelf first.",
+              "Restore Express Shelf from Left Reserve.",
+              "Confirm both standards."
+            ]
+          },
+          "kegStorageInRefillChain": false,
+          "stockCountScope": "one combined Main Storage Fridge count"
+        },
+        "reason": "Operations-approved final location alignment · confirmed 15 August 2026."
       }
     },
     {
@@ -1294,6 +1378,30 @@
     }
   ],
   "references": [
+    {
+      "key": "main-storage-fridge",
+      "label": "Main Storage Fridge orientation and combined count",
+      "description": "Placeholder reference for Main Storage Fridge orientation and combined count.",
+      "placeholderText": "Referansebilde kommer",
+      "buttonLabel": "Vis hvordan det skal se ut",
+      "taskIds": [
+        "O13",
+        "C08",
+        "C28"
+      ]
+    },
+    {
+      "key": "main-storage-express-shelf",
+      "label": "Express Shelf current saved standard",
+      "description": "Placeholder reference for Express Shelf current saved standard.",
+      "placeholderText": "Referansebilde kommer",
+      "buttonLabel": "Vis hvordan det skal se ut",
+      "taskIds": [
+        "O13",
+        "C08",
+        "C28"
+      ]
+    },
     {
       "key": "workbar-cleaning-station-opening",
       "label": "Workbar cleaning station opening",
@@ -2735,7 +2843,7 @@
           "timingSourceText": "After machine startup and before the first milk-based drink is served.",
           "fridgeStandardsAmendment": {
             "date": "2026-08-15",
-            "decisionHash": "be724431080fdbbb5fb598d52d3b01357ea2d3c778f94268166318064f5dfba1",
+            "decisionHash": "2a57f578128b6a6b696bf4f93d721fd6c56837ae413c9599a2845885c6c7a834",
             "ownership": "organization",
             "standardKeys": [
               "workbar-milk-fridge-target"
@@ -2743,7 +2851,7 @@
             "locationKeys": []
           }
         },
-        "sourceHash": "25ed5c6cef5666db9649bcbda2d692d31eb357ed6b244dcd5c8339a2df09830c"
+        "sourceHash": "01f71a76485b48fcba51d4e59fbc4003205d7e2f480ed638b7c0626a37ca320f"
       },
       {
         "id": "O09",
@@ -2910,7 +3018,7 @@
           },
           "fridgeStandardsAmendment": {
             "date": "2026-08-15",
-            "decisionHash": "be724431080fdbbb5fb598d52d3b01357ea2d3c778f94268166318064f5dfba1",
+            "decisionHash": "2a57f578128b6a6b696bf4f93d721fd6c56837ae413c9599a2845885c6c7a834",
             "ownership": "organization",
             "standardKeys": [
               "workbar-milk-fridge-target"
@@ -2920,7 +3028,7 @@
             ]
           }
         },
-        "sourceHash": "2ecefcddf2800bf1dc2f5ef76d390b1ead26ac65ad8ddd0c838bb249a0154e46"
+        "sourceHash": "eee6c38531c27d753b70539cb7df086fcf190787edcf1f726dd9ba8afec92a55"
       },
       {
         "id": "O10",
@@ -3276,8 +3384,8 @@
         "repeatPolicy": "once_per_run",
         "timingText": "Complete before guest service; repeat at O29 and O35.",
         "locationDescription": "Workbar Non-Alcoholic Fridge.",
-        "instructions": "Clean and restore the Workbar Non-Alco Fridge to its current saved location standard. Check dates and FIFO, place and front every product correctly, close the door, and confirm that the refrigerator and its internal light remain on.\n\nFor Opening, pull the grille fully up and physically verify the grille position and closed door. Record cleaning, date, FIFO or saved-standard issues as deviations.",
-        "structuredItemsText": "- `inventory_standard_items` — generated from the approved read-only inventory standard.\n- `date_rotation` — date rotation\n- `correct_shelf_placement` — correct shelf placement\n- `fronting_complete` — fronting complete\n- `fridge_clean_and_operating` — fridge clean and operating\n- `door_closed` — door closed\n- `fridge_remains_unlocked` — Workbar Non-Alco Fridge remains unlocked\n- `grille_fully_up` — grille pulled fully up for Opening\n- `refrigerator_and_internal_light_remain_on` — refrigerator and internal light remain on",
+        "instructions": "Clean and restore the Workbar Non-Alco Fridge to its current saved location standard. Check dates and FIFO, place and front every product correctly, close the door, and confirm that the refrigerator and its internal light remain on.\n\nFor Opening, pull the grille fully up and physically verify the grille position and closed door. Record cleaning, date, FIFO or saved-standard issues as deviations.\n\nFill this fridge from Express Shelf first. Restore Express Shelf from Left Reserve. Confirm both standards. Done when the service refrigerator matches its current saved location standard and Express Shelf has been restored to its current saved standard.",
+        "structuredItemsText": "- `inventory_standard_items` — generated from the approved read-only inventory standard.\n- `date_rotation` — date rotation\n- `correct_shelf_placement` — correct shelf placement\n- `fronting_complete` — fronting complete\n- `fridge_clean_and_operating` — fridge clean and operating\n- `door_closed` — door closed\n- `fridge_remains_unlocked` — Workbar Non-Alco Fridge remains unlocked\n- `grille_fully_up` — grille pulled fully up for Opening\n- `refrigerator_and_internal_light_remain_on` — refrigerator and internal light remain on\n- `express_shelf_refill_chain` — service fridge is filled from Express Shelf, then Express Shelf is restored from Left Reserve",
         "items": [
           {
             "key": "inventory_standard_items",
@@ -3425,11 +3533,27 @@
             "metadata": {
               "sourceText": "`refrigerator_and_internal_light_remain_on` — refrigerator and internal light remain on"
             }
+          },
+          {
+            "key": "express_shelf_refill_chain",
+            "label": "service fridge is filled from Express Shelf, then Express Shelf is restored from Left Reserve",
+            "itemType": "check",
+            "required": true,
+            "sourceKind": "routine_standard",
+            "sourceConfig": {},
+            "standardKey": "main-storage-express-shelf-refill",
+            "inputSchema": {
+              "type": "boolean"
+            },
+            "sortOrder": 9,
+            "metadata": {
+              "sourceText": "`express_shelf_refill_chain` — service fridge is filled from Express Shelf, then Express Shelf is restored from Left Reserve"
+            }
           }
         ],
-        "doneCriteriaText": "- The current manager-maintained saved location standard is resolved.\n- Every active product line is restored without embedding product names or quantities in routine copy.\n- Dates and FIFO are checked.\n- Placement and fronting are correct.\n- The door is closed.\n- The refrigerator and its internal light remain on.\n- The refrigerator is clean and operating normally.\n- Completing this routine check does not complete Stock Count.\n- The grille is fully up for Opening and the fridge remains unlocked.",
-        "deviationRulesText": "- Saved standard incomplete — manager confirmation required.\n- A shortage, date or FIFO issue remains unresolved.\n- Placement or fronting differs from the current saved standard.\n- The door is open or the refrigerator is not operating normally.\n- The refrigerator or its internal light is switched off.\n- Counts, notes, zeroes, deviations and targetless Stock Count lines remain separate and must never be overwritten.",
-        "referenceGuidanceText": "- `workbar-non-alcoholic-fridge` — canonical saved-location reference; image awaiting upload.",
+        "doneCriteriaText": "- The current manager-maintained saved location standard is resolved.\n- Every active product line is restored without embedding product names or quantities in routine copy.\n- Dates and FIFO are checked.\n- Placement and fronting are correct.\n- The door is closed.\n- The refrigerator and its internal light remain on.\n- The refrigerator is clean and operating normally.\n- Completing this routine check does not complete Stock Count.\n- The grille is fully up for Opening and the fridge remains unlocked.\n\n- Done when the service refrigerator matches its current saved location standard and Express Shelf has been restored to its current saved standard.",
+        "deviationRulesText": "- Saved standard incomplete — manager confirmation required.\n- A shortage, date or FIFO issue remains unresolved.\n- Placement or fronting differs from the current saved standard.\n- The door is open or the refrigerator is not operating normally.\n- The refrigerator or its internal light is switched off.\n- Counts, notes, zeroes, deviations and targetless Stock Count lines remain separate and must never be overwritten.\n\n- Express Shelf standard incomplete — manager setup required.\n- Use Express Shelf first where possible. The saved Express Shelf standard is incomplete. Finish the service-fridge refill and notify the manager.",
+        "referenceGuidanceText": "- `workbar-non-alcoholic-fridge` — canonical saved-location reference; image awaiting upload.\n\n- `main-storage-express-shelf` — current manager-maintained standard and live reference image; image initially awaiting upload.\n- `main-storage-fridge` — Left Reserve left, Express Shelf middle and Keg Storage right while facing the refrigerator.",
         "availabilityMode": "immediate",
         "condition": {},
         "timing": {},
@@ -3444,10 +3568,14 @@
             "Placement or fronting differs from the current saved standard.",
             "The door is open or the refrigerator is not operating normally.",
             "The refrigerator or its internal light is switched off.",
-            "Counts, notes, zeroes, deviations and targetless Stock Count lines remain separate and must never be overwritten."
+            "Counts, notes, zeroes, deviations and targetless Stock Count lines remain separate and must never be overwritten.",
+            "Express Shelf standard incomplete — manager setup required.",
+            "Use Express Shelf first where possible. The saved Express Shelf standard is incomplete. Finish the service-fridge refill and notify the manager."
           ],
           "referenceGuidance": [
-            "`workbar-non-alcoholic-fridge` — canonical saved-location reference; image awaiting upload."
+            "`workbar-non-alcoholic-fridge` — canonical saved-location reference; image awaiting upload.",
+            "`main-storage-express-shelf` — current manager-maintained standard and live reference image; image initially awaiting upload.",
+            "`main-storage-fridge` — Left Reserve left, Express Shelf middle and Keg Storage right while facing the refrigerator."
           ],
           "timingSourceText": "Complete before guest service; repeat at O29 and O35.",
           "operationalStandardsAmendment": {
@@ -3456,17 +3584,18 @@
           },
           "fridgeStandardsAmendment": {
             "date": "2026-08-15",
-            "decisionHash": "be724431080fdbbb5fb598d52d3b01357ea2d3c778f94268166318064f5dfba1",
+            "decisionHash": "2a57f578128b6a6b696bf4f93d721fd6c56837ae413c9599a2845885c6c7a834",
             "ownership": "organization",
             "standardKeys": [
-              "fridge-closing-rules"
+              "fridge-closing-rules",
+              "main-storage-express-shelf-refill"
             ],
             "locationKeys": [
               "workbar-non-alcoholic-fridge"
             ]
           }
         },
-        "sourceHash": "771a760fa58e80d879064c1b03661538e2ca4d1340226e5e5eea3956b66be838"
+        "sourceHash": "087bf6fccc3dafc0212a02f49f32f7ba33a385f982b3133a60120f36c10a1cc8"
       },
       {
         "id": "O14",
@@ -5287,7 +5416,7 @@
           },
           "fridgeStandardsAmendment": {
             "date": "2026-08-15",
-            "decisionHash": "be724431080fdbbb5fb598d52d3b01357ea2d3c778f94268166318064f5dfba1",
+            "decisionHash": "2a57f578128b6a6b696bf4f93d721fd6c56837ae413c9599a2845885c6c7a834",
             "ownership": "organization",
             "standardKeys": [
               "workbar-milk-fridge-target"
@@ -5297,7 +5426,7 @@
             ]
           }
         },
-        "sourceHash": "46e185dc42dc8fdbe42e2fe1a834f061e2ad2399bd7d1014cfaee362ca8c80b4"
+        "sourceHash": "19da26c01a88bec2e3bc5553f186f08adb6cd0a58471e4e4ed0d0512a3ef97af"
       },
       {
         "id": "O24",
@@ -6162,7 +6291,7 @@
           },
           "fridgeStandardsAmendment": {
             "date": "2026-08-15",
-            "decisionHash": "be724431080fdbbb5fb598d52d3b01357ea2d3c778f94268166318064f5dfba1",
+            "decisionHash": "2a57f578128b6a6b696bf4f93d721fd6c56837ae413c9599a2845885c6c7a834",
             "ownership": "organization",
             "standardKeys": [
               "workbar-milk-fridge-target",
@@ -6174,7 +6303,7 @@
             ]
           }
         },
-        "sourceHash": "c658bffa706608fcb009b0ee7b49e3b685b980b3c06e56ab597017577a26c6b8"
+        "sourceHash": "07b88be442147a11ab067dbe8fd68260da3ef6d20188e274e68748d2a3fada2f"
       },
       {
         "id": "O30",
@@ -7066,7 +7195,7 @@
           },
           "fridgeStandardsAmendment": {
             "date": "2026-08-15",
-            "decisionHash": "be724431080fdbbb5fb598d52d3b01357ea2d3c778f94268166318064f5dfba1",
+            "decisionHash": "2a57f578128b6a6b696bf4f93d721fd6c56837ae413c9599a2845885c6c7a834",
             "ownership": "organization",
             "standardKeys": [
               "workbar-milk-fridge-target",
@@ -7078,7 +7207,7 @@
             ]
           }
         },
-        "sourceHash": "d4321b826bbb61a061877f6f3eebadee8c217f1f9f74949b337ae844cf3da625"
+        "sourceHash": "95f523f35cf63205fe82bb22151fc4f060651ec95102bf1a48355aea6d070e71"
       },
       {
         "id": "O36",
@@ -8811,8 +8940,8 @@
         "repeatPolicy": "once_per_run",
         "timingText": "During pre-close; final delivery is repeated at C28.",
         "locationDescription": "Workbar Non-Alcoholic Fridge.",
-        "instructions": "Clean and restore the Workbar Non-Alco Fridge to its current saved location standard. Check dates and FIFO, place and front every product correctly, close the door, and confirm that the refrigerator and its internal light remain on.\n\nRecord the current physical state before correction; C28 still requires a fresh final assessment.",
-        "structuredItemsText": "- `inventory_standard_items` — dynamic authoritative product/target lines.\n- `date_rotation` — date rotation\n- `correct_shelf_placement` — correct shelf placement\n- `fronting_complete` — fronting complete\n- `fridge_clean_and_operating` — fridge clean and operating\n- `refrigerator_and_internal_light_remain_on` — refrigerator and internal light remain on",
+        "instructions": "Clean and restore the Workbar Non-Alco Fridge to its current saved location standard. Check dates and FIFO, place and front every product correctly, close the door, and confirm that the refrigerator and its internal light remain on.\n\nRecord the current physical state before correction; C28 still requires a fresh final assessment.\n\nFill this fridge from Express Shelf first. Restore Express Shelf from Left Reserve. Confirm both standards. Done when the service refrigerator matches its current saved location standard and Express Shelf has been restored to its current saved standard.",
+        "structuredItemsText": "- `inventory_standard_items` — dynamic authoritative product/target lines.\n- `date_rotation` — date rotation\n- `correct_shelf_placement` — correct shelf placement\n- `fronting_complete` — fronting complete\n- `fridge_clean_and_operating` — fridge clean and operating\n- `refrigerator_and_internal_light_remain_on` — refrigerator and internal light remain on\n- `express_shelf_refill_chain` — service fridge is filled from Express Shelf, then Express Shelf is restored from Left Reserve",
         "items": [
           {
             "key": "inventory_standard_items",
@@ -8913,11 +9042,27 @@
             "metadata": {
               "sourceText": "`refrigerator_and_internal_light_remain_on` — refrigerator and internal light remain on"
             }
+          },
+          {
+            "key": "express_shelf_refill_chain",
+            "label": "service fridge is filled from Express Shelf, then Express Shelf is restored from Left Reserve",
+            "itemType": "check",
+            "required": true,
+            "sourceKind": "routine_standard",
+            "sourceConfig": {},
+            "standardKey": "main-storage-express-shelf-refill",
+            "inputSchema": {
+              "type": "boolean"
+            },
+            "sortOrder": 6,
+            "metadata": {
+              "sourceText": "`express_shelf_refill_chain` — service fridge is filled from Express Shelf, then Express Shelf is restored from Left Reserve"
+            }
           }
         ],
-        "doneCriteriaText": "- The current manager-maintained saved location standard is resolved.\n- Every active product line is restored without embedding product names or quantities in routine copy.\n- Dates and FIFO are checked.\n- Placement and fronting are correct.\n- The door is closed.\n- The refrigerator and its internal light remain on.\n- The refrigerator is clean and operating normally.\n- Completing this routine check does not complete Stock Count.",
-        "deviationRulesText": "- Saved standard incomplete — manager confirmation required.\n- A shortage, date or FIFO issue remains unresolved.\n- Placement or fronting differs from the current saved standard.\n- The door is open or the refrigerator is not operating normally.\n- The refrigerator or its internal light is switched off.\n- Counts, notes, zeroes, deviations and targetless Stock Count lines remain separate and must never be overwritten.",
-        "referenceGuidanceText": "- `workbar-non-alcoholic-fridge` — canonical saved-location reference; image awaiting upload.",
+        "doneCriteriaText": "- The current manager-maintained saved location standard is resolved.\n- Every active product line is restored without embedding product names or quantities in routine copy.\n- Dates and FIFO are checked.\n- Placement and fronting are correct.\n- The door is closed.\n- The refrigerator and its internal light remain on.\n- The refrigerator is clean and operating normally.\n- Completing this routine check does not complete Stock Count.\n\n- Done when the service refrigerator matches its current saved location standard and Express Shelf has been restored to its current saved standard.",
+        "deviationRulesText": "- Saved standard incomplete — manager confirmation required.\n- A shortage, date or FIFO issue remains unresolved.\n- Placement or fronting differs from the current saved standard.\n- The door is open or the refrigerator is not operating normally.\n- The refrigerator or its internal light is switched off.\n- Counts, notes, zeroes, deviations and targetless Stock Count lines remain separate and must never be overwritten.\n\n- Express Shelf standard incomplete — manager setup required.\n- Use Express Shelf first where possible. The saved Express Shelf standard is incomplete. Finish the service-fridge refill and notify the manager.",
+        "referenceGuidanceText": "- `workbar-non-alcoholic-fridge` — canonical saved-location reference; image awaiting upload.\n\n- `main-storage-express-shelf` — current manager-maintained standard and live reference image; image initially awaiting upload.\n- `main-storage-fridge` — Left Reserve left, Express Shelf middle and Keg Storage right while facing the refrigerator.",
         "availabilityMode": "immediate",
         "condition": {},
         "timing": {},
@@ -8932,23 +9077,29 @@
             "Placement or fronting differs from the current saved standard.",
             "The door is open or the refrigerator is not operating normally.",
             "The refrigerator or its internal light is switched off.",
-            "Counts, notes, zeroes, deviations and targetless Stock Count lines remain separate and must never be overwritten."
+            "Counts, notes, zeroes, deviations and targetless Stock Count lines remain separate and must never be overwritten.",
+            "Express Shelf standard incomplete — manager setup required.",
+            "Use Express Shelf first where possible. The saved Express Shelf standard is incomplete. Finish the service-fridge refill and notify the manager."
           ],
           "referenceGuidance": [
-            "`workbar-non-alcoholic-fridge` — canonical saved-location reference; image awaiting upload."
+            "`workbar-non-alcoholic-fridge` — canonical saved-location reference; image awaiting upload.",
+            "`main-storage-express-shelf` — current manager-maintained standard and live reference image; image initially awaiting upload.",
+            "`main-storage-fridge` — Left Reserve left, Express Shelf middle and Keg Storage right while facing the refrigerator."
           ],
           "timingSourceText": "During pre-close; final delivery is repeated at C28.",
           "fridgeStandardsAmendment": {
             "date": "2026-08-15",
-            "decisionHash": "be724431080fdbbb5fb598d52d3b01357ea2d3c778f94268166318064f5dfba1",
+            "decisionHash": "2a57f578128b6a6b696bf4f93d721fd6c56837ae413c9599a2845885c6c7a834",
             "ownership": "organization",
-            "standardKeys": [],
+            "standardKeys": [
+              "main-storage-express-shelf-refill"
+            ],
             "locationKeys": [
               "workbar-non-alcoholic-fridge"
             ]
           }
         },
-        "sourceHash": "076d55013e9468b6d4ab57585755f70ad06bceb91a26ac474e64ecd3226205d4"
+        "sourceHash": "9e41a8d56439ed69062e6604a13d66886358ba3357e3f9009e6541bf800a3014"
       },
       {
         "id": "C09",
@@ -9111,7 +9262,7 @@
           "timingSourceText": "During pre-close; final delivery is repeated at C29.",
           "fridgeStandardsAmendment": {
             "date": "2026-08-15",
-            "decisionHash": "be724431080fdbbb5fb598d52d3b01357ea2d3c778f94268166318064f5dfba1",
+            "decisionHash": "2a57f578128b6a6b696bf4f93d721fd6c56837ae413c9599a2845885c6c7a834",
             "ownership": "organization",
             "standardKeys": [
               "workbar-milk-fridge-target"
@@ -9119,7 +9270,7 @@
             "locationKeys": []
           }
         },
-        "sourceHash": "acfcee82e45e67d366997b4b36a8392d859d20f80d524d78253a54efd5a0580c"
+        "sourceHash": "97d5da36484c7c2353772506ea319fa04789eca0ddd229f7bdd167494ceef6e5"
       },
       {
         "id": "C10",
@@ -9316,7 +9467,7 @@
           },
           "fridgeStandardsAmendment": {
             "date": "2026-08-15",
-            "decisionHash": "be724431080fdbbb5fb598d52d3b01357ea2d3c778f94268166318064f5dfba1",
+            "decisionHash": "2a57f578128b6a6b696bf4f93d721fd6c56837ae413c9599a2845885c6c7a834",
             "ownership": "organization",
             "standardKeys": [
               "fridge-closing-rules",
@@ -9325,7 +9476,7 @@
             "locationKeys": []
           }
         },
-        "sourceHash": "ded5923b71894e0b6a913e7726b21fba8449c7406a26786a58a6b00521e21c74"
+        "sourceHash": "7cc430d65ac4625d023ef57507f574bf2bae005f85f94092bfcf3c30ba6f00b7"
       },
       {
         "id": "C11",
@@ -12188,8 +12339,8 @@
         "repeatPolicy": "once_per_run",
         "timingText": "After final sales/use affecting the fridge.",
         "locationDescription": "Workbar Non-Alcoholic Fridge.",
-        "instructions": "Clean and restore the Workbar Non-Alco Fridge to its current saved location standard. Check dates and FIFO, place and front every product correctly, close the door, and confirm that the refrigerator and its internal light remain on.\n\nPerform a fresh final assessment, keep the fridge unlocked and pull the grille fully down after restoration.",
-        "structuredItemsText": "- `inventory_standard_items` — dynamic authoritative product/target lines.\n- `date_rotation` — date rotation\n- `correct_shelf_placement` — correct shelf placement\n- `fronting_complete` — fronting complete\n- `fridge_clean_and_operating` — fridge clean and operating\n- `door_closed` — door closed\n- `fridge_remains_unlocked` — Workbar Non-Alco Fridge remains unlocked\n- `grille_fully_down` — grille pulled fully down and physically checked\n- `refrigerator_and_internal_light_remain_on` — refrigerator and internal light remain on",
+        "instructions": "Clean and restore the Workbar Non-Alco Fridge to its current saved location standard. Check dates and FIFO, place and front every product correctly, close the door, and confirm that the refrigerator and its internal light remain on.\n\nPerform a fresh final assessment, keep the fridge unlocked and pull the grille fully down after restoration.\n\nFill this fridge from Express Shelf first. Restore Express Shelf from Left Reserve. Confirm both standards. Done when the service refrigerator matches its current saved location standard and Express Shelf has been restored to its current saved standard.",
+        "structuredItemsText": "- `inventory_standard_items` — dynamic authoritative product/target lines.\n- `date_rotation` — date rotation\n- `correct_shelf_placement` — correct shelf placement\n- `fronting_complete` — fronting complete\n- `fridge_clean_and_operating` — fridge clean and operating\n- `door_closed` — door closed\n- `fridge_remains_unlocked` — Workbar Non-Alco Fridge remains unlocked\n- `grille_fully_down` — grille pulled fully down and physically checked\n- `refrigerator_and_internal_light_remain_on` — refrigerator and internal light remain on\n- `express_shelf_refill_chain` — service fridge is filled from Express Shelf, then Express Shelf is restored from Left Reserve",
         "items": [
           {
             "key": "inventory_standard_items",
@@ -12337,11 +12488,27 @@
             "metadata": {
               "sourceText": "`refrigerator_and_internal_light_remain_on` — refrigerator and internal light remain on"
             }
+          },
+          {
+            "key": "express_shelf_refill_chain",
+            "label": "service fridge is filled from Express Shelf, then Express Shelf is restored from Left Reserve",
+            "itemType": "check",
+            "required": true,
+            "sourceKind": "routine_standard",
+            "sourceConfig": {},
+            "standardKey": "main-storage-express-shelf-refill",
+            "inputSchema": {
+              "type": "boolean"
+            },
+            "sortOrder": 9,
+            "metadata": {
+              "sourceText": "`express_shelf_refill_chain` — service fridge is filled from Express Shelf, then Express Shelf is restored from Left Reserve"
+            }
           }
         ],
-        "doneCriteriaText": "- The current manager-maintained saved location standard is resolved.\n- Every active product line is restored without embedding product names or quantities in routine copy.\n- Dates and FIFO are checked.\n- Placement and fronting are correct.\n- The door is closed.\n- The refrigerator and its internal light remain on.\n- The refrigerator is clean and operating normally.\n- Completing this routine check does not complete Stock Count.\n- The fridge remains unlocked and the grille is fully down and physically checked.",
-        "deviationRulesText": "- Saved standard incomplete — manager confirmation required.\n- A shortage, date or FIFO issue remains unresolved.\n- Placement or fronting differs from the current saved standard.\n- The door is open or the refrigerator is not operating normally.\n- The refrigerator or its internal light is switched off.\n- Counts, notes, zeroes, deviations and targetless Stock Count lines remain separate and must never be overwritten.",
-        "referenceGuidanceText": "- `workbar-non-alcoholic-fridge` — canonical saved-location reference; image awaiting upload.",
+        "doneCriteriaText": "- The current manager-maintained saved location standard is resolved.\n- Every active product line is restored without embedding product names or quantities in routine copy.\n- Dates and FIFO are checked.\n- Placement and fronting are correct.\n- The door is closed.\n- The refrigerator and its internal light remain on.\n- The refrigerator is clean and operating normally.\n- Completing this routine check does not complete Stock Count.\n- The fridge remains unlocked and the grille is fully down and physically checked.\n\n- Done when the service refrigerator matches its current saved location standard and Express Shelf has been restored to its current saved standard.",
+        "deviationRulesText": "- Saved standard incomplete — manager confirmation required.\n- A shortage, date or FIFO issue remains unresolved.\n- Placement or fronting differs from the current saved standard.\n- The door is open or the refrigerator is not operating normally.\n- The refrigerator or its internal light is switched off.\n- Counts, notes, zeroes, deviations and targetless Stock Count lines remain separate and must never be overwritten.\n\n- Express Shelf standard incomplete — manager setup required.\n- Use Express Shelf first where possible. The saved Express Shelf standard is incomplete. Finish the service-fridge refill and notify the manager.",
+        "referenceGuidanceText": "- `workbar-non-alcoholic-fridge` — canonical saved-location reference; image awaiting upload.\n\n- `main-storage-express-shelf` — current manager-maintained standard and live reference image; image initially awaiting upload.\n- `main-storage-fridge` — Left Reserve left, Express Shelf middle and Keg Storage right while facing the refrigerator.",
         "availabilityMode": "immediate",
         "condition": {},
         "timing": {},
@@ -12356,10 +12523,14 @@
             "Placement or fronting differs from the current saved standard.",
             "The door is open or the refrigerator is not operating normally.",
             "The refrigerator or its internal light is switched off.",
-            "Counts, notes, zeroes, deviations and targetless Stock Count lines remain separate and must never be overwritten."
+            "Counts, notes, zeroes, deviations and targetless Stock Count lines remain separate and must never be overwritten.",
+            "Express Shelf standard incomplete — manager setup required.",
+            "Use Express Shelf first where possible. The saved Express Shelf standard is incomplete. Finish the service-fridge refill and notify the manager."
           ],
           "referenceGuidance": [
-            "`workbar-non-alcoholic-fridge` — canonical saved-location reference; image awaiting upload."
+            "`workbar-non-alcoholic-fridge` — canonical saved-location reference; image awaiting upload.",
+            "`main-storage-express-shelf` — current manager-maintained standard and live reference image; image initially awaiting upload.",
+            "`main-storage-fridge` — Left Reserve left, Express Shelf middle and Keg Storage right while facing the refrigerator."
           ],
           "timingSourceText": "After final sales/use affecting the fridge.",
           "operationalStandardsAmendment": {
@@ -12368,17 +12539,18 @@
           },
           "fridgeStandardsAmendment": {
             "date": "2026-08-15",
-            "decisionHash": "be724431080fdbbb5fb598d52d3b01357ea2d3c778f94268166318064f5dfba1",
+            "decisionHash": "2a57f578128b6a6b696bf4f93d721fd6c56837ae413c9599a2845885c6c7a834",
             "ownership": "organization",
             "standardKeys": [
-              "fridge-closing-rules"
+              "fridge-closing-rules",
+              "main-storage-express-shelf-refill"
             ],
             "locationKeys": [
               "workbar-non-alcoholic-fridge"
             ]
           }
         },
-        "sourceHash": "2a8a90e20e0c7d25814d55325a85ae669c495576e31f87aae52211fc831f0057"
+        "sourceHash": "aaabddea8da7e9b26ef9b23e6dd43e81d846b9898f00e18fe5990c6f24d9530d"
       },
       {
         "id": "C29",
@@ -12545,7 +12717,7 @@
           },
           "fridgeStandardsAmendment": {
             "date": "2026-08-15",
-            "decisionHash": "be724431080fdbbb5fb598d52d3b01357ea2d3c778f94268166318064f5dfba1",
+            "decisionHash": "2a57f578128b6a6b696bf4f93d721fd6c56837ae413c9599a2845885c6c7a834",
             "ownership": "organization",
             "standardKeys": [
               "workbar-milk-fridge-target"
@@ -12555,7 +12727,7 @@
             ]
           }
         },
-        "sourceHash": "a2779e658dd59f1c73cabbaad859303a3aa006dee21b60d3928fd11f2ec338ce"
+        "sourceHash": "7f0a209d4abdbe26d55dc9958e997f09788d3acc7094645b9c4890e18174369c"
       },
       {
         "id": "C30",
@@ -12768,7 +12940,7 @@
           },
           "fridgeStandardsAmendment": {
             "date": "2026-08-15",
-            "decisionHash": "be724431080fdbbb5fb598d52d3b01357ea2d3c778f94268166318064f5dfba1",
+            "decisionHash": "2a57f578128b6a6b696bf4f93d721fd6c56837ae413c9599a2845885c6c7a834",
             "ownership": "organization",
             "standardKeys": [
               "fridge-closing-rules",
@@ -12777,7 +12949,7 @@
             "locationKeys": []
           }
         },
-        "sourceHash": "ac196c5d1c3283d67ec417a24b5278ae6ac84e444a51091cec129d8b06e49756"
+        "sourceHash": "1f914a519c2a60832e563e1da6b1c4a90426a99ae1826c4795d5c609fea247cc"
       },
       {
         "id": "C31",
@@ -13395,7 +13567,7 @@
           },
           "fridgeStandardsAmendment": {
             "date": "2026-08-15",
-            "decisionHash": "be724431080fdbbb5fb598d52d3b01357ea2d3c778f94268166318064f5dfba1",
+            "decisionHash": "2a57f578128b6a6b696bf4f93d721fd6c56837ae413c9599a2845885c6c7a834",
             "ownership": "organization",
             "standardKeys": [
               "fridge-closing-rules",
@@ -13407,7 +13579,7 @@
             ]
           }
         },
-        "sourceHash": "e96cdd63258520a8b96c47126ddd5029ba493a8df90ea61d95aef7bdc7f674f7"
+        "sourceHash": "c8114b251c5b1098c484f8665cdd53e22b0c32ec986fe434741408abc776dcad"
       },
       {
         "id": "C34",
@@ -15866,7 +16038,8 @@
           "evidenceItemKeys": [
             "inventory_standard_items",
             "fridge_clean_and_operating",
-            "fridge_remains_unlocked"
+            "fridge_remains_unlocked",
+            "express_shelf_refill_chain"
           ],
           "requireValidTaskVerification": false,
           "requireValidRunVerification": false
@@ -16050,7 +16223,7 @@
       "repeat": "once per participant",
       "offlinePolicy": "online/server-confirmed",
       "criticality": "critical",
-      "instructions": "Review the server-generated Opening summary and record how operational responsibility continues until Closing.\n\nThe summary must include:\n\n### Opening result\n\n- tasks completed\n- tasks completed after correction\n- ready-on-arrival results\n- initial shortcomings\n- unresolved deviations\n- manager overrides\n- delayed checkpoints\n\n### Stock and presentation\n\n- Workbar Non-Alco Fridge actual saved-standard status, including shortages, date/FIFO issues and incomplete-standard escalation\n- espresso-machine dairy and oat reservoirs\n- self-service milk jug\n- Workbar Milk Fridge top-shelf 2 + 2 reserve\n- Workbar Milk Fridge lower shelves: opened, visibly date-labelled wine only\n- self-service\n- baked goods, fruit and snacks\n- Coffee Canisters\n- coffee cups and wine glasses\n- unresolved product/serviceware issues\n\n### Rooms and venue\n\n- project rooms/Boardroom\n- furniture/venue plan\n- rooms still in use\n- named later resets\n\n### Bookings/events\n\n- latest bookings and changes\n- active zones\n- expected final service\n- Event-transfer risks\n\n### Technical and maintenance\n\n- coffee machine\n- dishwashers\n- POS/Weorder\n- music/screen/lighting\n- other equipment/maintenance issues\n\nThe participant chooses one transition status:\n\n- `continuing_on_site`\n- `temporarily_away`\n- `handing_operation_to_another`\n- `unable_to_complete_closing`\n\n## Status-specific requirements\n\n### Continuing on site\n\n- no return time required\n- participant becomes `continuing_on_site`\n- Opening history freezes as finished\n\n### Temporarily away\n\n- expected return required\n- interim owner required when policy/open issues require it\n- participant becomes `expected_back`\n\n### Handing operation to another\n\n- interim owner required\n- recipient must be a valid same-organization routine user/operator\n- recipient is joined to linked work when required\n- responsibilities and open conditions are explicit\n\n### Unable to complete Closing\n\n- reason required\n- participant becomes `unable_to_return`\n- bundle shows Closing reassignment required\n- existing Closing run remains intact",
+      "instructions": "Review the server-generated Opening summary and record how operational responsibility continues until Closing.\n\nThe summary must include:\n\n### Opening result\n\n- tasks completed\n- tasks completed after correction\n- ready-on-arrival results\n- initial shortcomings\n- unresolved deviations\n- manager overrides\n- delayed checkpoints\n\n### Stock and presentation\n\n- Workbar Non-Alco Fridge actual saved-standard status, including shortages, date/FIFO issues and incomplete-standard escalation\n- espresso-machine dairy and oat reservoirs\n- self-service milk jug\n- Workbar Milk Fridge top-shelf 2 + 2 reserve\n- Workbar Milk Fridge lower shelves: opened, visibly date-labelled wine only\n- self-service\n- baked goods, fruit and snacks\n- Coffee Canisters\n- coffee cups and wine glasses\n- unresolved product/serviceware issues\n\n### Rooms and venue\n\n- project rooms/Boardroom\n- furniture/venue plan\n- rooms still in use\n- named later resets\n\n### Bookings/events\n\n- latest bookings and changes\n- active zones\n- expected final service\n- Event-transfer risks\n\n### Technical and maintenance\n\n- coffee machine\n- dishwashers\n- POS/Weorder\n- music/screen/lighting\n- other equipment/maintenance issues\n\nThe participant chooses one transition status:\n\n- `continuing_on_site`\n- `temporarily_away`\n- `handing_operation_to_another`\n- `unable_to_complete_closing`\n\n## Status-specific requirements\n\n### Continuing on site\n\n- no return time required\n- participant becomes `continuing_on_site`\n- Opening history freezes as finished\n\n### Temporarily away\n\n- expected return required\n- interim owner required when policy/open issues require it\n- participant becomes `expected_back`\n\n### Handing operation to another\n\n- interim owner required\n- recipient must be a valid same-organization routine user/operator\n- recipient is joined to linked work when required\n- responsibilities and open conditions are explicit\n\n### Unable to complete Closing\n\n- reason required\n- participant becomes `unable_to_return`\n- bundle shows Closing reassignment required\n- existing Closing run remains intact\n- Service refrigerator refill follows Service fridge ← Express Shelf ← Left Reserve; restore Express Shelf after the service-fridge refill. Keg Storage is outside this chain.",
       "eligibilityText": "",
       "structuredPayloadText": "- server-generated Opening summary\n- transition status\n- expected return\n- interim owner\n- open deviations/overrides\n- active handovers/transfers\n- unresolved action count\n- supplementary note\n- shared Opening-transition handover ID/hash",
       "structuredPayload": [
@@ -16064,13 +16237,13 @@
         "supplementary note",
         "shared Opening-transition handover ID/hash"
       ],
-      "doneCriteriaText": "- Opening is finished.\n- DS01 is completed.\n- The transition choice is valid.\n- Required return/interim owner/reason data exists.\n- One shared `opening_transition` handover is regenerated and submitted.\n- The step and handover are server-confirmed without duplicates.\n- The handover reports actual Workbar Non-Alco Fridge saved-standard status, shortages, date/FIFO issues and incomplete-standard escalation without duplicating product quantities.\n- The handover reports espresso reservoirs, self-service milk jug, Workbar Milk Fridge top shelf and lower shelves separately.\n- A 2 + 2 top shelf alone never reports the full refrigerator standard as compliant.",
+      "doneCriteriaText": "- Opening is finished.\n- DS01 is completed.\n- The transition choice is valid.\n- Required return/interim owner/reason data exists.\n- One shared `opening_transition` handover is regenerated and submitted.\n- The step and handover are server-confirmed without duplicates.\n- The handover reports actual Workbar Non-Alco Fridge saved-standard status, shortages, date/FIFO issues and incomplete-standard escalation without duplicating product quantities.\n- The handover reports espresso reservoirs, self-service milk jug, Workbar Milk Fridge top shelf and lower shelves separately.\n- A 2 + 2 top shelf alone never reports the full refrigerator standard as compliant.\n- Express Shelf is restored to its current saved standard after the service-fridge refill; incomplete setup is handed over to the manager.",
       "blockingRulesText": "- Opening is not finished.\n- DS01 is missing/stale.\n- Required return/interim owner/reason missing.\n- Open critical/important issue is absent from the handover.\n- Target user is invalid.\n- No silent cancellation or deletion of Closing is allowed.",
       "systemGenerated": false,
-      "sourceHash": "b0c6e07c4dffd926497e0cec38dbe2ea255307dbd96155fc0e179393d78ebb96",
+      "sourceHash": "7422f8dfc4ee3cceb9d7eb844bd5a769e096b2e18d1654d7a8f2a59fb2a5383e",
       "fridgeStandardsAmendment": {
         "date": "2026-08-15",
-        "decisionHash": "be724431080fdbbb5fb598d52d3b01357ea2d3c778f94268166318064f5dfba1",
+        "decisionHash": "2a57f578128b6a6b696bf4f93d721fd6c56837ae413c9599a2845885c6c7a834",
         "ownership": "organization"
       }
     },
@@ -16207,9 +16380,9 @@
     {
       "kind": "fridge_standards_amendment",
       "fileName": "routine-engine-v2-fridge-standards-amendment-2026-08-15.md",
-      "sha256": "be724431080fdbbb5fb598d52d3b01357ea2d3c778f94268166318064f5dfba1",
+      "sha256": "2a57f578128b6a6b696bf4f93d721fd6c56837ae413c9599a2845885c6c7a834",
       "hashScope": "content-before-generated-pack-metadata"
     }
   ],
-  "packHash": "66af45ecb1afa2b432b95ed0e1d5425c39ed0cc67becacbb386bd43489db1e02"
+  "packHash": "710c9412eabc8f2e9c5a6488499ac4654cd7c94b62138eaed9563ab5f0203c9c"
 }

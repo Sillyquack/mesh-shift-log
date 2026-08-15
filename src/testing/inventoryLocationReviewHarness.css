@@ -1,0 +1,21 @@
+:root { color-scheme: dark; background: #11110f; color: #fffdf7; font-family: Inter, ui-sans-serif, system-ui, sans-serif; }
+* { box-sizing: border-box; }
+body { margin: 0; background: radial-gradient(circle at 85% 0, #d6a65d30, transparent 32%), #11110f; }
+.il-shell { min-height: 100vh; padding: clamp(12px, 4vw, 48px); }
+.il-shell > header { width: min(980px, 100%); margin: 0 auto 18px; display: flex; justify-content: space-between; gap: 12px; color: #efca8f; font-size: .75rem; letter-spacing: .1em; }
+.il-card { width: min(980px, 100%); margin: auto; padding: clamp(24px, 6vw, 64px); border: 1px solid #ffffff24; border-radius: clamp(22px, 4vw, 38px); background: #1d1c19ed; box-shadow: 0 32px 90px #0008; }
+.il-card h1 { margin: 8px 0 12px; color: #fffdf7; font-size: clamp(2.3rem, 8vw, 5.5rem); line-height: .95; letter-spacing: -.055em; }
+.il-card strong, .il-card summary { color: #fffdf7; }
+.il-card p, .il-card li { color: #d5cec2; line-height: 1.6; }
+.il-status { padding: 14px 16px; border: 1px solid #d6a65d70; border-radius: 14px; background: #d6a65d18; color: #ffe2b5 !important; font-weight: 760; }
+.il-zones, .il-fridge { display: grid; grid-template-columns: repeat(3, 1fr); gap: 12px; margin: 28px 0; }
+.il-fridge { grid-template-columns: repeat(2, 1fr); }
+.il-zones article, .il-fridge article, .il-alert { min-height: 112px; padding: 18px; border: 1px solid #ffffff1f; border-radius: 18px; background: #ffffff0a; display: flex; flex-direction: column; justify-content: center; gap: 8px; }
+.il-zones span, .il-fridge span { color: #efca8f; font-size: .72rem; text-transform: uppercase; letter-spacing: .12em; }
+.il-card summary { min-height: 48px; display: flex; align-items: center; cursor: pointer; font-weight: 780; }
+.il-current-image { min-height: 260px; margin: 24px 0; padding: 24px; border-radius: 22px; background: linear-gradient(140deg, #6e8b77, #273a31); display: flex; flex-direction: column; justify-content: end; gap: 6px; }
+.il-current-image span { color: #fff; font-size: 1.7rem; font-weight: 820; }
+.il-alert { border-color: #d57c6d80; background: #d57c6d17; }
+.il-alert span { color: #f6d9d4; }
+.il-orientation { margin-top: 28px; font-size: .86rem; }
+@media (max-width: 620px) { .il-shell > header { flex-direction: column; } .il-zones, .il-fridge { grid-template-columns: 1fr; } .il-card { padding: 24px 18px; } }
