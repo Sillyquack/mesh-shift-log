@@ -145,14 +145,18 @@ Test at 390 px mobile width and desktop width.
 
 ### 7. Counter — Count Mode
 
-- One product at a time.
-- Saving advances to the next incomplete product.
-- Progress shows full location state.
-- Review blocks incomplete, invalid or unsaved work.
-- Exact-standard fast path requires physical confirmation.
+- Only assigned physical locations or refrigerators are visible.
+- The same product in different refrigerators remains separate count lines.
+- A fully matching refrigerator presents the saved-standard decision first.
+- “Done — count & next fridge” physically confirms the whole refrigerator, fills only eligible exact-standard lines, submits only that assignment for manager review and opens the next assigned refrigerator.
+- Manager acceptance of the assignment and approval of the whole Stock Count session remain separate.
+- “No — count differences” opens manual counting only inside the current refrigerator.
+- Blank and explicit zero remain distinct.
+- Existing notes, counts, deviations and targetless rows are never overwritten.
+- The three protected wines remain physical units until the final Millum export conversion.
+- Progress shows full location state and Review blocks incomplete, invalid or unsaved work.
 - Submitted and accepted assignments are read-only.
 - Returned work opens with the manager message.
-- Submission sends one location only and never approves the session.
 
 ### 8. History
 
@@ -164,7 +168,11 @@ Test at 390 px mobile width and desktop width.
 
 ## Content source provenance
 
-`npm run verify:routine-content-pack` passed 372/372 checks against the exact approved source documents and pinned SHA-256 hashes. The hash gate was not disabled, relaxed or bypassed. This authorizes review of the later draft-only 1.4R installation plan; it does not install or publish content.
+`npm run verify:routine-content-pack` passed 372/372 checks against the exact approved source documents retained under `content/routine-engine/source-evidence/` and their pinned SHA-256 hashes. The hash gate was not disabled, relaxed or bypassed. This authorizes review of the later draft-only 1.4R installation plan; it does not install or publish content.
+
+## Remote release evidence
+
+`.github/workflows/release-review.yml` is a review-only pull-request check for PR #17. It has read-only repository permission, receives no production secret, performs no deployment or production write, and runs the required migration-plan, combined-experience, visual-library, authorization, Stock Count, content-provenance and build checks. The exact PR #17 head must have a clean run before the separately approved merge.
 
 ## Production smoke-test evidence template
 

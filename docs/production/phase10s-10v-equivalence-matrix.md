@@ -23,9 +23,10 @@ Observed read-only on 15 August 2026 against Supabase project `jzuegkbzgynknnviv
 
 The visible production migration ledger ends at Phase 10R, while every reviewed Phase 10S–10V object is an exact semantic match. A safe cutover proposal is therefore:
 
-1. Stop and obtain Bobby’s explicit approval for a ledger-only S–V reconciliation procedure that records the already-present exact states without re-running their function or constraint DDL.
-2. Independently re-read and fingerprint S–V immediately before that procedure; any mismatch or unknown stops the cutover.
-3. After the ledger is coherent, apply the genuinely pending additive migrations in order: `phase10w_event_visual_reference_bridge.sql`, then `phase10x_event_visual_library_expansion.sql`.
-4. Keep 1.4R content installation draft-only and separate; do not publish or change mode / UI stage in the migration step.
+1. Stop and obtain Bobby’s explicit approval for a ledger-only S–V reconciliation procedure that records the already-present exact states.
+2. Independently re-read and fingerprint S–V immediately before the maintenance write; any mismatch or unknown stops the cutover.
+3. Reconcile only the ledger. Do not reapply S–V DDL, replace matching functions or re-drop matching constraints.
+4. After the ledger is coherent, apply the genuinely pending additive migrations in order: `phase10w_event_visual_reference_bridge.sql`, then `phase10x_event_visual_library_expansion.sql`.
+5. Keep 1.4R content installation draft-only and separate; do not publish or change mode / UI stage in the migration step.
 
 This is a proposal for a later authorized window, not an action performed by this release-preparation task.

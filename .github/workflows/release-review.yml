@@ -1,0 +1,61 @@
+name: Release review
+
+on:
+  pull_request:
+    branches:
+      - phase-9a-inventory-par-levels-stocktaking
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  release-review:
+    name: Release review
+    runs-on: ubuntu-latest
+    timeout-minutes: 60
+    steps:
+      - name: Check out reviewed commit
+        uses: actions/checkout@v4
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 24
+          cache: npm
+
+      - name: Install locked dependencies
+        run: npm ci
+
+      - name: Verify production migration plan
+        run: npm run verify:production-migration-plan
+
+      - name: Verify combined production experience
+        run: npm run verify:production-candidate-experience
+
+      - name: Verify Event visual library
+        run: npm run verify:event-visual-library
+
+      - name: Verify Event visual authorization bridge
+        run: npm run verify:event-visual-reference-bridge
+
+      - name: Verify Inventory Count experience
+        run: npm run verify:inventory-counter-experience
+
+      - name: Verify Inventory Count workflow
+        run: npm run verify:inventory-counter-workflow
+
+      - name: Verify Inventory Count mobile behavior
+        run: npm run verify:inventory-counter-mobile
+
+      - name: Verify Inventory Count confirmation
+        run: npm run verify:inventory-confirmation-dialog
+
+      - name: Verify Millum export integrity
+        run: npm run verify:inventory-millum-export
+
+      - name: Verify pinned Routine content provenance
+        run: npm run verify:routine-content-pack
+
+      - name: Build production bundle
+        run: npm run build

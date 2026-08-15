@@ -341,7 +341,11 @@ const operationMigration="supabase/phase10u_routine_operation_idempotency_conver
 const provenanceMigration="supabase/phase10v_routine_creation_idempotency_provenance_alignment.sql";
 const securityMigration="supabase/phase10o_routine_default_privilege_hardening.sql";
 const paths={pack:"content/routine-engine/mesh-routine-content-v1-4r.json",previousPack:"content/routine-engine/mesh-routine-content-v1-3r.json",predecessorPack:"content/routine-engine/mesh-routine-content-v1-2r.json",baselinePack:"content/routine-engine/mesh-routine-content-v1.json",generator:"scripts/generate-routine-content-pack.mjs",identityGenerator:"scripts/generate-routine-participant-identity-alignment.mjs",doc:"docs/routine-engine-v2-mesh-content-v1-4r.md",baseAmendment:"docs/routine-engine-v2-mesh-operational-standards-amendment-2026-08-07.md",productionAmendment:"docs/routine-engine-v2-production-readiness-amendment-2026-08-09.md",servicewareAmendment:"docs/routine-engine-v2-serviceware-route-amendment-2026-08-09.md",amendment:"docs/routine-engine-v2-runtime-contract-alignment-amendment-2026-08-09.md",identityDoc:"docs/routine-engine-v2-participant-identity-conflict-alignment-2026-08-10.md",operationDoc:"docs/routine-engine-v2-operation-ledger-concurrency-convergence-2026-08-10.md",provenanceDoc:"docs/routine-engine-v2-creation-idempotency-provenance-alignment-2026-08-10.md",manifest:"src/features/routines-v2/data/routineRuntimeContractAlignmentManifest.js",fixture:"supabase/tests/phase10/content-pack-fixtures.sql",assertions:"supabase/tests/phase10/content-pack-assertions.sql"};
-const authoritativeSources={opening:"/Users/robert/Downloads/mesh-opening-content-spec-v1R-combined.md",closing:"/Users/robert/Downloads/mesh-closing-content-spec-v1R-combined.md",doubleShift:"/Users/robert/Downloads/mesh-double-shift-content-spec-v1R.md"};
+const authoritativeSources={
+  opening:absolute("content/routine-engine/source-evidence/mesh-opening-content-spec-v1R-combined.md"),
+  closing:absolute("content/routine-engine/source-evidence/mesh-closing-content-spec-v1R-combined.md"),
+  doubleShift:absolute("content/routine-engine/source-evidence/mesh-double-shift-content-spec-v1R.md"),
+};
 const protectedSchemaFingerprintSql=String.raw`
 with protected_relations as (
   select relation.oid,namespace.nspname,relation.relname,relation.relacl,relation.relrowsecurity
