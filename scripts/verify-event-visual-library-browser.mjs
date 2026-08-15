@@ -20,14 +20,17 @@ const VIEWPORTS = [
   [375, 812],
   [360, 800],
 ];
-const GUIDE_SCENARIOS = ["atrium", "cornerbar", "cornerbar-group", "cornerbar-horseshoe", "cornerbar-coffee", "workbar", "error"];
-const scenarios = ["chromium", "webkit"].flatMap((engine) => VIEWPORTS.map(([width, height], index) => [
-  `${GUIDE_SCENARIOS[index]}-${engine}-${width}`,
-  GUIDE_SCENARIOS[index],
+const GUIDE_SCENARIOS = ["atrium", "cornerbar", "cornerbar-group", "cornerbar-horseshoe", "cornerbar-coffee", "workbar", "workbar-milk-fridge", "error"];
+const scenarios = ["chromium", "webkit"].flatMap((engine) => GUIDE_SCENARIOS.map((scenario, index) => {
+  const [width, height] = VIEWPORTS[index % VIEWPORTS.length];
+  return [
+  `${scenario}-${engine}-${width}`,
+  scenario,
   engine,
   width,
   height,
-]));
+  ];
+}));
 const managerScenarios = [
   ["manager-desktop", "manager", "chromium", 1440, 1000],
   ["manager-mobile", "manager", "webkit", 390, 844],
@@ -162,6 +165,13 @@ async function main() {
         await page.getByRole("dialog").waitFor();
         check(`${name} exposes reconstruction sequence`, await page.getByText(/KNOW THE TARGET/).isVisible() && await page.getByText(/FINAL WALK-THROUGH/).isVisible());
         if (scenario === "workbar") check(`${name} preserves written-only source`, await page.getByText(/Written standard only/).isVisible());
+        if (scenario === "workbar-milk-fridge") {
+          check(`${name} exposes the complete three-zone fridge standard`, await page.getByText("Full refrigerator", { exact: true }).isVisible()
+            && await page.getByText("Top shelf", { exact: true }).isVisible()
+            && await page.getByText("Lower shelves", { exact: true }).isVisible());
+          check(`${name} states the exact permanent shelf allocation`, await page.getByText(/Exactly 2 regular milk cartons and 2 Oatly cartons/).first().isVisible()
+            && await page.getByText(/Opened and visibly date-labelled wine only/).first().isVisible());
+        }
         if (scenario === "error") check(`${name} keeps written fallback after image error`, await page.getByText(/complete written reconstruction remains available/i).isVisible());
         await page.getByRole("button", { name: "Close visual guide" }).focus();
         await page.keyboard.press("Shift+Tab");
@@ -197,7 +207,10 @@ async function main() {
       }
       await page.close();
     }
-    check("Chromium and WebKit each cover 1440, 1280, 1024, 430, 390, 375 and 360 widths plus manager states", scenarios.length === 14 && managerScenarios.length === 2 && new Set(scenarios.map((entry) => entry[2])).size === 2);
+    check("Chromium and WebKit each cover all eight guides, seven widths and manager states", scenarios.length === GUIDE_SCENARIOS.length * 2
+      && managerScenarios.length === 2
+      && new Set(scenarios.map((entry) => entry[2])).size === 2
+      && ["chromium", "webkit"].every((engine) => new Set(scenarios.filter((entry) => entry[2] === engine).map((entry) => entry[3])).size === VIEWPORTS.length));
     console.log(`Event visual browser verification: ${passed}/${passed} passed; evidence ${EVIDENCE}`);
   } finally {
     await browsers.chromium.close().catch(() => {});

@@ -31,15 +31,15 @@ assert.ok(atrium, "Atrium template missing");
 assert.ok(cornerbar, "Cornerbar template missing");
 assert.equal(atrium.source?.system, "notion", "Atrium source metadata missing");
 assert.equal(cornerbar.source?.system, "notion", "Cornerbar source metadata missing");
-assert.ok(atrium.tasks.length >= 20, "Atrium routine must retain the full Julie workflow");
-assert.ok(cornerbar.tasks.length >= 20, "Cornerbar routine must retain the full Julie workflow");
+assert.ok(atrium.tasks.length >= 20, "Atrium routine must retain the full operations-approved workflow");
+assert.ok(cornerbar.tasks.length >= 20, "Cornerbar routine must retain the full operations-approved workflow");
 
 const atriumText = atrium.tasks.map((item) => `${item.title} ${item.description}`).join(" ").toLowerCase();
 const cornerbarText = cornerbar.tasks.map((item) => `${item.title} ${item.description}`).join(" ").toLowerCase();
 for (const required of ["next event", "15 minutes", "allergen", "two hours", "lost property", "alarm codes"]) {
   assert.ok(atriumText.includes(required), `Atrium routine missing: ${required}`);
 }
-for (const required of ["pre-event product count", "chairs on tables", "front bank-terminal display", "fridges", "sliced fruit", "one night only", "alarm codes"]) {
+for (const required of ["pre-event product count", "chairs on tables", "front bank-terminal display", "current saved location standard", "sliced fruit", "one night only", "alarm codes"]) {
   assert.ok(cornerbarText.includes(required), `Cornerbar routine missing: ${required}`);
 }
 

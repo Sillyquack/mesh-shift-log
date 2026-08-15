@@ -45,6 +45,9 @@ jobs:
       - name: Verify Event operator experience
         run: npm run verify:event-operator-experience
 
+      - name: Verify operations-owned Event routine content
+        run: npm run verify:event-routine-content
+
       - name: Verify Event visual library
         run: npm run verify:event-visual-library
 

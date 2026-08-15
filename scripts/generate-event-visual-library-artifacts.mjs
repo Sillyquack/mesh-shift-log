@@ -96,7 +96,10 @@ const escapeCell = (value) => String(value ?? "").replaceAll("|", "\\|").replace
 const rows = eventVisualVenues.flatMap((venue) => venue.guides.flatMap((guide) =>
   guide.zones.flatMap((zone) => {
     if (!zone.angles.length) {
-      return [`| — | ${escapeCell(venue.label)} | ${escapeCell(guide.title)} | ${escapeCell(zone.label)} | Written standard only | — | — | ${escapeCell(zone.description)} | ${escapeCell(zone.description)} | awaiting production upload | required | source empty / existing guidance preserved |`];
+      const sourceStatus = guide.sourceStatus === "operations_approved_image_awaiting_upload"
+        ? "Operations-approved standard · image awaiting upload"
+        : "source empty / existing guidance preserved";
+      return [`| — | ${escapeCell(venue.label)} | ${escapeCell(guide.title)} | ${escapeCell(zone.label)} | Written standard only | — | — | ${escapeCell(zone.description)} | ${escapeCell(zone.description)} | awaiting production upload | required | ${sourceStatus} |`];
     }
     return zone.angles.map((angle) =>
       `| \`${angle.stableKey}\` | ${escapeCell(venue.label)} | ${escapeCell(guide.title)} | ${escapeCell(zone.label)} | ${escapeCell(angle.label)} | \`${angle.suggestedFileName}\` | ${escapeCell(angle.caption)} | ${escapeCell(angle.altText)} | ${escapeCell(angle.proves)} | ${angle.uploadStatus.replaceAll("_", " ")} | ${angle.required ? "required" : "optional"} | ${escapeCell(angle.sourceStatus.replaceAll("_", " "))} |`,

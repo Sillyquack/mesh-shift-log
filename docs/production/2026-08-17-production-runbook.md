@@ -73,8 +73,9 @@ The production preflight must first establish the exact migration currently inst
 24. `phase10v_routine_creation_idempotency_provenance_alignment.sql`
 25. `phase10w_event_visual_reference_bridge.sql`
 26. `phase10x_event_visual_library_expansion.sql`
+27. `phase10y_mesh_routine_content_pack_1_5r.sql`
 
-Phase 10W creates the least-privilege Event visual metadata and private Storage bridge for current allowlisted images. Phase 10X expands that bridge to the canonical visual allowlist, fixes `set_updated_at()` search-path configuration, and removes unintended anonymous Event Ops execution while preserving the existing authenticated RPC boundaries. Security-advisor and privilege readback acceptance is evaluated after Phase 10X, not after Phase 10W alone. Neither migration installs or publishes content, changes Routine Engine mode or UI release stage, uploads a file, or grants manager access to Event Floor Managers.
+Phase 10W creates the least-privilege Event visual metadata and private Storage bridge for current allowlisted images. Phase 10X expands that bridge to the canonical visual allowlist, fixes `set_updated_at()` search-path configuration, and removes unintended anonymous Event Ops execution while preserving the existing authenticated RPC boundaries. Phase 10Y replaces only the private canonical provider with the additive 1.5R draft containing the confirmed refrigerator standards; it does not install that provider. Security-advisor and privilege readback acceptance is evaluated after Phase 10X, not after Phase 10W alone. None of these migrations installs or publishes content, changes Routine Engine mode or UI release stage, uploads a file, or grants manager access to Event Floor Managers.
 
 ## Required evidence before the first window
 
@@ -83,7 +84,7 @@ All of the following must be present before Saturday 15 August 23:30:
 - PR #17 is open, approved for the later merge, conflict-free and still targets `phase-9a-inventory-par-levels-stocktaking` from `codex/release-2026-08-17`.
 - The exact PR #17 head has a clean release-review GitHub Actions check.
 - Production build succeeds from a clean dependency install.
-- Julie event routine verification passes.
+- Event routine content verification passes.
 - Event Mode, Shift Mode and Count Mode experience verification passes.
 - Auth and permission checks pass.
 - Routine manager, reference-image and history checks pass.
@@ -136,7 +137,7 @@ Complete before 23:00:
 - After the immediate S–V readback is an exact match, perform only the separately approved S–V migration-ledger reconciliation.
 - Do not reapply S–V DDL, replace matching functions, or re-drop matching constraints.
 - If the S–V ledger reconciliation is not explicitly approved, stop before any write.
-- Only after the ledger is coherent, apply the genuinely pending migrations in order: Phase 10W, then Phase 10X.
+- Only after the ledger is coherent, apply the genuinely pending migrations in order: Phase 10W, then Phase 10X, then Phase 10Y.
 - Capture output for every migration separately.
 - After each logical group, run its minimal readback rather than waiting until the end.
 - Do not manually edit production rows to “help” a migration pass.
@@ -148,11 +149,12 @@ Suggested checkpoints:
 - After 10D–10K4: runs, lifecycle, offline behavior, shared-device identity, manager and employee contracts exist.
 - After content-provider and hardening phases: provider and schema fingerprints match the approved candidate; content installation remains separately controlled, publication is unchanged, and mode/stage are unchanged.
 - After 10W–10X: manager and Event Floor Manager can read only the intended visual-standard paths; anonymous Event Ops execution is absent; `set_updated_at()` has the approved fixed search path; authenticated Event Ops behavior and ordinary staff behavior remain unchanged.
+- After 10Y: the private provider exposes the exact reviewed 1.5R hash; no installation, template, publication, run, mode, stage or other operational row changed.
 - Evaluate the final security-advisor/readback acceptance only after Phase 10X has completed.
 
 Migration completion is not operational activation. The following require distinct, explicit approvals and must not be combined implicitly with the migration step:
 
-1. 1.4R draft installation — installing drafts does not publish them.
+1. 1.5R draft installation — installing drafts does not publish them.
 2. Template publication.
 3. Production image upload.
 4. Routine Engine mode change.
@@ -282,7 +284,7 @@ Stop and use the next window for any of the following:
 The database work is additive and hardening-oriented. Do not improvise destructive reverse SQL.
 
 1. **Application regression with healthy database:** roll the app back to the previous known-good deployment. Leave additive database objects in place while the frontend is corrected.
-2. **New Phase 10W–10X permission defect:** disable use of Event visual guides in the app and apply a reviewed forward-fix migration that narrows the affected function or grant. Do not broadly disable RLS.
+2. **New Phase 10W–10X permission defect:** disable use of Event visual guides in the app and apply a reviewed forward-fix migration that narrows the affected function or grant. Do not broadly disable RLS. A Phase 10Y provider defect must remain uninstalled and be corrected through a new reviewed provider-only migration.
 3. **Migration stopped before commit:** keep the transaction rolled back and diagnose before retrying.
 4. **Migration committed but readback fails:** freeze affected actions, capture state, and use a forward repair. Restore from backup only when integrity cannot be recovered safely through a reviewed forward fix.
 5. **Content or image error:** restore the previous current image through the versioned manager workflow or return the reference to an honest placeholder. Do not delete immutable history.

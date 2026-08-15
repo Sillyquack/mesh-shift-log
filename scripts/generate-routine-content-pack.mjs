@@ -2,17 +2,28 @@ import { createHash } from "node:crypto";
 import { existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import { dirname, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
+import {
+  CORNERBAR_SAVED_STANDARD_INCOMPLETE,
+  CORNERBAR_SAVED_STANDARD_INSTRUCTION,
+  ESPRESSO_MACHINE_MILK_RESERVOIR_INSTRUCTION,
+  WORKBAR_MILK_FRIDGE_STANDARD_KEY,
+  cornerbarSavedLocationStandardBinding,
+  workbarMilkFridgeStandard,
+} from "../src/data/fridgeOperationalStandards.js";
 
 const ROOT = resolve(dirname(fileURLToPath(import.meta.url)), "..");
-const PACK_PATH = resolve(ROOT, "content/routine-engine/mesh-routine-content-v1-4r.json");
-const PREVIOUS_PACK_PATH = resolve(ROOT, "content/routine-engine/mesh-routine-content-v1-3r.json");
-const DOC_PATH = resolve(ROOT, "docs/routine-engine-v2-mesh-content-v1-4r.md");
-const SQL_PATH = resolve(ROOT, "supabase/phase10s_mesh_routine_content_pack_1_4r.sql");
+const PACK_PATH = resolve(ROOT, "content/routine-engine/mesh-routine-content-v1-5r.json");
+const PREVIOUS_PACK_PATH = resolve(ROOT, "content/routine-engine/mesh-routine-content-v1-4r.json");
+const RUNTIME_BASELINE_PACK_PATH = resolve(ROOT, "content/routine-engine/mesh-routine-content-v1-3r.json");
+const RUNTIME_TARGET_PACK_PATH = resolve(ROOT, "content/routine-engine/mesh-routine-content-v1-4r.json");
+const DOC_PATH = resolve(ROOT, "docs/routine-engine-v2-mesh-content-v1-5r.md");
+const SQL_PATH = resolve(ROOT, "supabase/phase10y_mesh_routine_content_pack_1_5r.sql");
 const MANIFEST_PATH = resolve(ROOT, "src/features/routines-v2/data/routineRuntimeContractAlignmentManifest.js");
 const BASE_AMENDMENT_PATH = resolve(ROOT, "docs/routine-engine-v2-mesh-operational-standards-amendment-2026-08-07.md");
 const PRODUCTION_AMENDMENT_PATH = resolve(ROOT, "docs/routine-engine-v2-production-readiness-amendment-2026-08-09.md");
 const SERVICEWARE_AMENDMENT_PATH = resolve(ROOT, "docs/routine-engine-v2-serviceware-route-amendment-2026-08-09.md");
 const AMENDMENT_PATH = resolve(ROOT, "docs/routine-engine-v2-runtime-contract-alignment-amendment-2026-08-09.md");
+const FRIDGE_AMENDMENT_PATH = resolve(ROOT, "docs/routine-engine-v2-fridge-standards-amendment-2026-08-15.md");
 const AMENDMENT_METADATA_HEADING = "## Generated pack metadata";
 const PACK_START = "-- BEGIN GENERATED MESH CONTENT PACK PAYLOAD";
 const PACK_END = "-- END GENERATED MESH CONTENT PACK PAYLOAD";
@@ -32,6 +43,15 @@ const INVENTORY_ITEM_BINDINGS = Object.freeze({
   O13: Object.freeze(["inventory_standard_items"]),
   C08: Object.freeze(["inventory_standard_items"]),
   C28: Object.freeze(["inventory_standard_items"]),
+});
+const CORNERBAR_LOCATION_CODE_BY_ITEM = Object.freeze({
+  cornerbar_left: "CORNERBAR_LEFT_FRIDGE",
+  cornerbar_middle: "CORNERBAR_MIDDLE_FRIDGE",
+  cornerbar_right: "CORNERBAR_RIGHT_FRIDGE",
+});
+const CORNERBAR_INVENTORY_ITEM_BINDINGS = Object.freeze({
+  C10: Object.freeze(Object.keys(CORNERBAR_LOCATION_CODE_BY_ITEM)),
+  C30: Object.freeze(Object.keys(CORNERBAR_LOCATION_CODE_BY_ITEM)),
 });
 const REQUIRED_CLOSING_ASSET_SOURCE = Object.freeze({
   mode: "active_assets",
@@ -158,15 +178,17 @@ const FRIDGE_CLOSING_RULES = Object.freeze({
   workbarBarLeft: { opening: ["unlock-with-universal-key", "physically-verify-unlocked"], finalClosing: ["full-restock", "close-door-completely", "lock-with-universal-key", "physically-verify-locked"] },
   workbarBarRight: { opening: ["unlock-with-universal-key", "physically-verify-unlocked"], finalClosing: ["full-restock", "close-door-completely", "lock-with-universal-key", "physically-verify-locked"] },
   workbarNonAlcoholic: { locking: "never-lock", opening: ["raise-grille-fully"], finalClosing: ["full-restock-including-eggs", "remain-unlocked", "lower-grille-fully", "physically-verify-grille-and-closed-fridge-door"] },
-  workbarMilk: { location: "old-small-wine-cabinet-in-workbar-bar", locking: "remain-unlocked", topShelf: { regularMilk: 2, oatly: 2 }, remainingStandingSpace: "reserved-for-opened-wine-bottles", door: "physically-closed" },
-  cornerbarLeft: { openingWhenActive: ["unlock-with-universal-key", "physically-verify-unlocked", "restock-own-layout"], finalClosing: ["full-restock", "close-door", "lock-with-universal-key", "physically-verify-locked"] },
-  cornerbarMiddle: { openingWhenActive: ["unlock-with-universal-key", "physically-verify-unlocked", "restock-own-layout"], finalClosing: ["full-restock", "close-door", "lock-with-universal-key", "physically-verify-locked"] },
-  cornerbarRight: { openingWhenActive: ["unlock-with-universal-key", "physically-verify-unlocked", "restock-own-layout"], finalClosing: ["full-restock", "close-door", "lock-with-universal-key", "physically-verify-locked"] },
+  workbarMilk: { standardKey: WORKBAR_MILK_FRIDGE_STANDARD_KEY, locking: "remain-unlocked", power: "remain-on", door: "physically-closed" },
+  cornerbarLeft: { standardSource: { ...cornerbarSavedLocationStandardBinding, locationCodes: ["CORNERBAR_LEFT_FRIDGE"] }, openingWhenActive: ["unlock-with-universal-key", "physically-verify-unlocked", "restock-current-saved-location-standard", "keep-refrigerator-and-internal-light-on"], finalClosing: ["restock-current-saved-location-standard", "keep-refrigerator-and-internal-light-on", "close-door", "lock-with-universal-key", "physically-verify-locked"] },
+  cornerbarMiddle: { standardSource: { ...cornerbarSavedLocationStandardBinding, locationCodes: ["CORNERBAR_MIDDLE_FRIDGE"] }, openingWhenActive: ["unlock-with-universal-key", "physically-verify-unlocked", "restock-current-saved-location-standard", "keep-refrigerator-and-internal-light-on"], finalClosing: ["restock-current-saved-location-standard", "keep-refrigerator-and-internal-light-on", "close-door", "lock-with-universal-key", "physically-verify-locked"] },
+  cornerbarRight: { standardSource: { ...cornerbarSavedLocationStandardBinding, locationCodes: ["CORNERBAR_RIGHT_FRIDGE"] }, openingWhenActive: ["unlock-with-universal-key", "physically-verify-unlocked", "restock-current-saved-location-standard", "keep-refrigerator-and-internal-light-on"], finalClosing: ["restock-current-saved-location-standard", "keep-refrigerator-and-internal-light-on", "close-door", "lock-with-universal-key", "physically-verify-locked"] },
   cornerbarEventActive: { result: "formal-transfer-not-not-applicable", recipient: "authorized-event-operations-person", scope: "each-relevant-fridge", finalEvidence: "physical-check-required" },
 });
 const CORNERBAR_OPERATING_STANDARD = Object.freeze({
   openingWhenUsed: ["confirm-booking-event-and-expected-opening-time", "confirm-operational-owner", "unlock-relevant-doors-in-salto", "unlock-cornerbar-street-upper-physical-security-lock", "unlock-left-middle-right-fridges-with-universal-key", "check-and-restock-each-fridge-to-own-layout", "set-glassware-bar-equipment-and-presentation", "activate-relevant-music-and-lighting", "physically-confirm-ready"],
-  finalClosing: ["confirm-last-service-and-event-operation-ended", "full-restock-close-lock-and-check-left-middle-right-fridges", "clean-and-return-bar-equipment", "clean-and-return-beer-tap-parts-and-drip-trays", "reset-cornerbar-to-approved-final-standard", "turn-off-music", "apply-closed-lighting", "complete-physical-area-sweep", "close-and-lock-relevant-inner-doors", "remove-unauthorized-manual-salto-unlocks", "lock-cornerbar-street-door-in-salto", "engage-upper-physical-security-lock", "verify-salto-lock-and-upper-physical-lock-separately"],
+  fridgeStandardSource: cornerbarSavedLocationStandardBinding,
+  fridgeStandardIncompleteMessage: CORNERBAR_SAVED_STANDARD_INCOMPLETE,
+  finalClosing: ["confirm-last-service-and-event-operation-ended", "refill-left-middle-right-fridges-to-current-saved-location-standard", "keep-every-cornerbar-refrigerator-and-internal-light-on", "close-lock-and-check-left-middle-right-fridges", "clean-and-return-bar-equipment", "clean-and-return-beer-tap-parts-and-drip-trays", "reset-cornerbar-to-approved-final-standard", "turn-off-room-music", "apply-closed-room-lighting", "complete-physical-area-sweep", "close-and-lock-relevant-inner-doors", "remove-unauthorized-manual-salto-unlocks", "lock-cornerbar-street-door-in-salto", "engage-upper-physical-security-lock", "verify-salto-lock-and-upper-physical-lock-separately"],
   eventActive: { ordinaryClosingMayClaimComplete: false, notApplicableAllowed: false, transferRequired: true, transferScopes: ["fridges", "doors-and-locks", "equipment", "music-and-lighting", "final-sweep", "reset-controls"], finalEvidence: "physical-completion-evidence-required" },
 });
 const SERVICEWARE_RECOVERY_ROUTE = Object.freeze({
@@ -234,7 +256,7 @@ const SERVICEWARE_RECOVERY_ROUTE = Object.freeze({
 });
 
 const STANDARDS = [
-  ["workbar-milk-fridge-target", "Workbar Milk Fridge target", "object", "manual", { regularMilk: 2, oatly: 2 }],
+  [WORKBAR_MILK_FRIDGE_STANDARD_KEY, workbarMilkFridgeStandard.displayName, "object", "manual", workbarMilkFridgeStandard, workbarMilkFridgeStandard.provenance],
   ["workbar-coffee-canister-assigned-target", "Workbar-assigned Coffee Canisters target", "object", "manual", WORKBAR_CANISTER_TARGET],
   ["baked-goods-daily", "Baked goods daily", "object", "manual", { requiredEveryDay: true }],
   ["self-service-fixed-components", "Self-service fixed components", "list", "manual", SELF_SERVICE_COMPONENTS],
@@ -411,6 +433,7 @@ function normalizePolicy(value) { return value?.replaceAll("-", "_").replaceAll(
 function sourceTypeToTaskType(sourceType) { return sourceType === "conditional" ? "action" : sourceType; }
 function applyItemSources(task) {
   const inventoryItemKeys = new Set(INVENTORY_ITEM_BINDINGS[task.id] || []);
+  const cornerbarInventoryItemKeys = new Set(CORNERBAR_INVENTORY_ITEM_BINDINGS[task.id] || []);
   const assetRegistryItemKeys = new Set(ASSET_REGISTRY_ITEM_BINDINGS[task.id] || []);
   for (const item of task.items) {
     const text = `${item.key} ${item.label}`.toLowerCase();
@@ -437,6 +460,16 @@ function applyItemSources(task) {
         locationCodes: [...WORKBAR_NON_ALCO_LOCATION_STANDARD_SOURCE.locationCodes],
       };
     }
+    if (cornerbarInventoryItemKeys.has(item.key)) {
+      delete item.standardKey;
+      delete item.locationSetKey;
+      item.sourceKind = "inventory_readonly";
+      item.sourceConfig = {
+        mode: "location_standards",
+        locationCodes: [CORNERBAR_LOCATION_CODE_BY_ITEM[item.key]],
+        activeOnly: true,
+      };
+    }
     if (assetRegistryItemKeys.has(item.key)) {
       delete item.standardKey;
       delete item.locationSetKey;
@@ -446,6 +479,9 @@ function applyItemSources(task) {
   }
   for (const itemKey of inventoryItemKeys) {
     if (!task.items.some((item) => item.key === itemKey)) throw new Error(`${task.id}/${itemKey}: explicit inventory source binding was not found.`);
+  }
+  for (const itemKey of cornerbarInventoryItemKeys) {
+    if (!task.items.some((item) => item.key === itemKey)) throw new Error(`${task.id}/${itemKey}: Cornerbar location-standard source binding was not found.`);
   }
   for (const itemKey of assetRegistryItemKeys) {
     if (!task.items.some((item) => item.key === itemKey)) throw new Error(`${task.id}/${itemKey}: explicit asset-registry source binding was not found.`);
@@ -859,6 +895,136 @@ function applyRuntimeContractAlignment(openingTasks, closingTasks, amendmentDeci
     }));
   }
 }
+function finalizeFridgeStandardsAmendment(task, amendmentDecisionHash) {
+  task.items.forEach((item, sortOrder) => { item.sortOrder = sortOrder; item.metadata.sourceText = `\`${item.key}\` — ${item.label}`; });
+  task.structuredItemsText = task.items.map((item) => `- \`${item.key}\` — ${item.label}`).join("\n");
+  task.metadata.deviationRules = bullets(task.deviationRulesText);
+  task.metadata.referenceGuidance = bullets(task.referenceGuidanceText);
+  task.metadata.fridgeStandardsAmendment = {
+    date: "2026-08-15",
+    decisionHash: amendmentDecisionHash,
+    ownership: "organization",
+    standardKey: WORKBAR_MILK_FRIDGE_STANDARD_KEY,
+  };
+  task.sourceHash = sha256(canonical({
+    priorSourceHash: task.sourceHash,
+    title: task.title,
+    instructions: task.instructions,
+    structuredItemsText: task.structuredItemsText,
+    doneCriteriaText: task.doneCriteriaText,
+    deviationRulesText: task.deviationRulesText,
+    referenceGuidanceText: task.referenceGuidanceText,
+    amendmentDecisionHash,
+  }));
+}
+function applyFridgeStandardsAmendment(openingTasks, closingTasks, doubleShiftSteps, amendmentDecisionHash) {
+  const tasks = new Map([...openingTasks, ...closingTasks].map((task) => [task.id, task]));
+  const touched = new Set();
+  const task = (id) => {
+    const value = tasks.get(id);
+    if (!value) throw new Error(`Missing task for fridge-standards amendment: ${id}`);
+    touched.add(id);
+    return value;
+  };
+  const fullFridgeItems = () => [
+    ["regular_milk_count", "top shelf contains exactly 2 regular milk cartons", { standardKey: WORKBAR_MILK_FRIDGE_STANDARD_KEY }],
+    ["oatly_count", "top shelf contains exactly 2 Oatly cartons", { standardKey: WORKBAR_MILK_FRIDGE_STANDARD_KEY }],
+    ["lower_shelves_opened_wine_only", "every bottle below the top shelf is opened wine", { standardKey: WORKBAR_MILK_FRIDGE_STANDARD_KEY }],
+    ["lower_shelves_visible_date_labels", "every bottle below has a clearly visible date label", { standardKey: WORKBAR_MILK_FRIDGE_STANDARD_KEY }],
+    ["no_unrelated_items", "no unrelated item or temporary event product is stored in the refrigerator", { standardKey: WORKBAR_MILK_FRIDGE_STANDARD_KEY }],
+    ["fridge_clean_and_operating", "refrigerator is clean, operating and correctly organised", { standardKey: WORKBAR_MILK_FRIDGE_STANDARD_KEY }],
+    ["door_closed_and_powered_on", "door is closed and refrigerator remains powered on", { standardKey: WORKBAR_MILK_FRIDGE_STANDARD_KEY }],
+  ];
+  const fullFridgeDone = `- Arrival or checkpoint assessment is recorded.\n${workbarMilkFridgeStandard.doneCriteria.map((criterion) => `- ${criterion}.`).join("\n")}\n- The refrigerator remains powered on and its door is closed.`;
+  const fullFridgeDeviation = "- The top shelf is not exactly 2 regular milk cartons and 2 Oatly cartons.\n- A lower shelf contains anything other than opened wine with a clearly visible date label.\n- An unrelated product, extra milk carton or temporary event product is present.\n- The refrigerator is not clean, operating, correctly organised and powered on.\n- Completing this routine check never completes a Stock Count assignment.";
+
+  {
+    const value = task("O08");
+    value.instructions = ESPRESSO_MACHINE_MILK_RESERVOIR_INSTRUCTION;
+    setTaskItems(value, [
+      ["dairy_reservoir_regular_milk", "dairy reservoir contains regular milk"],
+      ["oat_reservoir_oatly", "oat reservoir contains Oatly"],
+      ["fresh_in_date_cartons_from_workbar_milk_fridge", "fresh, in-date cartons are taken from the Workbar Milk Fridge", { standardKey: WORKBAR_MILK_FRIDGE_STANDARD_KEY }],
+      ["both_reservoirs_connected", "both espresso-machine milk reservoirs are correctly connected"],
+      ["milk_system_normal", "espresso-machine milk system reports normal status"],
+    ]);
+    value.doneCriteriaText = "- The dairy reservoir contains regular milk.\n- The oat reservoir contains Oatly.\n- Only fresh, in-date cartons from the Workbar Milk Fridge are used.\n- Both reservoirs are correctly connected.\n- No unresolved milk-system error remains.";
+    value.deviationRulesText = "- Dairy and oat reservoirs are confused.\n- A carton is out of date or did not come from the Workbar Milk Fridge.\n- Either reservoir is disconnected or the milk system reports an error.\n- Espresso-machine reservoirs are never treated as carton-storage or a Stock Count location.";
+    value.referenceGuidanceText = "- `workbar-milk-fridge` supplies fresh cartons but remains a separate physical system.";
+  }
+  for (const id of ["O09", "C09", "C29"]) {
+    const value = task(id);
+    value.instructions = `${workbarMilkFridgeStandard.mainInstruction}\n\nCompleting this routine-standard check does not complete any Stock Count assignment.`;
+    setTaskItems(value, fullFridgeItems());
+    value.doneCriteriaText = fullFridgeDone;
+    value.deviationRulesText = fullFridgeDeviation;
+    value.referenceGuidanceText = "- `workbar-milk-fridge` — written organization-owned standard; image awaiting upload.";
+  }
+  {
+    const value = task("O23");
+    const machine = value.items.find((item) => item.key === "coffee_machine_milk_ready");
+    const fridge = value.items.find((item) => item.key === "milk_fridge_2_plus_2");
+    if (!machine || !fridge) throw new Error("O23 milk readiness items are missing.");
+    machine.label = "both espresso-machine milk reservoirs correctly filled and connected";
+    fridge.label = "complete Workbar Milk Fridge standard: 2 + 2 on top and opened, visibly date-labelled wine only below";
+    fridge.sourceKind = "routine_standard";
+    fridge.standardKey = WORKBAR_MILK_FRIDGE_STANDARD_KEY;
+    fridge.sourceConfig = {};
+    appendTaskText(value, "doneCriteriaText", "- Espresso-machine reservoirs and Workbar Milk Fridge carton storage are verified as separate physical systems.\n- The full refrigerator standard is required; a correct 2 + 2 top shelf alone is insufficient.");
+  }
+  for (const id of ["O29", "O35"]) {
+    const value = task(id);
+    const fridge = value.items.find((item) => item.key === "milk_fridge_two_regular_two_oatly");
+    if (!fridge) throw new Error(`${id} milk-fridge checkpoint item is missing.`);
+    fridge.label = "complete Workbar Milk Fridge standard: exact 2 + 2 top shelf and compliant lower shelves";
+    fridge.sourceKind = "routine_standard";
+    fridge.standardKey = WORKBAR_MILK_FRIDGE_STANDARD_KEY;
+    fridge.sourceConfig = {};
+    appendTaskText(value, "instructions", "For the Workbar Milk Fridge, confirm both the exact milk reserve and opened, visibly date-labelled wine only on every lower shelf. Temporary event storage is prohibited.");
+    appendTaskText(value, "doneCriteriaText", "- Workbar Milk Fridge top and lower shelves both comply with the permanent standard; 2 + 2 alone is not a pass.");
+    appendTaskText(value, "deviationRulesText", "- Workbar Milk Fridge lower-shelf or temporary-storage noncompliance blocks the checkpoint even when 2 + 2 milk is present.");
+  }
+  for (const id of ["C10", "C30"]) {
+    const value = task(id);
+    appendTaskText(value, "instructions", `${CORNERBAR_SAVED_STANDARD_INSTRUCTION} Resolve Left, Middle and Right independently from their current manager-maintained location standards. ${CORNERBAR_SAVED_STANDARD_INCOMPLETE}`);
+    for (const [itemKey, locationCode] of Object.entries(CORNERBAR_LOCATION_CODE_BY_ITEM)) {
+      const item = value.items.find((entry) => entry.key === itemKey);
+      if (!item) throw new Error(`${id}/${itemKey}: Cornerbar fridge item is missing.`);
+      item.label = `${itemKey.replaceAll("_", " ")} — current saved location standard`;
+      item.sourceKind = "inventory_readonly";
+      item.sourceConfig = { mode: "location_standards", locationCodes: [locationCode], activeOnly: true };
+      delete item.standardKey;
+      delete item.locationSetKey;
+    }
+    appendTaskText(value, "doneCriteriaText", "- Cornerbar Left, Middle and Right each match the current saved location standard.\n- Every Cornerbar refrigerator and internal light remains on.\n- No product quantity is embedded in Event or Closing content.");
+    appendTaskText(value, "deviationRulesText", `- ${CORNERBAR_SAVED_STANDARD_INCOMPLETE}\n- Never invent a missing product or quantity, and never switch off a Cornerbar refrigerator or its internal light.`);
+  }
+  {
+    const value = task("C33");
+    value.instructions = "Apply the structured fridge rules and physically verify every door, grille and required lock. Workbar Left/Right are locked after final full restock. The non-alcoholic fridge remains unlocked with its grille down. The Workbar Milk Fridge remains unlocked, powered on and fully compliant with its permanent top- and lower-shelf standard. Cornerbar Left/Middle/Right remain powered on with internal lights on, match their current saved location standards, and may then be closed, locked and physically checked. Event-active Cornerbar work is formally transferred per fridge scope with final physical evidence, never N/A.";
+    const milk = value.items.find((item) => item.key === "workbar_milk_rule");
+    if (!milk) throw new Error("C33/workbar_milk_rule is missing.");
+    milk.label = "Workbar Milk Fridge powered on and fully compliant: exact 2 + 2 top shelf; opened, visibly date-labelled wine only below";
+    milk.sourceKind = "routine_standard";
+    milk.standardKey = WORKBAR_MILK_FRIDGE_STANDARD_KEY;
+    milk.sourceConfig = {};
+    addTaskItem(value, "cornerbar_refrigerators_and_internal_lights_on", "every Cornerbar refrigerator and internal light remains on", { standardKey: "cornerbar-operating-standard" });
+    value.doneCriteriaText = "- Every fridge physically matches its structured rule.\n- Required locks are physically checked after the universal key is turned.\n- Non-alcoholic grille/door and unlocked state are checked.\n- Workbar Milk Fridge top and lower shelves fully comply; the refrigerator remains powered on, closed and unlocked.\n- Cornerbar refrigerators and internal lights remain on and each fridge matches its current saved location standard.\n- Event-active Cornerbar scope has authorized transfer and final physical evidence.";
+    appendTaskText(value, "deviationRulesText", "- A correct Workbar Milk Fridge top shelf never compensates for noncompliant lower shelves.\n- Switching off a Cornerbar refrigerator or its internal light is forbidden.");
+  }
+
+  const transition = doubleShiftSteps.find((step) => step.id === "DS02");
+  if (!transition) throw new Error("DS02 is missing from the fridge-standards amendment.");
+  transition.instructions = transition.instructions.replace(
+    "- Workbar milk fridge",
+    "- espresso-machine dairy and oat reservoirs\n- self-service milk jug\n- Workbar Milk Fridge top-shelf 2 + 2 reserve\n- Workbar Milk Fridge lower shelves: opened, visibly date-labelled wine only",
+  );
+  transition.doneCriteriaText = `${transition.doneCriteriaText}\n- The handover reports espresso reservoirs, self-service milk jug, Workbar Milk Fridge top shelf and lower shelves separately.\n- A 2 + 2 top shelf alone never reports the full refrigerator standard as compliant.`;
+  transition.sourceHash = sha256(canonical({ priorSourceHash: transition.sourceHash, instructions: transition.instructions, doneCriteriaText: transition.doneCriteriaText, amendmentDecisionHash }));
+  transition.fridgeStandardsAmendment = { date: "2026-08-15", decisionHash: amendmentDecisionHash, ownership: "organization" };
+
+  for (const id of touched) finalizeFridgeStandardsAmendment(tasks.get(id), amendmentDecisionHash);
+}
 function parseDoubleShift(source) {
   const matcher = /^# (DS\d{2}) — ([^\n]+)\n([\s\S]*?)(?=^# [^\n]+|$(?![\s\S]))/gm;
   const steps = [];
@@ -941,7 +1107,7 @@ function amendmentDecisionBody(source) {
   if (index < 0) throw new Error("Operational standards amendment is missing the generated metadata boundary.");
   return `${source.replaceAll("\r\n", "\n").slice(0, index).trimEnd()}\n`;
 }
-function buildPack(openingSource, closingSource, doubleShiftSource, baseAmendmentSource, productionAmendmentSource, servicewareAmendmentSource, amendmentSource) {
+function buildPack(openingSource, closingSource, doubleShiftSource, baseAmendmentSource, productionAmendmentSource, servicewareAmendmentSource, amendmentSource, fridgeAmendmentSource) {
   validateSource(openingSource, "Opening", SOURCE_HASHES.opening);
   validateSource(closingSource, "Closing", SOURCE_HASHES.closing);
   validateSource(doubleShiftSource, "Double Shift", SOURCE_HASHES.doubleShift);
@@ -949,6 +1115,7 @@ function buildPack(openingSource, closingSource, doubleShiftSource, baseAmendmen
   const productionAmendmentDecisionHash = sha256(amendmentDecisionBody(productionAmendmentSource));
   const servicewareAmendmentDecisionHash = sha256(amendmentDecisionBody(servicewareAmendmentSource));
   const amendmentDecisionHash = sha256(amendmentDecisionBody(amendmentSource));
+  const fridgeAmendmentDecisionHash = sha256(amendmentDecisionBody(fridgeAmendmentSource));
   const openingTasks = parseRoutine(openingSource, "O");
   const closingTasks = parseRoutine(closingSource, "C");
   applyOperationalStandardsAmendment(openingTasks, closingTasks, baseAmendmentDecisionHash);
@@ -956,9 +1123,10 @@ function buildPack(openingSource, closingSource, doubleShiftSource, baseAmendmen
   applyServicewareRouteAmendment(openingTasks, closingTasks, servicewareAmendmentDecisionHash);
   applyRuntimeContractAlignment(openingTasks, closingTasks, amendmentDecisionHash);
   const doubleShiftSteps = parseDoubleShift(doubleShiftSource);
+  applyFridgeStandardsAmendment(openingTasks, closingTasks, doubleShiftSteps, fridgeAmendmentDecisionHash);
   const allRelations = relations(closingTasks, amendmentDecisionHash);
   const pack = {
-    schemaVersion: "1.0", packKey: "mesh-routine-content", packVersion: "1.4R",
+    schemaVersion: "1.0", packKey: "mesh-routine-content", packVersion: "1.5R",
     name: "Mesh Opening and Closing operational content", description: "Editable Opening and Closing drafts plus Double Shift system-step copy. Installation never publishes or creates operative state.",
     sections: [...SECTION_CONFIG.O.map((value, sortOrder) => ({ ...value, routineKey: "opening", sortOrder })), ...SECTION_CONFIG.C.map((value, sortOrder) => ({ ...value, routineKey: "closing", sortOrder }))],
     locations: LOCATIONS, locationSets: LOCATION_SETS, standards: STANDARDS, references: REFERENCES,
@@ -973,6 +1141,7 @@ function buildPack(openingSource, closingSource, doubleShiftSource, baseAmendmen
       { kind: "production_readiness_amendment", fileName: "routine-engine-v2-production-readiness-amendment-2026-08-09.md", sha256: productionAmendmentDecisionHash, hashScope: "content-before-generated-pack-metadata" },
       { kind: "serviceware_route_amendment", fileName: "routine-engine-v2-serviceware-route-amendment-2026-08-09.md", sha256: servicewareAmendmentDecisionHash, hashScope: "content-before-generated-pack-metadata" },
       { kind: "runtime_contract_alignment_amendment", fileName: "routine-engine-v2-runtime-contract-alignment-amendment-2026-08-09.md", sha256: amendmentDecisionHash, hashScope: "content-before-generated-pack-metadata" },
+      { kind: "fridge_standards_amendment", fileName: "routine-engine-v2-fridge-standards-amendment-2026-08-15.md", sha256: fridgeAmendmentDecisionHash, hashScope: "content-before-generated-pack-metadata" },
     ],
   };
   validatePack(pack);
@@ -980,16 +1149,16 @@ function buildPack(openingSource, closingSource, doubleShiftSource, baseAmendmen
   return pack;
 }
 function generatedAmendment(pack) {
-  const source = readFileSync(AMENDMENT_PATH, "utf8");
+  const source = readFileSync(FRIDGE_AMENDMENT_PATH, "utf8");
   const body = amendmentDecisionBody(source);
-  const amendment = pack.sourceDocuments.find((entry) => entry.kind === "runtime_contract_alignment_amendment");
+  const amendment = pack.sourceDocuments.find((entry) => entry.kind === "fridge_standards_amendment");
   return `${body}\n${AMENDMENT_METADATA_HEADING}\n\nThis section is generated from the canonical pack and is excluded from the amendment decision-body hash.\n\n- Pack: \`${pack.packKey}@${pack.packVersion}\`\n- Canonical pack SHA-256: \`${pack.packHash}\`\n- Amendment decision-body SHA-256: \`${amendment.sha256}\`\n- Production action: none; this artifact is local implementation and review only\n`;
 }
 function syncAmendment(pack, checkOnly) {
   const expected = generatedAmendment(pack);
-  const source = readFileSync(AMENDMENT_PATH, "utf8");
-  if (checkOnly) { if (source !== expected) throw new Error("Runtime-contract alignment amendment metadata is stale."); }
-  else writeFileSync(AMENDMENT_PATH, expected);
+  const source = readFileSync(FRIDGE_AMENDMENT_PATH, "utf8");
+  if (checkOnly) { if (source !== expected) throw new Error("Fridge-standards amendment metadata is stale."); }
+  else writeFileSync(FRIDGE_AMENDMENT_PATH, expected);
 }
 function validatePack(pack, withHash = false) {
   const keys = Object.keys(pack);
@@ -999,7 +1168,7 @@ function validatePack(pack, withHash = false) {
   for (const key of TOP_LEVEL_FIELDS.filter((key) => key !== "packHash")) if (!(key in pack)) throw new Error(`Missing top-level field: ${key}`);
   if (pack.opening.tasks.length !== 37 || pack.closing.tasks.length !== 46 || pack.doubleShiftSteps.length !== 4) throw new Error("Content counts must be Opening 37, Closing 46, Double Shift 4.");
   if (pack.locations.length !== 44 || pack.locationSets.length !== 12 || pack.standards.length !== 14 || pack.references.length !== 40) throw new Error("Foundation counts must be 44 locations, 12 sets, 14 standards, and 40 references.");
-  if (pack.packVersion !== "1.4R") throw new Error("Runtime-contract alignment pack version must be 1.4R.");
+  if (pack.packVersion !== "1.5R") throw new Error("Fridge-standards pack version must be 1.5R.");
   for (const [tasks, prefix, count] of [[pack.opening.tasks, "O", 37], [pack.closing.tasks, "C", 46]]) {
     const expected = new Set(Array.from({ length: count }, (_, index) => `${prefix}${String(index + 1).padStart(2, "0")}`));
     for (const task of tasks) {
@@ -1015,7 +1184,11 @@ function validatePack(pack, withHash = false) {
   }
   if (pack.locations.some((location) => /(^|\D)005(\D|$)/.test(`${location.key} ${location.name}`))) throw new Error("Room 005 is forbidden.");
   if (/coffee container|coffee urn|coffee pot/i.test(canonical(pack))) throw new Error("Content violates Coffee Canister terminology.");
-  if (pack.standards.find((standard) => standard.key === "workbar-milk-fridge-target")?.currentRevision?.value?.regularMilk !== 2 || pack.standards.find((standard) => standard.key === "workbar-milk-fridge-target")?.currentRevision?.value?.oatly !== 2) throw new Error("Workbar Milk Fridge target must be 2 regular milk + 2 Oatly.");
+  const milkFridgeStandard = pack.standards.find((standard) => standard.key === WORKBAR_MILK_FRIDGE_STANDARD_KEY)?.currentRevision?.value;
+  if (milkFridgeStandard?.topShelf?.regularMilkCartons !== 2 || milkFridgeStandard?.topShelf?.oatlyCartons !== 2
+    || milkFridgeStandard?.lowerShelves?.exclusiveUse !== "opened-wine-bottles"
+    || milkFridgeStandard?.lowerShelves?.visibleDateLabelRequired !== true
+    || milkFridgeStandard?.applicability?.notOverridableByEvent !== true) throw new Error("Workbar Milk Fridge organization-owned standard is incomplete.");
   if (!pack.standards.find((standard) => standard.key === "self-service-fixed-components").currentRevision.value.includes("eggs")) throw new Error("Self-service fixed components must include eggs.");
   if (pack.unresolvedRequirements.length !== 0) throw new Error("The authoritative serviceware route must leave no unresolved content requirements.");
   const servicewareStandard = pack.standards.find((standard) => standard.key === "serviceware-office-recovery-route-confirmation");
@@ -1051,6 +1224,10 @@ function validatePack(pack, withHash = false) {
   const c05Automatic = pack.closing.dependencies.filter((entry) => entry.predecessorTaskId === "C05" && entry.dependencyType === "complete_predecessor_on_successor");
   if (c05Automatic.length !== 1 || c05Automatic[0].successorTaskId !== "C15" || pack.closing.dependencies.some((entry) => entry.predecessorTaskId === "C05" && entry.successorTaskId === "C14")) throw new Error("C05 must have exactly one automatic successor, C15, and no C14 dependency.");
   const canonicalInventoryConfig = canonical(WORKBAR_NON_ALCO_LOCATION_STANDARD_SOURCE);
+  const expectedCornerbarInventoryConfigs = new Map(
+    ["C10", "C30"].flatMap((taskId) => Object.entries(CORNERBAR_LOCATION_CODE_BY_ITEM)
+      .map(([itemKey, locationCode]) => [`${taskId}/${itemKey}`, canonical({ mode: "location_standards", locationCodes: [locationCode], activeOnly: true })])),
+  );
   const canonicalAssetConfig = canonical(REQUIRED_CLOSING_ASSET_SOURCE);
   const inventoryPairs = [];
   const assetPairs = [];
@@ -1059,7 +1236,8 @@ function validatePack(pack, withHash = false) {
       const pair = `${task.id}/${item.key}`;
       if (item.sourceKind === "inventory_readonly") {
         inventoryPairs.push(pair);
-        if (canonical(item.sourceConfig) !== canonicalInventoryConfig
+        const expectedConfig = expectedCornerbarInventoryConfigs.get(pair) || canonicalInventoryConfig;
+        if (canonical(item.sourceConfig) !== expectedConfig
           || item.standardKey || item.locationSetKey
           || item.sourceConfig.locationCodes.some((code) => !/^[A-Z][A-Z0-9_]*$/.test(code))) {
           throw new Error(`${pair}: inventory_readonly source does not match the canonical location_standards contract.`);
@@ -1101,8 +1279,9 @@ function validatePack(pack, withHash = false) {
       }
     }
   }
-  if (canonical(inventoryPairs.sort()) !== canonical(["C08/inventory_standard_items", "C28/inventory_standard_items", "O13/inventory_standard_items"])) {
-    throw new Error("Only the three approved inventory_standard_items bindings may use inventory_readonly.");
+  const expectedInventoryPairs = ["C08/inventory_standard_items", "C28/inventory_standard_items", "O13/inventory_standard_items", ...expectedCornerbarInventoryConfigs.keys()].sort();
+  if (canonical(inventoryPairs.sort()) !== canonical(expectedInventoryPairs)) {
+    throw new Error("Only the approved Workbar and Cornerbar location-standard bindings may use inventory_readonly.");
   }
   if (canonical(assetPairs.sort()) !== canonical(["C37/active_asset_registry_items"])) {
     throw new Error("Only C37/active_asset_registry_items may use asset_registry_readonly.");
@@ -1143,7 +1322,7 @@ function generatedDocBase(pack) {
 function generatedDoc(pack) {
   return generatedDocBase(pack)
     .replace("# Mesh Routine Content Pack v1", `# Mesh Routine Content Pack ${pack.packVersion}`)
-    .replace("content/routine-engine/mesh-routine-content-v1.json", "content/routine-engine/mesh-routine-content-v1-4r.json");
+    .replace("content/routine-engine/mesh-routine-content-v1.json", "content/routine-engine/mesh-routine-content-v1-5r.json");
 }
 function runtimeContractTaskProjection(task) {
   return {
@@ -1219,14 +1398,15 @@ function runtimeContractPackProjection(pack) {
     relations: [companion],
   };
 }
-function generatedRuntimeContractManifest(pack) {
-  const previous = JSON.parse(readFileSync(PREVIOUS_PACK_PATH, "utf8"));
-  const baseline = runtimeContractPackProjection(previous);
-  const target = runtimeContractPackProjection(pack);
+function generatedRuntimeContractManifest() {
+  const baselinePack = JSON.parse(readFileSync(RUNTIME_BASELINE_PACK_PATH, "utf8"));
+  const targetPack = JSON.parse(readFileSync(RUNTIME_TARGET_PACK_PATH, "utf8"));
+  const baseline = runtimeContractPackProjection(baselinePack);
+  const target = runtimeContractPackProjection(targetPack);
   return `// Generated byte-derived projection of the reviewed 1.3R → 1.4R runtime-contract alignment.\n// Canonical pack hashes remain authoritative; unrelated fields are deliberately absent.\nexport const runtimeContractAlignmentBaseline = Object.freeze(${JSON.stringify(baseline, null, 2)});\n\nexport const runtimeContractAlignmentTarget = Object.freeze(${JSON.stringify(target, null, 2)});\n`;
 }
 function syncRuntimeContractManifest(pack, checkOnly) {
-  const expected = generatedRuntimeContractManifest(pack);
+  const expected = generatedRuntimeContractManifest();
   if (checkOnly) {
     if (readFileSync(MANIFEST_PATH, "utf8") !== expected) throw new Error("Generated runtime-contract alignment manifest is stale.");
   } else writeFileSync(MANIFEST_PATH, expected);
@@ -1241,7 +1421,7 @@ function syncSql(pack, checkOnly) {
   const source = readFileSync(SQL_PATH, "utf8");
   const start = source.indexOf(PACK_START);
   const end = source.indexOf(PACK_END);
-  if (start < 0 || end < start) throw new Error("Phase 10S SQL is missing generated payload markers.");
+  if (start < 0 || end < start) throw new Error("Phase 10Y SQL is missing generated payload markers.");
   const expected = `${source.slice(0, start)}${generatedSql(pack)}${source.slice(end + PACK_END.length)}`;
   if (checkOnly) { if (source !== expected) throw new Error("Generated SQL content payload is stale."); }
   else writeFileSync(SQL_PATH, expected);
@@ -1259,7 +1439,7 @@ if (args.has("--bootstrap") || args.has("--verify-sources")) {
   const doubleShiftPath = resolve(String(args.get("--double-shift")));
   const pack = buildPack(readFileSync(openingPath, "utf8"), readFileSync(closingPath, "utf8"), readFileSync(doubleShiftPath, "utf8"),
     readFileSync(BASE_AMENDMENT_PATH, "utf8"), readFileSync(PRODUCTION_AMENDMENT_PATH, "utf8"),
-    readFileSync(SERVICEWARE_AMENDMENT_PATH, "utf8"), readFileSync(AMENDMENT_PATH, "utf8"));
+    readFileSync(SERVICEWARE_AMENDMENT_PATH, "utf8"), readFileSync(AMENDMENT_PATH, "utf8"), readFileSync(FRIDGE_AMENDMENT_PATH, "utf8"));
   if (args.has("--verify-sources")) {
     const existing = JSON.parse(readFileSync(PACK_PATH, "utf8"));
     if (canonical(existing) !== canonical(pack)) throw new Error("Canonical pack differs from the three locked authoritative sources.");

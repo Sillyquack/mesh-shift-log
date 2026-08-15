@@ -1,0 +1,132 @@
+:root {
+  color-scheme: dark;
+  background: #11110f;
+  color: #fffdf7;
+}
+
+body {
+  margin: 0;
+  background:
+    radial-gradient(circle at 90% 0, rgb(214 166 93 / 20%), transparent 30%),
+    linear-gradient(180deg, #151513, #11110f 60%, #181510);
+}
+
+.fridge-review-shell {
+  width: min(920px, calc(100% - 28px));
+  margin: 0 auto;
+  padding: clamp(18px, 5vw, 56px) 0 70px;
+}
+
+.fridge-review-note {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: space-between;
+  gap: 8px 20px;
+  margin-bottom: 14px;
+  padding: 16px 18px;
+  border: 1px solid rgb(239 202 143 / 48%);
+  border-radius: 16px;
+  background: rgb(239 202 143 / 10%);
+  color: #f8e7ca;
+}
+
+.fridge-review-card {
+  overflow: hidden;
+  border: 1px solid rgb(255 255 255 / 14%);
+  border-radius: 28px;
+  background: linear-gradient(145deg, #1a1917, #28231c);
+  box-shadow: 0 30px 90px rgb(0 0 0 / 38%);
+}
+
+.fridge-review-card > header,
+.fridge-review-card > section,
+.fridge-review-card > footer {
+  padding: clamp(24px, 5vw, 48px);
+}
+
+.fridge-review-card > section,
+.fridge-review-card > footer {
+  border-top: 1px solid rgb(255 255 255 / 10%);
+}
+
+.fridge-review-card > header {
+  background: linear-gradient(135deg, rgb(255 255 255 / 5%), transparent);
+}
+
+.fridge-review-kicker {
+  margin: 0 0 10px;
+  color: #efca8f;
+  font-size: .74rem;
+  font-weight: 850;
+  letter-spacing: .14em;
+  text-transform: uppercase;
+}
+
+.fridge-review-card h1 {
+  margin: 0;
+  font-size: clamp(2.3rem, 8vw, 5rem);
+  line-height: .95;
+  letter-spacing: -.055em;
+}
+
+.fridge-review-card h2 {
+  margin: 0 0 12px;
+  font-size: clamp(1.25rem, 4vw, 2rem);
+}
+
+.fridge-review-card p,
+.fridge-review-card li,
+.fridge-review-card footer span {
+  color: #d4cec4;
+  font-size: 1rem;
+  line-height: 1.65;
+}
+
+.fridge-review-subtitle {
+  max-width: 680px;
+  margin: 18px 0 0;
+  color: #f5dfbb !important;
+  font-size: clamp(1.05rem, 3vw, 1.35rem) !important;
+}
+
+.fridge-review-instruction {
+  background: rgb(214 166 93 / 9%);
+}
+
+.fridge-review-card ul {
+  margin: 16px 0 0;
+  padding-left: 22px;
+}
+
+.fridge-review-card li + li {
+  margin-top: 8px;
+}
+
+.fridge-review-card footer {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: space-between;
+  gap: 8px 24px;
+}
+
+.fridge-review-card footer strong {
+  color: #f8e7ca;
+}
+
+@media (max-width: 520px) {
+  .fridge-review-shell {
+    width: min(100% - 16px, 920px);
+    padding-top: 8px;
+  }
+
+  .fridge-review-card {
+    border-radius: 22px;
+  }
+
+  .fridge-review-note,
+  .fridge-review-card > header,
+  .fridge-review-card > section,
+  .fridge-review-card > footer {
+    padding: 22px 18px;
+  }
+}

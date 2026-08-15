@@ -314,7 +314,7 @@ export default function RoutineReferenceManager({ loader, uploader }) {
       >
         <div className="rm-visual-readiness-summary">
           <div>
-            <p className="eyebrow">Julie’s event set</p>
+            <p className="eyebrow">Operations event set</p>
             <h3 id="event-visual-readiness-title">Image upload queue</h3>
             <p>
               Every slot below comes from the current event routines. A missing

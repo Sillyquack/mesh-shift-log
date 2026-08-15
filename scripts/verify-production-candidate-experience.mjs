@@ -135,7 +135,7 @@ test('Operations Studio replaces ten equal tabs with grouped human navigation', 
   assert.doesNotMatch(managerWorkspace, /phase10k2|server contract|Personal manager auth only/);
 });
 
-test('Julie event image requirements become a concrete permanent upload queue', () => {
+test('Operations event image requirements become a concrete permanent upload queue', () => {
   const slots = new Set(
     eventRigGuides.flatMap((guide) =>
       (guide.requiredImageSlots || []).map((slot) => slot.id),

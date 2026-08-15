@@ -20,22 +20,26 @@ const expansion = readFileSync(
   absolute('supabase/phase10x_event_visual_library_expansion.sql'),
   'utf8',
 );
+const fridgeProvider = readFileSync(
+  absolute('supabase/phase10y_mesh_routine_content_pack_1_5r.sql'),
+  'utf8',
+);
 const reviewWorkflow = readFileSync(
   absolute('.github/workflows/release-review.yml'),
   'utf8',
 );
 
-test('production migration manifest is unique, complete on disk and terminal at Phase 10X', () => {
-  assert.equal(PHASE10_PRODUCTION_MIGRATIONS.length, 26);
-  assert.equal(new Set(PHASE10_PRODUCTION_MIGRATIONS).size, 26);
+test('production migration manifest is unique, complete on disk and terminal at Phase 10Y', () => {
+  assert.equal(PHASE10_PRODUCTION_MIGRATIONS.length, 27);
+  assert.equal(new Set(PHASE10_PRODUCTION_MIGRATIONS).size, 27);
   assert.ok(PHASE10_PRODUCTION_MIGRATIONS.every((path) => existsSync(absolute(path))));
   assert.equal(
     PHASE10_PRODUCTION_TERMINAL_MIGRATION,
-    'supabase/phase10x_event_visual_library_expansion.sql',
+    'supabase/phase10y_mesh_routine_content_pack_1_5r.sql',
   );
   assert.equal(
     PHASE10_PRODUCTION_MIGRATIONS.at(-2),
-    'supabase/phase10w_event_visual_reference_bridge.sql',
+    'supabase/phase10x_event_visual_library_expansion.sql',
   );
 });
 
@@ -78,6 +82,16 @@ test('Phase 10X stays additive and least privilege', () => {
   assert.match(expansion, /grant execute on function %s to authenticated/i);
 });
 
+test('Phase 10Y is a provider-only additive 1.5R replacement', () => {
+  assert.match(fridgeProvider, /^begin;/i);
+  assert.match(fridgeProvider, /commit;\s*$/i);
+  assert.match(fridgeProvider, /create or replace function public\.routine_mesh_content_pack_v1\(\)/i);
+  assert.match(fridgeProvider, /"packVersion":"1\.5R"/i);
+  assert.doesNotMatch(fridgeProvider, /^(?!\s*--).*\b(?:insert\s+into|update\s+|delete\s+from|truncate\s+|merge\s+into)\b/im);
+  assert.doesNotMatch(fridgeProvider, /(?:perform|select)\s+public\.(?:install_mesh_routine_content_pack_v1|publish_routine_template_versions|create_or_get_routine_run|create_or_get_double_shift_bundle)/i);
+  assert.doesNotMatch(fridgeProvider, /set\s+(?:mode|ui_release_stage)\s*=/i);
+});
+
 test('runbook declares the authorized Oslo cutover windows and Monday go/no-go', () => {
   for (const phrase of [
     'Saturday 15 August 23:30',
@@ -105,13 +119,13 @@ test('runbook names PR #17 as the only combined release merge', () => {
   assert.doesNotMatch(runbook, /Each PR is stacked|PR stack is conflict-free|Production-candidate PR/i);
 });
 
-test('runbook fails closed on S–V and sequences genuine W/X migrations', () => {
+test('runbook fails closed on S–V and sequences genuine W/X/Y migrations', () => {
   for (const phrase of [
     'immediately before the maintenance write',
     'stop on any mismatch or unknown',
     'separately approved S–V migration-ledger reconciliation',
     'Do not reapply S–V DDL, replace matching functions, or re-drop matching constraints',
-    'Phase 10W, then Phase 10X',
+    'Phase 10W, then Phase 10X, then Phase 10Y',
   ]) {
     assert.ok(runbook.includes(phrase), phrase);
   }
@@ -122,7 +136,8 @@ test('runbook separates Phase 10W bridge work from Phase 10X security acceptance
     'Phase 10W creates the least-privilege Event visual metadata and private Storage bridge',
     'Phase 10X expands that bridge to the canonical visual allowlist',
     'Security-advisor and privilege readback acceptance is evaluated after Phase 10X',
-    'Neither migration installs or publishes content',
+    'None of these migrations installs or publishes content',
+    'Phase 10Y replaces only the private canonical provider with the additive 1.5R draft',
     'grants manager access to Event Floor Managers',
   ]) {
     assert.ok(runbook.includes(phrase), phrase);
@@ -148,7 +163,7 @@ test('runbook preserves the final location-first Stock Count acceptance contract
 test('runbook keeps content, activation, images and deployment separately approval-gated', () => {
   for (const phrase of [
     'Migration completion is not operational activation',
-    '1.4R draft installation — installing drafts does not publish them',
+    '1.5R draft installation — installing drafts does not publish them',
     'Template publication',
     'Production image upload',
     'Routine Engine mode change',
@@ -167,6 +182,7 @@ test('review-only GitHub Actions workflow runs every required release check with
     'npm ci',
     'npm run verify:production-migration-plan',
     'npm run verify:production-candidate-experience',
+    'npm run verify:event-routine-content',
     'npm run verify:event-visual-library',
     'npm run verify:event-visual-reference-bridge',
     'npm run verify:inventory-counter-experience',

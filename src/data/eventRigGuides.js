@@ -1,3 +1,5 @@
+import { workbarMilkFridgeStandard } from "./fridgeOperationalStandards.js";
+
 const DEFAULT_PLACEHOLDER = "Reference image awaiting production upload";
 
 const source = (pageId, title, lastReviewedAt = "2026-08-15", note = "") => ({
@@ -16,7 +18,7 @@ const makeAngle = (key, label, operationalDescription, imageRole, options = {}) 
   description: operationalDescription,
   imageRole,
   required: options.required !== false,
-  sourceNote: options.sourceNote || "Julie operational source; stable production binary not uploaded yet.",
+  sourceNote: options.sourceNote || "Operations-approved source; stable production binary not uploaded yet.",
   placeholderText: options.placeholderText || DEFAULT_PLACEHOLDER,
   suggestedFileName: options.suggestedFileName || `${key}.jpg`,
   caption: options.caption || label,
@@ -118,6 +120,12 @@ const WORKBAR_SOURCE = source(
   "2026-08-15",
   "The updated source page is empty; the existing written Workbar standard is preserved.",
 );
+const WORKBAR_MILK_FRIDGE_SOURCE = {
+  system: "operations",
+  title: workbarMilkFridgeStandard.provenance,
+  lastReviewedAt: "2026-08-15",
+  note: "Written organization-owned standard; image awaiting upload.",
+};
 
 const layoutWalkthrough = [
   "Compare the room from the entrance and the reverse angle",
@@ -507,13 +515,13 @@ export const eventRigGuides = [
     guideType: "closing_reset",
     selectionKind: "operational_target",
     summary: "Complete the operational close after the furniture target is restored; a room photo never proves these checks.",
-    operationalFacts: ["Devices charging", "Fridges off", "Labels removed", "Bottles washed", "Sliced fruit discarded", "Sparkling wine dated with date and time"],
+    operationalFacts: ["Devices charging", "Fridges and internal lights remain on", "Each fridge resolves its current saved location standard", "Labels reviewed", "Bottles washed", "Sliced fruit discarded", "Sparkling wine dated with date and time"],
     zones: [
       zone("final-reset", "Final reset", "Current wide comparison; future detail images remain explicit placeholders.", [makeAngle("cornerbar-final-reset", "Cornerbar final reset", "Whole closing-reset target without implying unseen device or product checks.", "overview")]),
       zone("device-charge", "Devices", "Charging position and powered-down checks.", [makeAngle("cornerbar-closing-devices", "Device closing checks", "Approved charging and powered-down target.", "detail", { required: false })], { required: false }),
       zone("product-close", "Fridges & products", "Fridge, label, bottle, fruit and sparkling-wine checks.", [makeAngle("cornerbar-closing-products", "Product closing checks", "Approved fridge and product-handling target.", "detail", { required: false })], { required: false }),
     ],
-    finalWalkthrough: ["Confirm devices are charging in approved positions", "Turn off Cornerbar fridges", "Remove labels and wash bottles", "Discard sliced fruit and citrus", "Date sparkling wine with date and time", "Complete the final security close"],
+    finalWalkthrough: ["Confirm devices are charging in approved positions", "Refill each Cornerbar fridge to its current saved location standard", "Keep every Cornerbar refrigerator and its internal light on", "Remove superseded labels and wash applicable bottles", "Discard sliced fruit and citrus", "Date sparkling wine with date and time", "Complete the final security close"],
     commonMisses: ["Treating correct furniture as proof of operational closing", "Claiming a future detail image already exists"],
     provenance: [CORNERBAR_EVENT_SOURCE],
     tags: ["bar", "closing", "reset"],
@@ -602,15 +610,40 @@ export const eventRigGuides = [
     tags: ["conference", "workbar"],
   }),
   guide({
+    key: "workbar-milk-fridge-standard",
+    venueKey: "workbar",
+    title: workbarMilkFridgeStandard.displayName,
+    guideType: "default_restore",
+    selectionKind: "default_target",
+    summary: workbarMilkFridgeStandard.subtitle,
+    operationalFacts: [
+      "Top shelf: exactly 2 regular milk cartons and 2 Oatly cartons",
+      "Lower shelves: opened wine bottles with visible date labels only",
+      "No extra milk, unopened wine, event products, food or general temporary storage",
+      "Always active and never overridden by an event or shift type",
+    ],
+    zones: [
+      zone("full-refrigerator", "Full refrigerator", "Complete cabinet and permanent shelf allocation. Written standard only; image awaiting upload.", [], { required: true }),
+      zone("top-shelf", "Top shelf", "Exactly 2 regular milk cartons and 2 Oatly cartons. Written standard only; image awaiting upload.", [], { required: true }),
+      zone("lower-shelves", "Lower shelves", "Opened and visibly date-labelled wine only. Written standard only; image awaiting upload.", [], { required: true }),
+    ],
+    finalWalkthrough: workbarMilkFridgeStandard.doneCriteria,
+    commonMisses: ["Checking only the 2 + 2 milk reserve", "Using lower shelves for temporary event products", "Accepting an opened bottle without a visible date label"],
+    provenance: [WORKBAR_MILK_FRIDGE_SOURCE],
+    sourceStatus: "operations_approved_image_awaiting_upload",
+    notes: "Operations-approved standard · image awaiting upload. No image binary is claimed or uploaded.",
+    tags: ["milk", "fridge", "wine", "default", "always-active"],
+  }),
+  guide({
     key: "communitystage-presentation",
     venueKey: "communitystage",
     title: "CommunityStage Presentation / Stage Setup",
     guideType: "stage_tech",
     selectionKind: "preserved_existing",
-    summary: "Preserved written standard; no updated Julie reference set was found for this venue.",
+    summary: "Preserved written standard; no updated operations reference set was found for this venue.",
     zones: [],
     finalWalkthrough: ["Check microphones", "Check screen input", "Test sound", "Confirm speaker position"],
-    notes: "No updated Julie reference set was found for this venue in the Event Routines page.",
+    notes: "No updated operations reference set was found for this venue in the Event Routines page.",
     tags: ["stage", "microphone", "screen", "presentation"],
   }),
   guide({
@@ -619,10 +652,10 @@ export const eventRigGuides = [
     title: "LoungeVenue Mingling Setup",
     guideType: "customer_layout",
     selectionKind: "preserved_existing",
-    summary: "Preserved written standard; no updated Julie reference set was found for this venue.",
+    summary: "Preserved written standard; no updated operations reference set was found for this venue.",
     zones: [],
     finalWalkthrough: ["Set furniture for flow", "Check lighting", "Place bins", "Confirm bar and restock route"],
-    notes: "No updated Julie reference set was found for this venue in the Event Routines page.",
+    notes: "No updated operations reference set was found for this venue in the Event Routines page.",
     tags: ["mingling", "afterwork", "ambience"],
   }),
 ];

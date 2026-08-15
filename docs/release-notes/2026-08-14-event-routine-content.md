@@ -1,4 +1,4 @@
-# Julie event routines — Notion integration
+# Operations-owned event routines — Notion integration
 
 ## Source
 
@@ -10,7 +10,7 @@
 
 ## What changed
 
-The existing `atrium-bar-event` and `cornerbar-event` templates keep their stable IDs, but their short task lists are replaced with the complete operational sequence from Julie's current Notion routines.
+The existing `atrium-bar-event` and `cornerbar-event` templates keep their stable IDs, but their short task lists are replaced with the complete operational sequence from the current operations-maintained Notion routines.
 
 The sequence now covers:
 
@@ -31,7 +31,7 @@ Cornerbar also includes the exact final reset for chairs, iPads, terminals, frid
 
 ## Visual standards
 
-`eventRigGuides.js` now records Julie's Atrium furniture layouts, serving-station variants, Atrium stage-tech default, and Cornerbar opening/closing standards.
+`eventRigGuides.js` now records the organization-owned Atrium furniture layouts, serving-station variants, Atrium stage-tech default, and Cornerbar opening/closing standards.
 
 Each known reference image has a stable `requiredImageSlots` identifier. `imageRefs` remain empty until the images are uploaded to permanent app/Supabase storage. Signed Notion image URLs are intentionally not copied because they expire and are not suitable as app data.
 
@@ -46,7 +46,7 @@ Each known reference image has a stable `requiredImageSlots` identifier. `imageR
 Run:
 
 ```bash
-npm run verify:julie-event-routines
+npm run verify:event-routine-content
 ```
 
 The verification checks template and task uniqueness, timing anchors, rig references, required Atrium and Cornerbar controls, image-field compatibility, the empty Workbar-source safeguard, and absence of embedded external URLs or alarm codes.

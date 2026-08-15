@@ -47,6 +47,7 @@ function Harness() {
     "cornerbar-horseshoe": guide("cornerbar-horseshoe"),
     "cornerbar-coffee": guide("coffee-water-tea"),
     workbar: guide("workbar-conference-setup"),
+    "workbar-milk-fridge": guide("workbar-milk-fridge-standard"),
     error: guide("atrium-stage-tech-default"),
   };
   const selected = guideByScenario[scenario] || guideByScenario.atrium;

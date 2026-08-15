@@ -1,8 +1,18 @@
-const JULIE_EVENT_ROUTINES = {
+import {
+  CORNERBAR_SAVED_STANDARD_INSTRUCTION,
+  ESPRESSO_MACHINE_MILK_RESERVOIR_INSTRUCTION,
+  WORKBAR_MILK_FRIDGE_STANDARD_KEY,
+  WORKBAR_SALAD_FRIDGE_LIGHT_INSTRUCTION,
+  cornerbarSavedLocationStandardBinding,
+  workbarMilkFridgeStandard,
+} from "./fridgeOperationalStandards.js";
+
+const OPERATIONS_EVENT_ROUTINES = {
   system: "notion",
   parentPageId: "3910d8d1-a8b2-80da-8f20-c8a1ca00e937",
   title: "Event Routines",
-  authoredBy: "Julie Bolid",
+  ownership: "organization",
+  provenance: "Operations-approved source",
   lastEditedAt: "2026-08-12T09:44:00.000Z",
 };
 
@@ -39,11 +49,13 @@ export const eventTaskTemplates = [
     recommendedFor: "Most hosted events where rig, food, coffee, tech, bar, and closing may be involved.",
     defaultDurationMinutes: 240,
     suggestedRoles: ["Event Floor Manager", "Zone Managers", "Bar Staff", "Support"],
-    source: JULIE_EVENT_ROUTINES,
+    source: OPERATIONS_EVENT_ROUTINES,
     tasks: [
       task("before-event-brief", "BEFORE: Confirm event description", "Check OfficeRnD / Google Calendar for rig, food, technical setup, bar sales, client arrival time, schedule, contacts, and what is included.", "all", "critical", "event_floor_manager", fromStart(-120), { guideRef: "google-calendar-guide" }),
       task("before-client-arrival", "BEFORE: Venue ready before client arrival", "Make sure the venue, rig, furniture, bins, smell and temperature, toilets, doors, signs, and guest route are ready before the client arrives.", "all", "critical", "event_floor_manager", fromStart(-90), { guideRef: "venue-setup-library" }),
       task("before-coffee-food", "BEFORE: Coffee, food, water, and allergens", "Prepare ordered serving stations, plates, cutlery, napkins, water, mineral water, allergen cards, and a used-dish return point. Start coffee and tea so they are ready 15 minutes before service.", "workbar", "important", "workbar_staff", fromStart(-75), { rigRef: "coffee-water-station" }),
+      task("before-espresso-milk-reservoirs", "BEFORE: Refill both espresso-machine milk reservoirs", ESPRESSO_MACHINE_MILK_RESERVOIR_INSTRUCTION, "workbar", "critical", "workbar_staff", fromStart(-70), { standardKey: "espresso-machine-milk-reservoirs", supplyStandardKey: WORKBAR_MILK_FRIDGE_STANDARD_KEY }),
+      task("before-workbar-milk-fridge", "BEFORE: Restore the Workbar Milk Fridge", workbarMilkFridgeStandard.mainInstruction, "workbar", "critical", "workbar_staff", fromStart(-65), { standardKey: WORKBAR_MILK_FRIDGE_STANDARD_KEY }),
       task("before-tech", "BEFORE: Tech and sound check", "Test microphones, batteries, adapters, screens, presentation inputs, clicker, sound, and any hybrid meeting equipment before handover.", "all", "important", "support", fromStart(-60), { guideRef: "technical-equipment-standard" }),
       task("before-bar", "BEFORE: Bar readiness if needed", "Check agreed products, stock, dated beer kegs, ice, clean glassware, dishwashers, sealed and dated open wine, charged iPads and payment terminals, and the restock route.", "all", "important", "bar_staff", fromStart(-45)),
       task("during-client-contact", "DURING: One main client contact", "Choose one main client contact and confirm breaks, serving times, room changes, technical support, and the end-of-event plan.", "all", "important", "event_floor_manager", fromStart(0)),
@@ -52,6 +64,7 @@ export const eventTaskTemplates = [
       task("after-client-feedback", "AFTER: Thank client and handle feedback", "Thank the client, ask whether everything went well, and escalate complaints or unresolved feedback to the event coordinator or responsible manager.", "all", "important", "event_floor_manager", fromEnd(0)),
       task("after-count-invoice", "AFTER: Counts, payment, and invoice", "Verify ordered products, coffee, mineral water, tabs, payment, and invoice details according to the agreed billing method.", "all", "important", "event_floor_manager", fromEnd(10), { guideRef: "shopbox-pos-guide" }),
       task("after-reset-clean", "AFTER: Clean, reset, and lost property", "Clean the venue, wipe surfaces, empty waste, glass and pant, reset furniture, tech, heaters and lights, and label lost property with the date and event name.", "all", "critical", "support", fromEnd(25)),
+      task("after-workbar-salad-fridge-light", "AFTER: Clean the Workbar salad fridge", WORKBAR_SALAD_FRIDGE_LIGHT_INSTRUCTION, "workbar", "important", "support", fromEnd(35), { standardKey: "workbar-salad-fridge-internal-light" }),
       task("after-final-close", "AFTER: Final close and next-event check", "Confirm the next event, complete any agreed rig, record unresolved work with photos for the coordinator, make sure guests have left, secure doors and lights, and follow the approved daytime or final-close security path. Never store alarm codes in the app.", "all", "critical", "event_floor_manager", fromEnd(45)),
     ],
   },
@@ -103,14 +116,14 @@ export const eventTaskTemplates = [
   },
   {
     id: "atrium-bar-event",
-    title: "Atrium Event — Julie Routine",
+    title: "Atrium Event Routine",
     description: "Complete Atrium routine for breakfast, daytime, party, and evening events, in operational order.",
     category: "Zone event",
     recommendedFor: "All events centred in Atrium. Conditional daytime and final-close steps are stated inside the relevant tasks.",
     defaultDurationMinutes: 240,
     suggestedRoles: ["Event Floor Manager", "Atrium Manager", "Atrium Staff", "Bar Staff", "Support"],
     source: {
-      ...JULIE_EVENT_ROUTINES,
+      ...OPERATIONS_EVENT_ROUTINES,
       pageIds: [
         "3910d8d1-a8b2-8073-afe2-cbbe4d281144",
         "3910d8d1-a8b2-80b7-862c-f494ad6b0fa5",
@@ -144,14 +157,14 @@ export const eventTaskTemplates = [
   },
   {
     id: "cornerbar-event",
-    title: "Cornerbar Event — Julie Routine",
+    title: "Cornerbar Event Routine",
     description: "Complete Cornerbar routine for breakfast, daytime, party, and evening events, in operational order.",
     category: "Zone event",
     recommendedFor: "All events where Cornerbar is the main room or service point. Conditional daytime and final-close steps are stated inside the relevant tasks.",
     defaultDurationMinutes: 240,
     suggestedRoles: ["Event Floor Manager", "Cornerbar Manager", "Cornerbar Staff", "Bar Staff", "Support"],
     source: {
-      ...JULIE_EVENT_ROUTINES,
+      ...OPERATIONS_EVENT_ROUTINES,
       pageIds: [
         "3910d8d1-a8b2-8025-bce7-ed08132f23de",
         "3910d8d1-a8b2-80b4-b283-d594ded2edc0",
@@ -167,7 +180,7 @@ export const eventTaskTemplates = [
       task("cornerbar-rig", "BEFORE: Build the booked Cornerbar setup", "Set furniture, bar, signs, check-in, food, water, coffee, used-dish return, and guest flow exactly as booked. Keep access, service routes, and evacuation paths clear.", "cornerbar", "critical", "cornerbar_manager", fromStart(-100), { guideRef: "venue-setup-library", rigRef: "cornerbar-standard-service" }),
       task("cornerbar-food-allergens", "BEFORE: Catering and allergen setup", "Confirm supplier, delivery and collection contacts, serving time, return plan, plates, cutlery, napkins, and allergen signs. Food preparation normally happens in the Cornerbar bar unless the booking states otherwise.", "cornerbar", "important", "support", fromStart(-85), { rigRef: "buffet-food-station" }),
       task("cornerbar-coffee", "BEFORE: Coffee and tea ready 15 minutes early", "Prepare coffee and tea so the station is complete at least 15 minutes before the ordered serving time. Confirm refills and how usage will be recorded for billing.", "cornerbar", "important", "workbar_staff", fromStart(-75), { rigRef: "coffee-water-station" }),
-      task("cornerbar-devices-stock", "BEFORE: Devices, stock, and service station", "Charge and test the iPads and terminals, confirm ordering flow, set the agreed bar products, ice, glassware, garnish, opening tools, fridges, and restock route.", "cornerbar", "critical", "cornerbar_staff", fromStart(-60), { guideRef: "shopbox-pos-guide", rigRef: "cornerbar-standard-service" }),
+      task("cornerbar-devices-stock", "BEFORE: Devices, stock, and service station", `Charge and test the iPads and terminals, confirm ordering flow, ice, glassware, garnish, opening tools and the restock route. ${CORNERBAR_SAVED_STANDARD_INSTRUCTION}`, "cornerbar", "critical", "cornerbar_staff", fromStart(-60), { guideRef: "shopbox-pos-guide", rigRef: "cornerbar-standard-service", standardBinding: cornerbarSavedLocationStandardBinding }),
       task("cornerbar-tech-client", "BEFORE: Tech check and client handover", "Test requested sound, screen, adapters, microphones, and music. Meet the client, confirm timing and changes, demonstrate equipment, agree one main contact, and confirm the end-of-event plan.", "cornerbar", "critical", "cornerbar_manager", fromStart(-25), { guideRef: "technical-equipment-standard" }),
       task("cornerbar-main-contact", "DURING: Keep one main client contact", "Route operational questions through one agreed client contact. Confirm breaks, serving times, room changes, technical needs, stock decisions, and expected finish time.", "cornerbar", "important", "event_floor_manager", fromStart(0)),
       task("cornerbar-break-reminders", "DURING: Set reminders before service moments", "Set reminders early enough to refresh food, coffee, tea, water, signs, cups, plates, bar stock, and waste before guests move.", "cornerbar", "important", "support", fromStart(30)),
@@ -177,7 +190,8 @@ export const eventTaskTemplates = [
       task("cornerbar-final-count", "AFTER: Verify final product count and billing", "Count the same billable products used in the pre-event count, verify additions and tabs, and complete payment or invoice handover. Record discrepancies before the client leaves when possible.", "cornerbar", "critical", "cornerbar_manager", fromEnd(10), { guideRef: "shopbox-pos-guide" }),
       task("cornerbar-furniture-reset", "AFTER: Chairs, furniture, and room reset", "Place chairs on tables and reset furniture to the approved closing or next-event layout. Remove signs and temporary items unless the next booking needs them.", "cornerbar", "important", "support", fromEnd(20), { rigRef: "cornerbar-standard-service" }),
       task("cornerbar-device-close", "AFTER: Power down and charge devices", "Turn off the room iPad, front bank-terminal display, bar iPad, and bar terminal. Place the bar iPad and terminal on charge in their approved positions.", "cornerbar", "critical", "cornerbar_staff", fromEnd(30)),
-      task("cornerbar-fridge-bottles-fruit", "AFTER: Fridge, labels, bottles, and fruit", "Turn off the Cornerbar fridges. Remove wine and syrup labels, wash the bottles, and store them under the Workbar sink. Discard sliced fruit and citrus.", "cornerbar", "critical", "cornerbar_staff", fromEnd(40)),
+      task("cornerbar-fridge-bottles-fruit", "AFTER: Fridge, labels, bottles, and fruit", `${CORNERBAR_SAVED_STANDARD_INSTRUCTION} Remove superseded wine and syrup labels, wash the applicable bottles, store them under the Workbar sink, and discard sliced fruit and citrus.`, "cornerbar", "critical", "cornerbar_staff", fromEnd(40), { standardBinding: cornerbarSavedLocationStandardBinding }),
+      task("cornerbar-workbar-salad-fridge-light", "AFTER: Workbar salad-fridge internal light", WORKBAR_SALAD_FRIDGE_LIGHT_INSTRUCTION, "workbar", "important", "support", fromEnd(45), { standardKey: "workbar-salad-fridge-internal-light" }),
       task("cornerbar-opened-products", "AFTER: Handle opened drinks correctly", "Follow the agreed opened-bottle procedure. Date sparkling wine with date and time and keep it for one night only. Dispose of opened beer after the final close, and retain opened wine only when agreed, sealed, dated, and refrigerated.", "cornerbar", "critical", "cornerbar_manager", fromEnd(50)),
       task("cornerbar-clean-lost-property", "AFTER: Clean, waste, dishes, and lost property", "Clean the bar, room, surfaces, glassware and dishwashing area; empty waste, glass and pant; return catering items; and label lost property with the event name and date.", "cornerbar", "critical", "support", fromEnd(60)),
       task("cornerbar-lights-security", "AFTER: Lights, doors, and security path", "Turn off Cornerbar lights using the approved control. For a daytime handover, leave the building in the approved operating state and do not set the alarm. For the final or evening close, confirm everyone has left, secure doors, and follow the approved alarm procedure. Never store alarm codes in the app.", "cornerbar", "critical", "cornerbar_manager", fromEnd(75)),

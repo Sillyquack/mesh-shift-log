@@ -34,6 +34,10 @@ const SURFACES = [
   ["operations-access", "/routine-manager-harness.html?scenario=review-access", "operations"],
   ["operations-history", "/routine-manager-harness.html?scenario=review-history", "operations"],
   ["operations-release-readiness", "/routine-manager-harness.html?scenario=review-release-readiness", "operations"],
+  ["workbar-milk-fridge", "/fridge-standards-review-harness.html?scenario=milk-fridge", "fridge-milk"],
+  ["espresso-milk-reservoirs", "/fridge-standards-review-harness.html?scenario=espresso-reservoirs", "fridge-espresso"],
+  ["cornerbar-saved-standard", "/fridge-standards-review-harness.html?scenario=cornerbar-saved-standard", "fridge-cornerbar"],
+  ["salad-fridge-light", "/fridge-standards-review-harness.html?scenario=salad-fridge-light", "fridge-salad"],
   ["count-standard", "/inventory-count-mode-harness.html", "count-standard"],
   ["count-manual", "/inventory-count-mode-harness.html?scenario=manual-differences", "count-manual"],
 ];
@@ -182,6 +186,23 @@ async function main() {
         });
         check(`${name} keeps the active work area fully visible ${JSON.stringify(activeGroupGeometry)}`, activeGroupGeometry.ok);
         check(`${name} marks fixture state explicitly`, await page.locator(".rm-review-fixture").getByText(/no backend writes/i).isVisible());
+      } else if (kind.startsWith("fridge-")) {
+        await page.getByRole("note").getByText(/no backend writes/i).waitFor();
+        check(`${name} labels organization ownership`, await page.getByText("Organization-owned operational standard", { exact: true }).isVisible());
+        check(`${name} uses no person-owned standard terminology`, await page.getByText(/(?:Bobby|Robert|Julie)(?:’s|'s)? (?:standard|source)/i).count() === 0);
+        if (kind === "fridge-milk") {
+          check(`${name} shows exact top and exclusive lower shelves`, await page.getByRole("heading", { name: "Exactly 2 regular milk + 2 Oatly" }).isVisible()
+            && await page.getByRole("heading", { name: "Opened, visibly date-labelled wine only" }).isVisible());
+        } else if (kind === "fridge-espresso") {
+          check(`${name} keeps reservoirs distinct from carton storage`, await page.getByRole("heading", { name: "Espresso-machine milk reservoirs" }).isVisible()
+            && await page.getByText(/confirm both reservoirs are correctly connected/i).isVisible());
+        } else if (kind === "fridge-cornerbar") {
+          check(`${name} resolves the saved standards and keeps equipment on`, await page.getByRole("heading", { name: "Current manager-maintained location standards" }).isVisible()
+            && await page.getByText(/Keep every refrigerator and its internal light on/).isVisible());
+        } else if (kind === "fridge-salad") {
+          check(`${name} switches off the internal light only`, await page.getByText(/Switch off the internal light only/).isVisible()
+            && await page.getByText(/Do not switch off the refrigerator/).isVisible());
+        }
       } else if (kind === "count-standard") {
         await page.getByRole("heading", { name: "Does this fridge match its saved standard?" }).waitFor();
         check(`${name} exposes the manual difference action`, await page.getByRole("button", { name: "No — count differences" }).isVisible() && await page.getByRole("button", { name: "No — count differences" }).isEnabled());
