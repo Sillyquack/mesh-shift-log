@@ -78,7 +78,7 @@ The exact release worktree was exercised locally on 15 August 2026 with the repo
 - The 70-scenario content/operational-standards matrix, including light/dark, mobile, keyboard and 200% zoom states.
 - Assertions include console/page errors, Vite overlays, horizontal overflow, 48 px operational targets, duplicate IDs and accessible control names/labels.
 
-Retained release evidence is in `docs/production/artifacts/event-visual-browser/` and `docs/production/artifacts/count-mode-browser/`. The larger pre-existing matrices wrote ephemeral screenshots under `/private/tmp` and completed successfully; no production service was used.
+Retained release evidence is in `docs/production/artifacts/release-review-browser/`, `docs/production/artifacts/event-visual-browser/` and `docs/production/artifacts/count-mode-browser/`. The larger pre-existing matrices wrote ephemeral screenshots under `/private/tmp` and completed successfully; no production service was used.
 
 ## Manual review journeys
 
