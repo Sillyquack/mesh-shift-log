@@ -290,7 +290,7 @@ body.event-operator-active main.page:has(> .event-operator-experience) > :not(.e
 .event-operator-avatar {
   display: grid;
   place-items: center;
-  width: 44px;
+  width: 48px;
   aspect-ratio: 1;
   border: 1px solid rgba(255, 255, 255, 0.13);
   border-radius: 15px;
@@ -542,6 +542,9 @@ body.event-operator-active main.page:has(> .event-operator-experience) > :not(.e
 }
 
 .event-operator-link {
+  display: inline-flex;
+  align-items: center;
+  min-height: 48px;
   padding: 8px 0;
   color: #805c2c;
   text-decoration: underline;
@@ -580,6 +583,7 @@ body.event-operator-active main.page:has(> .event-operator-experience) > :not(.e
 
 .event-operator-help-button {
   width: 100%;
+  min-height: 48px;
   margin-top: 13px;
   padding: 12px;
   border: 0;
@@ -646,6 +650,10 @@ body.event-operator-active main.page:has(> .event-operator-experience) > :not(.e
 
 .event-operator-section-heading button,
 .event-operator-alert-card button {
+  display: inline-flex;
+  align-items: center;
+  min-height: 48px;
+  padding-inline: 8px;
   color: #e5bd7c;
 }
 

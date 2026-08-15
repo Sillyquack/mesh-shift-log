@@ -36,6 +36,7 @@
     "verify:event-visual-reference-bridge": "node scripts/verify-event-visual-reference-bridge.mjs",
     "verify:event-visual-library": "node scripts/verify-event-visual-library.mjs",
     "verify:event-visual-library-browser": "node scripts/verify-event-visual-library-browser.mjs",
+    "verify:release-review-browser": "node scripts/verify-release-review-browser.mjs",
     "verify:inventory-count-mode-browser": "node scripts/verify-inventory-count-mode-browser.mjs",
     "verify:mesh-experience-system": "node scripts/verify-mesh-experience-system.mjs",
     "verify:production-candidate-experience": "node scripts/verify-production-candidate-experience.mjs",
