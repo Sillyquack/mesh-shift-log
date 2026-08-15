@@ -7,7 +7,10 @@ import {
   CORNERBAR_SAVED_STANDARD_INSTRUCTION,
   ESPRESSO_MACHINE_MILK_RESERVOIR_INSTRUCTION,
   WORKBAR_MILK_FRIDGE_STANDARD_KEY,
+  WORKBAR_NON_ALCO_LOCATION_KEY,
+  WORKBAR_NON_ALCO_SAVED_STANDARD_INSTRUCTION,
   cornerbarSavedLocationStandardBinding,
+  workbarNonAlcoSavedLocationStandardBinding,
   workbarMilkFridgeStandard,
 } from "../src/data/fridgeOperationalStandards.js";
 
@@ -35,9 +38,9 @@ const SOURCE_HASHES = Object.freeze({
 });
 
 const WORKBAR_NON_ALCO_LOCATION_STANDARD_SOURCE = Object.freeze({
-  mode: "location_standards",
-  locationCodes: Object.freeze(["WORKBAR_NON_ALCO_FRIDGE"]),
-  activeOnly: true,
+  mode: workbarNonAlcoSavedLocationStandardBinding.mode,
+  locationCodes: workbarNonAlcoSavedLocationStandardBinding.locationCodes,
+  activeOnly: workbarNonAlcoSavedLocationStandardBinding.activeOnly,
 });
 const INVENTORY_ITEM_BINDINGS = Object.freeze({
   O13: Object.freeze(["inventory_standard_items"]),
@@ -83,7 +86,7 @@ const LOCATIONS = [
   ["project-room-001", "001", "room"], ["project-room-002", "002", "room"], ["project-room-003", "003", "room"],
   ["project-room-004", "004", "room"], ["project-room-006", "006", "room"], ["boardroom", "Boardroom", "room"],
   ["workbar-bar-left-fridge", "Workbar Bar Left", "fridge"], ["workbar-bar-right-fridge", "Workbar Bar Right", "fridge"],
-  ["workbar-non-alcoholic-fridge", "Workbar Non-Alcoholic Fridge", "fridge"], ["workbar-milk-fridge", "Workbar Milk Fridge", "fridge"],
+  ["workbar-non-alcoholic-fridge", "Workbar Non-Alco Fridge", "fridge"], ["workbar-milk-fridge", "Workbar Milk Fridge", "fridge"],
   ["cornerbar-left-fridge", "Cornerbar Left", "fridge"], ["cornerbar-middle-fridge", "Cornerbar Middle", "fridge"], ["cornerbar-right-fridge", "Cornerbar Right", "fridge"],
   ["workbar-toilets", "Workbar toilets", "toilet"], ["basement-toilets", "Basement toilets", "toilet"], ["cornerbar-toilets", "Cornerbar toilets", "toilet"],
   ["front-door", "Front door", "door"], ["vindfang-door", "Vindfang door", "door"], ["kitchen-atrium-door", "Kitchen / Atrium door", "door"],
@@ -177,7 +180,15 @@ const FRIDGE_CLOSING_RULES = Object.freeze({
   sharedBarFridgeRule: { universalInterchangeableKeys: true, physicallyVerifyLockAfterKeyTurn: true, eventActivePolicy: "formal-transfer-with-scope-and-physical-evidence-never-not-applicable" },
   workbarBarLeft: { opening: ["unlock-with-universal-key", "physically-verify-unlocked"], finalClosing: ["full-restock", "close-door-completely", "lock-with-universal-key", "physically-verify-locked"] },
   workbarBarRight: { opening: ["unlock-with-universal-key", "physically-verify-unlocked"], finalClosing: ["full-restock", "close-door-completely", "lock-with-universal-key", "physically-verify-locked"] },
-  workbarNonAlcoholic: { locking: "never-lock", opening: ["raise-grille-fully"], finalClosing: ["full-restock-including-eggs", "remain-unlocked", "lower-grille-fully", "physically-verify-grille-and-closed-fridge-door"] },
+  workbarNonAlcoholic: {
+    locationKey: WORKBAR_NON_ALCO_LOCATION_KEY,
+    standardSource: workbarNonAlcoSavedLocationStandardBinding,
+    locking: "never-lock",
+    power: "remain-on",
+    internalLight: "remain-on",
+    opening: ["resolve-current-saved-location-standard", "clean-and-restore", "check-dates-and-fifo", "correct-placement-and-fronting", "raise-grille-fully", "close-door", "confirm-normal-operation"],
+    finalClosing: ["resolve-current-saved-location-standard", "clean-and-restore", "check-dates-and-fifo", "correct-placement-and-fronting", "remain-unlocked", "lower-grille-fully", "close-door", "confirm-refrigerator-and-internal-light-on", "confirm-normal-operation"],
+  },
   workbarMilk: { standardKey: WORKBAR_MILK_FRIDGE_STANDARD_KEY, locking: "remain-unlocked", power: "remain-on", door: "physically-closed" },
   cornerbarLeft: { standardSource: { ...cornerbarSavedLocationStandardBinding, locationCodes: ["CORNERBAR_LEFT_FRIDGE"] }, openingWhenActive: ["unlock-with-universal-key", "physically-verify-unlocked", "restock-current-saved-location-standard", "keep-refrigerator-and-internal-light-on"], finalClosing: ["restock-current-saved-location-standard", "keep-refrigerator-and-internal-light-on", "close-door", "lock-with-universal-key", "physically-verify-locked"] },
   cornerbarMiddle: { standardSource: { ...cornerbarSavedLocationStandardBinding, locationCodes: ["CORNERBAR_MIDDLE_FRIDGE"] }, openingWhenActive: ["unlock-with-universal-key", "physically-verify-unlocked", "restock-current-saved-location-standard", "keep-refrigerator-and-internal-light-on"], finalClosing: ["restock-current-saved-location-standard", "keep-refrigerator-and-internal-light-on", "close-door", "lock-with-universal-key", "physically-verify-locked"] },
@@ -904,7 +915,11 @@ function finalizeFridgeStandardsAmendment(task, amendmentDecisionHash) {
     date: "2026-08-15",
     decisionHash: amendmentDecisionHash,
     ownership: "organization",
-    standardKey: WORKBAR_MILK_FRIDGE_STANDARD_KEY,
+    standardKeys: [...new Set(task.items.map((item) => item.standardKey).filter(Boolean))],
+    locationKeys: [...new Set([
+      task.locationKey,
+      ...task.items.map((item) => item.metadata?.locationKey),
+    ].filter(Boolean))],
   };
   task.sourceHash = sha256(canonical({
     priorSourceHash: task.sourceHash,
@@ -937,6 +952,48 @@ function applyFridgeStandardsAmendment(openingTasks, closingTasks, doubleShiftSt
   ];
   const fullFridgeDone = `- Arrival or checkpoint assessment is recorded.\n${workbarMilkFridgeStandard.doneCriteria.map((criterion) => `- ${criterion}.`).join("\n")}\n- The refrigerator remains powered on and its door is closed.`;
   const fullFridgeDeviation = "- The top shelf is not exactly 2 regular milk cartons and 2 Oatly cartons.\n- A lower shelf contains anything other than opened wine with a clearly visible date label.\n- An unrelated product, extra milk carton or temporary event product is present.\n- The refrigerator is not clean, operating, correctly organised and powered on.\n- Completing this routine check never completes a Stock Count assignment.";
+  const bindWorkbarNonAlcoItem = (entry) => {
+    if (!entry) throw new Error("Workbar Non-Alco Fridge inventory item is missing.");
+    entry.sourceKind = "inventory_readonly";
+    entry.sourceConfig = {
+      ...WORKBAR_NON_ALCO_LOCATION_STANDARD_SOURCE,
+      locationCodes: [...WORKBAR_NON_ALCO_LOCATION_STANDARD_SOURCE.locationCodes],
+    };
+    delete entry.standardKey;
+    delete entry.locationSetKey;
+    entry.metadata = { ...entry.metadata, locationKey: WORKBAR_NON_ALCO_LOCATION_KEY };
+  };
+  const workbarNonAlcoDone = "- The current manager-maintained saved location standard is resolved.\n- Every active product line is restored without embedding product names or quantities in routine copy.\n- Dates and FIFO are checked.\n- Placement and fronting are correct.\n- The door is closed.\n- The refrigerator and its internal light remain on.\n- The refrigerator is clean and operating normally.\n- Completing this routine check does not complete Stock Count.";
+  const workbarNonAlcoDeviations = `- ${workbarNonAlcoSavedLocationStandardBinding.incompleteMessage}\n- A shortage, date or FIFO issue remains unresolved.\n- Placement or fronting differs from the current saved standard.\n- The door is open or the refrigerator is not operating normally.\n- The refrigerator or its internal light is switched off.\n- Counts, notes, zeroes, deviations and targetless Stock Count lines remain separate and must never be overwritten.`;
+
+  {
+    const value = task("O13");
+    value.title = "Verify and restore the Workbar Non-Alco Fridge";
+    value.locationKey = WORKBAR_NON_ALCO_LOCATION_KEY;
+    value.instructions = `${WORKBAR_NON_ALCO_SAVED_STANDARD_INSTRUCTION}\n\nFor Opening, pull the grille fully up and physically verify the grille position and closed door. Record cleaning, date, FIFO or saved-standard issues as deviations.`;
+    bindWorkbarNonAlcoItem(value.items.find((entry) => entry.key === "inventory_standard_items"));
+    value.items = value.items.filter((entry) => entry.key !== "eggs_present_and_to_standard");
+    const unlocked = value.items.find((entry) => entry.key === "fridge_remains_unlocked");
+    if (unlocked) unlocked.label = "Workbar Non-Alco Fridge remains unlocked";
+    addTaskItem(value, "refrigerator_and_internal_light_remain_on", "refrigerator and internal light remain on");
+    value.doneCriteriaText = `${workbarNonAlcoDone}\n- The grille is fully up for Opening and the fridge remains unlocked.`;
+    value.deviationRulesText = workbarNonAlcoDeviations;
+    value.referenceGuidanceText = "- `workbar-non-alcoholic-fridge` — canonical saved-location reference; image awaiting upload.";
+  }
+  for (const id of ["C08", "C28"]) {
+    const value = task(id);
+    value.title = `${id === "C08" ? "Pre-restore" : "Final-restore"} the Workbar Non-Alco Fridge`;
+    value.locationKey = WORKBAR_NON_ALCO_LOCATION_KEY;
+    value.instructions = `${WORKBAR_NON_ALCO_SAVED_STANDARD_INSTRUCTION}\n\n${id === "C08" ? "Record the current physical state before correction; C28 still requires a fresh final assessment." : "Perform a fresh final assessment, keep the fridge unlocked and pull the grille fully down after restoration."}`;
+    bindWorkbarNonAlcoItem(value.items.find((entry) => entry.key === "inventory_standard_items"));
+    value.items = value.items.filter((entry) => entry.key !== "eggs_present_and_to_standard");
+    const unlocked = value.items.find((entry) => entry.key === "fridge_remains_unlocked");
+    if (unlocked) unlocked.label = "Workbar Non-Alco Fridge remains unlocked";
+    addTaskItem(value, "refrigerator_and_internal_light_remain_on", "refrigerator and internal light remain on");
+    value.doneCriteriaText = `${workbarNonAlcoDone}${id === "C28" ? "\n- The fridge remains unlocked and the grille is fully down and physically checked." : ""}`;
+    value.deviationRulesText = workbarNonAlcoDeviations;
+    value.referenceGuidanceText = "- `workbar-non-alcoholic-fridge` — canonical saved-location reference; image awaiting upload.";
+  }
 
   {
     const value = task("O08");
@@ -964,25 +1021,34 @@ function applyFridgeStandardsAmendment(openingTasks, closingTasks, doubleShiftSt
     const value = task("O23");
     const machine = value.items.find((item) => item.key === "coffee_machine_milk_ready");
     const fridge = value.items.find((item) => item.key === "milk_fridge_2_plus_2");
-    if (!machine || !fridge) throw new Error("O23 milk readiness items are missing.");
+    const nonAlco = value.items.find((item) => item.key === "food_nonalcoholic_fridge_ready");
+    if (!machine || !fridge || !nonAlco) throw new Error("O23 refrigerator readiness items are missing.");
     machine.label = "both espresso-machine milk reservoirs correctly filled and connected";
+    nonAlco.key = "workbar_non_alco_fridge_standard";
+    nonAlco.label = "Workbar Non-Alco Fridge matches its current saved location standard; refrigerator and internal light remain on";
+    bindWorkbarNonAlcoItem(nonAlco);
     fridge.label = "complete Workbar Milk Fridge standard: 2 + 2 on top and opened, visibly date-labelled wine only below";
     fridge.sourceKind = "routine_standard";
     fridge.standardKey = WORKBAR_MILK_FRIDGE_STANDARD_KEY;
     fridge.sourceConfig = {};
-    appendTaskText(value, "doneCriteriaText", "- Espresso-machine reservoirs and Workbar Milk Fridge carton storage are verified as separate physical systems.\n- The full refrigerator standard is required; a correct 2 + 2 top shelf alone is insufficient.");
+    appendTaskText(value, "doneCriteriaText", "- Workbar Non-Alco Fridge matches its current manager-maintained saved location standard, is clean and operating normally, and its refrigerator and internal light remain on.\n- Espresso-machine reservoirs and Workbar Milk Fridge carton storage are verified as separate physical systems.\n- The full refrigerator standard is required; a correct 2 + 2 top shelf alone is insufficient.");
+    appendTaskText(value, "deviationRulesText", `- ${workbarNonAlcoSavedLocationStandardBinding.incompleteMessage}\n- A Workbar Non-Alco Fridge shortage, date, FIFO, placement, fronting, door, power or internal-light issue blocks final Opening readiness.`);
   }
   for (const id of ["O29", "O35"]) {
     const value = task(id);
     const fridge = value.items.find((item) => item.key === "milk_fridge_two_regular_two_oatly");
-    if (!fridge) throw new Error(`${id} milk-fridge checkpoint item is missing.`);
+    const nonAlco = value.items.find((item) => item.key === "food_nonalcoholic_fridge_including_eggs");
+    if (!fridge || !nonAlco) throw new Error(`${id} refrigerator checkpoint item is missing.`);
+    nonAlco.key = "workbar_non_alco_fridge_standard";
+    nonAlco.label = "Workbar Non-Alco Fridge — current saved location standard";
+    bindWorkbarNonAlcoItem(nonAlco);
     fridge.label = "complete Workbar Milk Fridge standard: exact 2 + 2 top shelf and compliant lower shelves";
     fridge.sourceKind = "routine_standard";
     fridge.standardKey = WORKBAR_MILK_FRIDGE_STANDARD_KEY;
     fridge.sourceConfig = {};
-    appendTaskText(value, "instructions", "For the Workbar Milk Fridge, confirm both the exact milk reserve and opened, visibly date-labelled wine only on every lower shelf. Temporary event storage is prohibited.");
-    appendTaskText(value, "doneCriteriaText", "- Workbar Milk Fridge top and lower shelves both comply with the permanent standard; 2 + 2 alone is not a pass.");
-    appendTaskText(value, "deviationRulesText", "- Workbar Milk Fridge lower-shelf or temporary-storage noncompliance blocks the checkpoint even when 2 + 2 milk is present.");
+    appendTaskText(value, "instructions", `${WORKBAR_NON_ALCO_SAVED_STANDARD_INSTRUCTION} ${workbarNonAlcoSavedLocationStandardBinding.incompleteMessage}\n\nFor the Workbar Milk Fridge, confirm both the exact milk reserve and opened, visibly date-labelled wine only on every lower shelf. Temporary event storage is prohibited.`);
+    appendTaskText(value, "doneCriteriaText", "- Workbar Non-Alco Fridge matches its current saved location standard, is clean, closed and operating normally, and its refrigerator and internal light remain on.\n- Workbar Milk Fridge top and lower shelves both comply with the permanent standard; 2 + 2 alone is not a pass.");
+    appendTaskText(value, "deviationRulesText", `- ${workbarNonAlcoSavedLocationStandardBinding.incompleteMessage}\n- A Workbar Non-Alco Fridge shortage, date, FIFO, placement, fronting, door, power or internal-light issue blocks the checkpoint.\n- Workbar Milk Fridge lower-shelf or temporary-storage noncompliance blocks the checkpoint even when 2 + 2 milk is present.`);
   }
   for (const id of ["C10", "C30"]) {
     const value = task(id);
@@ -1001,16 +1067,20 @@ function applyFridgeStandardsAmendment(openingTasks, closingTasks, doubleShiftSt
   }
   {
     const value = task("C33");
-    value.instructions = "Apply the structured fridge rules and physically verify every door, grille and required lock. Workbar Left/Right are locked after final full restock. The non-alcoholic fridge remains unlocked with its grille down. The Workbar Milk Fridge remains unlocked, powered on and fully compliant with its permanent top- and lower-shelf standard. Cornerbar Left/Middle/Right remain powered on with internal lights on, match their current saved location standards, and may then be closed, locked and physically checked. Event-active Cornerbar work is formally transferred per fridge scope with final physical evidence, never N/A.";
+    value.instructions = "Apply the structured fridge rules and physically verify every door, grille and required lock. Workbar Left/Right are locked after final full restock. Workbar Non-Alco Fridge matches its current manager-maintained saved location standard, remains unlocked with its grille down, and keeps the refrigerator and internal light on. The Workbar Milk Fridge remains unlocked, powered on and fully compliant with its permanent top- and lower-shelf standard. Cornerbar Left/Middle/Right remain powered on with internal lights on, match their current saved location standards, and may then be closed, locked and physically checked. Event-active Cornerbar work is formally transferred per fridge scope with final physical evidence, never N/A.";
     const milk = value.items.find((item) => item.key === "workbar_milk_rule");
-    if (!milk) throw new Error("C33/workbar_milk_rule is missing.");
+    const nonAlco = value.items.find((item) => item.key === "workbar_nonalcoholic_rule");
+    if (!milk || !nonAlco) throw new Error("C33 Workbar refrigerator rules are missing.");
+    nonAlco.key = "workbar_non_alco_fridge_standard";
+    nonAlco.label = "Workbar Non-Alco Fridge matches its current saved location standard, remains unlocked with grille down and door closed, and keeps refrigerator and internal light on";
+    bindWorkbarNonAlcoItem(nonAlco);
     milk.label = "Workbar Milk Fridge powered on and fully compliant: exact 2 + 2 top shelf; opened, visibly date-labelled wine only below";
     milk.sourceKind = "routine_standard";
     milk.standardKey = WORKBAR_MILK_FRIDGE_STANDARD_KEY;
     milk.sourceConfig = {};
     addTaskItem(value, "cornerbar_refrigerators_and_internal_lights_on", "every Cornerbar refrigerator and internal light remains on", { standardKey: "cornerbar-operating-standard" });
-    value.doneCriteriaText = "- Every fridge physically matches its structured rule.\n- Required locks are physically checked after the universal key is turned.\n- Non-alcoholic grille/door and unlocked state are checked.\n- Workbar Milk Fridge top and lower shelves fully comply; the refrigerator remains powered on, closed and unlocked.\n- Cornerbar refrigerators and internal lights remain on and each fridge matches its current saved location standard.\n- Event-active Cornerbar scope has authorized transfer and final physical evidence.";
-    appendTaskText(value, "deviationRulesText", "- A correct Workbar Milk Fridge top shelf never compensates for noncompliant lower shelves.\n- Switching off a Cornerbar refrigerator or its internal light is forbidden.");
+    value.doneCriteriaText = "- Every fridge physically matches its structured rule.\n- Required locks are physically checked after the universal key is turned.\n- Workbar Non-Alco Fridge matches its current saved location standard; dates, FIFO, placement and fronting are correct; the grille is checked; the door is closed; the refrigerator is clean and operating normally; refrigerator and internal light remain on.\n- Workbar Milk Fridge top and lower shelves fully comply; the refrigerator remains powered on, closed and unlocked.\n- Cornerbar refrigerators and internal lights remain on and each fridge matches its current saved location standard.\n- Event-active Cornerbar scope has authorized transfer and final physical evidence.";
+    appendTaskText(value, "deviationRulesText", `- ${workbarNonAlcoSavedLocationStandardBinding.incompleteMessage}\n- Switching off the Workbar Non-Alco Fridge or its internal light is forbidden.\n- A correct Workbar Milk Fridge top shelf never compensates for noncompliant lower shelves.\n- Switching off a Cornerbar refrigerator or its internal light is forbidden.`);
   }
 
   const transition = doubleShiftSteps.find((step) => step.id === "DS02");
@@ -1019,7 +1089,11 @@ function applyFridgeStandardsAmendment(openingTasks, closingTasks, doubleShiftSt
     "- Workbar milk fridge",
     "- espresso-machine dairy and oat reservoirs\n- self-service milk jug\n- Workbar Milk Fridge top-shelf 2 + 2 reserve\n- Workbar Milk Fridge lower shelves: opened, visibly date-labelled wine only",
   );
-  transition.doneCriteriaText = `${transition.doneCriteriaText}\n- The handover reports espresso reservoirs, self-service milk jug, Workbar Milk Fridge top shelf and lower shelves separately.\n- A 2 + 2 top shelf alone never reports the full refrigerator standard as compliant.`;
+  transition.instructions = transition.instructions.replace(
+    "- Workbar food/non-alcoholic fridge",
+    "- Workbar Non-Alco Fridge actual saved-standard status, including shortages, date/FIFO issues and incomplete-standard escalation",
+  );
+  transition.doneCriteriaText = `${transition.doneCriteriaText}\n- The handover reports actual Workbar Non-Alco Fridge saved-standard status, shortages, date/FIFO issues and incomplete-standard escalation without duplicating product quantities.\n- The handover reports espresso reservoirs, self-service milk jug, Workbar Milk Fridge top shelf and lower shelves separately.\n- A 2 + 2 top shelf alone never reports the full refrigerator standard as compliant.`;
   transition.sourceHash = sha256(canonical({ priorSourceHash: transition.sourceHash, instructions: transition.instructions, doneCriteriaText: transition.doneCriteriaText, amendmentDecisionHash }));
   transition.fridgeStandardsAmendment = { date: "2026-08-15", decisionHash: amendmentDecisionHash, ownership: "organization" };
 
@@ -1243,7 +1317,7 @@ function validatePack(pack, withHash = false) {
           throw new Error(`${pair}: inventory_readonly source does not match the canonical location_standards contract.`);
         }
       }
-      if (["O13", "C08", "C28"].includes(task.id) && ["eggs_present_and_to_standard", "fridge_clean_and_operating"].includes(item.key)
+      if (["O13", "C08", "C28"].includes(task.id) && item.key === "fridge_clean_and_operating"
         && (item.sourceKind !== "static" || canonical(item.sourceConfig) !== "{}" || item.standardKey || item.locationSetKey)) {
         throw new Error(`${pair}: the explicit physical check must remain one static item.`);
       }
@@ -1279,7 +1353,16 @@ function validatePack(pack, withHash = false) {
       }
     }
   }
-  const expectedInventoryPairs = ["C08/inventory_standard_items", "C28/inventory_standard_items", "O13/inventory_standard_items", ...expectedCornerbarInventoryConfigs.keys()].sort();
+  const expectedInventoryPairs = [
+    "C08/inventory_standard_items",
+    "C28/inventory_standard_items",
+    "C33/workbar_non_alco_fridge_standard",
+    "O13/inventory_standard_items",
+    "O23/workbar_non_alco_fridge_standard",
+    "O29/workbar_non_alco_fridge_standard",
+    "O35/workbar_non_alco_fridge_standard",
+    ...expectedCornerbarInventoryConfigs.keys(),
+  ].sort();
   if (canonical(inventoryPairs.sort()) !== canonical(expectedInventoryPairs)) {
     throw new Error("Only the approved Workbar and Cornerbar location-standard bindings may use inventory_readonly.");
   }

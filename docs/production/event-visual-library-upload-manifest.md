@@ -80,6 +80,7 @@
 | — | Workbar | Workbar Milk Fridge | Full refrigerator | Written standard only | — | — | Complete cabinet and permanent shelf allocation. Written standard only; image awaiting upload. | Complete cabinet and permanent shelf allocation. Written standard only; image awaiting upload. | awaiting production upload | required | Operations-approved standard · image awaiting upload |
 | — | Workbar | Workbar Milk Fridge | Top shelf | Written standard only | — | — | Exactly 2 regular milk cartons and 2 Oatly cartons. Written standard only; image awaiting upload. | Exactly 2 regular milk cartons and 2 Oatly cartons. Written standard only; image awaiting upload. | awaiting production upload | required | Operations-approved standard · image awaiting upload |
 | — | Workbar | Workbar Milk Fridge | Lower shelves | Written standard only | — | — | Opened and visibly date-labelled wine only. Written standard only; image awaiting upload. | Opened and visibly date-labelled wine only. Written standard only; image awaiting upload. | awaiting production upload | required | Operations-approved standard · image awaiting upload |
+| — | Workbar | Workbar Non-Alco Fridge | Full refrigerator | Written standard only | — | — | Canonical saved-location reference. Written standard only; image awaiting upload. | Canonical saved-location reference. Written standard only; image awaiting upload. | awaiting production upload | required | Current saved location standard · image awaiting upload |
 
 ## Upload rule
 

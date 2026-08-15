@@ -20,9 +20,9 @@ const VIEWPORTS = [
   [375, 812],
   [360, 800],
 ];
-const GUIDE_SCENARIOS = ["atrium", "cornerbar", "cornerbar-group", "cornerbar-horseshoe", "cornerbar-coffee", "workbar", "workbar-milk-fridge", "error"];
+const GUIDE_SCENARIOS = ["atrium", "cornerbar", "cornerbar-group", "cornerbar-horseshoe", "cornerbar-coffee", "workbar", "workbar-milk-fridge", "workbar-non-alco-fridge", "error"];
 const scenarios = ["chromium", "webkit"].flatMap((engine) => GUIDE_SCENARIOS.map((scenario, index) => {
-  const [width, height] = VIEWPORTS[index % VIEWPORTS.length];
+  const [width, height] = scenario === "error" ? VIEWPORTS[0] : VIEWPORTS[index % VIEWPORTS.length];
   return [
   `${scenario}-${engine}-${width}`,
   scenario,
@@ -172,6 +172,12 @@ async function main() {
           check(`${name} states the exact permanent shelf allocation`, await page.getByText(/Exactly 2 regular milk cartons and 2 Oatly cartons/).first().isVisible()
             && await page.getByText(/Opened and visibly date-labelled wine only/).first().isVisible());
         }
+        if (scenario === "workbar-non-alco-fridge") {
+          check(`${name} reuses the canonical Workbar Non-Alco Fridge reference`, await page.getByRole("heading", { name: "Workbar Non-Alco Fridge" }).isVisible()
+            && await page.getByText("Full refrigerator", { exact: true }).isVisible());
+          check(`${name} resolves the saved standard and keeps refrigerator and light on`, await page.getByText(/Resolve the current saved location standard dynamically/).isVisible()
+            && await page.getByText(/Keep the refrigerator and its internal light on/).isVisible());
+        }
         if (scenario === "error") check(`${name} keeps written fallback after image error`, await page.getByText(/complete written reconstruction remains available/i).isVisible());
         await page.getByRole("button", { name: "Close visual guide" }).focus();
         await page.keyboard.press("Shift+Tab");
@@ -207,7 +213,7 @@ async function main() {
       }
       await page.close();
     }
-    check("Chromium and WebKit each cover all eight guides, seven widths and manager states", scenarios.length === GUIDE_SCENARIOS.length * 2
+    check("Chromium and WebKit each cover all nine guides, seven widths and manager states", scenarios.length === GUIDE_SCENARIOS.length * 2
       && managerScenarios.length === 2
       && new Set(scenarios.map((entry) => entry[2])).size === 2
       && ["chromium", "webkit"].every((engine) => new Set(scenarios.filter((entry) => entry[2] === engine).map((entry) => entry[3])).size === VIEWPORTS.length));

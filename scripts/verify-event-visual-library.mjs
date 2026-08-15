@@ -71,6 +71,23 @@ check("Workbar Milk Fridge is a three-zone written-only operations-approved defa
     && /Operations-approved standard/.test(fridge.source?.title)
     && !/Julie|Bobby|Robert/.test(JSON.stringify(fridge));
 })());
+check("Workbar Non-Alco Fridge is one canonical written-only saved-standard restore", (() => {
+  const fridge = eventRigGuides.find((guide) => guide.key === "workbar-non-alcoholic-fridge-standard");
+  const operationalCopy = JSON.stringify(fridge);
+  return fridge?.guideType === "default_restore"
+    && fridge.selectionKind === "default_target"
+    && fridge.sourceStatus === "saved_location_standard_image_awaiting_upload"
+    && fridge.title === "Workbar Non-Alco Fridge"
+    && JSON.stringify(fridge.zones.map((zone) => zone.key)) === JSON.stringify(["full-refrigerator"])
+    && fridge.zones[0].angles.length === 0
+    && fridge.source?.title === "Current saved location standard · image awaiting upload"
+    && /current manager-maintained saved location standard/i.test(operationalCopy)
+    && /dates and FIFO/i.test(operationalCopy)
+    && /placement and fronting/i.test(operationalCopy)
+    && /door is closed/i.test(operationalCopy)
+    && /refrigerator and (?:its )?internal light remain on/i.test(operationalCopy)
+    && !/Julie|Bobby|Robert/.test(operationalCopy);
+})());
 check("latest Atrium stage conflict is resolved to two handheld and two headset", (() => {
   const stage = eventRigGuides.find((guide) => guide.key === "atrium-stage-tech-default");
   const facts = stage.operationalFacts.join(" | ").toLowerCase();
@@ -91,7 +108,7 @@ check("manager reports guide, venue and overall required progress", /guide\.prog
 const migration = read("supabase/phase10x_event_visual_library_expansion.sql");
 const sqlKeys = [...(migration.match(/event_visual_reference_key_allowed[\s\S]*?any\s*\(array\[([\s\S]*?)\]::text\[\]\)/i)?.[1] || "").matchAll(/'([a-z0-9_-]+)'/g)].map((match) => match[1]);
 check("Phase 10X SQL allowlist exactly equals the ordered frontend manifest", JSON.stringify(sqlKeys) === JSON.stringify(eventVisualReferenceKeys));
-check("written-only Workbar Milk Fridge adds no visual-reference allowlist key", !eventVisualReferenceKeys.some((key) => key.startsWith("workbar-milk-fridge")));
+check("written-only Workbar fridge standards add no visual-reference allowlist keys", !eventVisualReferenceKeys.some((key) => key.startsWith("workbar-milk-fridge") || key.startsWith("workbar-non-alcoholic-fridge")));
 check("Phase 10X fails closed unless the Phase 10W metadata boundary exists", /Phase 10X requires Phase 10W Event visual-reference bridge/.test(migration) && /event_visual_current_user_can_read\(\)/.test(migration) && /get_event_visual_references\(text\[\]\)/.test(migration));
 check("Phase 10X is additive and contains no data or publication mutation", !/\bdrop\s+(?:table|schema|column)\b|\btruncate\b|\bdelete\s+from\b|\binsert\s+into\b|\bupdate\s+public\.|publish|install_content/i.test(migration));
 check("Phase 10X removes anon Event Ops execution while preserving authenticated client boundaries", /from public, anon, authenticated/.test(migration) && /to authenticated/.test(migration) && /set_updated_at\(\) set search_path = pg_catalog/.test(migration));
@@ -100,5 +117,6 @@ const generated = spawnSync(process.execPath, ["scripts/generate-event-visual-li
 check("generated migration and upload manifest cannot drift from the model", generated.status === 0);
 check("upload manifest states zero committed binaries and zero production uploads", /Binary files committed: \*\*0\*\*/.test(read("docs/production/event-visual-library-upload-manifest.md")) && /Production uploads performed: \*\*0\*\*/.test(read("docs/production/event-visual-library-upload-manifest.md")));
 check("upload manifest labels all three fridge zones operations-approved and awaiting upload", (read("docs/production/event-visual-library-upload-manifest.md").match(/Workbar Milk Fridge.*Operations-approved standard · image awaiting upload/g) || []).length === 3);
+check("upload manifest has one canonical Workbar Non-Alco Fridge row awaiting upload", (read("docs/production/event-visual-library-upload-manifest.md").match(/Workbar Non-Alco Fridge.*Current saved location standard · image awaiting upload/g) || []).length === 1);
 
 console.log(`Event visual library verification: ${passed}/${passed} passed across ${eventRigGuides.length} guides and ${eventVisualAngles.length} angles.`);

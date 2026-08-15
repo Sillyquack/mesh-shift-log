@@ -11,7 +11,7 @@ const standardByScenario = Object.freeze({
   "milk-fridge": fridgeReviewStandards.workbarMilkFridge,
   "espresso-reservoirs": fridgeReviewStandards.espressoMachineMilkReservoirs,
   "cornerbar-saved-standard": fridgeReviewStandards.cornerbarSavedStandards,
-  "salad-fridge-light": fridgeReviewStandards.workbarSaladFridgeLight,
+  "workbar-non-alco-fridge": fridgeReviewStandards.workbarNonAlcoFridge,
 });
 
 function WorkbarMilkFridgeDetails({ standard }) {
@@ -36,9 +36,20 @@ function WorkbarMilkFridgeDetails({ standard }) {
   );
 }
 
+function WorkbarNonAlcoFridgeDetails({ standard }) {
+  return (
+    <section aria-labelledby="non-alco-done-heading">
+      <p className="fridge-review-kicker">Canonical physical location</p>
+      <h2 id="non-alco-done-heading">One saved standard · one refrigerator</h2>
+      <ul>{standard.doneCriteria.map((criterion) => <li key={criterion}>{criterion}</li>)}</ul>
+    </section>
+  );
+}
+
 function StandardReview() {
   const standard = standardByScenario[scenario] || standardByScenario["milk-fridge"];
   const isMilkFridge = standard.key === fridgeReviewStandards.workbarMilkFridge.key;
+  const isWorkbarNonAlcoFridge = standard.key === fridgeReviewStandards.workbarNonAlcoFridge.key;
   const instruction = standard.instruction || standard.mainInstruction;
 
   return (
@@ -59,6 +70,7 @@ function StandardReview() {
           <p>{instruction}</p>
         </section>
         {isMilkFridge ? <WorkbarMilkFridgeDetails standard={standard} /> : null}
+        {isWorkbarNonAlcoFridge ? <WorkbarNonAlcoFridgeDetails standard={standard} /> : null}
         {standard.binding ? (
           <section aria-labelledby="runtime-heading">
             <p className="fridge-review-kicker">Runtime resolution</p>
@@ -68,7 +80,7 @@ function StandardReview() {
           </section>
         ) : null}
         <footer>
-          <strong>{isMilkFridge ? standard.provenance : "Operations-approved standard"}</strong>
+          <strong>{isMilkFridge ? standard.provenance : standard.sourceStatus || "Operations-approved standard"}</strong>
           <span>{isMilkFridge ? "Image awaiting upload · written standard remains complete" : "Deterministic review-only fixture"}</span>
         </footer>
       </article>

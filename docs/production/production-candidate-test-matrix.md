@@ -19,7 +19,7 @@ A production go decision requires all applicable automated and database checks p
 | Area | Command | Required result |
 |---|---|---|
 | Password and auth safety | `npm run verify:auth-password-security` | Pass |
-| Operations-owned event content | `npm run verify:event-routine-content` | 7 templates, 100 tasks and 30 guides verified |
+| Operations-owned event content | `npm run verify:event-routine-content` | 7 templates, 99 tasks and 31 guides verified |
 | Canonical Event visual library | `npm run verify:event-visual-library` | 29 guides (27 canonical + 2 compatibility), 49 zones and 65 unique ordered angles; generated SQL/manifest equality and source-safety checks pass |
 | Event Mode experience | `npm run verify:event-operator-experience` | Role-gated English low-noise Event Mode; manager cockpit preserved |
 | Event visual bridge | `npm run verify:event-visual-reference-bridge` | Allowlist, same-org metadata, current-image Storage access and denial matrix pass |

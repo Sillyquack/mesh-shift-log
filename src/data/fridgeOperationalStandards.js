@@ -1,6 +1,8 @@
 const freezeList = (items) => Object.freeze([...items]);
 
 export const WORKBAR_MILK_FRIDGE_STANDARD_KEY = "workbar-milk-fridge-target";
+export const WORKBAR_NON_ALCO_LOCATION_KEY = "workbar-non-alcoholic-fridge";
+export const WORKBAR_NON_ALCO_LOCATION_CODE = "WORKBAR_NON_ALCO_FRIDGE";
 
 export const workbarMilkFridgeStandard = Object.freeze({
   key: WORKBAR_MILK_FRIDGE_STANDARD_KEY,
@@ -71,8 +73,10 @@ export const ESPRESSO_MACHINE_MILK_RESERVOIR_INSTRUCTION =
 export const CORNERBAR_SAVED_STANDARD_INSTRUCTION =
   "Refill each Cornerbar fridge to its current saved location standard. Keep every refrigerator and its internal light on.";
 
-export const CORNERBAR_SAVED_STANDARD_INCOMPLETE =
+export const SAVED_LOCATION_STANDARD_INCOMPLETE =
   "Saved standard incomplete — manager confirmation required.";
+
+export const CORNERBAR_SAVED_STANDARD_INCOMPLETE = SAVED_LOCATION_STANDARD_INCOMPLETE;
 
 export const cornerbarSavedLocationStandardBinding = Object.freeze({
   mode: "location_standards",
@@ -83,8 +87,17 @@ export const cornerbarSavedLocationStandardBinding = Object.freeze({
   embeddedProductQuantitiesAllowed: false,
 });
 
-export const WORKBAR_SALAD_FRIDGE_LIGHT_INSTRUCTION =
-  "Clean the Workbar salad fridge. Switch off the internal light only using the light-bulb control. Do not switch off the refrigerator.";
+export const WORKBAR_NON_ALCO_SAVED_STANDARD_INSTRUCTION =
+  "Clean and restore the Workbar Non-Alco Fridge to its current saved location standard. Check dates and FIFO, place and front every product correctly, close the door, and confirm that the refrigerator and its internal light remain on.";
+
+export const workbarNonAlcoSavedLocationStandardBinding = Object.freeze({
+  mode: "location_standards",
+  locationCodes: freezeList([WORKBAR_NON_ALCO_LOCATION_CODE]),
+  activeOnly: true,
+  resolution: "current-manager-maintained-location-standard",
+  incompleteMessage: SAVED_LOCATION_STANDARD_INCOMPLETE,
+  embeddedProductQuantitiesAllowed: false,
+});
 
 export const fridgeReviewStandards = Object.freeze({
   workbarMilkFridge: workbarMilkFridgeStandard,
@@ -102,10 +115,21 @@ export const fridgeReviewStandards = Object.freeze({
     instruction: CORNERBAR_SAVED_STANDARD_INSTRUCTION,
     binding: cornerbarSavedLocationStandardBinding,
   }),
-  workbarSaladFridgeLight: Object.freeze({
-    key: "workbar-salad-fridge-internal-light",
-    displayName: "Workbar salad-fridge internal light",
+  workbarNonAlcoFridge: Object.freeze({
+    key: WORKBAR_NON_ALCO_LOCATION_KEY,
+    displayName: "Workbar Non-Alco Fridge",
     ownership: "organization",
-    instruction: WORKBAR_SALAD_FRIDGE_LIGHT_INSTRUCTION,
+    instruction: WORKBAR_NON_ALCO_SAVED_STANDARD_INSTRUCTION,
+    binding: workbarNonAlcoSavedLocationStandardBinding,
+    operatingState: Object.freeze({ poweredOn: true, internalLightOn: true, doorClosed: true }),
+    doneCriteria: freezeList([
+      "current saved location standard is resolved",
+      "dates and FIFO are checked",
+      "every product is correctly placed and fronted",
+      "door is closed",
+      "refrigerator and internal light remain on",
+      "refrigerator is clean and operating normally",
+    ]),
+    sourceStatus: "Current saved location standard · image awaiting upload",
   }),
 });

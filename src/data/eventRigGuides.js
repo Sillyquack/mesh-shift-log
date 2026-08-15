@@ -1,4 +1,7 @@
-import { workbarMilkFridgeStandard } from "./fridgeOperationalStandards.js";
+import {
+  fridgeReviewStandards,
+  workbarMilkFridgeStandard,
+} from "./fridgeOperationalStandards.js";
 
 const DEFAULT_PLACEHOLDER = "Reference image awaiting production upload";
 
@@ -125,6 +128,12 @@ const WORKBAR_MILK_FRIDGE_SOURCE = {
   title: workbarMilkFridgeStandard.provenance,
   lastReviewedAt: "2026-08-15",
   note: "Written organization-owned standard; image awaiting upload.",
+};
+const WORKBAR_NON_ALCO_FRIDGE_SOURCE = {
+  system: "operations",
+  title: fridgeReviewStandards.workbarNonAlcoFridge.sourceStatus,
+  lastReviewedAt: "2026-08-15",
+  note: "Canonical saved-location reference; no separate refrigerator or image binary is claimed.",
 };
 
 const layoutWalkthrough = [
@@ -633,6 +642,29 @@ export const eventRigGuides = [
     sourceStatus: "operations_approved_image_awaiting_upload",
     notes: "Operations-approved standard · image awaiting upload. No image binary is claimed or uploaded.",
     tags: ["milk", "fridge", "wine", "default", "always-active"],
+  }),
+  guide({
+    key: "workbar-non-alcoholic-fridge-standard",
+    venueKey: "workbar",
+    title: fridgeReviewStandards.workbarNonAlcoFridge.displayName,
+    guideType: "default_restore",
+    selectionKind: "default_target",
+    summary: "Canonical Workbar refrigerator resolved from its current manager-maintained saved location standard.",
+    operationalFacts: [
+      "Resolve the current saved location standard dynamically",
+      "Clean, check dates and FIFO, and restore placement and fronting",
+      "Close the door and confirm normal operation",
+      "Keep the refrigerator and its internal light on",
+    ],
+    zones: [
+      zone("full-refrigerator", "Full refrigerator", "Canonical saved-location reference. Written standard only; image awaiting upload.", [], { required: true }),
+    ],
+    finalWalkthrough: fridgeReviewStandards.workbarNonAlcoFridge.doneCriteria,
+    commonMisses: ["Using a stale or incomplete saved standard", "Leaving date or FIFO issues unresolved", "Switching off the refrigerator or its internal light"],
+    provenance: [WORKBAR_NON_ALCO_FRIDGE_SOURCE],
+    sourceStatus: "saved_location_standard_image_awaiting_upload",
+    notes: "Current saved location standard · image awaiting upload. No duplicate refrigerator, angle or image binary is created.",
+    tags: ["fridge", "saved-standard", "default", "always-on"],
   }),
   guide({
     key: "communitystage-presentation",

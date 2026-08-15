@@ -53,6 +53,7 @@
     "verify:routine-employee-ui": "node scripts/verify-routine-employee-ui.mjs",
     "verify:routine-history-pilot": "node scripts/verify-routine-history-pilot.mjs",
     "verify:routine-content-pack": "node scripts/verify-routine-content-pack.mjs && node scripts/verify-fridge-standards-patch.mjs",
+    "verify:fridge-standards-patch": "node scripts/verify-fridge-standards-patch.mjs",
     "verify:fridge-standards": "node scripts/verify-fridge-standards-patch.mjs",
     "verify:routine-content-visual": "node scripts/verify-routine-content-visual.mjs",
     "verify:routine-e2e-pilot": "node scripts/verify-routine-e2e-pilot.mjs",

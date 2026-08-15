@@ -2,8 +2,9 @@ import {
   CORNERBAR_SAVED_STANDARD_INSTRUCTION,
   ESPRESSO_MACHINE_MILK_RESERVOIR_INSTRUCTION,
   WORKBAR_MILK_FRIDGE_STANDARD_KEY,
-  WORKBAR_SALAD_FRIDGE_LIGHT_INSTRUCTION,
+  WORKBAR_NON_ALCO_SAVED_STANDARD_INSTRUCTION,
   cornerbarSavedLocationStandardBinding,
+  workbarNonAlcoSavedLocationStandardBinding,
   workbarMilkFridgeStandard,
 } from "./fridgeOperationalStandards.js";
 
@@ -64,7 +65,7 @@ export const eventTaskTemplates = [
       task("after-client-feedback", "AFTER: Thank client and handle feedback", "Thank the client, ask whether everything went well, and escalate complaints or unresolved feedback to the event coordinator or responsible manager.", "all", "important", "event_floor_manager", fromEnd(0)),
       task("after-count-invoice", "AFTER: Counts, payment, and invoice", "Verify ordered products, coffee, mineral water, tabs, payment, and invoice details according to the agreed billing method.", "all", "important", "event_floor_manager", fromEnd(10), { guideRef: "shopbox-pos-guide" }),
       task("after-reset-clean", "AFTER: Clean, reset, and lost property", "Clean the venue, wipe surfaces, empty waste, glass and pant, reset furniture, tech, heaters and lights, and label lost property with the date and event name.", "all", "critical", "support", fromEnd(25)),
-      task("after-workbar-salad-fridge-light", "AFTER: Clean the Workbar salad fridge", WORKBAR_SALAD_FRIDGE_LIGHT_INSTRUCTION, "workbar", "important", "support", fromEnd(35), { standardKey: "workbar-salad-fridge-internal-light" }),
+      task("after-workbar-non-alco-fridge", "AFTER: Restore the Workbar Non-Alco Fridge when affected", `If Workbar service or stock was affected, ${WORKBAR_NON_ALCO_SAVED_STANDARD_INSTRUCTION} ${workbarNonAlcoSavedLocationStandardBinding.incompleteMessage}`, "workbar", "important", "support", fromEnd(35), { locationKey: "workbar-non-alcoholic-fridge", standardBinding: workbarNonAlcoSavedLocationStandardBinding }),
       task("after-final-close", "AFTER: Final close and next-event check", "Confirm the next event, complete any agreed rig, record unresolved work with photos for the coordinator, make sure guests have left, secure doors and lights, and follow the approved daytime or final-close security path. Never store alarm codes in the app.", "all", "critical", "event_floor_manager", fromEnd(45)),
     ],
   },
@@ -191,7 +192,6 @@ export const eventTaskTemplates = [
       task("cornerbar-furniture-reset", "AFTER: Chairs, furniture, and room reset", "Place chairs on tables and reset furniture to the approved closing or next-event layout. Remove signs and temporary items unless the next booking needs them.", "cornerbar", "important", "support", fromEnd(20), { rigRef: "cornerbar-standard-service" }),
       task("cornerbar-device-close", "AFTER: Power down and charge devices", "Turn off the room iPad, front bank-terminal display, bar iPad, and bar terminal. Place the bar iPad and terminal on charge in their approved positions.", "cornerbar", "critical", "cornerbar_staff", fromEnd(30)),
       task("cornerbar-fridge-bottles-fruit", "AFTER: Fridge, labels, bottles, and fruit", `${CORNERBAR_SAVED_STANDARD_INSTRUCTION} Remove superseded wine and syrup labels, wash the applicable bottles, store them under the Workbar sink, and discard sliced fruit and citrus.`, "cornerbar", "critical", "cornerbar_staff", fromEnd(40), { standardBinding: cornerbarSavedLocationStandardBinding }),
-      task("cornerbar-workbar-salad-fridge-light", "AFTER: Workbar salad-fridge internal light", WORKBAR_SALAD_FRIDGE_LIGHT_INSTRUCTION, "workbar", "important", "support", fromEnd(45), { standardKey: "workbar-salad-fridge-internal-light" }),
       task("cornerbar-opened-products", "AFTER: Handle opened drinks correctly", "Follow the agreed opened-bottle procedure. Date sparkling wine with date and time and keep it for one night only. Dispose of opened beer after the final close, and retain opened wine only when agreed, sealed, dated, and refrigerated.", "cornerbar", "critical", "cornerbar_manager", fromEnd(50)),
       task("cornerbar-clean-lost-property", "AFTER: Clean, waste, dishes, and lost property", "Clean the bar, room, surfaces, glassware and dishwashing area; empty waste, glass and pant; return catering items; and label lost property with the event name and date.", "cornerbar", "critical", "support", fromEnd(60)),
       task("cornerbar-lights-security", "AFTER: Lights, doors, and security path", "Turn off Cornerbar lights using the approved control. For a daytime handover, leave the building in the approved operating state and do not set the alarm. For the final or evening close, confirm everyone has left, secure doors, and follow the approved alarm procedure. Never store alarm codes in the app.", "cornerbar", "critical", "cornerbar_manager", fromEnd(75)),

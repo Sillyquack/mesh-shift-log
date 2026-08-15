@@ -16,7 +16,9 @@ This amendment is the authoritative source for the `mesh-routine-content@1.5R` r
 - This standard applies continuously across all shifts and events.
 - Cornerbar quantities come only from current manager-maintained saved location standards.
 - All Cornerbar refrigerators and internal lights remain on.
-- Workbar salad-fridge internal light may be switched off; the refrigerator remains on.
+- Legacy source alias “salad fridge” maps to the existing canonical Workbar Non-Alco Fridge at `workbar-non-alcoholic-fridge` / `WORKBAR_NON_ALCO_FRIDGE`.
+- The earlier separate refrigerator and internal-light interpretation is superseded. Workbar Non-Alco Fridge and its internal light remain on.
+- Workbar Non-Alco Fridge resolves its current manager-maintained saved location standard dynamically; Event and routine copy embeds no product or shelf quantities.
 - Operational standards are organization-owned and must not be named after an individual.
 
 ## Canonical Workbar Milk Fridge standard
@@ -42,9 +44,21 @@ The integrated cooler has separate dairy and oat reservoirs. The reservoirs use 
 
 Cornerbar Left, Middle and Right resolve their current saved location standards at runtime. Event and Closing content contains no embedded product quantities. An incomplete saved standard produces: “Saved standard incomplete — manager confirmation required.” Every Cornerbar refrigerator and internal light remains on.
 
-## Workbar salad-fridge light
+## Canonical Workbar Non-Alco Fridge mapping
 
-The Workbar salad fridge is cleaned and only its internal light is switched off with the light-bulb control. The refrigerator itself remains on. This has no effect on any Cornerbar refrigerator.
+The quoted legacy source term “salad fridge” does not identify another physical refrigerator, operational standard, task scope or Visual Standard. It is source-provenance shorthand for the existing Workbar Non-Alco Fridge.
+
+- Stable content/location key: `workbar-non-alcoholic-fridge`
+- Existing database/location code: `WORKBAR_NON_ALCO_FRIDGE`
+- Canonical application display name: Workbar Non-Alco Fridge
+- Runtime source: current manager-maintained saved location standard
+- Incomplete state: “Saved standard incomplete — manager confirmation required.”
+
+Approved instruction:
+
+> Clean and restore the Workbar Non-Alco Fridge to its current saved location standard. Check dates and FIFO, place and front every product correctly, close the door, and confirm that the refrigerator and its internal light remain on.
+
+Opening, Daytime, Double Shift, Closing and relevant Workbar Event paths use this one physical identity. The saved standard is resolved dynamically. Shortages, date/FIFO issues and incomplete-standard status are recorded as deviations or handover facts without copying product names or quantities into routine/Event content. Routine completion remains separate from Stock Count.
 
 ## Stock Count boundary
 
@@ -62,6 +76,6 @@ Regular milk and Oatly may use exact-standard quantity 2. Opened wine remains ac
 This section is generated from the canonical pack and is excluded from the amendment decision-body hash.
 
 - Pack: `mesh-routine-content@1.5R`
-- Canonical pack SHA-256: `fdf16deb681de343bebd8988b5a66635e38e05f927968beb38449e0c32a2d31c`
-- Amendment decision-body SHA-256: `b494dba7f1d7368c42f82caf017271ecdffea0d5be8c5d53cd2fec3fed69f235`
+- Canonical pack SHA-256: `66af45ecb1afa2b432b95ed0e1d5425c39ed0cc67becacbb386bd43489db1e02`
+- Amendment decision-body SHA-256: `be724431080fdbbb5fb598d52d3b01357ea2d3c778f94268166318064f5dfba1`
 - Production action: none; this artifact is local implementation and review only

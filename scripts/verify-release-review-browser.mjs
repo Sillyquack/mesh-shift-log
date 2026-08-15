@@ -37,7 +37,7 @@ const SURFACES = [
   ["workbar-milk-fridge", "/fridge-standards-review-harness.html?scenario=milk-fridge", "fridge-milk"],
   ["espresso-milk-reservoirs", "/fridge-standards-review-harness.html?scenario=espresso-reservoirs", "fridge-espresso"],
   ["cornerbar-saved-standard", "/fridge-standards-review-harness.html?scenario=cornerbar-saved-standard", "fridge-cornerbar"],
-  ["salad-fridge-light", "/fridge-standards-review-harness.html?scenario=salad-fridge-light", "fridge-salad"],
+  ["workbar-non-alco-fridge", "/fridge-standards-review-harness.html?scenario=workbar-non-alco-fridge", "fridge-non-alco"],
   ["count-standard", "/inventory-count-mode-harness.html", "count-standard"],
   ["count-manual", "/inventory-count-mode-harness.html?scenario=manual-differences", "count-manual"],
 ];
@@ -107,7 +107,7 @@ async function audit(page) {
       }
       return getComputedStyle(document.documentElement).backgroundColor;
     };
-    const keyText = [...document.querySelectorAll("button,[role='alert'],.rh-callout,.mesh-review-context,.rm-review-fixture,.counter-standard-decision")].filter((node) => visible(node) && node.textContent?.trim());
+    const keyText = [...document.querySelectorAll("h1,h2,button,[role='alert'],.rh-callout,.mesh-review-context,.rm-review-fixture,.counter-standard-decision")].filter((node) => visible(node) && node.textContent?.trim());
     const contrastFailures = keyText.map((node) => {
       const style = getComputedStyle(node);
       const background = effectiveBackground(node);
@@ -199,9 +199,12 @@ async function main() {
         } else if (kind === "fridge-cornerbar") {
           check(`${name} resolves the saved standards and keeps equipment on`, await page.getByRole("heading", { name: "Current manager-maintained location standards" }).isVisible()
             && await page.getByText(/Keep every refrigerator and its internal light on/).isVisible());
-        } else if (kind === "fridge-salad") {
-          check(`${name} switches off the internal light only`, await page.getByText(/Switch off the internal light only/).isVisible()
-            && await page.getByText(/Do not switch off the refrigerator/).isVisible());
+        } else if (kind === "fridge-non-alco") {
+          check(`${name} uses the canonical saved-standard flow and keeps equipment on`, await page.getByRole("heading", { name: "Workbar Non-Alco Fridge" }).isVisible()
+            && await page.getByRole("heading", { name: "Current manager-maintained location standards" }).isVisible()
+            && await page.getByText(/Check dates and FIFO, place and front every product correctly/i).isVisible()
+            && await page.getByText(/refrigerator and its internal light remain on/i).isVisible()
+            && await page.getByRole("heading", { name: "One saved standard · one refrigerator" }).isVisible());
         }
       } else if (kind === "count-standard") {
         await page.getByRole("heading", { name: "Does this fridge match its saved standard?" }).waitFor();

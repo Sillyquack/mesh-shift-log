@@ -218,7 +218,7 @@
     },
     {
       "key": "workbar-non-alcoholic-fridge",
-      "name": "Workbar Non-Alcoholic Fridge",
+      "name": "Workbar Non-Alco Fridge",
       "type": "fridge",
       "sortOrder": 22,
       "metadata": {}
@@ -1099,15 +1099,39 @@
             ]
           },
           "workbarNonAlcoholic": {
+            "locationKey": "workbar-non-alcoholic-fridge",
+            "standardSource": {
+              "mode": "location_standards",
+              "locationCodes": [
+                "WORKBAR_NON_ALCO_FRIDGE"
+              ],
+              "activeOnly": true,
+              "resolution": "current-manager-maintained-location-standard",
+              "incompleteMessage": "Saved standard incomplete — manager confirmation required.",
+              "embeddedProductQuantitiesAllowed": false
+            },
             "locking": "never-lock",
+            "power": "remain-on",
+            "internalLight": "remain-on",
             "opening": [
-              "raise-grille-fully"
+              "resolve-current-saved-location-standard",
+              "clean-and-restore",
+              "check-dates-and-fifo",
+              "correct-placement-and-fronting",
+              "raise-grille-fully",
+              "close-door",
+              "confirm-normal-operation"
             ],
             "finalClosing": [
-              "full-restock-including-eggs",
+              "resolve-current-saved-location-standard",
+              "clean-and-restore",
+              "check-dates-and-fifo",
+              "correct-placement-and-fronting",
               "remain-unlocked",
               "lower-grille-fully",
-              "physically-verify-grille-and-closed-fridge-door"
+              "close-door",
+              "confirm-refrigerator-and-internal-light-on",
+              "confirm-normal-operation"
             ]
           },
           "workbarMilk": {
@@ -2711,12 +2735,15 @@
           "timingSourceText": "After machine startup and before the first milk-based drink is served.",
           "fridgeStandardsAmendment": {
             "date": "2026-08-15",
-            "decisionHash": "b494dba7f1d7368c42f82caf017271ecdffea0d5be8c5d53cd2fec3fed69f235",
+            "decisionHash": "be724431080fdbbb5fb598d52d3b01357ea2d3c778f94268166318064f5dfba1",
             "ownership": "organization",
-            "standardKey": "workbar-milk-fridge-target"
+            "standardKeys": [
+              "workbar-milk-fridge-target"
+            ],
+            "locationKeys": []
           }
         },
-        "sourceHash": "a933016881230254d649a0bd8593cc829ba089e3e22950b539d23349a425c65d"
+        "sourceHash": "25ed5c6cef5666db9649bcbda2d692d31eb357ed6b244dcd5c8339a2df09830c"
       },
       {
         "id": "O09",
@@ -2883,12 +2910,17 @@
           },
           "fridgeStandardsAmendment": {
             "date": "2026-08-15",
-            "decisionHash": "b494dba7f1d7368c42f82caf017271ecdffea0d5be8c5d53cd2fec3fed69f235",
+            "decisionHash": "be724431080fdbbb5fb598d52d3b01357ea2d3c778f94268166318064f5dfba1",
             "ownership": "organization",
-            "standardKey": "workbar-milk-fridge-target"
+            "standardKeys": [
+              "workbar-milk-fridge-target"
+            ],
+            "locationKeys": [
+              "workbar-milk-fridge"
+            ]
           }
         },
-        "sourceHash": "198b81ccb069c23882e39345f0d86c2948049e992ea9ff2b46a12873fd055b00"
+        "sourceHash": "2ecefcddf2800bf1dc2f5ef76d390b1ead26ac65ad8ddd0c838bb249a0154e46"
       },
       {
         "id": "O10",
@@ -3231,7 +3263,7 @@
         "id": "O13",
         "taskKey": "o13-verify-restock-food-nonalcoholic-fridge",
         "stableKey": "opening.o13.verify-restock-food-nonalcoholic-fridge",
-        "title": "Verify and fully restock the Workbar food and non-alcoholic fridge, including eggs",
+        "title": "Verify and restore the Workbar Non-Alco Fridge",
         "sectionKey": "opening-07-08",
         "sourceType": "measurement",
         "taskType": "measurement",
@@ -3244,8 +3276,8 @@
         "repeatPolicy": "once_per_run",
         "timingText": "Complete before guest service; repeat at O29 and O35.",
         "locationDescription": "Workbar Non-Alcoholic Fridge.",
-        "instructions": "Record whether the fridge was fully stocked on arrival. If not, select correction required and physically restore every active product to the authoritative standard. Eggs are explicitly included.\n\nThis fridge is never locked. Pull the grille fully up for Opening and physically verify the grille position and closed fridge door.",
-        "structuredItemsText": "- `inventory_standard_items` — generated from the approved read-only inventory standard.\n- `eggs_present_and_to_standard` — eggs present and to standard\n- `date_rotation` — date rotation\n- `correct_shelf_placement` — correct shelf placement\n- `fronting_complete` — fronting complete\n- `fridge_clean_and_operating` — fridge clean and operating\n- `door_closed` — door closed\n- `fridge_remains_unlocked` — food and non-alcoholic fridge remains unlocked\n- `grille_fully_up` — grille pulled fully up for Opening",
+        "instructions": "Clean and restore the Workbar Non-Alco Fridge to its current saved location standard. Check dates and FIFO, place and front every product correctly, close the door, and confirm that the refrigerator and its internal light remain on.\n\nFor Opening, pull the grille fully up and physically verify the grille position and closed door. Record cleaning, date, FIFO or saved-standard issues as deviations.",
+        "structuredItemsText": "- `inventory_standard_items` — generated from the approved read-only inventory standard.\n- `date_rotation` — date rotation\n- `correct_shelf_placement` — correct shelf placement\n- `fronting_complete` — fronting complete\n- `fridge_clean_and_operating` — fridge clean and operating\n- `door_closed` — door closed\n- `fridge_remains_unlocked` — Workbar Non-Alco Fridge remains unlocked\n- `grille_fully_up` — grille pulled fully up for Opening\n- `refrigerator_and_internal_light_remain_on` — refrigerator and internal light remain on",
         "items": [
           {
             "key": "inventory_standard_items",
@@ -3266,22 +3298,8 @@
             },
             "sortOrder": 0,
             "metadata": {
-              "sourceText": "`inventory_standard_items` — generated from the approved read-only inventory standard."
-            }
-          },
-          {
-            "key": "eggs_present_and_to_standard",
-            "label": "eggs present and to standard",
-            "itemType": "check",
-            "required": true,
-            "sourceKind": "static",
-            "sourceConfig": {},
-            "inputSchema": {
-              "type": "boolean"
-            },
-            "sortOrder": 1,
-            "metadata": {
-              "sourceText": "`eggs_present_and_to_standard` — eggs present and to standard"
+              "sourceText": "`inventory_standard_items` — generated from the approved read-only inventory standard.",
+              "locationKey": "workbar-non-alcoholic-fridge"
             }
           },
           {
@@ -3296,7 +3314,7 @@
               "minLength": 1,
               "maxLength": 1000
             },
-            "sortOrder": 2,
+            "sortOrder": 1,
             "metadata": {
               "sourceText": "`date_rotation` — date rotation"
             }
@@ -3311,7 +3329,7 @@
             "inputSchema": {
               "type": "boolean"
             },
-            "sortOrder": 3,
+            "sortOrder": 2,
             "metadata": {
               "sourceText": "`correct_shelf_placement` — correct shelf placement"
             }
@@ -3326,7 +3344,7 @@
             "inputSchema": {
               "type": "boolean"
             },
-            "sortOrder": 4,
+            "sortOrder": 3,
             "metadata": {
               "sourceText": "`fronting_complete` — fronting complete"
             }
@@ -3341,7 +3359,7 @@
             "inputSchema": {
               "type": "boolean"
             },
-            "sortOrder": 5,
+            "sortOrder": 4,
             "metadata": {
               "sourceText": "`fridge_clean_and_operating` — fridge clean and operating"
             }
@@ -3356,14 +3374,14 @@
             "inputSchema": {
               "type": "boolean"
             },
-            "sortOrder": 6,
+            "sortOrder": 5,
             "metadata": {
               "sourceText": "`door_closed` — door closed"
             }
           },
           {
             "key": "fridge_remains_unlocked",
-            "label": "food and non-alcoholic fridge remains unlocked",
+            "label": "Workbar Non-Alco Fridge remains unlocked",
             "itemType": "check",
             "required": true,
             "sourceKind": "routine_standard",
@@ -3372,9 +3390,9 @@
             "inputSchema": {
               "type": "boolean"
             },
-            "sortOrder": 7,
+            "sortOrder": 6,
             "metadata": {
-              "sourceText": "`fridge_remains_unlocked` — food and non-alcoholic fridge remains unlocked"
+              "sourceText": "`fridge_remains_unlocked` — Workbar Non-Alco Fridge remains unlocked"
             }
           },
           {
@@ -3388,15 +3406,30 @@
             "inputSchema": {
               "type": "boolean"
             },
-            "sortOrder": 8,
+            "sortOrder": 7,
             "metadata": {
               "sourceText": "`grille_fully_up` — grille pulled fully up for Opening"
             }
+          },
+          {
+            "key": "refrigerator_and_internal_light_remain_on",
+            "label": "refrigerator and internal light remain on",
+            "itemType": "check",
+            "required": true,
+            "sourceKind": "static",
+            "sourceConfig": {},
+            "inputSchema": {
+              "type": "boolean"
+            },
+            "sortOrder": 8,
+            "metadata": {
+              "sourceText": "`refrigerator_and_internal_light_remain_on` — refrigerator and internal light remain on"
+            }
           }
         ],
-        "doneCriteriaText": "- Arrival assessment is recorded.\n- Every active standard line is physically at target.\n- Eggs are included.\n- Products are in date, rotated and placed correctly.\n- The fridge is clean, fronted, closed and operating normally.\n\n- The fridge remains unlocked and the grille is fully up for service.",
-        "deviationRulesText": "- Any active product cannot be brought to target.\n- Reserve stock missing.\n- Expired or damaged product.\n- Inventory source is inconsistent or required location cannot be resolved.\n- Fridge fault.\n- Never mark complete because stock exists elsewhere; it must be in the fridge.",
-        "referenceGuidanceText": "- `workbar-food-non-alcoholic-fridge` — actual shelf layout.\n- Closing C28 delivery is displayed as previous evidence when available.",
+        "doneCriteriaText": "- The current manager-maintained saved location standard is resolved.\n- Every active product line is restored without embedding product names or quantities in routine copy.\n- Dates and FIFO are checked.\n- Placement and fronting are correct.\n- The door is closed.\n- The refrigerator and its internal light remain on.\n- The refrigerator is clean and operating normally.\n- Completing this routine check does not complete Stock Count.\n- The grille is fully up for Opening and the fridge remains unlocked.",
+        "deviationRulesText": "- Saved standard incomplete — manager confirmation required.\n- A shortage, date or FIFO issue remains unresolved.\n- Placement or fronting differs from the current saved standard.\n- The door is open or the refrigerator is not operating normally.\n- The refrigerator or its internal light is switched off.\n- Counts, notes, zeroes, deviations and targetless Stock Count lines remain separate and must never be overwritten.",
+        "referenceGuidanceText": "- `workbar-non-alcoholic-fridge` — canonical saved-location reference; image awaiting upload.",
         "availabilityMode": "immediate",
         "condition": {},
         "timing": {},
@@ -3406,24 +3439,34 @@
           "authoritativeSourceId": "O13",
           "sourceType": "measurement",
           "deviationRules": [
-            "Any active product cannot be brought to target.",
-            "Reserve stock missing.",
-            "Expired or damaged product.",
-            "Inventory source is inconsistent or required location cannot be resolved.",
-            "Fridge fault.",
-            "Never mark complete because stock exists elsewhere; it must be in the fridge."
+            "Saved standard incomplete — manager confirmation required.",
+            "A shortage, date or FIFO issue remains unresolved.",
+            "Placement or fronting differs from the current saved standard.",
+            "The door is open or the refrigerator is not operating normally.",
+            "The refrigerator or its internal light is switched off.",
+            "Counts, notes, zeroes, deviations and targetless Stock Count lines remain separate and must never be overwritten."
           ],
           "referenceGuidance": [
-            "`workbar-food-non-alcoholic-fridge` — actual shelf layout.",
-            "Closing C28 delivery is displayed as previous evidence when available."
+            "`workbar-non-alcoholic-fridge` — canonical saved-location reference; image awaiting upload."
           ],
           "timingSourceText": "Complete before guest service; repeat at O29 and O35.",
           "operationalStandardsAmendment": {
             "date": "2026-08-07",
             "decisionHash": "8ebedb39be888dfa118a429fa2046ba2b7b5dc49c868d9d5b811f2aa89b45351"
+          },
+          "fridgeStandardsAmendment": {
+            "date": "2026-08-15",
+            "decisionHash": "be724431080fdbbb5fb598d52d3b01357ea2d3c778f94268166318064f5dfba1",
+            "ownership": "organization",
+            "standardKeys": [
+              "fridge-closing-rules"
+            ],
+            "locationKeys": [
+              "workbar-non-alcoholic-fridge"
+            ]
           }
         },
-        "sourceHash": "b16c9ff61eee9a4c74a35d90f7fd20c64f6b045c8de3840d09b435e2ec679612"
+        "sourceHash": "771a760fa58e80d879064c1b03661538e2ca4d1340226e5e5eea3956b66be838"
       },
       {
         "id": "O14",
@@ -4928,7 +4971,7 @@
         "timingText": "Final Opening gate; target completion by 08:00.",
         "locationDescription": "All Opening areas.",
         "instructions": "Perform a final physical readiness check. This is not a summary click: verify that the venue can open safely and professionally at 08:00.",
-        "structuredItemsText": "- `bookings_and_events_understood` — bookings and events understood\n- `coffee_orders_understood` — coffee orders understood\n- `espresso_machine_ready` — espresso machine ready\n- `workbar_dishwashers_ready` — workbar dishwashers ready\n- `kitchen_dishwashers_ready` — kitchen dishwashers ready\n- `four_coffee_canisters_ready` — four coffee canisters ready\n- `cleaning_station_ready` — cleaning station ready\n- `coffee_machine_milk_ready` — both espresso-machine milk reservoirs correctly filled and connected\n- `milk_fridge_2_plus_2` — complete Workbar Milk Fridge standard: 2 + 2 on top and opened, visibly date-labelled wine only below\n- `members_lounge_ready` — members lounge ready\n- `baked_goods_fruit_snacks_ready` — baked goods fruit snacks ready\n- `food_nonalcoholic_fridge_ready` — food nonalcoholic fridge ready\n- `self_service_ready` — self service ready\n- `cups_and_glasses_full` — cups and glasses full\n- `project_rooms_ready` — project rooms ready\n- `register_pos_music_screen_lighting_ready` — register pos music screen lighting ready\n- `seasonal_task_handled_when_included` — seasonal task handled when included\n- `no_unresolved_opening_blocker` — no unresolved opening blocker",
+        "structuredItemsText": "- `bookings_and_events_understood` — bookings and events understood\n- `coffee_orders_understood` — coffee orders understood\n- `espresso_machine_ready` — espresso machine ready\n- `workbar_dishwashers_ready` — workbar dishwashers ready\n- `kitchen_dishwashers_ready` — kitchen dishwashers ready\n- `four_coffee_canisters_ready` — four coffee canisters ready\n- `cleaning_station_ready` — cleaning station ready\n- `coffee_machine_milk_ready` — both espresso-machine milk reservoirs correctly filled and connected\n- `milk_fridge_2_plus_2` — complete Workbar Milk Fridge standard: 2 + 2 on top and opened, visibly date-labelled wine only below\n- `members_lounge_ready` — members lounge ready\n- `baked_goods_fruit_snacks_ready` — baked goods fruit snacks ready\n- `workbar_non_alco_fridge_standard` — Workbar Non-Alco Fridge matches its current saved location standard; refrigerator and internal light remain on\n- `self_service_ready` — self service ready\n- `cups_and_glasses_full` — cups and glasses full\n- `project_rooms_ready` — project rooms ready\n- `register_pos_music_screen_lighting_ready` — register pos music screen lighting ready\n- `seasonal_task_handled_when_included` — seasonal task handled when included\n- `no_unresolved_opening_blocker` — no unresolved opening blocker",
         "items": [
           {
             "key": "bookings_and_events_understood",
@@ -5097,18 +5140,25 @@
             }
           },
           {
-            "key": "food_nonalcoholic_fridge_ready",
-            "label": "food nonalcoholic fridge ready",
+            "key": "workbar_non_alco_fridge_standard",
+            "label": "Workbar Non-Alco Fridge matches its current saved location standard; refrigerator and internal light remain on",
             "itemType": "check",
             "required": true,
-            "sourceKind": "static",
-            "sourceConfig": {},
+            "sourceKind": "inventory_readonly",
+            "sourceConfig": {
+              "mode": "location_standards",
+              "locationCodes": [
+                "WORKBAR_NON_ALCO_FRIDGE"
+              ],
+              "activeOnly": true
+            },
             "inputSchema": {
               "type": "boolean"
             },
             "sortOrder": 11,
             "metadata": {
-              "sourceText": "`food_nonalcoholic_fridge_ready` — food nonalcoholic fridge ready"
+              "sourceText": "`workbar_non_alco_fridge_standard` — Workbar Non-Alco Fridge matches its current saved location standard; refrigerator and internal light remain on",
+              "locationKey": "workbar-non-alcoholic-fridge"
             }
           },
           {
@@ -5204,8 +5254,8 @@
             }
           }
         ],
-        "doneCriteriaText": "- Every included required Opening task has been handled.\n- All physical readiness items are checked at the final gate.\n- Unresolved blockers prevent a normal pass.\n- Known authorized deviations remain visible and owned.\n- The venue is ready for 08:00.\n\n- Espresso-machine reservoirs and Workbar Milk Fridge carton storage are verified as separate physical systems.\n- The full refrigerator standard is required; a correct 2 + 2 top shelf alone is insufficient.",
-        "deviationRulesText": "- Any critical setup is not ready.\n- Unresolved stock, serviceware, machine, access, cash or safety blocker.\n- An item is merely assumed from an earlier check.\n- Do not use a manager override to display ordinary green readiness.",
+        "doneCriteriaText": "- Every included required Opening task has been handled.\n- All physical readiness items are checked at the final gate.\n- Unresolved blockers prevent a normal pass.\n- Known authorized deviations remain visible and owned.\n- The venue is ready for 08:00.\n\n- Workbar Non-Alco Fridge matches its current manager-maintained saved location standard, is clean and operating normally, and its refrigerator and internal light remain on.\n- Espresso-machine reservoirs and Workbar Milk Fridge carton storage are verified as separate physical systems.\n- The full refrigerator standard is required; a correct 2 + 2 top shelf alone is insufficient.",
+        "deviationRulesText": "- Any critical setup is not ready.\n- Unresolved stock, serviceware, machine, access, cash or safety blocker.\n- An item is merely assumed from an earlier check.\n- Do not use a manager override to display ordinary green readiness.\n\n- Saved standard incomplete — manager confirmation required.\n- A Workbar Non-Alco Fridge shortage, date, FIFO, placement, fronting, door, power or internal-light issue blocks final Opening readiness.",
         "referenceGuidanceText": "- This checkpoint may link to the task-specific references but does not require a new generic image.\n\n# Block 2 — Opening 08:00–10:00",
         "availabilityMode": "immediate",
         "condition": {},
@@ -5221,7 +5271,9 @@
             "Any critical setup is not ready.",
             "Unresolved stock, serviceware, machine, access, cash or safety blocker.",
             "An item is merely assumed from an earlier check.",
-            "Do not use a manager override to display ordinary green readiness."
+            "Do not use a manager override to display ordinary green readiness.",
+            "Saved standard incomplete — manager confirmation required.",
+            "A Workbar Non-Alco Fridge shortage, date, FIFO, placement, fronting, door, power or internal-light issue blocks final Opening readiness."
           ],
           "referenceGuidance": [
             "This checkpoint may link to the task-specific references but does not require a new generic image. # Block 2 — Opening 08:00–10:00"
@@ -5235,12 +5287,17 @@
           },
           "fridgeStandardsAmendment": {
             "date": "2026-08-15",
-            "decisionHash": "b494dba7f1d7368c42f82caf017271ecdffea0d5be8c5d53cd2fec3fed69f235",
+            "decisionHash": "be724431080fdbbb5fb598d52d3b01357ea2d3c778f94268166318064f5dfba1",
             "ownership": "organization",
-            "standardKey": "workbar-milk-fridge-target"
+            "standardKeys": [
+              "workbar-milk-fridge-target"
+            ],
+            "locationKeys": [
+              "workbar-non-alcoholic-fridge"
+            ]
           }
         },
-        "sourceHash": "38c51ef5714bcf4e4b5635fa18451e182a94c641ae07fe0743636948479871c0"
+        "sourceHash": "46e185dc42dc8fdbe42e2fe1a834f061e2ad2399bd7d1014cfaee362ca8c80b4"
       },
       {
         "id": "O24",
@@ -5878,22 +5935,29 @@
         "repeatPolicy": "once_per_phase",
         "timingText": "Visible 09:35; start permitted 09:40; target 09:45; overdue 09:55. Server time is authoritative.",
         "locationDescription": "All guest-facing Workbar stock and service points.",
-        "instructions": "At the checkpoint, perform a new 09:45 physical assessment of every listed category and both cup/glass visual layouts. For each item, record whether it was already at standard or required correction, then restore it before completing the checkpoint.\n\nFor the Workbar Milk Fridge, confirm both the exact milk reserve and opened, visibly date-labelled wine only on every lower shelf. Temporary event storage is prohibited.",
-        "structuredItemsText": "- `food_nonalcoholic_fridge_including_eggs` — food nonalcoholic fridge including eggs\n- `milk_fridge_two_regular_two_oatly` — complete Workbar Milk Fridge standard: exact 2 + 2 top shelf and compliant lower shelves\n- `self_service_components` — self service components\n- `baked_goods_fruit_snacks` — baked goods fruit snacks\n- `coffee_canisters_one_plus_three` — coffee canisters one plus three\n- `coffee_cups_service_ready_target` — new physical check: full coffee-cup visual layout, with no inherited completion\n- `wine_glasses_service_ready_target` — new physical check: full wine-glass visual layout, with no inherited completion\n- `members_lounge_coffee_point` — members lounge coffee point\n- `ordinary_cups_four_high_handles_right` — ordinary cups four high with handles right\n- `cappuccino_shelf_and_machine_top_filled` — cappuccino shelf and machine-top positions filled\n- `espresso_machine_top_filled` — espresso machine-top positions filled",
+        "instructions": "At the checkpoint, perform a new 09:45 physical assessment of every listed category and both cup/glass visual layouts. For each item, record whether it was already at standard or required correction, then restore it before completing the checkpoint.\n\nClean and restore the Workbar Non-Alco Fridge to its current saved location standard. Check dates and FIFO, place and front every product correctly, close the door, and confirm that the refrigerator and its internal light remain on. Saved standard incomplete — manager confirmation required.\n\nFor the Workbar Milk Fridge, confirm both the exact milk reserve and opened, visibly date-labelled wine only on every lower shelf. Temporary event storage is prohibited.",
+        "structuredItemsText": "- `workbar_non_alco_fridge_standard` — Workbar Non-Alco Fridge — current saved location standard\n- `milk_fridge_two_regular_two_oatly` — complete Workbar Milk Fridge standard: exact 2 + 2 top shelf and compliant lower shelves\n- `self_service_components` — self service components\n- `baked_goods_fruit_snacks` — baked goods fruit snacks\n- `coffee_canisters_one_plus_three` — coffee canisters one plus three\n- `coffee_cups_service_ready_target` — new physical check: full coffee-cup visual layout, with no inherited completion\n- `wine_glasses_service_ready_target` — new physical check: full wine-glass visual layout, with no inherited completion\n- `members_lounge_coffee_point` — members lounge coffee point\n- `ordinary_cups_four_high_handles_right` — ordinary cups four high with handles right\n- `cappuccino_shelf_and_machine_top_filled` — cappuccino shelf and machine-top positions filled\n- `espresso_machine_top_filled` — espresso machine-top positions filled",
         "items": [
           {
-            "key": "food_nonalcoholic_fridge_including_eggs",
-            "label": "food nonalcoholic fridge including eggs",
+            "key": "workbar_non_alco_fridge_standard",
+            "label": "Workbar Non-Alco Fridge — current saved location standard",
             "itemType": "check",
             "required": true,
-            "sourceKind": "static",
-            "sourceConfig": {},
+            "sourceKind": "inventory_readonly",
+            "sourceConfig": {
+              "mode": "location_standards",
+              "locationCodes": [
+                "WORKBAR_NON_ALCO_FRIDGE"
+              ],
+              "activeOnly": true
+            },
             "inputSchema": {
               "type": "boolean"
             },
             "sortOrder": 0,
             "metadata": {
-              "sourceText": "`food_nonalcoholic_fridge_including_eggs` — food nonalcoholic fridge including eggs"
+              "sourceText": "`workbar_non_alco_fridge_standard` — Workbar Non-Alco Fridge — current saved location standard",
+              "locationKey": "workbar-non-alcoholic-fridge"
             }
           },
           {
@@ -6053,8 +6117,8 @@
             }
           }
         ],
-        "doneCriteriaText": "- Every checkpoint category has an explicit first result.\n- Every correction is physically completed and attributed.\n- Food/non-alcoholic products, eggs, milk, coffee, tea, serviceware, fruit, snacks and baked goods are ready for the next period.\n- One Coffee Canister is in the members lounge and three are in reserve.\n- Coffee-cup and wine-glass service-ready layouts exactly match their full visual layouts after a new physical check.\n- O27 is system-completed only after this checkpoint succeeds.\n\n- O27 is system-completed only after this independent 09:45 checkpoint succeeds; earlier completion is never inherited.\n\n- Workbar Milk Fridge top and lower shelves both comply with the permanent standard; 2 + 2 alone is not a pass.",
-        "deviationRulesText": "- Any defined cup/glass position is empty, has the wrong type, or still depends on washing; service-ready is not a lower minimum.\n- Any category cannot be restored.\n- Missing stock, serviceware, Coffee Canisters or access.\n- Do not link normal morning consumption to the previous Closing automatically; record the current finding accurately.\n\n- Workbar Milk Fridge lower-shelf or temporary-storage noncompliance blocks the checkpoint even when 2 + 2 milk is present.",
+        "doneCriteriaText": "- Every checkpoint category has an explicit first result.\n- Every correction is physically completed and attributed.\n- Food/non-alcoholic products, eggs, milk, coffee, tea, serviceware, fruit, snacks and baked goods are ready for the next period.\n- One Coffee Canister is in the members lounge and three are in reserve.\n- Coffee-cup and wine-glass service-ready layouts exactly match their full visual layouts after a new physical check.\n- O27 is system-completed only after this checkpoint succeeds.\n\n- O27 is system-completed only after this independent 09:45 checkpoint succeeds; earlier completion is never inherited.\n\n- Workbar Non-Alco Fridge matches its current saved location standard, is clean, closed and operating normally, and its refrigerator and internal light remain on.\n- Workbar Milk Fridge top and lower shelves both comply with the permanent standard; 2 + 2 alone is not a pass.",
+        "deviationRulesText": "- Any defined cup/glass position is empty, has the wrong type, or still depends on washing; service-ready is not a lower minimum.\n- Any category cannot be restored.\n- Missing stock, serviceware, Coffee Canisters or access.\n- Do not link normal morning consumption to the previous Closing automatically; record the current finding accurately.\n\n- Saved standard incomplete — manager confirmation required.\n- A Workbar Non-Alco Fridge shortage, date, FIFO, placement, fronting, door, power or internal-light issue blocks the checkpoint.\n- Workbar Milk Fridge lower-shelf or temporary-storage noncompliance blocks the checkpoint even when 2 + 2 milk is present.",
         "referenceGuidanceText": "- `ordinary-coffee-cup-layout`.\n- `cappuccino-cup-shelf-layout`.\n- `cappuccino-and-espresso-machine-top-layout`.\n- `wine-glass-layout`.\n- `workbar-food-non-alcoholic-fridge`.\n- `workbar-milk-fridge`.\n- `coffee-canister-lunch-reserve`.",
         "availabilityMode": "time_window",
         "condition": {},
@@ -6074,6 +6138,8 @@
             "Any category cannot be restored.",
             "Missing stock, serviceware, Coffee Canisters or access.",
             "Do not link normal morning consumption to the previous Closing automatically; record the current finding accurately.",
+            "Saved standard incomplete — manager confirmation required.",
+            "A Workbar Non-Alco Fridge shortage, date, FIFO, placement, fronting, door, power or internal-light issue blocks the checkpoint.",
             "Workbar Milk Fridge lower-shelf or temporary-storage noncompliance blocks the checkpoint even when 2 + 2 milk is present."
           ],
           "referenceGuidance": [
@@ -6096,12 +6162,19 @@
           },
           "fridgeStandardsAmendment": {
             "date": "2026-08-15",
-            "decisionHash": "b494dba7f1d7368c42f82caf017271ecdffea0d5be8c5d53cd2fec3fed69f235",
+            "decisionHash": "be724431080fdbbb5fb598d52d3b01357ea2d3c778f94268166318064f5dfba1",
             "ownership": "organization",
-            "standardKey": "workbar-milk-fridge-target"
+            "standardKeys": [
+              "workbar-milk-fridge-target",
+              "coffee-cups-service-ready-target",
+              "wine-glasses-service-ready-target"
+            ],
+            "locationKeys": [
+              "workbar-non-alcoholic-fridge"
+            ]
           }
         },
-        "sourceHash": "94956c8bbfa8e7e0cb716105f06717cbeaa671b99c551c95ee15982088992cdb"
+        "sourceHash": "c658bffa706608fcb009b0ee7b49e3b685b980b3c06e56ab597017577a26c6b8"
       },
       {
         "id": "O30",
@@ -6765,22 +6838,29 @@
         "repeatPolicy": "once_per_phase",
         "timingText": "Visible 10:35; start permitted 10:40; target 10:45; overdue 10:50; hard deadline 10:55. Server time is authoritative.",
         "locationDescription": "All guest-facing Workbar stock and service points.",
-        "instructions": "Before lunch, perform a new 10:45 physical assessment of every listed category and both cup/glass visual layouts. For each category, record whether it was already at standard or required correction, then restore it. The task cannot inherit O29 completion.\n\nFor the Workbar Milk Fridge, confirm both the exact milk reserve and opened, visibly date-labelled wine only on every lower shelf. Temporary event storage is prohibited.",
-        "structuredItemsText": "- `food_nonalcoholic_fridge_including_eggs` — food nonalcoholic fridge including eggs\n- `milk_fridge_two_regular_two_oatly` — complete Workbar Milk Fridge standard: exact 2 + 2 top shelf and compliant lower shelves\n- `self_service_components` — self service components\n- `baked_goods_fruit_snacks` — baked goods fruit snacks\n- `coffee_canisters_one_plus_three` — coffee canisters one plus three\n- `coffee_cups_service_ready_target` — new physical check: full coffee-cup visual layout, with no inherited completion\n- `wine_glasses_service_ready_target` — new physical check: full wine-glass visual layout, with no inherited completion\n- `members_lounge_coffee_point` — members lounge coffee point\n- `ordinary_cups_four_high_handles_right` — ordinary cups four high with handles right\n- `cappuccino_shelf_and_machine_top_filled` — cappuccino shelf and machine-top positions filled\n- `espresso_machine_top_filled` — espresso machine-top positions filled",
+        "instructions": "Before lunch, perform a new 10:45 physical assessment of every listed category and both cup/glass visual layouts. For each category, record whether it was already at standard or required correction, then restore it. The task cannot inherit O29 completion.\n\nClean and restore the Workbar Non-Alco Fridge to its current saved location standard. Check dates and FIFO, place and front every product correctly, close the door, and confirm that the refrigerator and its internal light remain on. Saved standard incomplete — manager confirmation required.\n\nFor the Workbar Milk Fridge, confirm both the exact milk reserve and opened, visibly date-labelled wine only on every lower shelf. Temporary event storage is prohibited.",
+        "structuredItemsText": "- `workbar_non_alco_fridge_standard` — Workbar Non-Alco Fridge — current saved location standard\n- `milk_fridge_two_regular_two_oatly` — complete Workbar Milk Fridge standard: exact 2 + 2 top shelf and compliant lower shelves\n- `self_service_components` — self service components\n- `baked_goods_fruit_snacks` — baked goods fruit snacks\n- `coffee_canisters_one_plus_three` — coffee canisters one plus three\n- `coffee_cups_service_ready_target` — new physical check: full coffee-cup visual layout, with no inherited completion\n- `wine_glasses_service_ready_target` — new physical check: full wine-glass visual layout, with no inherited completion\n- `members_lounge_coffee_point` — members lounge coffee point\n- `ordinary_cups_four_high_handles_right` — ordinary cups four high with handles right\n- `cappuccino_shelf_and_machine_top_filled` — cappuccino shelf and machine-top positions filled\n- `espresso_machine_top_filled` — espresso machine-top positions filled",
         "items": [
           {
-            "key": "food_nonalcoholic_fridge_including_eggs",
-            "label": "food nonalcoholic fridge including eggs",
+            "key": "workbar_non_alco_fridge_standard",
+            "label": "Workbar Non-Alco Fridge — current saved location standard",
             "itemType": "check",
             "required": true,
-            "sourceKind": "static",
-            "sourceConfig": {},
+            "sourceKind": "inventory_readonly",
+            "sourceConfig": {
+              "mode": "location_standards",
+              "locationCodes": [
+                "WORKBAR_NON_ALCO_FRIDGE"
+              ],
+              "activeOnly": true
+            },
             "inputSchema": {
               "type": "boolean"
             },
             "sortOrder": 0,
             "metadata": {
-              "sourceText": "`food_nonalcoholic_fridge_including_eggs` — food nonalcoholic fridge including eggs"
+              "sourceText": "`workbar_non_alco_fridge_standard` — Workbar Non-Alco Fridge — current saved location standard",
+              "locationKey": "workbar-non-alcoholic-fridge"
             }
           },
           {
@@ -6940,8 +7020,8 @@
             }
           }
         ],
-        "doneCriteriaText": "- Every category has a new 10:45 assessment.\n- Every correction is physically complete.\n- All guest-facing lunch products are available.\n- Food/non-alcoholic fridge including eggs is full.\n- Milk fridge is 2 regular + 2 Oatly.\n- Self-service, baked goods, fruit and snacks are ready.\n- Four ready Coffee Canisters are in the 1 + 3 positions.\n- Coffee-cup and wine-glass service-ready layouts exactly match their full visual layouts after a new physical check.\n- O33 is system-completed only after this checkpoint succeeds.\n\n- O33 is system-completed only after this independent 10:45 checkpoint succeeds; earlier completion is never inherited.\n\n- Workbar Milk Fridge top and lower shelves both comply with the permanent standard; 2 + 2 alone is not a pass.",
-        "deviationRulesText": "- Any defined cup/glass position is empty, has the wrong type, or still depends on washing; service-ready is not a lower minimum.\n- Any product, serviceware or Coffee Canisters shortage.\n- Hard deadline missed — nonblocking timing deviation is recorded, but corrective completion is still required.\n- Do not mark complete with unresolved stock.\n\n- Workbar Milk Fridge lower-shelf or temporary-storage noncompliance blocks the checkpoint even when 2 + 2 milk is present.",
+        "doneCriteriaText": "- Every category has a new 10:45 assessment.\n- Every correction is physically complete.\n- All guest-facing lunch products are available.\n- Food/non-alcoholic fridge including eggs is full.\n- Milk fridge is 2 regular + 2 Oatly.\n- Self-service, baked goods, fruit and snacks are ready.\n- Four ready Coffee Canisters are in the 1 + 3 positions.\n- Coffee-cup and wine-glass service-ready layouts exactly match their full visual layouts after a new physical check.\n- O33 is system-completed only after this checkpoint succeeds.\n\n- O33 is system-completed only after this independent 10:45 checkpoint succeeds; earlier completion is never inherited.\n\n- Workbar Non-Alco Fridge matches its current saved location standard, is clean, closed and operating normally, and its refrigerator and internal light remain on.\n- Workbar Milk Fridge top and lower shelves both comply with the permanent standard; 2 + 2 alone is not a pass.",
+        "deviationRulesText": "- Any defined cup/glass position is empty, has the wrong type, or still depends on washing; service-ready is not a lower minimum.\n- Any product, serviceware or Coffee Canisters shortage.\n- Hard deadline missed — nonblocking timing deviation is recorded, but corrective completion is still required.\n- Do not mark complete with unresolved stock.\n\n- Saved standard incomplete — manager confirmation required.\n- A Workbar Non-Alco Fridge shortage, date, FIFO, placement, fronting, door, power or internal-light issue blocks the checkpoint.\n- Workbar Milk Fridge lower-shelf or temporary-storage noncompliance blocks the checkpoint even when 2 + 2 milk is present.",
         "referenceGuidanceText": "- `ordinary-coffee-cup-layout`.\n- `cappuccino-cup-shelf-layout`.\n- `cappuccino-and-espresso-machine-top-layout`.\n- `wine-glass-layout`.\n- `workbar-food-non-alcoholic-fridge`.\n- `workbar-milk-fridge`.\n- `coffee-canister-lunch-reserve`.",
         "availabilityMode": "time_window",
         "condition": {},
@@ -6962,6 +7042,8 @@
             "Any product, serviceware or Coffee Canisters shortage.",
             "Hard deadline missed — nonblocking timing deviation is recorded, but corrective completion is still required.",
             "Do not mark complete with unresolved stock.",
+            "Saved standard incomplete — manager confirmation required.",
+            "A Workbar Non-Alco Fridge shortage, date, FIFO, placement, fronting, door, power or internal-light issue blocks the checkpoint.",
             "Workbar Milk Fridge lower-shelf or temporary-storage noncompliance blocks the checkpoint even when 2 + 2 milk is present."
           ],
           "referenceGuidance": [
@@ -6984,12 +7066,19 @@
           },
           "fridgeStandardsAmendment": {
             "date": "2026-08-15",
-            "decisionHash": "b494dba7f1d7368c42f82caf017271ecdffea0d5be8c5d53cd2fec3fed69f235",
+            "decisionHash": "be724431080fdbbb5fb598d52d3b01357ea2d3c778f94268166318064f5dfba1",
             "ownership": "organization",
-            "standardKey": "workbar-milk-fridge-target"
+            "standardKeys": [
+              "workbar-milk-fridge-target",
+              "coffee-cups-service-ready-target",
+              "wine-glasses-service-ready-target"
+            ],
+            "locationKeys": [
+              "workbar-non-alcoholic-fridge"
+            ]
           }
         },
-        "sourceHash": "9971554d9ad7b4d906c51ecc557079490464cb969516ed2e8087e52d67d7a832"
+        "sourceHash": "d4321b826bbb61a061877f6f3eebadee8c217f1f9f74949b337ae844cf3da625"
       },
       {
         "id": "O36",
@@ -8709,7 +8798,7 @@
         "id": "C08",
         "taskKey": "c08-pre-restock-workbar-food-nonalcoholic-fridge",
         "stableKey": "closing.c08.pre-restock-workbar-food-nonalcoholic-fridge",
-        "title": "Pre-restock the Workbar food and non-alcoholic fridge",
+        "title": "Pre-restore the Workbar Non-Alco Fridge",
         "sectionKey": "closing-15-18",
         "sourceType": "measurement",
         "taskType": "measurement",
@@ -8722,8 +8811,8 @@
         "repeatPolicy": "once_per_run",
         "timingText": "During pre-close; final delivery is repeated at C28.",
         "locationDescription": "Workbar Non-Alcoholic Fridge.",
-        "instructions": "Record the current physical state before moving stock. Pre-restock every active product line, including eggs, using the authoritative read-only fridge standard. Rotate dates, correct placement and front products while service continues.\n\nThis is not the next-day delivery; C28 must perform a fresh final check.",
-        "structuredItemsText": "- `inventory_standard_items` — dynamic authoritative product/target lines.\n- `eggs_present_and_to_standard`\n- `date_rotation`\n- `correct_shelf_placement`\n- `fronting_complete`\n- `fridge_clean_and_operating`",
+        "instructions": "Clean and restore the Workbar Non-Alco Fridge to its current saved location standard. Check dates and FIFO, place and front every product correctly, close the door, and confirm that the refrigerator and its internal light remain on.\n\nRecord the current physical state before correction; C28 still requires a fresh final assessment.",
+        "structuredItemsText": "- `inventory_standard_items` — dynamic authoritative product/target lines.\n- `date_rotation` — date rotation\n- `correct_shelf_placement` — correct shelf placement\n- `fronting_complete` — fronting complete\n- `fridge_clean_and_operating` — fridge clean and operating\n- `refrigerator_and_internal_light_remain_on` — refrigerator and internal light remain on",
         "items": [
           {
             "key": "inventory_standard_items",
@@ -8744,22 +8833,8 @@
             },
             "sortOrder": 0,
             "metadata": {
-              "sourceText": "`inventory_standard_items` — dynamic authoritative product/target lines."
-            }
-          },
-          {
-            "key": "eggs_present_and_to_standard",
-            "label": "eggs present and to standard",
-            "itemType": "check",
-            "required": true,
-            "sourceKind": "static",
-            "sourceConfig": {},
-            "inputSchema": {
-              "type": "boolean"
-            },
-            "sortOrder": 1,
-            "metadata": {
-              "sourceText": "`eggs_present_and_to_standard`"
+              "sourceText": "`inventory_standard_items` — dynamic authoritative product/target lines.",
+              "locationKey": "workbar-non-alcoholic-fridge"
             }
           },
           {
@@ -8774,9 +8849,9 @@
               "minLength": 1,
               "maxLength": 1000
             },
-            "sortOrder": 2,
+            "sortOrder": 1,
             "metadata": {
-              "sourceText": "`date_rotation`"
+              "sourceText": "`date_rotation` — date rotation"
             }
           },
           {
@@ -8789,9 +8864,9 @@
             "inputSchema": {
               "type": "boolean"
             },
-            "sortOrder": 3,
+            "sortOrder": 2,
             "metadata": {
-              "sourceText": "`correct_shelf_placement`"
+              "sourceText": "`correct_shelf_placement` — correct shelf placement"
             }
           },
           {
@@ -8804,9 +8879,9 @@
             "inputSchema": {
               "type": "boolean"
             },
-            "sortOrder": 4,
+            "sortOrder": 3,
             "metadata": {
-              "sourceText": "`fronting_complete`"
+              "sourceText": "`fronting_complete` — fronting complete"
             }
           },
           {
@@ -8819,35 +8894,61 @@
             "inputSchema": {
               "type": "boolean"
             },
+            "sortOrder": 4,
+            "metadata": {
+              "sourceText": "`fridge_clean_and_operating` — fridge clean and operating"
+            }
+          },
+          {
+            "key": "refrigerator_and_internal_light_remain_on",
+            "label": "refrigerator and internal light remain on",
+            "itemType": "check",
+            "required": true,
+            "sourceKind": "static",
+            "sourceConfig": {},
+            "inputSchema": {
+              "type": "boolean"
+            },
             "sortOrder": 5,
             "metadata": {
-              "sourceText": "`fridge_clean_and_operating`"
+              "sourceText": "`refrigerator_and_internal_light_remain_on` — refrigerator and internal light remain on"
             }
           }
         ],
-        "doneCriteriaText": "- First-check state is recorded.\n- Every currently restockable line is restored.\n- Eggs are included.\n- Unresolved shortages have a visible deviation and final follow-up.",
-        "deviationRulesText": "- Reserve stock missing.\n- Expired/damaged product.\n- Inventory mapping/source inconsistent.\n- Fridge fault.",
-        "referenceGuidanceText": "- `workbar-food-non-alcoholic-fridge`.",
+        "doneCriteriaText": "- The current manager-maintained saved location standard is resolved.\n- Every active product line is restored without embedding product names or quantities in routine copy.\n- Dates and FIFO are checked.\n- Placement and fronting are correct.\n- The door is closed.\n- The refrigerator and its internal light remain on.\n- The refrigerator is clean and operating normally.\n- Completing this routine check does not complete Stock Count.",
+        "deviationRulesText": "- Saved standard incomplete — manager confirmation required.\n- A shortage, date or FIFO issue remains unresolved.\n- Placement or fronting differs from the current saved standard.\n- The door is open or the refrigerator is not operating normally.\n- The refrigerator or its internal light is switched off.\n- Counts, notes, zeroes, deviations and targetless Stock Count lines remain separate and must never be overwritten.",
+        "referenceGuidanceText": "- `workbar-non-alcoholic-fridge` — canonical saved-location reference; image awaiting upload.",
         "availabilityMode": "immediate",
         "condition": {},
         "timing": {},
-        "locationKey": null,
+        "locationKey": "workbar-non-alcoholic-fridge",
         "locationSetKey": null,
         "metadata": {
           "authoritativeSourceId": "C08",
           "sourceType": "measurement",
           "deviationRules": [
-            "Reserve stock missing.",
-            "Expired/damaged product.",
-            "Inventory mapping/source inconsistent.",
-            "Fridge fault."
+            "Saved standard incomplete — manager confirmation required.",
+            "A shortage, date or FIFO issue remains unresolved.",
+            "Placement or fronting differs from the current saved standard.",
+            "The door is open or the refrigerator is not operating normally.",
+            "The refrigerator or its internal light is switched off.",
+            "Counts, notes, zeroes, deviations and targetless Stock Count lines remain separate and must never be overwritten."
           ],
           "referenceGuidance": [
-            "`workbar-food-non-alcoholic-fridge`."
+            "`workbar-non-alcoholic-fridge` — canonical saved-location reference; image awaiting upload."
           ],
-          "timingSourceText": "During pre-close; final delivery is repeated at C28."
+          "timingSourceText": "During pre-close; final delivery is repeated at C28.",
+          "fridgeStandardsAmendment": {
+            "date": "2026-08-15",
+            "decisionHash": "be724431080fdbbb5fb598d52d3b01357ea2d3c778f94268166318064f5dfba1",
+            "ownership": "organization",
+            "standardKeys": [],
+            "locationKeys": [
+              "workbar-non-alcoholic-fridge"
+            ]
+          }
         },
-        "sourceHash": "beb0335bcdd1a1ba9d1759f2b2f0f6b7beddce2c2e2c34a680a7f23835a09c5f"
+        "sourceHash": "076d55013e9468b6d4ab57585755f70ad06bceb91a26ac474e64ecd3226205d4"
       },
       {
         "id": "C09",
@@ -9010,12 +9111,15 @@
           "timingSourceText": "During pre-close; final delivery is repeated at C29.",
           "fridgeStandardsAmendment": {
             "date": "2026-08-15",
-            "decisionHash": "b494dba7f1d7368c42f82caf017271ecdffea0d5be8c5d53cd2fec3fed69f235",
+            "decisionHash": "be724431080fdbbb5fb598d52d3b01357ea2d3c778f94268166318064f5dfba1",
             "ownership": "organization",
-            "standardKey": "workbar-milk-fridge-target"
+            "standardKeys": [
+              "workbar-milk-fridge-target"
+            ],
+            "locationKeys": []
           }
         },
-        "sourceHash": "be796ab56c4c7a6fc3189d07c787824a8941e1c6778f6cf4b82d5dcf4b3c92b0"
+        "sourceHash": "acfcee82e45e67d366997b4b36a8392d859d20f80d524d78253a54efd5a0580c"
       },
       {
         "id": "C10",
@@ -9212,12 +9316,16 @@
           },
           "fridgeStandardsAmendment": {
             "date": "2026-08-15",
-            "decisionHash": "b494dba7f1d7368c42f82caf017271ecdffea0d5be8c5d53cd2fec3fed69f235",
+            "decisionHash": "be724431080fdbbb5fb598d52d3b01357ea2d3c778f94268166318064f5dfba1",
             "ownership": "organization",
-            "standardKey": "workbar-milk-fridge-target"
+            "standardKeys": [
+              "fridge-closing-rules",
+              "cornerbar-operating-standard"
+            ],
+            "locationKeys": []
           }
         },
-        "sourceHash": "086e0fe60d5fe9d655f6ed6279d925c23537862314e6fb91e6a71e36d011be21"
+        "sourceHash": "ded5923b71894e0b6a913e7726b21fba8449c7406a26786a58a6b00521e21c74"
       },
       {
         "id": "C11",
@@ -12067,7 +12175,7 @@
         "id": "C28",
         "taskKey": "c28-final-restock-workbar-food-nonalcoholic-fridge",
         "stableKey": "closing.c28.final-restock-workbar-food-nonalcoholic-fridge",
-        "title": "Final-restock the Workbar food and non-alcoholic fridge",
+        "title": "Final-restore the Workbar Non-Alco Fridge",
         "sectionKey": "closing-18-19",
         "sourceType": "measurement",
         "taskType": "measurement",
@@ -12080,8 +12188,8 @@
         "repeatPolicy": "once_per_run",
         "timingText": "After final sales/use affecting the fridge.",
         "locationDescription": "Workbar Non-Alcoholic Fridge.",
-        "instructions": "Perform a new final first-check assessment. Restock every active authoritative product line, including eggs, to the configured target. Rotate dates, correct placement, front the fridge and confirm it is clean, closed and operating.\n\nC08 completion does not count. The final evidence must describe the state delivered to the next Opening.\n\nThe fridge remains unlocked. Pull the grille fully down after full restock and physically check both the grille and the closed fridge door.",
-        "structuredItemsText": "- `inventory_standard_items` — dynamic authoritative product/target lines.\n- `eggs_present_and_to_standard` — eggs present and to standard\n- `date_rotation` — date rotation\n- `correct_shelf_placement` — correct shelf placement\n- `fronting_complete` — fronting complete\n- `fridge_clean_and_operating` — fridge clean and operating\n- `door_closed` — door closed\n- `fridge_remains_unlocked` — food and non-alcoholic fridge remains unlocked\n- `grille_fully_down` — grille pulled fully down and physically checked",
+        "instructions": "Clean and restore the Workbar Non-Alco Fridge to its current saved location standard. Check dates and FIFO, place and front every product correctly, close the door, and confirm that the refrigerator and its internal light remain on.\n\nPerform a fresh final assessment, keep the fridge unlocked and pull the grille fully down after restoration.",
+        "structuredItemsText": "- `inventory_standard_items` — dynamic authoritative product/target lines.\n- `date_rotation` — date rotation\n- `correct_shelf_placement` — correct shelf placement\n- `fronting_complete` — fronting complete\n- `fridge_clean_and_operating` — fridge clean and operating\n- `door_closed` — door closed\n- `fridge_remains_unlocked` — Workbar Non-Alco Fridge remains unlocked\n- `grille_fully_down` — grille pulled fully down and physically checked\n- `refrigerator_and_internal_light_remain_on` — refrigerator and internal light remain on",
         "items": [
           {
             "key": "inventory_standard_items",
@@ -12102,22 +12210,8 @@
             },
             "sortOrder": 0,
             "metadata": {
-              "sourceText": "`inventory_standard_items` — dynamic authoritative product/target lines."
-            }
-          },
-          {
-            "key": "eggs_present_and_to_standard",
-            "label": "eggs present and to standard",
-            "itemType": "check",
-            "required": true,
-            "sourceKind": "static",
-            "sourceConfig": {},
-            "inputSchema": {
-              "type": "boolean"
-            },
-            "sortOrder": 1,
-            "metadata": {
-              "sourceText": "`eggs_present_and_to_standard` — eggs present and to standard"
+              "sourceText": "`inventory_standard_items` — dynamic authoritative product/target lines.",
+              "locationKey": "workbar-non-alcoholic-fridge"
             }
           },
           {
@@ -12132,7 +12226,7 @@
               "minLength": 1,
               "maxLength": 1000
             },
-            "sortOrder": 2,
+            "sortOrder": 1,
             "metadata": {
               "sourceText": "`date_rotation` — date rotation"
             }
@@ -12147,7 +12241,7 @@
             "inputSchema": {
               "type": "boolean"
             },
-            "sortOrder": 3,
+            "sortOrder": 2,
             "metadata": {
               "sourceText": "`correct_shelf_placement` — correct shelf placement"
             }
@@ -12162,7 +12256,7 @@
             "inputSchema": {
               "type": "boolean"
             },
-            "sortOrder": 4,
+            "sortOrder": 3,
             "metadata": {
               "sourceText": "`fronting_complete` — fronting complete"
             }
@@ -12177,7 +12271,7 @@
             "inputSchema": {
               "type": "boolean"
             },
-            "sortOrder": 5,
+            "sortOrder": 4,
             "metadata": {
               "sourceText": "`fridge_clean_and_operating` — fridge clean and operating"
             }
@@ -12192,14 +12286,14 @@
             "inputSchema": {
               "type": "boolean"
             },
-            "sortOrder": 6,
+            "sortOrder": 5,
             "metadata": {
               "sourceText": "`door_closed` — door closed"
             }
           },
           {
             "key": "fridge_remains_unlocked",
-            "label": "food and non-alcoholic fridge remains unlocked",
+            "label": "Workbar Non-Alco Fridge remains unlocked",
             "itemType": "check",
             "required": true,
             "sourceKind": "routine_standard",
@@ -12208,9 +12302,9 @@
             "inputSchema": {
               "type": "boolean"
             },
-            "sortOrder": 7,
+            "sortOrder": 6,
             "metadata": {
-              "sourceText": "`fridge_remains_unlocked` — food and non-alcoholic fridge remains unlocked"
+              "sourceText": "`fridge_remains_unlocked` — Workbar Non-Alco Fridge remains unlocked"
             }
           },
           {
@@ -12224,40 +12318,67 @@
             "inputSchema": {
               "type": "boolean"
             },
-            "sortOrder": 8,
+            "sortOrder": 7,
             "metadata": {
               "sourceText": "`grille_fully_down` — grille pulled fully down and physically checked"
             }
+          },
+          {
+            "key": "refrigerator_and_internal_light_remain_on",
+            "label": "refrigerator and internal light remain on",
+            "itemType": "check",
+            "required": true,
+            "sourceKind": "static",
+            "sourceConfig": {},
+            "inputSchema": {
+              "type": "boolean"
+            },
+            "sortOrder": 8,
+            "metadata": {
+              "sourceText": "`refrigerator_and_internal_light_remain_on` — refrigerator and internal light remain on"
+            }
           }
         ],
-        "doneCriteriaText": "- Final first-check state is recorded.\n- Every active product and eggs are physically at target.\n- Products are usable, rotated and correctly placed.\n- Fridge is clean, fronted, closed and operating.\n- Required verification/override evidence is valid.\n\n- The fridge remains unlocked; the grille is fully down and both grille and door were physically checked.",
-        "deviationRulesText": "- Any product cannot reach target.\n- Reserve stock missing.\n- Expired/damaged product.\n- Inventory source inconsistent.\n- Fridge fault.",
-        "referenceGuidanceText": "- `workbar-food-non-alcoholic-fridge`.",
+        "doneCriteriaText": "- The current manager-maintained saved location standard is resolved.\n- Every active product line is restored without embedding product names or quantities in routine copy.\n- Dates and FIFO are checked.\n- Placement and fronting are correct.\n- The door is closed.\n- The refrigerator and its internal light remain on.\n- The refrigerator is clean and operating normally.\n- Completing this routine check does not complete Stock Count.\n- The fridge remains unlocked and the grille is fully down and physically checked.",
+        "deviationRulesText": "- Saved standard incomplete — manager confirmation required.\n- A shortage, date or FIFO issue remains unresolved.\n- Placement or fronting differs from the current saved standard.\n- The door is open or the refrigerator is not operating normally.\n- The refrigerator or its internal light is switched off.\n- Counts, notes, zeroes, deviations and targetless Stock Count lines remain separate and must never be overwritten.",
+        "referenceGuidanceText": "- `workbar-non-alcoholic-fridge` — canonical saved-location reference; image awaiting upload.",
         "availabilityMode": "immediate",
         "condition": {},
         "timing": {},
-        "locationKey": null,
+        "locationKey": "workbar-non-alcoholic-fridge",
         "locationSetKey": null,
         "metadata": {
           "authoritativeSourceId": "C28",
           "sourceType": "measurement",
           "deviationRules": [
-            "Any product cannot reach target.",
-            "Reserve stock missing.",
-            "Expired/damaged product.",
-            "Inventory source inconsistent.",
-            "Fridge fault."
+            "Saved standard incomplete — manager confirmation required.",
+            "A shortage, date or FIFO issue remains unresolved.",
+            "Placement or fronting differs from the current saved standard.",
+            "The door is open or the refrigerator is not operating normally.",
+            "The refrigerator or its internal light is switched off.",
+            "Counts, notes, zeroes, deviations and targetless Stock Count lines remain separate and must never be overwritten."
           ],
           "referenceGuidance": [
-            "`workbar-food-non-alcoholic-fridge`."
+            "`workbar-non-alcoholic-fridge` — canonical saved-location reference; image awaiting upload."
           ],
           "timingSourceText": "After final sales/use affecting the fridge.",
           "operationalStandardsAmendment": {
             "date": "2026-08-07",
             "decisionHash": "8ebedb39be888dfa118a429fa2046ba2b7b5dc49c868d9d5b811f2aa89b45351"
+          },
+          "fridgeStandardsAmendment": {
+            "date": "2026-08-15",
+            "decisionHash": "be724431080fdbbb5fb598d52d3b01357ea2d3c778f94268166318064f5dfba1",
+            "ownership": "organization",
+            "standardKeys": [
+              "fridge-closing-rules"
+            ],
+            "locationKeys": [
+              "workbar-non-alcoholic-fridge"
+            ]
           }
         },
-        "sourceHash": "75c5142c5b16c533df4a1b16c01cb79962abd9db3e8e10f24bb54757924fc48f"
+        "sourceHash": "2a8a90e20e0c7d25814d55325a85ae669c495576e31f87aae52211fc831f0057"
       },
       {
         "id": "C29",
@@ -12424,12 +12545,17 @@
           },
           "fridgeStandardsAmendment": {
             "date": "2026-08-15",
-            "decisionHash": "b494dba7f1d7368c42f82caf017271ecdffea0d5be8c5d53cd2fec3fed69f235",
+            "decisionHash": "be724431080fdbbb5fb598d52d3b01357ea2d3c778f94268166318064f5dfba1",
             "ownership": "organization",
-            "standardKey": "workbar-milk-fridge-target"
+            "standardKeys": [
+              "workbar-milk-fridge-target"
+            ],
+            "locationKeys": [
+              "workbar-milk-fridge"
+            ]
           }
         },
-        "sourceHash": "8aebdd6f7ab396bf0c734a3eeaf0757f1b90229f6fdf1bf678641300a6b93695"
+        "sourceHash": "a2779e658dd59f1c73cabbaad859303a3aa006dee21b60d3928fd11f2ec338ce"
       },
       {
         "id": "C30",
@@ -12642,12 +12768,16 @@
           },
           "fridgeStandardsAmendment": {
             "date": "2026-08-15",
-            "decisionHash": "b494dba7f1d7368c42f82caf017271ecdffea0d5be8c5d53cd2fec3fed69f235",
+            "decisionHash": "be724431080fdbbb5fb598d52d3b01357ea2d3c778f94268166318064f5dfba1",
             "ownership": "organization",
-            "standardKey": "workbar-milk-fridge-target"
+            "standardKeys": [
+              "fridge-closing-rules",
+              "cornerbar-operating-standard"
+            ],
+            "locationKeys": []
           }
         },
-        "sourceHash": "0b8f58b48208732f2dea857ae7c18eb89a7b5d5ea4541bc7cde5dcfc32edecf3"
+        "sourceHash": "ac196c5d1c3283d67ec417a24b5278ae6ac84e444a51091cec129d8b06e49756"
       },
       {
         "id": "C31",
@@ -13060,8 +13190,8 @@
         "repeatPolicy": "once_per_run",
         "timingText": "After final restock and final use of each fridge.",
         "locationDescription": "All operational fridges.",
-        "instructions": "Apply the structured fridge rules and physically verify every door, grille and required lock. Workbar Left/Right are locked after final full restock. The non-alcoholic fridge remains unlocked with its grille down. The Workbar Milk Fridge remains unlocked, powered on and fully compliant with its permanent top- and lower-shelf standard. Cornerbar Left/Middle/Right remain powered on with internal lights on, match their current saved location standards, and may then be closed, locked and physically checked. Event-active Cornerbar work is formally transferred per fridge scope with final physical evidence, never N/A.",
-        "structuredItemsText": "- `workbar_bar_left_rule` — Workbar Bar Left closed, universally keyed, locked and physically verified\n- `workbar_bar_right_rule` — Workbar Bar Right closed, universally keyed, locked and physically verified\n- `workbar_nonalcoholic_rule` — Workbar Non-Alcoholic Fridge unlocked, grille fully down and door closed\n- `workbar_milk_rule` — Workbar Milk Fridge powered on and fully compliant: exact 2 + 2 top shelf; opened, visibly date-labelled wine only below\n- `cornerbar_left_rule` — Cornerbar Left final-restocked, closed, universally keyed, locked and checked\n- `cornerbar_middle_rule` — Cornerbar Middle final-restocked, closed, universally keyed, locked and checked\n- `cornerbar_right_rule` — Cornerbar Right final-restocked, closed, universally keyed, locked and checked\n- `cornerbar_operating_scope` — Cornerbar final fridge state or formal event transfer follows the operating standard\n- `event_transfer_evidence_when_required` — scope-specific authorized transfer and final physical evidence; never N/A\n- `cornerbar_refrigerators_and_internal_lights_on` — every Cornerbar refrigerator and internal light remains on",
+        "instructions": "Apply the structured fridge rules and physically verify every door, grille and required lock. Workbar Left/Right are locked after final full restock. Workbar Non-Alco Fridge matches its current manager-maintained saved location standard, remains unlocked with its grille down, and keeps the refrigerator and internal light on. The Workbar Milk Fridge remains unlocked, powered on and fully compliant with its permanent top- and lower-shelf standard. Cornerbar Left/Middle/Right remain powered on with internal lights on, match their current saved location standards, and may then be closed, locked and physically checked. Event-active Cornerbar work is formally transferred per fridge scope with final physical evidence, never N/A.",
+        "structuredItemsText": "- `workbar_bar_left_rule` — Workbar Bar Left closed, universally keyed, locked and physically verified\n- `workbar_bar_right_rule` — Workbar Bar Right closed, universally keyed, locked and physically verified\n- `workbar_non_alco_fridge_standard` — Workbar Non-Alco Fridge matches its current saved location standard, remains unlocked with grille down and door closed, and keeps refrigerator and internal light on\n- `workbar_milk_rule` — Workbar Milk Fridge powered on and fully compliant: exact 2 + 2 top shelf; opened, visibly date-labelled wine only below\n- `cornerbar_left_rule` — Cornerbar Left final-restocked, closed, universally keyed, locked and checked\n- `cornerbar_middle_rule` — Cornerbar Middle final-restocked, closed, universally keyed, locked and checked\n- `cornerbar_right_rule` — Cornerbar Right final-restocked, closed, universally keyed, locked and checked\n- `cornerbar_operating_scope` — Cornerbar final fridge state or formal event transfer follows the operating standard\n- `event_transfer_evidence_when_required` — scope-specific authorized transfer and final physical evidence; never N/A\n- `cornerbar_refrigerators_and_internal_lights_on` — every Cornerbar refrigerator and internal light remains on",
         "items": [
           {
             "key": "workbar_bar_left_rule",
@@ -13096,19 +13226,25 @@
             }
           },
           {
-            "key": "workbar_nonalcoholic_rule",
-            "label": "Workbar Non-Alcoholic Fridge unlocked, grille fully down and door closed",
+            "key": "workbar_non_alco_fridge_standard",
+            "label": "Workbar Non-Alco Fridge matches its current saved location standard, remains unlocked with grille down and door closed, and keeps refrigerator and internal light on",
             "itemType": "check",
             "required": true,
-            "sourceKind": "routine_standard",
-            "sourceConfig": {},
-            "standardKey": "fridge-closing-rules",
+            "sourceKind": "inventory_readonly",
+            "sourceConfig": {
+              "mode": "location_standards",
+              "locationCodes": [
+                "WORKBAR_NON_ALCO_FRIDGE"
+              ],
+              "activeOnly": true
+            },
             "inputSchema": {
               "type": "boolean"
             },
             "sortOrder": 2,
             "metadata": {
-              "sourceText": "`workbar_nonalcoholic_rule` — Workbar Non-Alcoholic Fridge unlocked, grille fully down and door closed"
+              "sourceText": "`workbar_non_alco_fridge_standard` — Workbar Non-Alco Fridge matches its current saved location standard, remains unlocked with grille down and door closed, and keeps refrigerator and internal light on",
+              "locationKey": "workbar-non-alcoholic-fridge"
             }
           },
           {
@@ -13226,8 +13362,8 @@
             }
           }
         ],
-        "doneCriteriaText": "- Every fridge physically matches its structured rule.\n- Required locks are physically checked after the universal key is turned.\n- Non-alcoholic grille/door and unlocked state are checked.\n- Workbar Milk Fridge top and lower shelves fully comply; the refrigerator remains powered on, closed and unlocked.\n- Cornerbar refrigerators and internal lights remain on and each fridge matches its current saved location standard.\n- Event-active Cornerbar scope has authorized transfer and final physical evidence.",
-        "deviationRulesText": "- Required door, grille or lock state cannot be achieved or verified.\n- Full restock remains incomplete.\n- Universal key is unavailable.\n- Event-active scope lacks authorized transfer or physical completion evidence.\n- Never substitute N/A for active event work.\n\n- A correct Workbar Milk Fridge top shelf never compensates for noncompliant lower shelves.\n- Switching off a Cornerbar refrigerator or its internal light is forbidden.",
+        "doneCriteriaText": "- Every fridge physically matches its structured rule.\n- Required locks are physically checked after the universal key is turned.\n- Workbar Non-Alco Fridge matches its current saved location standard; dates, FIFO, placement and fronting are correct; the grille is checked; the door is closed; the refrigerator is clean and operating normally; refrigerator and internal light remain on.\n- Workbar Milk Fridge top and lower shelves fully comply; the refrigerator remains powered on, closed and unlocked.\n- Cornerbar refrigerators and internal lights remain on and each fridge matches its current saved location standard.\n- Event-active Cornerbar scope has authorized transfer and final physical evidence.",
+        "deviationRulesText": "- Required door, grille or lock state cannot be achieved or verified.\n- Full restock remains incomplete.\n- Universal key is unavailable.\n- Event-active scope lacks authorized transfer or physical completion evidence.\n- Never substitute N/A for active event work.\n\n- Saved standard incomplete — manager confirmation required.\n- Switching off the Workbar Non-Alco Fridge or its internal light is forbidden.\n- A correct Workbar Milk Fridge top shelf never compensates for noncompliant lower shelves.\n- Switching off a Cornerbar refrigerator or its internal light is forbidden.",
         "referenceGuidanceText": "- Use each fridge-specific reference.\n- `cornerbar-left-fridge`, `cornerbar-middle-fridge`, `cornerbar-right-fridge`.",
         "availabilityMode": "immediate",
         "condition": {},
@@ -13243,6 +13379,8 @@
             "Universal key is unavailable.",
             "Event-active scope lacks authorized transfer or physical completion evidence.",
             "Never substitute N/A for active event work.",
+            "Saved standard incomplete — manager confirmation required.",
+            "Switching off the Workbar Non-Alco Fridge or its internal light is forbidden.",
             "A correct Workbar Milk Fridge top shelf never compensates for noncompliant lower shelves.",
             "Switching off a Cornerbar refrigerator or its internal light is forbidden."
           ],
@@ -13257,12 +13395,19 @@
           },
           "fridgeStandardsAmendment": {
             "date": "2026-08-15",
-            "decisionHash": "b494dba7f1d7368c42f82caf017271ecdffea0d5be8c5d53cd2fec3fed69f235",
+            "decisionHash": "be724431080fdbbb5fb598d52d3b01357ea2d3c778f94268166318064f5dfba1",
             "ownership": "organization",
-            "standardKey": "workbar-milk-fridge-target"
+            "standardKeys": [
+              "fridge-closing-rules",
+              "workbar-milk-fridge-target",
+              "cornerbar-operating-standard"
+            ],
+            "locationKeys": [
+              "workbar-non-alcoholic-fridge"
+            ]
           }
         },
-        "sourceHash": "f46460b46a8b1bb909825bb9f0f770a001332b881a202a6121abd2d833a32f34"
+        "sourceHash": "e96cdd63258520a8b96c47126ddd5029ba493a8df90ea61d95aef7bdc7f674f7"
       },
       {
         "id": "C34",
@@ -15720,7 +15865,6 @@
           "scopePolicy": "same_scope",
           "evidenceItemKeys": [
             "inventory_standard_items",
-            "eggs_present_and_to_standard",
             "fridge_clean_and_operating",
             "fridge_remains_unlocked"
           ],
@@ -15906,7 +16050,7 @@
       "repeat": "once per participant",
       "offlinePolicy": "online/server-confirmed",
       "criticality": "critical",
-      "instructions": "Review the server-generated Opening summary and record how operational responsibility continues until Closing.\n\nThe summary must include:\n\n### Opening result\n\n- tasks completed\n- tasks completed after correction\n- ready-on-arrival results\n- initial shortcomings\n- unresolved deviations\n- manager overrides\n- delayed checkpoints\n\n### Stock and presentation\n\n- Workbar food/non-alcoholic fridge\n- espresso-machine dairy and oat reservoirs\n- self-service milk jug\n- Workbar Milk Fridge top-shelf 2 + 2 reserve\n- Workbar Milk Fridge lower shelves: opened, visibly date-labelled wine only\n- self-service\n- baked goods, fruit and snacks\n- Coffee Canisters\n- coffee cups and wine glasses\n- unresolved product/serviceware issues\n\n### Rooms and venue\n\n- project rooms/Boardroom\n- furniture/venue plan\n- rooms still in use\n- named later resets\n\n### Bookings/events\n\n- latest bookings and changes\n- active zones\n- expected final service\n- Event-transfer risks\n\n### Technical and maintenance\n\n- coffee machine\n- dishwashers\n- POS/Weorder\n- music/screen/lighting\n- other equipment/maintenance issues\n\nThe participant chooses one transition status:\n\n- `continuing_on_site`\n- `temporarily_away`\n- `handing_operation_to_another`\n- `unable_to_complete_closing`\n\n## Status-specific requirements\n\n### Continuing on site\n\n- no return time required\n- participant becomes `continuing_on_site`\n- Opening history freezes as finished\n\n### Temporarily away\n\n- expected return required\n- interim owner required when policy/open issues require it\n- participant becomes `expected_back`\n\n### Handing operation to another\n\n- interim owner required\n- recipient must be a valid same-organization routine user/operator\n- recipient is joined to linked work when required\n- responsibilities and open conditions are explicit\n\n### Unable to complete Closing\n\n- reason required\n- participant becomes `unable_to_return`\n- bundle shows Closing reassignment required\n- existing Closing run remains intact",
+      "instructions": "Review the server-generated Opening summary and record how operational responsibility continues until Closing.\n\nThe summary must include:\n\n### Opening result\n\n- tasks completed\n- tasks completed after correction\n- ready-on-arrival results\n- initial shortcomings\n- unresolved deviations\n- manager overrides\n- delayed checkpoints\n\n### Stock and presentation\n\n- Workbar Non-Alco Fridge actual saved-standard status, including shortages, date/FIFO issues and incomplete-standard escalation\n- espresso-machine dairy and oat reservoirs\n- self-service milk jug\n- Workbar Milk Fridge top-shelf 2 + 2 reserve\n- Workbar Milk Fridge lower shelves: opened, visibly date-labelled wine only\n- self-service\n- baked goods, fruit and snacks\n- Coffee Canisters\n- coffee cups and wine glasses\n- unresolved product/serviceware issues\n\n### Rooms and venue\n\n- project rooms/Boardroom\n- furniture/venue plan\n- rooms still in use\n- named later resets\n\n### Bookings/events\n\n- latest bookings and changes\n- active zones\n- expected final service\n- Event-transfer risks\n\n### Technical and maintenance\n\n- coffee machine\n- dishwashers\n- POS/Weorder\n- music/screen/lighting\n- other equipment/maintenance issues\n\nThe participant chooses one transition status:\n\n- `continuing_on_site`\n- `temporarily_away`\n- `handing_operation_to_another`\n- `unable_to_complete_closing`\n\n## Status-specific requirements\n\n### Continuing on site\n\n- no return time required\n- participant becomes `continuing_on_site`\n- Opening history freezes as finished\n\n### Temporarily away\n\n- expected return required\n- interim owner required when policy/open issues require it\n- participant becomes `expected_back`\n\n### Handing operation to another\n\n- interim owner required\n- recipient must be a valid same-organization routine user/operator\n- recipient is joined to linked work when required\n- responsibilities and open conditions are explicit\n\n### Unable to complete Closing\n\n- reason required\n- participant becomes `unable_to_return`\n- bundle shows Closing reassignment required\n- existing Closing run remains intact",
       "eligibilityText": "",
       "structuredPayloadText": "- server-generated Opening summary\n- transition status\n- expected return\n- interim owner\n- open deviations/overrides\n- active handovers/transfers\n- unresolved action count\n- supplementary note\n- shared Opening-transition handover ID/hash",
       "structuredPayload": [
@@ -15920,13 +16064,13 @@
         "supplementary note",
         "shared Opening-transition handover ID/hash"
       ],
-      "doneCriteriaText": "- Opening is finished.\n- DS01 is completed.\n- The transition choice is valid.\n- Required return/interim owner/reason data exists.\n- One shared `opening_transition` handover is regenerated and submitted.\n- The step and handover are server-confirmed without duplicates.\n- The handover reports espresso reservoirs, self-service milk jug, Workbar Milk Fridge top shelf and lower shelves separately.\n- A 2 + 2 top shelf alone never reports the full refrigerator standard as compliant.",
+      "doneCriteriaText": "- Opening is finished.\n- DS01 is completed.\n- The transition choice is valid.\n- Required return/interim owner/reason data exists.\n- One shared `opening_transition` handover is regenerated and submitted.\n- The step and handover are server-confirmed without duplicates.\n- The handover reports actual Workbar Non-Alco Fridge saved-standard status, shortages, date/FIFO issues and incomplete-standard escalation without duplicating product quantities.\n- The handover reports espresso reservoirs, self-service milk jug, Workbar Milk Fridge top shelf and lower shelves separately.\n- A 2 + 2 top shelf alone never reports the full refrigerator standard as compliant.",
       "blockingRulesText": "- Opening is not finished.\n- DS01 is missing/stale.\n- Required return/interim owner/reason missing.\n- Open critical/important issue is absent from the handover.\n- Target user is invalid.\n- No silent cancellation or deletion of Closing is allowed.",
       "systemGenerated": false,
-      "sourceHash": "030683fe3240f63c33ca658472a68ff11db879a907afa0d71cd54f2150df1d6e",
+      "sourceHash": "b0c6e07c4dffd926497e0cec38dbe2ea255307dbd96155fc0e179393d78ebb96",
       "fridgeStandardsAmendment": {
         "date": "2026-08-15",
-        "decisionHash": "b494dba7f1d7368c42f82caf017271ecdffea0d5be8c5d53cd2fec3fed69f235",
+        "decisionHash": "be724431080fdbbb5fb598d52d3b01357ea2d3c778f94268166318064f5dfba1",
         "ownership": "organization"
       }
     },
@@ -16063,9 +16207,9 @@
     {
       "kind": "fridge_standards_amendment",
       "fileName": "routine-engine-v2-fridge-standards-amendment-2026-08-15.md",
-      "sha256": "b494dba7f1d7368c42f82caf017271ecdffea0d5be8c5d53cd2fec3fed69f235",
+      "sha256": "be724431080fdbbb5fb598d52d3b01357ea2d3c778f94268166318064f5dfba1",
       "hashScope": "content-before-generated-pack-metadata"
     }
   ],
-  "packHash": "fdf16deb681de343bebd8988b5a66635e38e05f927968beb38449e0c32a2d31c"
+  "packHash": "66af45ecb1afa2b432b95ed0e1d5425c39ed0cc67becacbb386bd43489db1e02"
 }

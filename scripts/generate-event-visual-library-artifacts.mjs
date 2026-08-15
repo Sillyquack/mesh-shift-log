@@ -96,9 +96,10 @@ const escapeCell = (value) => String(value ?? "").replaceAll("|", "\\|").replace
 const rows = eventVisualVenues.flatMap((venue) => venue.guides.flatMap((guide) =>
   guide.zones.flatMap((zone) => {
     if (!zone.angles.length) {
-      const sourceStatus = guide.sourceStatus === "operations_approved_image_awaiting_upload"
-        ? "Operations-approved standard · image awaiting upload"
-        : "source empty / existing guidance preserved";
+      const sourceStatus = {
+        operations_approved_image_awaiting_upload: "Operations-approved standard · image awaiting upload",
+        saved_location_standard_image_awaiting_upload: "Current saved location standard · image awaiting upload",
+      }[guide.sourceStatus] || "source empty / existing guidance preserved";
       return [`| — | ${escapeCell(venue.label)} | ${escapeCell(guide.title)} | ${escapeCell(zone.label)} | Written standard only | — | — | ${escapeCell(zone.description)} | ${escapeCell(zone.description)} | awaiting production upload | required | ${sourceStatus} |`];
     }
     return zone.angles.map((angle) =>
