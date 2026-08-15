@@ -10,6 +10,11 @@
   box-shadow: none;
 }
 
+.routine-experience .mesh-icon-action,
+.routine-experience .mesh-avatar-action {
+  min-width: var(--mesh-touch-target);
+}
+
 .routine-experience-content {
   padding-bottom: 20px;
 }
@@ -148,7 +153,7 @@
 }
 
 .routine-attention-card button {
-  min-height: 44px;
+  min-height: 48px;
   padding: 0 16px;
   border: 0;
   border-radius: 13px;
@@ -300,7 +305,7 @@
 
 .routine-experience-card > button {
   min-width: 88px;
-  min-height: 44px;
+  min-height: 48px;
   padding: 0 14px;
   border: 0;
   border-radius: 13px;
@@ -445,6 +450,9 @@
 }
 
 .routine-experience .employee-offline summary {
+  display: flex;
+  align-items: center;
+  min-height: var(--mesh-touch-target);
   color: var(--mesh-gold-soft);
   cursor: pointer;
 }
@@ -454,6 +462,9 @@
 }
 
 .routine-experience .mesh-status summary {
+  display: flex;
+  align-items: center;
+  min-height: var(--mesh-touch-target);
   color: inherit;
   cursor: pointer;
 }

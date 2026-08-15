@@ -25,10 +25,10 @@ These are recommended working windows, not automatic jobs.
 
 | Window | Oslo time | Purpose |
 |---|---|---|
-| Primary | **Friday 14 August 23:30 → Saturday 15 August 02:00** | Preferred database migration, app deployment and first smoke test |
-| Fallback 1 | **Saturday 15 August 23:30 → Sunday 16 August 02:00** | Correct and retry any blocker found in the primary window |
-| Fallback 2 | **Sunday 16 August 22:30 → Monday 17 August 01:30** | Final controlled opportunity before launch morning |
-| Launch check | **Monday 17 August 06:15 → 07:00** | Final role checks, operational briefing and go/no-go |
+| Active cutover | **Saturday 15 August 23:30 → Sunday 16 August 02:00** | Preferred database migration, app deployment and first smoke test |
+| Fallback | **Sunday 16 August 22:30 → Monday 17 August 01:30** | Final controlled opportunity before launch morning |
+| Launch check | **Monday 17 August 06:15** | Begin final role checks and operational briefing |
+| Go / no-go | **Monday 17 August 06:50** | Bobby records the explicit launch decision |
 | Official use | **Monday 17 August 07:00** | Staff begin using the released workflow |
 
 Do not continue past a stop condition merely to preserve the preferred date. A controlled fallback is better than a half-working Monday launch.
@@ -73,12 +73,13 @@ The production preflight must first establish the exact migration currently inst
 23. `phase10u_routine_operation_idempotency_convergence.sql`
 24. `phase10v_routine_creation_idempotency_provenance_alignment.sql`
 25. `phase10w_event_visual_reference_bridge.sql`
+26. `phase10x_event_visual_library_expansion.sql`
 
-`phase10w` is additive. It adds a sanitized event-image metadata RPC and extends the existing private Storage read predicate for current allowlisted event images. It does not grant Event Floor Managers routine-table writes or manager permissions.
+`phase10w` is additive. It adds a sanitized event-image metadata RPC and extends the existing private Storage read predicate for current allowlisted event images. `phase10x` replaces that bridge's key allowlist from the canonical frontend manifest, fixes `set_updated_at()` search-path configuration, and removes unintended anonymous Event Ops execution while preserving the existing authenticated RPC boundaries. Neither migration grants Event Floor Managers routine-table writes or manager permissions.
 
 ## Required evidence before the first window
 
-All of the following must be present before Friday 14 August 23:30:
+All of the following must be present before Saturday 15 August 23:30:
 
 - PR stack is conflict-free and the final branch is ahead of, not behind, PR #15.
 - Production build succeeds from a clean dependency install.
@@ -141,7 +142,7 @@ Suggested checkpoints:
 - After 10A–10C: manager workspace, templates, private image bucket and reference metadata exist.
 - After 10D–10K4: runs, lifecycle, offline behavior, shared-device identity, manager and employee contracts exist.
 - After content-pack and hardening phases: published content and privilege fingerprints match the approved candidate.
-- After 10W: manager and Event Floor Manager can read only the intended visual-standard paths; ordinary staff behavior remains unchanged.
+- After 10W–10X: manager and Event Floor Manager can read only the intended visual-standard paths; anonymous Event Ops execution is absent; authenticated Event Ops behavior and ordinary staff behavior remain unchanged.
 
 ### 4. Database smoke tests before app deployment
 
@@ -261,7 +262,7 @@ Stop and use the next window for any of the following:
 The database work is additive and hardening-oriented. Do not improvise destructive reverse SQL.
 
 1. **Application regression with healthy database:** roll the app back to the previous known-good deployment. Leave additive database objects in place while the frontend is corrected.
-2. **New Phase 10W permission defect:** disable use of Event visual guides in the app and apply a reviewed forward-fix migration that narrows the affected function or grant. Do not broadly disable RLS.
+2. **New Phase 10W–10X permission defect:** disable use of Event visual guides in the app and apply a reviewed forward-fix migration that narrows the affected function or grant. Do not broadly disable RLS.
 3. **Migration stopped before commit:** keep the transaction rolled back and diagnose before retrying.
 4. **Migration committed but readback fails:** freeze affected actions, capture state, and use a forward repair. Restore from backup only when integrity cannot be recovered safely through a reviewed forward fix.
 5. **Content or image error:** restore the previous current image through the versioned manager workflow or return the reference to an honest placeholder. Do not delete immutable history.

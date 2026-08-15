@@ -19,7 +19,8 @@ A production go decision requires all applicable automated and database checks p
 | Area | Command | Required result |
 |---|---|---|
 | Password and auth safety | `npm run verify:auth-password-security` | Pass |
-| Julie’s event content | `npm run verify:julie-event-routines` | 7 templates, 96 tasks and 10 guides verified |
+| Julie’s event content | `npm run verify:julie-event-routines` | 7 templates, 96 tasks and 29 guides verified |
+| Canonical Event visual library | `npm run verify:event-visual-library` | 29 guides (27 canonical + 2 compatibility), 49 zones and 65 unique ordered angles; generated SQL/manifest equality and source-safety checks pass |
 | Event Mode experience | `npm run verify:event-operator-experience` | Role-gated English low-noise Event Mode; manager cockpit preserved |
 | Event visual bridge | `npm run verify:event-visual-reference-bridge` | Allowlist, same-org metadata, current-image Storage access and denial matrix pass |
 | Shared experience system | `npm run verify:mesh-experience-system` | Shared tokens and Shift Mode pass |
@@ -30,7 +31,10 @@ A production go decision requires all applicable automated and database checks p
 | Routine history | `npm run verify:routine-history-pilot` | Atomic history, permissions and read-only detail pass |
 | Routine UI foundation | `npm run verify:routine-ui-foundation` | Role routing and shared UI contracts pass |
 | Full Phase 10 reapply | `npm run verify:routine-full-migration-reapply` | Exact ordered Phase 10 migration stack reapplies safely in disposable PostgreSQL |
-| Browser visual matrix | `npm run verify:routine-content-visual` | 70/70 scenarios pass in Chromium and WebKit at 1440, 1280, 1024, 430, 390, 375 and 360 px in light and dark modes |
+| Event visual browser matrix | `npm run verify:event-visual-library-browser` | 56/56 checks across 10 Chromium/WebKit scenarios at 1440, 1280, 1180, 1024, 430, 390, 375 and 360 px |
+| Count Mode browser flow | `npm run verify:inventory-count-mode-browser` | 11/11 checks: the saved-standard action submits once, preserves separate-location/no-overwrite copy and opens the next fridge |
+| Routine content browser matrix | `npm run verify:routine-content-visual` | 365/365 checks across 70 Chromium/WebKit scenarios |
+| Shift/History end-to-end browser matrix | `npm run verify:routine-e2e-pilot` | 411/411 checks across 36 scenarios with a disposable PostgREST/PostgreSQL backend |
 | Production bundle | `npm run build` | Vite build succeeds with no unresolved import or syntax error |
 
 ## Disposable database authorization matrix
@@ -63,16 +67,17 @@ The Event visual bridge must not modify the manager upload boundary or the exist
 
 ## Browser matrix evidence
 
-The production-candidate bundle passed the isolated Playwright matrix in GitHub Actions on Friday 14 August 2026:
+The exact release worktree was exercised locally on 15 August 2026 with the repository's isolated Vite/Playwright harnesses:
 
 - Chromium and WebKit.
-- Five operational scenarios: Opening, Closing, Double Shift, counter daily and manager preview.
-- Seven viewports: 1440, 1280, 1024, 430, 390, 375 and 360 CSS pixels.
-- Light and dark mode.
-- 70 scenarios in total.
-- Assertions include horizontal overflow, covered controls, 48 px operational targets, duplicate IDs, label relationships, English frontline copy and visual screenshots.
+- Event reconstruction and grouped manager queue at 1440, 1280, 1180, 1024, 430, 390, 375 and 360 CSS pixels.
+- Explicit placeholder, failed-image, written-only Workbar, keyboard-only and reduced-motion states.
+- Count Mode saved-standard one-tap flow at 430 and 360 CSS pixels.
+- Shift Mode, shared-device, offline/reconnect, History, readiness and rollback scenarios against a disposable backend.
+- The 70-scenario content/operational-standards matrix, including light/dark, mobile, keyboard and 200% zoom states.
+- Assertions include console/page errors, Vite overlays, horizontal overflow, 48 px operational targets, duplicate IDs and accessible control names/labels.
 
-The retained browser-evidence artifact contains the matrix log and generated screenshot set. This test exercises the actual Vite application bundle; it is separate from the static product walkthrough.
+Retained release evidence is in `docs/production/artifacts/event-visual-browser/` and `docs/production/artifacts/count-mode-browser/`. The larger pre-existing matrices wrote ephemeral screenshots under `/private/tmp` and completed successfully; no production service was used.
 
 ## Manual review journeys
 
@@ -106,7 +111,7 @@ Test at 390 px mobile width and desktop width.
 
 ### 4. Visual Standards
 
-- The queue contains all 31 required event image slots.
+- The grouped queue contains all 65 canonical Event visual angle slots.
 - Missing slots can be created as placeholders through the guarded manager RPC.
 - An actual image cannot upload without a meaningful description.
 - JPEG, PNG and WebP work; unsupported or oversized files fail safely.
@@ -156,18 +161,9 @@ Test at 390 px mobile width and desktop width.
 - Search and filters are reachable on mobile.
 - Legacy history remains clearly identified.
 
-## Remaining source-evidence gate
+## Content source provenance
 
-### Content-pack source verification
-
-`npm run verify:routine-content-pack` expects the exact approved source documents currently referenced from Robert’s local Downloads paths. Before production:
-
-1. Put the exact approved source files in the expected local paths or update the verifier to a retained, reviewed fixture location.
-2. Confirm the source hashes match the approved content pack.
-3. Run the verifier locally.
-4. Save the output with the production evidence.
-
-Expected source hashes remain pinned in the verifier. Do not disable or weaken the hash checks merely to make the command green. This is a provenance gate for the content source files, not an application, database or browser failure.
+`npm run verify:routine-content-pack` passed 372/372 checks against the exact approved source documents and pinned SHA-256 hashes. The hash gate was not disabled, relaxed or bypassed. This authorizes review of the later draft-only 1.4R installation plan; it does not install or publish content.
 
 ## Production smoke-test evidence template
 

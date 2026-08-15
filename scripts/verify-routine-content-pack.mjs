@@ -839,6 +839,34 @@ async function main(){
   const creationStructuralAfter=routineStructuralFingerprint();
   psql(readFileSync(absolute(provenanceMigration),"utf8"),{transaction:true});
   check("Phase 10V reapplies with identical schema data ACL and protected-domain fingerprints",creationStructuralAfter===routineStructuralFingerprint()&&creationDataBefore===scalar(creationDataFingerprintSql)&&creationAclBefore===routineAclFingerprint()&&protectedSchemaBefore10U===scalar(protectedSchemaFingerprintSql)&&protectedDataBefore10U===scalar(protectedDataFingerprintSql));
+  const phase10svFingerprints=JSON.parse(scalar(String.raw`
+    with target(signature) as (values
+      ('routine_mesh_content_pack_v1()'),
+      ('create_or_get_routine_run_phase10d(text,text,date,uuid)'),
+      ('join_routine_run_phase10d(uuid,uuid)'),
+      ('routine_ensure_run_participant(uuid,uuid,uuid,uuid)'),
+      ('routine_ensure_bundle_participant(uuid,uuid,uuid,uuid)'),
+      ('routine_ensure_closing_bundle_participant(uuid,uuid,uuid,uuid)'),
+      ('routine_run_operation_replay(uuid,uuid,text,uuid,text)'),
+      ('routine_record_run_operation(uuid,uuid,text,uuid,text,text,uuid,jsonb)'),
+      ('routine_bundle_operation_replay(uuid,uuid,text,uuid,text)'),
+      ('routine_record_bundle_operation(uuid,uuid,text,uuid,text,text,uuid,jsonb)')
+    ), function_hashes as (
+      select target.signature,encode(extensions.digest(convert_to(pg_get_functiondef(('public.'||target.signature)::regprocedure),'UTF8'),'sha256'),'hex') hash
+      from target
+    ), constraint_state as (
+      select 'constraints' signature,encode(extensions.digest(convert_to(coalesce(string_agg(name||':'||present,E'\n' order by name),''),'UTF8'),'sha256'),'hex') hash
+      from (select name,(to_regclass('public.'||name) is not null)::text present from unnest(array[
+        'routine_runs_org_creation_idempotency_unique','routine_run_participants_org_idempotency_unique',
+        'routine_bundles_org_idempotency_unique','routine_bundle_participants_idempotency_unique'
+      ]) name) state
+    )
+    select jsonb_object_agg(signature,hash order by signature)::text from (
+      select * from function_hashes union all select * from constraint_state
+    ) all_rows;
+  `));
+  console.log(`PHASE10S_V_FINGERPRINTS=${JSON.stringify(phase10svFingerprints)}`);
+  if(process.env.PHASE10S_V_FINGERPRINT_ONLY==="1")return;
   const dO15Before=scalar("select md5(to_jsonb(task)::text) from public.routine_template_tasks task where task.organization_id='d4000000-0000-4000-8000-000000000001' and task.metadata->>'authoritativeSourceId'='O15';");
   const staleDraftUpdate=upsertDraftTask("44000000-0000-4000-8000-000000000001","d4000000-0000-4000-8000-000000000001","O15",{availabilityMode:"immediate"},{expectedVersionRevision:"version_revision-1",allowFailure:true});
   if(staleDraftUpdate.status===0||!/stale/i.test(staleDraftUpdate.stderr))console.error(`Stale draft probe diagnostic: ${staleDraftUpdate.status} ${staleDraftUpdate.stderr}`);

@@ -513,7 +513,7 @@ function LocationStateNotice({ assignment }) {
   return null;
 }
 
-function StandardMatchPanel({
+export function StandardMatchPanel({
   assignment,
   summary,
   busy,

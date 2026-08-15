@@ -85,6 +85,7 @@
   display: grid;
   place-items: center;
   width: var(--mesh-touch-target);
+  min-width: var(--mesh-touch-target);
   min-height: var(--mesh-touch-target);
   padding: 0;
   border: 1px solid var(--mesh-white-12);

@@ -1,0 +1,101 @@
+import { existsSync, mkdirSync } from "node:fs";
+import { dirname, resolve } from "node:path";
+import { fileURLToPath, pathToFileURL } from "node:url";
+import { spawn } from "node:child_process";
+
+const ROOT = resolve(dirname(fileURLToPath(import.meta.url)), "..");
+const PORT = 43132;
+const BASE_URL = `http://127.0.0.1:${PORT}`;
+const EVIDENCE = resolve(ROOT, "docs/production/artifacts/count-mode-browser");
+const PLAYWRIGHT_CANDIDATES = [
+  resolve(ROOT, "node_modules/playwright/index.mjs"),
+  "/Users/robert/.cache/codex-runtimes/codex-primary-runtime/dependencies/node/node_modules/playwright/index.mjs",
+];
+const scenarios = [
+  ["chromium", 430, 932],
+  ["webkit", 360, 800],
+];
+let server;
+let passed = 0;
+const check = (label, condition) => {
+  if (!condition) throw new Error(`FAIL ${String(passed + 1).padStart(3, "0")} ${label}`);
+  passed += 1;
+  console.log(`PASS ${String(passed).padStart(3, "0")} ${label}`);
+};
+const delay = (ms) => new Promise((resolveWait) => setTimeout(resolveWait, ms));
+
+async function startServer() {
+  server = spawn(process.execPath, [resolve(ROOT, "node_modules/vite/bin/vite.js"), "--host", "127.0.0.1", "--port", String(PORT), "--strictPort"], { cwd: ROOT, stdio: ["ignore", "pipe", "pipe"], env: { ...process.env, NO_COLOR: "1" } });
+  let output = "";
+  server.stdout.on("data", (chunk) => { output += chunk; });
+  server.stderr.on("data", (chunk) => { output += chunk; });
+  for (let attempt = 0; attempt < 100; attempt += 1) {
+    if (server.exitCode !== null) throw new Error(`Vite exited before readiness:\n${output}`);
+    try {
+      const response = await fetch(`${BASE_URL}/inventory-count-mode-harness.html`);
+      if (response.ok) return;
+    } catch {}
+    await delay(100);
+  }
+  throw new Error(`Vite did not become ready:\n${output}`);
+}
+
+async function audit(page) {
+  return page.evaluate(() => {
+    const visible = (node) => {
+      const style = getComputedStyle(node);
+      const rect = node.getBoundingClientRect();
+      return style.display !== "none" && style.visibility !== "hidden" && rect.width > 0 && rect.height > 0;
+    };
+    const controls = [...document.querySelectorAll("button,a[href],input,select,textarea,summary")].filter(visible);
+    const ids = [...document.querySelectorAll("[id]")].map((node) => node.id);
+    return {
+      unnamed: controls.filter((node) => !(node.getAttribute("aria-label") || node.getAttribute("aria-labelledby") || node.labels?.length || node.textContent?.trim())).length,
+      duplicateIds: ids.filter((id, index) => ids.indexOf(id) !== index).length,
+      smallTargets: controls.filter((node) => {
+        const rect = node.getBoundingClientRect();
+        return rect.width < 47.5 || rect.height < 47.5;
+      }).length,
+      overflow: Math.max(document.documentElement.scrollWidth, document.body.scrollWidth) - innerWidth,
+    };
+  });
+}
+
+async function main() {
+  check("Count Mode harness and production component exist", ["inventory-count-mode-harness.html", "src/testing/inventoryCountModeHarnessEntry.jsx", "src/components/InventoryCounterExperience.jsx"].every((path) => existsSync(resolve(ROOT, path))));
+  const playwrightPath = PLAYWRIGHT_CANDIDATES.find(existsSync);
+  check("bundled Playwright runtime is available", Boolean(playwrightPath));
+  const { chromium, webkit } = await import(pathToFileURL(playwrightPath).href);
+  mkdirSync(EVIDENCE, { recursive: true });
+  await startServer();
+  const browsers = { chromium: await chromium.launch({ headless: true }), webkit: await webkit.launch({ headless: true }) };
+  try {
+    for (const [engine, width, height] of scenarios) {
+      const page = await browsers[engine].newPage({ viewport: { width, height }, reducedMotion: "reduce" });
+      const consoleErrors = [];
+      const pageErrors = [];
+      page.on("console", (message) => { if (message.type() === "error") consoleErrors.push(message.text()); });
+      page.on("pageerror", (error) => pageErrors.push(error.message));
+      await page.goto(`${BASE_URL}/inventory-count-mode-harness.html`, { waitUntil: "networkidle" });
+      check(`${engine} ${width}px shows the saved-standard decision`, await page.getByRole("heading", { name: "Does this fridge match its saved standard?" }).isVisible());
+      check(`${engine} ${width}px preserves separate-location and no-overwrite copy`, await page.getByText(/same product in another fridge remains a separate count/i).isVisible() && await page.getByText(/never overwritten/i).isVisible());
+      const result = await audit(page);
+      check(`${engine} ${width}px has no errors, overflow or accessibility defects`, consoleErrors.length === 0 && pageErrors.length === 0 && result.unnamed === 0 && result.duplicateIds === 0 && result.smallTargets === 0 && result.overflow <= 1);
+      await page.getByRole("button", { name: "Done — count & next fridge" }).click();
+      check(`${engine} ${width}px submits once and opens only the next fridge`, await page.locator("main").getAttribute("data-submit-count") === "1" && await page.getByRole("heading", { name: "Workbar Fridge 2 is next." }).isVisible() && await page.getByText(/Only Cornerbar Fridge 1 was submitted/).isVisible());
+      await page.screenshot({ path: resolve(EVIDENCE, `count-mode-${engine}-${width}x${height}.png`), fullPage: true });
+      await page.close();
+    }
+    check("Chromium and WebKit cover the Count Mode one-tap refrigerator handoff", scenarios.length === 2);
+    console.log(`Count Mode browser verification: ${passed}/${passed} passed; evidence ${EVIDENCE}`);
+  } finally {
+    await browsers.chromium.close().catch(() => {});
+    await browsers.webkit.close().catch(() => {});
+  }
+}
+
+try {
+  await main();
+} finally {
+  if (server?.exitCode === null) server.kill("SIGTERM");
+}

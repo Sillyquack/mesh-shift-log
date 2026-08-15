@@ -16,22 +16,22 @@ const runbook = readFileSync(
   absolute('docs/production/2026-08-17-production-runbook.md'),
   'utf8',
 );
-const bridge = readFileSync(
-  absolute('supabase/phase10w_event_visual_reference_bridge.sql'),
+const expansion = readFileSync(
+  absolute('supabase/phase10x_event_visual_library_expansion.sql'),
   'utf8',
 );
 
-test('production migration manifest is unique, complete on disk and terminal at Phase 10W', () => {
-  assert.equal(PHASE10_PRODUCTION_MIGRATIONS.length, 25);
-  assert.equal(new Set(PHASE10_PRODUCTION_MIGRATIONS).size, 25);
+test('production migration manifest is unique, complete on disk and terminal at Phase 10X', () => {
+  assert.equal(PHASE10_PRODUCTION_MIGRATIONS.length, 26);
+  assert.equal(new Set(PHASE10_PRODUCTION_MIGRATIONS).size, 26);
   assert.ok(PHASE10_PRODUCTION_MIGRATIONS.every((path) => existsSync(absolute(path))));
   assert.equal(
     PHASE10_PRODUCTION_TERMINAL_MIGRATION,
-    'supabase/phase10w_event_visual_reference_bridge.sql',
+    'supabase/phase10x_event_visual_library_expansion.sql',
   );
   assert.equal(
     PHASE10_PRODUCTION_MIGRATIONS.at(-2),
-    'supabase/phase10v_routine_creation_idempotency_provenance_alignment.sql',
+    'supabase/phase10w_event_visual_reference_bridge.sql',
   );
 });
 
@@ -63,22 +63,23 @@ test('pending migration calculation preserves canonical order and rejects unknow
   );
 });
 
-test('Phase 10W stays additive and least privilege', () => {
-  assert.doesNotMatch(bridge, /\bdrop\s+(?:table|schema|column)\b/i);
-  assert.doesNotMatch(bridge, /\btruncate\b|\bdelete\s+from\b/i);
-  assert.doesNotMatch(bridge, /grant\s+(?:select|insert|update|delete)\s+on\s+table/i);
-  assert.doesNotMatch(bridge, /using\s*\(\s*true\s*\)|with\s+check\s*\(\s*true\s*\)/i);
-  assert.match(bridge, /security definer\nset search_path = pg_catalog/i);
-  assert.match(bridge, /revoke all on function public\.event_visual_current_user_can_read\(\)/i);
-  assert.match(bridge, /grant execute on function public\.get_event_visual_references\(text\[\]\)\s+to authenticated/i);
+test('Phase 10X stays additive and least privilege', () => {
+  assert.doesNotMatch(expansion, /\bdrop\s+(?:table|schema|column)\b/i);
+  assert.doesNotMatch(expansion, /\btruncate\b|\bdelete\s+from\b|\binsert\s+into\b|\bupdate\s+public\./i);
+  assert.doesNotMatch(expansion, /grant\s+(?:select|insert|update|delete)\s+on\s+table/i);
+  assert.doesNotMatch(expansion, /using\s*\(\s*true\s*\)|with\s+check\s*\(\s*true\s*\)/i);
+  assert.match(expansion, /alter function public\.set_updated_at\(\) set search_path = pg_catalog/i);
+  assert.match(expansion, /'public\.current_user_can_manage_event_ops\(\)', false/i);
+  assert.match(expansion, /'public\.create_event_operation_from_calendar_event\(uuid\)', true/i);
+  assert.match(expansion, /grant execute on function %s to authenticated/i);
 });
 
-test('runbook declares all three Oslo fallback windows and Monday go/no-go', () => {
+test('runbook declares the authorized Oslo cutover windows and Monday go/no-go', () => {
   for (const phrase of [
-    'Friday 14 August 23:30',
     'Saturday 15 August 23:30',
     'Sunday 16 August 22:30',
     'Monday 17 August 06:15',
+    'Monday 17 August 06:50',
     'Monday 17 August 07:00',
     'Go / no-go criteria',
     'Rollback and forward-fix strategy',

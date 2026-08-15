@@ -249,3 +249,128 @@
     position: static;
   }
 }
+
+.rm-visual-tree,
+.rm-visual-guide-list,
+.rm-visual-zone-list {
+  display: grid;
+  gap: 16px;
+}
+
+.rm-visual-venue {
+  padding: clamp(16px, 3vw, 26px);
+  border: 1px solid var(--mesh-border-subtle);
+  border-radius: 22px;
+  background: rgba(255, 255, 255, 0.025);
+}
+
+.rm-visual-venue > header,
+.rm-visual-zone > header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 14px;
+}
+
+.rm-visual-venue h4 {
+  margin: 5px 0 0;
+  color: var(--mesh-cream-strong);
+  font-size: clamp(1.35rem, 3vw, 2rem);
+}
+
+.rm-visual-venue > header > strong,
+.rm-visual-zone > header > span {
+  color: var(--mesh-gold-soft);
+  font-size: 0.8rem;
+}
+
+.rm-visual-guide {
+  overflow: hidden;
+  border: 1px solid var(--mesh-border-subtle);
+  border-radius: 18px;
+  background: rgba(0, 0, 0, 0.12);
+}
+
+.rm-visual-guide > summary {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 16px;
+  padding: 16px;
+  cursor: pointer;
+}
+
+.rm-visual-guide > summary span {
+  display: grid;
+  gap: 4px;
+}
+
+.rm-visual-guide > summary small {
+  color: var(--mesh-gold-soft);
+  font-size: 0.65rem;
+  font-weight: 900;
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+}
+
+.rm-visual-guide > summary strong,
+.rm-visual-zone strong {
+  color: var(--mesh-cream-strong);
+}
+
+.rm-visual-guide > summary b {
+  color: var(--mesh-text-muted);
+  font-size: 0.76rem;
+}
+
+.rm-visual-guide > p,
+.rm-visual-zone > p {
+  margin: 0;
+  color: var(--mesh-text-muted);
+  line-height: 1.5;
+}
+
+.rm-visual-guide > p {
+  padding: 0 16px 14px;
+}
+
+.rm-visual-zone-list {
+  padding: 0 16px 16px;
+}
+
+.rm-visual-zone {
+  display: grid;
+  gap: 10px;
+  padding-top: 14px;
+  border-top: 1px solid var(--mesh-border-subtle);
+}
+
+.rm-visual-angle-list {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 10px;
+}
+
+.rm-visual-guide > summary:focus-visible,
+.rm-visual-slot:focus-visible {
+  outline: 3px solid var(--mesh-gold-soft);
+  outline-offset: 3px;
+}
+
+@media (max-width: 960px) {
+  .rm-visual-angle-list {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+}
+
+@media (max-width: 620px) {
+  .rm-visual-guide > summary,
+  .rm-visual-venue > header {
+    align-items: flex-start;
+    flex-direction: column;
+  }
+
+  .rm-visual-angle-list {
+    grid-template-columns: 1fr;
+  }
+}

@@ -100,6 +100,6 @@ assert.match(offline, /Working offline/, "Human-readable offline status is missi
 assert.match(offline, /Needs your review|need review/, "Human-readable conflict status is missing");
 assert.match(experienceStyles, /\.routine-experience-nav/, "Shift Mode bottom navigation is missing");
 assert.match(experienceStyles, /position: fixed/, "Shift Mode mobile navigation must remain reachable");
-assert.match(experienceStyles, /min-height: 44px/, "Shift Mode must use practical touch targets");
+assert.match(experienceStyles, /min-height: 48px/, "Shift Mode must use 48px operational touch targets");
 
 console.log("Verified the shared Mesh experience foundation and focused Shift Mode migration.");

@@ -4,7 +4,7 @@ import { existsSync, readFileSync } from 'node:fs';
 import { dirname, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { spawnSync } from 'node:child_process';
-import { eventRigGuides } from '../src/data/eventRigGuides.js';
+import { eventVisualReferenceKeys } from '../src/data/eventRigGuides.js';
 
 const ROOT = resolve(dirname(fileURLToPath(import.meta.url)), '..');
 const IMAGE = 'public.ecr.aws/supabase/postgres:17.6.1.141';
@@ -24,6 +24,7 @@ const MIGRATIONS = [
   'supabase/phase10b_routine_templates.sql',
   'supabase/phase10c_routine_reference_images.sql',
   'supabase/phase10w_event_visual_reference_bridge.sql',
+  'supabase/phase10x_event_visual_library_expansion.sql',
 ];
 const FIXTURES = [
   'supabase/tests/phase10/foundation-fixtures.sql',
@@ -95,19 +96,19 @@ process.once('SIGINT', () => { cleanup(); process.exit(130); });
 process.once('SIGTERM', () => { cleanup(); process.exit(143); });
 
 function staticVerification() {
-  const migration = readFileSync(absolute(MIGRATIONS.at(-1)), 'utf8');
+  const bridge = readFileSync(absolute('supabase/phase10w_event_visual_reference_bridge.sql'), 'utf8');
+  const expansion = readFileSync(absolute('supabase/phase10x_event_visual_library_expansion.sql'), 'utf8');
+  const migration = `${bridge}\n${expansion}`;
   const client = readFileSync(absolute('src/lib/eventVisualReferenceClient.js'), 'utf8');
   const modal = readFileSync(absolute('src/components/EventVisualGuideModal.jsx'), 'utf8');
   const cockpit = readFileSync(absolute('src/components/EventOperationsCockpit.jsx'), 'utf8');
-  const allowedBlock = migration.match(
+  const allowedBlock = expansion.match(
     /event_visual_reference_key_allowed[\s\S]*?any\s*\(array\[([\s\S]*?)\]::text\[\]\)/i,
   )?.[1] || '';
   const migrationKeys = [...allowedBlock.matchAll(/'([a-z0-9_-]+)'/g)]
     .map((match) => match[1])
     .sort();
-  const guideKeys = [...new Set(eventRigGuides.flatMap((guide) =>
-    (guide.requiredImageSlots || []).map((slot) => slot.id),
-  ))].sort();
+  const guideKeys = [...eventVisualReferenceKeys].sort();
 
   check('migration allowlist exactly matches current event visual slots', JSON.stringify(migrationKeys) === JSON.stringify(guideKeys));
   check('metadata RPC fixes search_path under security definer', /get_event_visual_references[\s\S]*?security definer[\s\S]*?set search_path = pg_catalog/i.test(migration));
@@ -119,10 +120,11 @@ function staticVerification() {
   check('legacy manager and published-task Storage branches remain', /routine_current_user_can_manage_templates\(\)[\s\S]*?routine_current_user_can_perform_tasks\(\)[\s\S]*?routine_reference_is_published_linked/.test(migration));
   check('Event Floor Manager Storage is allowlisted and current-image only', /event_visual_reference_key_allowed\(reference\.reference_key\)[\s\S]*?version\.id = reference\.current_version_id[\s\S]*?version\.state = 'active_image'/.test(migration));
   check('migration grants no table DML and creates no broad policy', !/grant\s+(?:select|insert|update|delete)|using\s*\(\s*true\s*\)|with\s+check\s*\(\s*true\s*\)/i.test(migration));
-  check('authenticated receives exactly two execution boundaries', (migration.match(/grant execute on function/g) || []).length === 2);
+  check('Phase 10W keeps exactly two visual authenticated execution boundaries', (bridge.match(/grant execute on function/g) || []).length === 2);
+  check('Phase 10X repairs set_updated_at search_path and anonymous Event Ops exposure', /alter function public\.set_updated_at\(\) set search_path = pg_catalog/i.test(expansion) && /create_event_operation_from_calendar_event\(uuid\)[\s\S]*?from public, anon, authenticated/i.test(expansion));
   check('client uses one sanitized RPC and existing private bucket', /get_event_visual_references/.test(client) && /ROUTINE_REFERENCE_BUCKET/.test(client));
   check('client performs no reference-table read or signed URL creation', !/\.from\(['"]routine_reference|createSignedUrl|createSignedUploadUrl/i.test(client));
-  check('modal revokes object URLs and traps Escape and Tab', /URL\.revokeObjectURL/.test(modal) && /event\.key === 'Escape'/.test(modal) && /event\.key !== 'Tab'/.test(modal));
+  check('modal revokes object URLs and traps Escape and Tab', /URL\.revokeObjectURL/.test(modal) && /event\.key === ["']Escape["']/.test(modal) && /event\.key !== ["']Tab["']/.test(modal));
   check('operator route opens the modal and preserves Manager Cockpit', /EventVisualGuideModal/.test(cockpit) && /return <ManagerEventOperationsCockpit/.test(cockpit));
 }
 
@@ -222,11 +224,15 @@ function databaseVerification() {
       and has_function_privilege('authenticated', 'public.routine_reference_storage_can_read(text)', 'EXECUTE')
     )::text;
   `) === 'true');
+  check('set_updated_at has immutable pg_catalog search_path configuration', scalar(`
+    select coalesce(array_to_string(proconfig, ','), '')
+    from pg_proc where oid = 'public.set_updated_at()'::regprocedure;
+  `) === 'search_path=pg_catalog');
 }
 
 async function main() {
   const required = [...BASELINES, ...MIGRATIONS, ...FIXTURES];
-  check('every Phase 10W verifier input exists', required.every((path) => existsSync(absolute(path))));
+  check('every Phase 10W–10X verifier input exists', required.every((path) => existsSync(absolute(path))));
   staticVerification();
   command('docker', ['--version']);
   docker(['image', 'inspect', IMAGE]);
@@ -260,7 +266,7 @@ async function main() {
   `);
   for (const path of MIGRATIONS) psql(readFileSync(absolute(path), 'utf8'), { transaction: true });
   psql(readFileSync(absolute(MIGRATIONS.at(-1)), 'utf8'), { transaction: true });
-  check('Phase 10W applies and reapplies without data mutation', true);
+  check('Phase 10W–10X applies and Phase 10X reapplies without data mutation', true);
   for (const path of FIXTURES) psql(readFileSync(absolute(path), 'utf8'), { transaction: true });
   databaseVerification();
   console.log(`Event visual-reference bridge verification: ${passed}/${passed} passed.`);

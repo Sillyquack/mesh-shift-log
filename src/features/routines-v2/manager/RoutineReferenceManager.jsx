@@ -1,5 +1,8 @@
 import { useEffect, useMemo, useState } from "react";
-import { eventRigGuides } from "../../../data/eventRigGuides.js";
+import {
+  eventVisualAngles,
+  eventVisualVenues,
+} from "../../../data/eventRigGuides.js";
 import {
   createRoutineReferenceImage,
   downloadRoutineCurrentReferenceImage,
@@ -17,23 +20,21 @@ import {
 } from "./RoutineManagerPrimitives.jsx";
 
 function eventVisualSlots() {
-  const slots = new Map();
-  eventRigGuides.forEach((guide) => {
-    (guide.requiredImageSlots || []).forEach((slot) => {
-      const current = slots.get(slot.id);
-      if (current) {
-        current.guideIds.push(guide.id);
-        current.guideTitles.push(guide.title);
-        return;
-      }
-      slots.set(slot.id, {
-        ...slot,
-        guideIds: [guide.id],
-        guideTitles: [guide.title],
-      });
-    });
-  });
-  return [...slots.values()];
+  return eventVisualAngles.map((angle) => ({
+    ...angle,
+    id: angle.stableKey,
+    description: angle.operationalDescription,
+  }));
+}
+
+function readinessProgress(rows) {
+  const required = rows.filter((row) => row.required !== false);
+  const ready = required.filter((row) => row.ready).length;
+  return {
+    ready,
+    total: required.length,
+    percent: required.length ? Math.round((ready / required.length) * 100) : 100,
+  };
 }
 
 function referenceKey(reference) {
@@ -98,9 +99,26 @@ export default function RoutineReferenceManager({ loader, uploader }) {
     () => visualReadiness(slots, references),
     [slots, references],
   );
-  const completion = readiness.rows.length
-    ? Math.round((readiness.ready.length / readiness.rows.length) * 100)
-    : 100;
+  const requiredReadiness = useMemo(
+    () => readinessProgress(readiness.rows),
+    [readiness.rows],
+  );
+  const completion = requiredReadiness.percent;
+  const readinessTree = useMemo(() => {
+    const rowsByKey = new Map(readiness.rows.map((row) => [row.stableKey, row]));
+    return eventVisualVenues.map((venue) => {
+      const guides = venue.guides.map((guide) => {
+        const zones = guide.zones.map((zone) => {
+          const rows = zone.angles.map((angle) => rowsByKey.get(angle.stableKey)).filter(Boolean);
+          return { ...zone, rows, progress: readinessProgress(rows) };
+        });
+        const rows = zones.flatMap((zone) => zone.rows);
+        return { ...guide, zones, progress: readinessProgress(rows) };
+      });
+      const rows = guides.flatMap((guide) => guide.zones.flatMap((zone) => zone.rows));
+      return { ...venue, guides, progress: readinessProgress(rows) };
+    });
+  }, [readiness.rows]);
 
   const filteredReferences = useMemo(() => {
     const query = search.trim().toLowerCase();
@@ -158,8 +176,8 @@ export default function RoutineReferenceManager({ loader, uploader }) {
         const result = await createRoutineReferenceImage({
           referenceKey: slot.id,
           label: slot.label,
-          description: `${slot.description} Used by: ${slot.guideTitles.join(", ")}.`,
-          placeholderText: "Reference image coming soon",
+          description: slot.description,
+          placeholderText: slot.placeholderText,
           idempotencyKey: createIdempotencyKey(),
         });
         if (result.ok) created += 1;
@@ -236,7 +254,7 @@ export default function RoutineReferenceManager({ loader, uploader }) {
           <div>
             <strong>{completion}%</strong>
             <span>
-              {readiness.ready.length}/{readiness.rows.length} ready
+              {requiredReadiness.ready}/{requiredReadiness.total} required ready
             </span>
           </div>
         </div>
@@ -287,27 +305,50 @@ export default function RoutineReferenceManager({ loader, uploader }) {
           </p>
         )}
 
-        <div className="rm-visual-slot-grid">
-          {readiness.rows.map((row) => (
-            <button
-              key={row.id}
-              type="button"
-              className={`rm-visual-slot is-${row.state}`}
-              disabled={!row.reference}
-              onClick={() => row.reference && choose(row.reference)}
-            >
-              <span>
-                {row.ready ? "✓" : row.state === "missing" ? "+" : "○"}
-              </span>
-              <strong>{row.label}</strong>
-              <small>
-                {row.ready
-                  ? "Ready for staff"
-                  : row.state === "missing"
-                    ? "Create placeholder first"
-                    : "Upload image"}
-              </small>
-            </button>
+        <div className="rm-visual-tree" aria-label="Visual standards grouped by venue, guide, zone and angle">
+          {readinessTree.map((venue) => (
+            <section key={venue.key} className="rm-visual-venue">
+              <header>
+                <div><p className="eyebrow">Venue</p><h4>{venue.label}</h4></div>
+                <strong>{venue.progress.ready}/{venue.progress.total} · {venue.progress.percent}%</strong>
+              </header>
+              <div className="rm-visual-guide-list">
+                {venue.guides.map((guide) => (
+                  <details key={guide.key} className="rm-visual-guide" open={guide.selectionKind === "default_target"}>
+                    <summary>
+                      <span><small>{guide.guideType.replaceAll("_", " ")}</small><strong>{guide.title}</strong></span>
+                      <b>{guide.progress.ready}/{guide.progress.total} required</b>
+                    </summary>
+                    <p>{guide.summary}</p>
+                    <div className="rm-visual-zone-list">
+                      {guide.zones.map((zone) => (
+                        <section key={zone.key} className="rm-visual-zone">
+                          <header><strong>{zone.label}</strong><span>{zone.progress.ready}/{zone.progress.total}</span></header>
+                          <p>{zone.description}</p>
+                          {zone.rows.length ? (
+                            <div className="rm-visual-angle-list">
+                              {zone.rows.map((row) => (
+                                <button
+                                  key={row.id}
+                                  type="button"
+                                  className={`rm-visual-slot is-${row.state}`}
+                                  disabled={!row.reference}
+                                  onClick={() => row.reference && choose(row.reference)}
+                                >
+                                  <span>{row.ready ? "✓" : row.state === "missing" ? "+" : "○"}</span>
+                                  <strong>{row.label}</strong>
+                                  <small>{row.required === false ? "Optional · " : "Required · "}{row.ready ? "Ready" : row.state === "missing" ? "Create placeholder" : "Awaiting production upload"}</small>
+                                </button>
+                              ))}
+                            </div>
+                          ) : <p className="mesh-status is-warning">Written standard preserved; source image set is empty.</p>}
+                        </section>
+                      ))}
+                    </div>
+                  </details>
+                ))}
+              </div>
+            </section>
           ))}
         </div>
       </section>
