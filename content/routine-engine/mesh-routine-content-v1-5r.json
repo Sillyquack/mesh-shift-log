@@ -2711,12 +2711,12 @@
           "timingSourceText": "After machine startup and before the first milk-based drink is served.",
           "fridgeStandardsAmendment": {
             "date": "2026-08-15",
-            "decisionHash": "4012ca8d2dc131d551deb372e257f3483ca65aa205833502f2ea426c56cfb841",
+            "decisionHash": "b494dba7f1d7368c42f82caf017271ecdffea0d5be8c5d53cd2fec3fed69f235",
             "ownership": "organization",
             "standardKey": "workbar-milk-fridge-target"
           }
         },
-        "sourceHash": "9c0b4a326ac1cc743d413b8ee1fee50de80555fcc80db522f3434bb0a97cac14"
+        "sourceHash": "a933016881230254d649a0bd8593cc829ba089e3e22950b539d23349a425c65d"
       },
       {
         "id": "O09",
@@ -2883,12 +2883,12 @@
           },
           "fridgeStandardsAmendment": {
             "date": "2026-08-15",
-            "decisionHash": "4012ca8d2dc131d551deb372e257f3483ca65aa205833502f2ea426c56cfb841",
+            "decisionHash": "b494dba7f1d7368c42f82caf017271ecdffea0d5be8c5d53cd2fec3fed69f235",
             "ownership": "organization",
             "standardKey": "workbar-milk-fridge-target"
           }
         },
-        "sourceHash": "e27b8a24be9aabcca015267813b1b588ee3bd0fe52b2e03bb34d0e3cd03e9cf1"
+        "sourceHash": "198b81ccb069c23882e39345f0d86c2948049e992ea9ff2b46a12873fd055b00"
       },
       {
         "id": "O10",
@@ -5235,12 +5235,12 @@
           },
           "fridgeStandardsAmendment": {
             "date": "2026-08-15",
-            "decisionHash": "4012ca8d2dc131d551deb372e257f3483ca65aa205833502f2ea426c56cfb841",
+            "decisionHash": "b494dba7f1d7368c42f82caf017271ecdffea0d5be8c5d53cd2fec3fed69f235",
             "ownership": "organization",
             "standardKey": "workbar-milk-fridge-target"
           }
         },
-        "sourceHash": "9ce977aa8bd066a6b08a5d8559a30e368bba9837fd0c92b4c324ebdb0ba7ebd5"
+        "sourceHash": "38c51ef5714bcf4e4b5635fa18451e182a94c641ae07fe0743636948479871c0"
       },
       {
         "id": "O24",
@@ -6096,12 +6096,12 @@
           },
           "fridgeStandardsAmendment": {
             "date": "2026-08-15",
-            "decisionHash": "4012ca8d2dc131d551deb372e257f3483ca65aa205833502f2ea426c56cfb841",
+            "decisionHash": "b494dba7f1d7368c42f82caf017271ecdffea0d5be8c5d53cd2fec3fed69f235",
             "ownership": "organization",
             "standardKey": "workbar-milk-fridge-target"
           }
         },
-        "sourceHash": "0afcbd666473eead5b542c7b15634c6a9685ba7880cd1237e43eb9bbb3051e91"
+        "sourceHash": "94956c8bbfa8e7e0cb716105f06717cbeaa671b99c551c95ee15982088992cdb"
       },
       {
         "id": "O30",
@@ -6984,12 +6984,12 @@
           },
           "fridgeStandardsAmendment": {
             "date": "2026-08-15",
-            "decisionHash": "4012ca8d2dc131d551deb372e257f3483ca65aa205833502f2ea426c56cfb841",
+            "decisionHash": "b494dba7f1d7368c42f82caf017271ecdffea0d5be8c5d53cd2fec3fed69f235",
             "ownership": "organization",
             "standardKey": "workbar-milk-fridge-target"
           }
         },
-        "sourceHash": "6b62d6f9a2c7b87781f1bf36b598aaa61b9d0e0e5b1564270fa2aec6255a49fb"
+        "sourceHash": "9971554d9ad7b4d906c51ecc557079490464cb969516ed2e8087e52d67d7a832"
       },
       {
         "id": "O36",
@@ -9010,12 +9010,12 @@
           "timingSourceText": "During pre-close; final delivery is repeated at C29.",
           "fridgeStandardsAmendment": {
             "date": "2026-08-15",
-            "decisionHash": "4012ca8d2dc131d551deb372e257f3483ca65aa205833502f2ea426c56cfb841",
+            "decisionHash": "b494dba7f1d7368c42f82caf017271ecdffea0d5be8c5d53cd2fec3fed69f235",
             "ownership": "organization",
             "standardKey": "workbar-milk-fridge-target"
           }
         },
-        "sourceHash": "304841c7dcd5e0790cf2bd87c872052d6ba89055f30db6c79394bbee2ea21745"
+        "sourceHash": "be796ab56c4c7a6fc3189d07c787824a8941e1c6778f6cf4b82d5dcf4b3c92b0"
       },
       {
         "id": "C10",
@@ -9212,12 +9212,12 @@
           },
           "fridgeStandardsAmendment": {
             "date": "2026-08-15",
-            "decisionHash": "4012ca8d2dc131d551deb372e257f3483ca65aa205833502f2ea426c56cfb841",
+            "decisionHash": "b494dba7f1d7368c42f82caf017271ecdffea0d5be8c5d53cd2fec3fed69f235",
             "ownership": "organization",
             "standardKey": "workbar-milk-fridge-target"
           }
         },
-        "sourceHash": "8f34d419fd0259cd2209c97dcefbf05e61e1a041ce353ad685efbf9ec4b7801b"
+        "sourceHash": "086e0fe60d5fe9d655f6ed6279d925c23537862314e6fb91e6a71e36d011be21"
       },
       {
         "id": "C11",
@@ -12424,12 +12424,12 @@
           },
           "fridgeStandardsAmendment": {
             "date": "2026-08-15",
-            "decisionHash": "4012ca8d2dc131d551deb372e257f3483ca65aa205833502f2ea426c56cfb841",
+            "decisionHash": "b494dba7f1d7368c42f82caf017271ecdffea0d5be8c5d53cd2fec3fed69f235",
             "ownership": "organization",
             "standardKey": "workbar-milk-fridge-target"
           }
         },
-        "sourceHash": "de81cb302d4b459a0bd7e046ae28a733daba0c2ce7761d46d2a9beac153da49a"
+        "sourceHash": "8aebdd6f7ab396bf0c734a3eeaf0757f1b90229f6fdf1bf678641300a6b93695"
       },
       {
         "id": "C30",
@@ -12642,12 +12642,12 @@
           },
           "fridgeStandardsAmendment": {
             "date": "2026-08-15",
-            "decisionHash": "4012ca8d2dc131d551deb372e257f3483ca65aa205833502f2ea426c56cfb841",
+            "decisionHash": "b494dba7f1d7368c42f82caf017271ecdffea0d5be8c5d53cd2fec3fed69f235",
             "ownership": "organization",
             "standardKey": "workbar-milk-fridge-target"
           }
         },
-        "sourceHash": "5853390644dce77b82fe470321d938469157b52363a49efdb70339a82026e92b"
+        "sourceHash": "0b8f58b48208732f2dea857ae7c18eb89a7b5d5ea4541bc7cde5dcfc32edecf3"
       },
       {
         "id": "C31",
@@ -13257,12 +13257,12 @@
           },
           "fridgeStandardsAmendment": {
             "date": "2026-08-15",
-            "decisionHash": "4012ca8d2dc131d551deb372e257f3483ca65aa205833502f2ea426c56cfb841",
+            "decisionHash": "b494dba7f1d7368c42f82caf017271ecdffea0d5be8c5d53cd2fec3fed69f235",
             "ownership": "organization",
             "standardKey": "workbar-milk-fridge-target"
           }
         },
-        "sourceHash": "c074d2e2e1d79ba778007bcbb85063e164ab04dfaaefd979c5407e6fc8caf0fb"
+        "sourceHash": "f46460b46a8b1bb909825bb9f0f770a001332b881a202a6121abd2d833a32f34"
       },
       {
         "id": "C34",
@@ -15923,10 +15923,10 @@
       "doneCriteriaText": "- Opening is finished.\n- DS01 is completed.\n- The transition choice is valid.\n- Required return/interim owner/reason data exists.\n- One shared `opening_transition` handover is regenerated and submitted.\n- The step and handover are server-confirmed without duplicates.\n- The handover reports espresso reservoirs, self-service milk jug, Workbar Milk Fridge top shelf and lower shelves separately.\n- A 2 + 2 top shelf alone never reports the full refrigerator standard as compliant.",
       "blockingRulesText": "- Opening is not finished.\n- DS01 is missing/stale.\n- Required return/interim owner/reason missing.\n- Open critical/important issue is absent from the handover.\n- Target user is invalid.\n- No silent cancellation or deletion of Closing is allowed.",
       "systemGenerated": false,
-      "sourceHash": "05b43b12a9eb2e1a18a73920ec6649cf20ba56922e3e000bedf1575bff17d12a",
+      "sourceHash": "030683fe3240f63c33ca658472a68ff11db879a907afa0d71cd54f2150df1d6e",
       "fridgeStandardsAmendment": {
         "date": "2026-08-15",
-        "decisionHash": "4012ca8d2dc131d551deb372e257f3483ca65aa205833502f2ea426c56cfb841",
+        "decisionHash": "b494dba7f1d7368c42f82caf017271ecdffea0d5be8c5d53cd2fec3fed69f235",
         "ownership": "organization"
       }
     },
@@ -16063,9 +16063,9 @@
     {
       "kind": "fridge_standards_amendment",
       "fileName": "routine-engine-v2-fridge-standards-amendment-2026-08-15.md",
-      "sha256": "4012ca8d2dc131d551deb372e257f3483ca65aa205833502f2ea426c56cfb841",
+      "sha256": "b494dba7f1d7368c42f82caf017271ecdffea0d5be8c5d53cd2fec3fed69f235",
       "hashScope": "content-before-generated-pack-metadata"
     }
   ],
-  "packHash": "04b148f4329ca666f8fc7632fc72873411fe5b1aa15dddc6b56f7bf35c44be96"
+  "packHash": "fdf16deb681de343bebd8988b5a66635e38e05f927968beb38449e0c32a2d31c"
 }

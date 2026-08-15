@@ -62,6 +62,6 @@ Regular milk and Oatly may use exact-standard quantity 2. Opened wine remains ac
 This section is generated from the canonical pack and is excluded from the amendment decision-body hash.
 
 - Pack: `mesh-routine-content@1.5R`
-- Canonical pack SHA-256: `04b148f4329ca666f8fc7632fc72873411fe5b1aa15dddc6b56f7bf35c44be96`
-- Amendment decision-body SHA-256: `4012ca8d2dc131d551deb372e257f3483ca65aa205833502f2ea426c56cfb841`
+- Canonical pack SHA-256: `fdf16deb681de343bebd8988b5a66635e38e05f927968beb38449e0c32a2d31c`
+- Amendment decision-body SHA-256: `b494dba7f1d7368c42f82caf017271ecdffea0d5be8c5d53cd2fec3fed69f235`
 - Production action: none; this artifact is local implementation and review only
