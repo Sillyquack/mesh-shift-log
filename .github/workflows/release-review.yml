@@ -27,6 +27,9 @@ jobs:
       - name: Install locked dependencies
         run: npm ci
 
+      - name: Pull pinned disposable PostgreSQL image
+        run: docker pull public.ecr.aws/supabase/postgres:17.6.1.141
+
       - name: Verify production migration plan
         run: npm run verify:production-migration-plan
 

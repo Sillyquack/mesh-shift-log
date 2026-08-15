@@ -178,6 +178,7 @@ test('review-only GitHub Actions workflow runs every required release check with
     'npm run build',
   ];
   for (const command of commands) assert.ok(reviewWorkflow.includes(command), command);
+  assert.ok(reviewWorkflow.includes('docker pull public.ecr.aws/supabase/postgres:17.6.1.141'));
   assert.match(reviewWorkflow, /pull_request:/);
   assert.match(reviewWorkflow, /contents:\s*read/);
   assert.doesNotMatch(reviewWorkflow, /pull_request_target|secrets\.|supabase\s+(?:db|migration)|gh-pages|npm run deploy|git push/i);
