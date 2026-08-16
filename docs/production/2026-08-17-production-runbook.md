@@ -53,7 +53,8 @@ Protected release values for the final review are:
 - 1.5R file SHA-256: `6254ae1e961bf2cd30e831ea3d7a31be19c841128649d3f6266fa6902f73a2a4`;
 - Phase 10Y SQL SHA-256: `31118f78b22271f6cce6259b8af44931da18a4506cca0852d39784dc9b89d1ac`;
 - Phase 10Z SQL SHA-256: `caaf7c10970a97a5bc5928df967cd7683cff98a0f208888f6d162bdcd9f4fdab`;
-- portable migration fingerprint: `3bd0a3227b56a64a4f4b5a3ccc3e810c74758458e426d30ddbc8a8a0053d7024`;
+- Phase 10AA SQL SHA-256: `1f16dac64b1e66317d28c7fcbe20e87d62a7ff7db5ee12cc20e27e622eea8d4c`;
+- portable migration fingerprint: `f53315ccdfa8d2636c0baad8cd8c3a9d90e5a4033a9225cb0b7493c6ffb05f4f`;
 - historical 1.4R SHA-256: `a69042a4e8f25d07e952821a0fdcadb24a8f1cb55a4e53044b6f28909ea8fba4`.
 
 ## Database migration order
@@ -88,8 +89,9 @@ The production preflight must first establish the exact migration currently inst
 26. `phase10x_event_visual_library_expansion.sql`
 27. `phase10y_mesh_routine_content_pack_1_5r.sql`
 28. `phase10z_inventory_location_and_express_shelf_alignment.sql`
+29. `phase10aa_event_floor_manager_pilot_membership.sql`
 
-Phase 10W creates the least-privilege Event visual metadata and private Storage bridge for current allowlisted images. Phase 10X expands that bridge to the canonical visual allowlist, fixes `set_updated_at()` search-path configuration, and removes unintended anonymous Event Ops execution while preserving the existing authenticated RPC boundaries. Phase 10Y replaces only the private canonical provider with the additive 1.5R draft containing the confirmed refrigerator standards; it does not install that provider. This is the corrected 1.5R provider, not a new pack version. Phase 10Z performs the guarded physical-location alignment: it preserves the existing Main Storage identity, creates non-countable Express Shelf, creates Workbar Milk Fridge with exactly ten targetless profile-v2-mapped wine lines, leaves Planeta unlinked, and adds the manager-attention path for unlisted opened wine. Security-advisor and privilege readback acceptance is evaluated after Phase 10X, not after Phase 10W alone. None of these migrations installs or publishes content, changes Routine Engine mode or UI release stage, uploads a file, or grants manager access to Event Floor Managers. Phase 10Z fingerprints and preserves immutable Millum profile v2 and creates no profile v3.
+Phase 10W creates the least-privilege Event visual metadata and private Storage bridge for current allowlisted images. Phase 10X expands that bridge to the canonical visual allowlist, fixes `set_updated_at()` search-path configuration, and removes unintended anonymous Event Ops execution while preserving the existing authenticated RPC boundaries. Phase 10Y replaces only the private canonical provider with the additive 1.5R draft containing the confirmed refrigerator standards; it does not install that provider. This is the corrected 1.5R provider, not a new pack version. Phase 10Z performs the guarded physical-location alignment: it preserves the existing Main Storage identity, creates non-countable Express Shelf, creates Workbar Milk Fridge with exactly ten targetless profile-v2-mapped wine lines, leaves Planeta unlinked, and adds the manager-attention path for unlisted opened wine. Phase 10AA replaces only `replace_routine_pilot_memberships`: personal `event_floor_manager` profiles may receive preview or participant access, while coordinator remains exclusive to `shift_lead`. Security-advisor and privilege readback acceptance is evaluated after Phase 10X, not after Phase 10W alone. None of these migrations installs or publishes content, changes Routine Engine mode or UI release stage, uploads a file, creates a pilot membership, or grants manager access to Event Floor Managers. Phase 10Z fingerprints and preserves immutable Millum profile v2 and creates no profile v3.
 
 ## Required evidence before the first window
 
@@ -151,7 +153,7 @@ Complete before 23:00:
 - After the immediate S–V readback is an exact match, perform only the separately approved S–V migration-ledger reconciliation.
 - Do not reapply S–V DDL, replace matching functions, or re-drop matching constraints.
 - If the S–V ledger reconciliation is not explicitly approved, stop before any write.
-- Only after the ledger is coherent, apply the genuinely pending migrations in order: Phase 10W, then Phase 10X, then Phase 10Y, then Phase 10Z.
+- Only after the ledger is coherent, apply the genuinely pending migrations in order: Phase 10W, then Phase 10X, then Phase 10Y, then Phase 10Z, then Phase 10AA.
 - Capture output for every migration separately.
 - After each logical group, run its minimal readback rather than waiting until the end.
 - Do not manually edit production rows to “help” a migration pass.
@@ -165,6 +167,7 @@ Suggested checkpoints:
 - After 10W–10X: manager and Event Floor Manager can read only the intended visual-standard paths; anonymous Event Ops execution is absent; `set_updated_at()` has the approved fixed search path; authenticated Event Ops behavior and ordinary staff behavior remain unchanged.
 - After 10Y: the private provider exposes the exact reviewed 1.5R hash; no installation, template, publication, run, mode, stage or other operational row changed.
 - After 10Z: Main Storage Fridge retains its existing UUID; Express Shelf is active and non-countable with no invented standard rows; Workbar Milk Fridge has exactly ten `physical_count_only` wines, all mapped once in published profile v2; Planeta remains byte-identical and unlinked; profile v2 fingerprint is unchanged and no profile v3 exists.
+- After 10AA: the exact terminal membership function allows personal `staff`, `shift_lead`, and `event_floor_manager`; only `shift_lead` can receive coordinator; manager, counter, shared, inactive, cross-organization, null-organization, and unsupported profiles remain rejected; no membership, setting, content, inventory, or Millum row changed merely by applying the migration.
 - Evaluate the final security-advisor/readback acceptance only after Phase 10X has completed.
 
 Migration completion is not operational activation. The following require distinct, explicit approvals and must not be combined implicitly with the migration step:
@@ -303,7 +306,7 @@ Stop and use the next window for any of the following:
 The database work is additive and hardening-oriented. Do not improvise destructive reverse SQL.
 
 1. **Application regression with healthy database:** roll the app back to the previous known-good deployment. Leave additive database objects in place while the frontend is corrected.
-2. **New Phase 10W–10Z defect:** disable the affected new UI path and apply a reviewed forward-fix migration that narrows the defect. Do not broadly disable RLS. A Phase 10Y provider defect must remain uninstalled; a Phase 10Z location defect must not be repaired with ad-hoc product/profile edits.
+2. **New Phase 10W–10AA defect:** disable the affected new UI path and apply a reviewed forward-fix migration that narrows the defect. Do not broadly disable RLS. A Phase 10Y provider defect must remain uninstalled; a Phase 10Z location defect must not be repaired with ad-hoc product/profile edits; a Phase 10AA defect must leave memberships unchanged until a reviewed function-only repair is available.
 3. **Migration stopped before commit:** keep the transaction rolled back and diagnose before retrying.
 4. **Migration committed but readback fails:** freeze affected actions, capture state, and use a forward repair. Restore from backup only when integrity cannot be recovered safely through a reviewed forward fix.
 5. **Content or image error:** restore the previous current image through the versioned manager workflow or return the reference to an honest placeholder. Do not delete immutable history.

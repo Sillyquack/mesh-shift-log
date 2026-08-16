@@ -28,22 +28,26 @@ const locationAlignment = readFileSync(
   absolute('supabase/phase10z_inventory_location_and_express_shelf_alignment.sql'),
   'utf8',
 );
+const pilotMembership = readFileSync(
+  absolute('supabase/phase10aa_event_floor_manager_pilot_membership.sql'),
+  'utf8',
+);
 const reviewWorkflow = readFileSync(
   absolute('.github/workflows/release-review.yml'),
   'utf8',
 );
 
-test('production migration manifest is unique, complete on disk and terminal at Phase 10Z', () => {
-  assert.equal(PHASE10_PRODUCTION_MIGRATIONS.length, 28);
-  assert.equal(new Set(PHASE10_PRODUCTION_MIGRATIONS).size, 28);
+test('production migration manifest is unique, complete on disk and terminal at Phase 10AA', () => {
+  assert.equal(PHASE10_PRODUCTION_MIGRATIONS.length, 29);
+  assert.equal(new Set(PHASE10_PRODUCTION_MIGRATIONS).size, 29);
   assert.ok(PHASE10_PRODUCTION_MIGRATIONS.every((path) => existsSync(absolute(path))));
   assert.equal(
     PHASE10_PRODUCTION_TERMINAL_MIGRATION,
-    'supabase/phase10z_inventory_location_and_express_shelf_alignment.sql',
+    'supabase/phase10aa_event_floor_manager_pilot_membership.sql',
   );
   assert.equal(
     PHASE10_PRODUCTION_MIGRATIONS.at(-2),
-    'supabase/phase10y_mesh_routine_content_pack_1_5r.sql',
+    'supabase/phase10z_inventory_location_and_express_shelf_alignment.sql',
   );
 });
 
@@ -108,6 +112,20 @@ test('Phase 10Z is a guarded location-only terminal alignment', () => {
   assert.doesNotMatch(locationAlignment, /storage\.objects|\.upload\(/i);
 });
 
+test('Phase 10AA only widens personal pilot eligibility to non-coordinating Event Floor Managers', () => {
+  assert.match(pilotMembership, /^-- Phase 10AA:/);
+  assert.match(pilotMembership, /begin;[\s\S]*commit;\s*$/i);
+  assert.match(pilotMembership, /create or replace function public\.replace_routine_pilot_memberships\(/i);
+  assert.match(pilotMembership, /profile\.role in\('shift_lead','staff','event_floor_manager'\)/);
+  assert.match(pilotMembership, /v_access='coordinator' and v_profile\.role<>'shift_lead'/);
+  assert.match(pilotMembership, /set search_path=pg_catalog/i);
+  assert.match(pilotMembership, /revoke all on function public\.replace_routine_pilot_memberships\(jsonb,bigint,uuid\) from public,anon,authenticated/i);
+  assert.match(pilotMembership, /grant execute on function public\.replace_routine_pilot_memberships\(jsonb,bigint,uuid\) to authenticated/i);
+  assert.equal((pilotMembership.match(/create or replace function/gi) || []).length, 1);
+  assert.doesNotMatch(pilotMembership, /\b(?:insert|update|delete|truncate)\s+(?:into\s+|from\s+)?public\.(?!routine_pilot_memberships|routine_organization_settings)/i);
+  assert.doesNotMatch(pilotMembership, /install_mesh_routine_content_pack|publish_routine_template_versions|ui_release_stage\s*=|mode\s*=\s*'pilot'|storage\.objects/i);
+});
+
 test('runbook declares the authorized Oslo cutover windows and Monday go/no-go', () => {
   for (const phrase of [
     'Saturday 15 August 23:30',
@@ -135,13 +153,13 @@ test('runbook names PR #17 as the only combined release merge', () => {
   assert.doesNotMatch(runbook, /Each PR is stacked|PR stack is conflict-free|Production-candidate PR/i);
 });
 
-test('runbook fails closed on S–V and sequences genuine W/X/Y/Z migrations', () => {
+test('runbook fails closed on S–V and sequences genuine W/X/Y/Z/AA migrations', () => {
   for (const phrase of [
     'immediately before the maintenance write',
     'stop on any mismatch or unknown',
     'separately approved S–V migration-ledger reconciliation',
     'Do not reapply S–V DDL, replace matching functions, or re-drop matching constraints',
-    'Phase 10W, then Phase 10X, then Phase 10Y, then Phase 10Z',
+    'Phase 10W, then Phase 10X, then Phase 10Y, then Phase 10Z, then Phase 10AA',
   ]) {
     assert.ok(runbook.includes(phrase), phrase);
   }
