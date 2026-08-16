@@ -27,6 +27,7 @@ export const PHASE10_PRODUCTION_MIGRATIONS = Object.freeze([
   'supabase/phase10x_event_visual_library_expansion.sql',
   'supabase/phase10y_mesh_routine_content_pack_1_5r.sql',
   'supabase/phase10z_inventory_location_and_express_shelf_alignment.sql',
+  'supabase/phase10aa_event_floor_manager_pilot_membership.sql',
 ]);
 
 export const PHASE10_PRODUCTION_TERMINAL_MIGRATION =
