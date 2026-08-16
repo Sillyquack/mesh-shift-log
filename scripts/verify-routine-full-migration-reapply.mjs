@@ -26,6 +26,9 @@ const ORGANIZATION_ID = "aa000000-0000-4000-8000-000000000001";
 const PRESERVED_ORGANIZATION_ID = "ab000000-0000-4000-8000-000000000001";
 const SECONDARY_ORGANIZATION_ID = "ac000000-0000-4000-8000-000000000001";
 const FUTURE_ORGANIZATION_ID = "ad000000-0000-4000-8000-000000000001";
+const ACTIVATION_ORGANIZATION_ID = "ae000000-0000-4000-8000-000000000001";
+const ACTIVATION_MANAGER_ID = "ae100000-0000-4000-8000-000000000001";
+const ACTIVATION_RECOVERY_KEY = "ae200000-0000-4000-8000-000000000001";
 const EXPECTED_PACK_HASH = "48b7c4dfdb1340ddff14748a3c6d57df504f33fe822f25b6dde0d4ab48a6caf8";
 const EXPECTED_FRIDGE_PACK_HASH = "710c9412eabc8f2e9c5a6488499ac4654cd7c94b62138eaed9563ab5f0203c9c";
 const EXPECTED_PHASE10R_PACK_HASH = "b416001c2885bbf54bdb029b8e7164cbb903a76b8344396a4e9fcffa26107fe1";
@@ -44,7 +47,7 @@ const EXPECTED_FRIDGE_SOURCE_HASHES = [
   "2a57f578128b6a6b696bf4f93d721fd6c56837ae413c9599a2845885c6c7a834",
 ];
 const EXPECTED_ARGUMENT_NAMES = ["input_version_id", "input_publication_version_ids"];
-const EXPECTED_PORTABLE_SCHEMA_FINGERPRINT = "34d7797a5e8b992d422dbc39bb6dc91c83082d09f2fef749d9ca58a61be0da3d";
+const EXPECTED_PORTABLE_SCHEMA_FINGERPRINT = "6196f6f2657494badbb85cf9e0c0d2a07a9aea7a74d56e2b35726b7da0ab1f91";
 const EXPECTED_AUTHENTICATED_FUNCTION_COUNT = 220;
 const EXPECTED_AUTHENTICATED_FUNCTION_HASH = "35627e2aad45a00ef4103daebf1a93e400c679c01ff6f0096f136e0fd11991c9";
 const EXPECTED_AUTHENTICATED_RELATION_SELECT_COUNT = 65;
@@ -216,6 +219,7 @@ const migrations = [
   "supabase/phase10z_inventory_location_and_express_shelf_alignment.sql",
   "supabase/phase10aa_event_floor_manager_pilot_membership.sql",
   "supabase/phase10ab_mesh_routine_content_1_5r_activation_recovery.sql",
+  "supabase/phase10ac_routine_provider_vocabulary_alignment.sql",
 ];
 const phase10Sql = () => migrations.map((path) => readFileSync(absolute(path), "utf8")).join("\n");
 
@@ -307,7 +311,10 @@ function sourceChecks() {
   const audit = auditRepeatedFunctionArguments();
   console.log(`Static function audit: ${audit.definitions.length} definitions, ${audit.repeated.length} repeated identities, ${audit.drifts.length} drifts`);
   check("all repeated Phase 10 function identities have stable input argument names", audit.drifts.length === 0);
-  check("function argument audit covers the full Phase 10 definition set", audit.definitions.length === 573 && audit.repeated.length === 95);
+  check("function argument audit covers the full Phase 10 definition set including two narrow 10AC manager-RPC replacements",
+    audit.definitions.length === 575 && audit.repeated.length === 97
+      && audit.definitions.filter((definition) => definition.identity.startsWith("public.create_routine_standard(")).length === 2
+      && audit.definitions.filter((definition) => definition.identity.startsWith("public.create_routine_standard_revision(")).length === 2);
   check("validator has six layered public definitions", audit.target.length === 6);
   check("every validator definition uses the canonical input names", audit.target.every((entry) => JSON.stringify(entry.names) === JSON.stringify(EXPECTED_ARGUMENT_NAMES)));
   check("ACL hardening inventory contains the reproduced 17 signatures", REPRODUCED_ACL_SIGNATURES.length === 17);
@@ -321,24 +328,25 @@ function sourceChecks() {
     verifierSource.indexOf("function applySequence("),
     verifierSource.indexOf("function futureOrganizationChecks("),
   );
-  check("full Phase 10 manifest contains 30 ordered migrations through 10AB", migrations.length === 30
+  check("full Phase 10 manifest contains 31 ordered migrations through 10AC", migrations.length === 31
     && migrations[0].endsWith("phase10a_routine_engine_foundation.sql")
     && migrations[1].endsWith("phase10a1_routine_organization_settings_bootstrap.sql")
-    && migrations.at(-15).endsWith("phase10l_mesh_routine_content_pack.sql")
-    && migrations.at(-14).endsWith("phase10p_routine_readiness_finalization.sql")
-    && migrations.at(-13).endsWith("phase10q_mesh_routine_content_pack_1_2r.sql")
-    && migrations.at(-12).endsWith("phase10o_routine_default_privilege_hardening.sql")
-    && migrations.at(-11).endsWith("phase10r_mesh_routine_content_pack_1_3r.sql")
-    && migrations.at(-10).endsWith("phase10s_mesh_routine_content_pack_1_4r.sql")
-    && migrations.at(-9).endsWith("phase10t_routine_participant_identity_conflict_alignment.sql")
-    && migrations.at(-8).endsWith("phase10u_routine_operation_idempotency_convergence.sql")
-    && migrations.at(-7).endsWith("phase10v_routine_creation_idempotency_provenance_alignment.sql")
-    && migrations.at(-6).endsWith("phase10w_event_visual_reference_bridge.sql")
-    && migrations.at(-5).endsWith("phase10x_event_visual_library_expansion.sql")
-    && migrations.at(-4).endsWith("phase10y_mesh_routine_content_pack_1_5r.sql")
-    && migrations.at(-3).endsWith("phase10z_inventory_location_and_express_shelf_alignment.sql")
-    && migrations.at(-2).endsWith("phase10aa_event_floor_manager_pilot_membership.sql")
-    && migrations.at(-1).endsWith("phase10ab_mesh_routine_content_1_5r_activation_recovery.sql"));
+    && migrations.at(-16).endsWith("phase10l_mesh_routine_content_pack.sql")
+    && migrations.at(-15).endsWith("phase10p_routine_readiness_finalization.sql")
+    && migrations.at(-14).endsWith("phase10q_mesh_routine_content_pack_1_2r.sql")
+    && migrations.at(-13).endsWith("phase10o_routine_default_privilege_hardening.sql")
+    && migrations.at(-12).endsWith("phase10r_mesh_routine_content_pack_1_3r.sql")
+    && migrations.at(-11).endsWith("phase10s_mesh_routine_content_pack_1_4r.sql")
+    && migrations.at(-10).endsWith("phase10t_routine_participant_identity_conflict_alignment.sql")
+    && migrations.at(-9).endsWith("phase10u_routine_operation_idempotency_convergence.sql")
+    && migrations.at(-8).endsWith("phase10v_routine_creation_idempotency_provenance_alignment.sql")
+    && migrations.at(-7).endsWith("phase10w_event_visual_reference_bridge.sql")
+    && migrations.at(-6).endsWith("phase10x_event_visual_library_expansion.sql")
+    && migrations.at(-5).endsWith("phase10y_mesh_routine_content_pack_1_5r.sql")
+    && migrations.at(-4).endsWith("phase10z_inventory_location_and_express_shelf_alignment.sql")
+    && migrations.at(-3).endsWith("phase10aa_event_floor_manager_pilot_membership.sql")
+    && migrations.at(-2).endsWith("phase10ab_mesh_routine_content_1_5r_activation_recovery.sql")
+    && migrations.at(-1).endsWith("phase10ac_routine_provider_vocabulary_alignment.sql"));
   check("10A1 is a system bootstrap with no manager RPC installation step",
     !/create_or_update_routine_organization_settings|auth\.uid\s*\(|\bgrant\b|\bcreate\s+(?:or\s+replace\s+)?function\b/i.test(bootstrapSql));
   check("full-reapply migration sequence contains no out-of-band settings manager bootstrap",
@@ -1022,6 +1030,11 @@ function managerSql(statement) {
 function actorSql(actorId, statement) {
   return `select set_config('request.jwt.claim.sub','${actorId}',false); set role authenticated; ${statement}`;
 }
+function actorJson(actorId, expression) {
+  const lines = psql(actorSql(actorId, `select (${expression})::text;`), { tuplesOnly: true })
+    .stdout.trim().split("\n").filter(Boolean);
+  return JSON.parse(lines.at(-1));
+}
 
 function validationProbe() {
   const sql = String.raw`
@@ -1454,7 +1467,7 @@ function phase10abAuthorizationChecks() {
 }
 
 function applySequence(sequenceNumber) {
-  console.log(`Applying full Phase 10A-A1-L-P-Q-O-R-S-T-U-V-W-X-Y-Z-AA-AB sequence ${sequenceNumber} as ${ROLE}`);
+  console.log(`Applying full Phase 10A-A1-L-P-Q-O-R-S-T-U-V-W-X-Y-Z-AA-AB-AC sequence ${sequenceNumber} as ${ROLE}`);
   let stateAfterK4 = null;
   for (let index = 0; index < migrations.length; index += 1) {
     const path = migrations[index];
@@ -1729,6 +1742,29 @@ function applySequence(sequenceNumber) {
           `) === "t");
       if (sequenceNumber === 1) phase10abAuthorizationChecks();
     }
+    if (path.endsWith("phase10ac_routine_provider_vocabulary_alignment.sql")) {
+      check(`sequence ${sequenceNumber}: 10AC installs both exact validated provider vocabularies`, scalar(String.raw`
+        select
+          (select pg_get_constraintdef(oid,true) = 'CHECK (location_type = ANY (ARRAY[''zone''::text, ''room''::text, ''station''::text, ''storage''::text, ''storage_zone''::text, ''shelf''::text, ''fridge''::text, ''toilet''::text, ''door''::text, ''equipment''::text, ''collection_point''::text, ''other''::text]))'
+             and convalidated
+           from pg_constraint where conrelid='public.routine_locations'::regclass
+             and conname='routine_locations_type_check')
+          and
+          (select pg_get_constraintdef(oid,true) = 'CHECK (source_kind = ANY (ARRAY[''manual''::text, ''inventory_readonly''::text, ''asset_registry_readonly''::text, ''location_set''::text, ''location_standards''::text]))'
+             and convalidated
+           from pg_constraint where conrelid='public.routine_standards'::regclass
+             and conname='routine_standards_source_kind_check');
+      `) === "t");
+      check(`sequence ${sequenceNumber}: 10AC migration itself changes no content settings memberships inventory or operative rows`,
+        JSON.stringify(settingsState()) === JSON.stringify(stateAfterK4)
+          && scalar(String.raw`
+            select (select count(*) from public.routine_pilot_memberships)=0
+              and (select count(*) from public.routine_content_pack_installations)=0
+              and (select count(*) from public.routine_templates)=0
+              and (select count(*) from public.routine_runs)=0
+              and (select count(*) from public.routine_bundles)=0;
+          `) === "t");
+    }
     if (path.endsWith("phase10o_routine_default_privilege_hardening.sql")) {
       check(`sequence ${sequenceNumber}: 10O changes only pg_default_acl`,
         existingObjectSnapshot() === before10O);
@@ -1824,7 +1860,16 @@ function futureOrganizationChecks() {
       && /personal authenticated manager|Personal manager access is required|Manager access is required|operator_auth_failed/i.test(managerRead.stderr));
   }
   check("future-organization checks create no content or operative Routine data",
-    scalar("select (select count(*) from public.routine_content_pack_installations)=0 and (select count(*) from public.routine_templates)=0 and (select count(*) from public.routine_runs)=0 and (select count(*) from public.routine_bundles)=0 and (select count(*) from public.routine_delivery_records)=0 and (select count(*) from public.routine_operators)=0 and (select count(*) from public.routine_operator_sessions)=0;") === "t");
+    scalar(String.raw`
+      select
+        (select count(*) from public.routine_content_pack_installations where organization_id='${FUTURE_ORGANIZATION_ID}')=0
+        and (select count(*) from public.routine_templates where organization_id='${FUTURE_ORGANIZATION_ID}')=0
+        and (select count(*) from public.routine_runs where organization_id='${FUTURE_ORGANIZATION_ID}')=0
+        and (select count(*) from public.routine_bundles where organization_id='${FUTURE_ORGANIZATION_ID}')=0
+        and (select count(*) from public.routine_delivery_records where organization_id='${FUTURE_ORGANIZATION_ID}')=0
+        and (select count(*) from public.routine_operators where organization_id='${FUTURE_ORGANIZATION_ID}')=0
+        and (select count(*) from public.routine_operator_sessions where organization_id='${FUTURE_ORGANIZATION_ID}')=0;
+    `) === "t");
 }
 
 function namedArgumentChecks() {
@@ -1887,6 +1932,408 @@ function namedArgumentChecks() {
       : /operator_auth_failed|Manager template permission is required/i;
     check(`${label} receives no manager validation access`, denied.status !== 0 && expectedDenial.test(denied.stderr));
   }
+}
+
+function productionShapedActivationRecoveryChecks() {
+  const historicalProvider = readFileSync(absolute("supabase/phase10s_mesh_routine_content_pack_1_4r.sql"), "utf8");
+  const targetProvider = readFileSync(absolute("supabase/phase10y_mesh_routine_content_pack_1_5r.sql"), "utf8");
+  const targetPack = JSON.parse(readFileSync(
+    absolute("content/routine-engine/mesh-routine-content-v1-5r.json"), "utf8",
+  ));
+  const productionResourceIds = JSON.parse(readFileSync(
+    absolute("scripts/fixtures/phase10ab-production-resource-ids.json"), "utf8",
+  ));
+  const productionTaskMetadata = JSON.parse(readFileSync(
+    absolute("scripts/fixtures/phase10ab-production-task-metadata.json"), "utf8",
+  ));
+  const productionTaskMetadataSql = JSON.stringify(productionTaskMetadata).replaceAll("'", "''");
+  const expectedOpeningDraft = "73896e75-1509-4215-ac4a-a36b033e6d18";
+  const expectedClosingDraft = "072fee93-eda7-406c-87b3-d5186cd26944";
+  const expectedOpeningTemplate = "20377d92-bf85-4fb6-a4c9-5db847fd5f57";
+  const expectedClosingTemplate = "ede9b1ca-44b6-489e-97ea-3abab57ab6a1";
+  const expectedInstallation = "c5e43e3a-f9af-4565-98ab-7465d76593c3";
+  const expectedOpeningHash = "a3d2038b7bc0d3b3e75baee5ce63a1c0ffeea8c4b13331c88ea474e10a4f2e4a";
+  const expectedClosingHash = "04124b4ab3ddc94e384012e85201cf271efd335187e75f3dd1475fb81aa50d98";
+  check("production-shaped task metadata fixture contains only the 15 incremental-history exceptions",
+    Object.keys(productionTaskMetadata).sort().join(",")
+      === "C03,C06,C14,C15,C17,C27,O02,O15,O22,O23,O28,O29,O34,O35,O37"
+      && Object.entries(productionTaskMetadata).every(([taskKey, metadata]) =>
+        metadata?.authoritativeSourceId === taskKey
+          && metadata?.packHash === "c149a8416a867dcb7d87224f3ae8e2a214e5ca4954613b118521ebe5ae3aff2a"));
+
+  psql(String.raw`
+    insert into auth.users(id) values('${ACTIVATION_MANAGER_ID}');
+    insert into public.organizations(id,name,slug)
+    values('${ACTIVATION_ORGANIZATION_ID}','Phase 10AB production-shape rehearsal','phase10ab-production-shape-rehearsal');
+    insert into public.user_profiles(id,organization_id,display_name,role,active,is_shared_device)
+    values('${ACTIVATION_MANAGER_ID}','${ACTIVATION_ORGANIZATION_ID}','Bobby rehearsal manager','manager',true,false);
+    insert into public.routine_organization_settings(
+      organization_id,mode,timezone,operational_day_cutoff,shared_device_enabled,reopen_window_hours,
+      ui_release_stage,ui_contract_version,revision,created_by_auth_user_id,updated_by_auth_user_id
+    ) values(
+      '${ACTIVATION_ORGANIZATION_ID}','legacy','Europe/Oslo','04:00',false,24,
+      'staff_preview','phase10k4-v1',1,'${ACTIVATION_MANAGER_ID}','${ACTIVATION_MANAGER_ID}'
+    );
+  `, { transaction: true });
+
+  // Build the historical reviewed drafts through the real canonical 1.4R
+  // provider and the real installer, then restore the terminal 1.5R provider.
+  psql(historicalProvider);
+  const historicalAnalysis = actorJson(
+    ACTIVATION_MANAGER_ID,
+    "public.preview_mesh_routine_content_pack_v1()",
+  );
+  check("production-shaped 10AB fixture starts with a valid real 1.4R installer preview",
+    historicalAnalysis.valid === true
+      && historicalAnalysis.packMetadata?.packVersion === "1.4R"
+      && historicalAnalysis.conflicts?.length === 0);
+  const historicalInstall = actorJson(
+    ACTIVATION_MANAGER_ID,
+    `public.install_mesh_routine_content_pack_v1('${historicalAnalysis.organizationStateHash}',`+
+      `'Disposable production-shape historical draft installation.','ae300000-0000-4000-8000-000000000001')`,
+  );
+  check("production-shaped fixture uses the real installer for the canonical 1.4R drafts",
+    historicalInstall.installStatus === "installed"
+      && historicalInstall.packHash === EXPECTED_PACK_HASH
+      && historicalInstall.published === false
+      && historicalInstall.runsCreated === false);
+
+  const ids = {
+    installation: scalar(`select id from public.routine_content_pack_installations where organization_id='${ACTIVATION_ORGANIZATION_ID}' and pack_version='1.4R';`),
+    openingTemplate: scalar(`select id from public.routine_templates where organization_id='${ACTIVATION_ORGANIZATION_ID}' and routine_key='opening';`),
+    closingTemplate: scalar(`select id from public.routine_templates where organization_id='${ACTIVATION_ORGANIZATION_ID}' and routine_key='closing';`),
+    openingDraft: scalar(`select version.id from public.routine_template_versions version join public.routine_templates template on template.id=version.template_id where version.organization_id='${ACTIVATION_ORGANIZATION_ID}' and template.routine_key='opening' and version.state='draft';`),
+    closingDraft: scalar(`select version.id from public.routine_template_versions version join public.routine_templates template on template.id=version.template_id where version.organization_id='${ACTIVATION_ORGANIZATION_ID}' and template.routine_key='closing' and version.state='draft';`),
+    location: scalar(`select id from public.routine_locations where organization_id='${ACTIVATION_ORGANIZATION_ID}' and location_key='workbar-non-alcoholic-fridge';`),
+    locationSet: scalar(`select id from public.routine_location_sets where organization_id='${ACTIVATION_ORGANIZATION_ID}' and set_key='serviceware-recovery-route';`),
+  };
+  const standardTargets = [
+    ["workbar-milk-fridge-target", "de6530b6-b5f3-44d5-b7e7-f1bfea37430d", "2ffe2d30-f444-4449-bc64-0ce85728c92c"],
+    ["workbar-coffee-canister-assigned-target", "badc7c4d-8162-4d48-a4be-31e9ef65d36f", "17d4f2d1-7660-4c1c-9997-465a9e07ef30"],
+    ["serviceware-office-recovery-route-confirmation", "34f83f63-279c-4294-b381-1417ce446692", "efda6906-6689-4d87-9b54-f6866d589745"],
+    ["fridge-closing-rules", "722ab761-19f0-4a36-ac2b-09c0f844c4f4", "d74b6594-866e-4986-8548-2c07c75b76dc"],
+    ["cornerbar-operating-standard", "693d07e5-dcd2-4c70-bbc5-54d13b6e83ed", "54cd9dfe-828b-4f72-95c0-3173cd9e38e2"],
+  ];
+  const remaps = [
+    [ids.installation, expectedInstallation],
+    [ids.openingTemplate, expectedOpeningTemplate],
+    [ids.closingTemplate, expectedClosingTemplate],
+    [ids.openingDraft, expectedOpeningDraft],
+    [ids.closingDraft, expectedClosingDraft],
+  ];
+  for (const [fixtureKey, table, keyColumn] of [
+    ["locations", "routine_locations", "location_key"],
+    ["locationSets", "routine_location_sets", "set_key"],
+    ["standards", "routine_standards", "standard_key"],
+    ["references", "routine_reference_images", "reference_key"],
+  ]) {
+    for (const [stableKey, targetId] of Object.entries(productionResourceIds[fixtureKey])) {
+      const oldId = scalar(`select id from public.${table} where organization_id='${ACTIVATION_ORGANIZATION_ID}' and ${keyColumn}='${stableKey}';`);
+      remaps.push([oldId, targetId]);
+    }
+  }
+  for (const [standardKey, standardId, revisionId] of standardTargets) {
+    const oldStandardId = scalar(`select id from public.routine_standards where organization_id='${ACTIVATION_ORGANIZATION_ID}' and standard_key='${standardKey}';`);
+    const oldRevisionId = scalar(`select current_revision_id from public.routine_standards where id='${oldStandardId}';`);
+    check(`production-shaped fixture pins the reviewed ${standardKey} identity`,
+      productionResourceIds.standards[standardKey] === standardId);
+    remaps.push([oldRevisionId, revisionId]);
+  }
+  check("production-shaped fixture resolves every historical resource identity before remapping",
+    remaps.every(([from, to]) => /^[0-9a-f-]{36}$/.test(from) && /^[0-9a-f-]{36}$/.test(to)));
+
+  const remapCalls = remaps.map(([from, to]) => `perform pg_temp.phase10ab_remap_uuid('${from}','${to}');`).join("\n");
+  psql(String.raw`
+    set session_replication_role=replica;
+    create or replace function pg_temp.phase10ab_remap_uuid(input_old uuid,input_new uuid)
+    returns void language plpgsql as $remap$
+    declare target record;
+    begin
+      for target in
+        select namespace.nspname schema_name,relation.relname table_name,attribute.attname column_name
+        from pg_catalog.pg_attribute attribute
+        join pg_catalog.pg_class relation on relation.oid=attribute.attrelid and relation.relkind in('r','p')
+        join pg_catalog.pg_namespace namespace on namespace.oid=relation.relnamespace
+        where namespace.nspname='public' and attribute.atttypid='uuid'::regtype
+          and attribute.attnum>0 and not attribute.attisdropped and attribute.attgenerated=''
+        order by relation.oid,attribute.attnum
+      loop
+        execute format('update %I.%I set %I=$1 where %I=$2',
+          target.schema_name,target.table_name,target.column_name,target.column_name)
+          using input_new,input_old;
+      end loop;
+    end;
+    $remap$;
+    do $shape$ begin
+      ${remapCalls}
+    end $shape$;
+
+    update public.routine_content_pack_installations
+    set pack_version='1.1R',pack_hash='c149a8416a867dcb7d87224f3ae8e2a214e5ca4954613b118521ebe5ae3aff2a'
+    where id='${expectedInstallation}';
+    update public.routine_content_pack_operations
+    set pack_version='1.1R'
+    where organization_id='${ACTIVATION_ORGANIZATION_ID}' and pack_version='1.4R';
+    update public.routine_organization_settings
+    set mode='shadow',revision=4
+    where organization_id='${ACTIVATION_ORGANIZATION_ID}';
+    update public.routine_template_versions
+    set revision=case id when '${expectedOpeningDraft}' then 18 when '${expectedClosingDraft}' then 25 else revision end
+    where id in('${expectedOpeningDraft}','${expectedClosingDraft}');
+    update public.routine_template_tasks
+    set metadata=jsonb_set(metadata,'{packHash}',to_jsonb('c149a8416a867dcb7d87224f3ae8e2a214e5ca4954613b118521ebe5ae3aff2a'::text))
+    where organization_id='${ACTIVATION_ORGANIZATION_ID}';
+    with expected as (
+      select key task_key,value metadata
+      from jsonb_each('${productionTaskMetadataSql}'::jsonb)
+    )
+    update public.routine_template_tasks task
+    set metadata=expected.metadata
+    from expected
+    where task.organization_id='${ACTIVATION_ORGANIZATION_ID}'
+      and task.metadata->>'authoritativeSourceId'=expected.task_key;
+    update public.routine_locations
+    set name='Workbar Non-Alcoholic Fridge',location_type='fridge',parent_location_id=null,
+        sort_order=22,metadata='{}',active=true,revision=1
+    where id='5d279ff8-6e6c-4e2a-bde1-a27cd8763841';
+    update public.routine_location_sets set revision=2
+    where id='c49581b2-e52b-4873-96b9-3579a5b85d96';
+    update public.routine_location_set_members set metadata='{"managerIncomplete":true}'
+    where location_set_id='c49581b2-e52b-4873-96b9-3579a5b85d96';
+
+    update public.routine_standards set revision=2 where id in(
+      'de6530b6-b5f3-44d5-b7e7-f1bfea37430d','badc7c4d-8162-4d48-a4be-31e9ef65d36f',
+      '34f83f63-279c-4294-b381-1417ce446692','722ab761-19f0-4a36-ac2b-09c0f844c4f4',
+      '693d07e5-dcd2-4c70-bbc5-54d13b6e83ed');
+    update public.routine_standards set label='Workbar Milk Fridge target',description=null
+      where id='de6530b6-b5f3-44d5-b7e7-f1bfea37430d';
+    update public.routine_standards set label='Workbar-assigned Coffee Canister target',description=null
+      where id='badc7c4d-8162-4d48-a4be-31e9ef65d36f';
+    update public.routine_standards set description='Unresolved publication and readiness blocker.'
+      where id='34f83f63-279c-4294-b381-1417ce446692';
+    update public.routine_standard_revisions
+      set value_json='{"regularMilk":2,"oatly":2}',
+          reason='Approved Mesh operational standards amendment 2026-08-07.',
+          content_hash='c9ec8c4d490b279d812712dda7e26ed3'
+      where id='2ffe2d30-f444-4449-bc64-0ce85728c92c';
+    update public.routine_standard_revisions set content_hash='aae7cc7b83392283824d575e06c2e98e'
+      where id='17d4f2d1-7660-4c1c-9997-465a9e07ef30';
+    update public.routine_standard_revisions set content_hash='78cfae7e1361fc4a2b2cdc007b3b78d7'
+      where id='efda6906-6689-4d87-9b54-f6866d589745';
+    update public.routine_standard_revisions
+      set value_json='null'::jsonb,reason='Approved Mesh operational standards amendment 2026-08-07.',
+          content_hash='8870646d91877d166b32870a1680729d'
+      where id='d74b6594-866e-4986-8548-2c07c75b76dc';
+    update public.routine_standard_revisions
+      set value_json='null'::jsonb,reason='Approved Mesh operational standards amendment 2026-08-07.',
+          content_hash='a7c6498e222fe8acf02a361d7ac385ad'
+      where id='54cd9dfe-828b-4f72-95c0-3173cd9e38e2';
+    set session_replication_role=origin;
+  `, { transaction: true });
+
+  check("production-shaped fixture reproduces all 15 exact incremental task metadata objects",
+    scalar(String.raw`
+      with expected as (
+        select key task_key,value metadata
+        from jsonb_each('${productionTaskMetadataSql}'::jsonb)
+      )
+      select count(*) from public.routine_template_tasks task join expected
+        on task.metadata->>'authoritativeSourceId'=expected.task_key
+       and task.metadata=expected.metadata
+      where task.organization_id='${ACTIVATION_ORGANIZATION_ID}';
+    `) === "15");
+
+  const shapedDraftHashes = JSON.parse(scalar(String.raw`
+    select jsonb_object_agg(template.routine_key,jsonb_build_object(
+      'content',public.routine_template_version_content_hash(version.id),
+      'sections',encode(extensions.digest(convert_to((public.routine_template_version_canonical_json(version.id)->'sections')::text,'UTF8'),'sha256'),'hex'),
+      'tasks',encode(extensions.digest(convert_to((public.routine_template_version_canonical_json(version.id)->'tasks')::text,'UTF8'),'sha256'),'hex'),
+      'items',encode(extensions.digest(convert_to((public.routine_template_version_canonical_json(version.id)->'taskItems')::text,'UTF8'),'sha256'),'hex'),
+      'dependencies',encode(extensions.digest(convert_to((public.routine_template_version_canonical_json(version.id)->'dependencies')::text,'UTF8'),'sha256'),'hex'),
+      'relations',encode(extensions.digest(convert_to((public.routine_template_version_canonical_json(version.id)->'relations')::text,'UTF8'),'sha256'),'hex'),
+      'references',encode(extensions.digest(convert_to((public.routine_template_version_canonical_json(version.id)->'referenceImages')::text,'UTF8'),'sha256'),'hex')
+    ))::text
+    from public.routine_template_versions version join public.routine_templates template on template.id=version.template_id
+    where version.id in('${expectedOpeningDraft}','${expectedClosingDraft}');
+  `));
+  check("production-shaped historical drafts retain their exact reviewed semantic hashes after identity shaping",
+    shapedDraftHashes.opening.content === expectedOpeningHash
+      && shapedDraftHashes.closing.content === expectedClosingHash);
+  psql(targetProvider);
+  check("production-shaped fixture restores the exact terminal 1.5R provider before recovery",
+    scalar("select (public.routine_mesh_content_pack_v1()->>'packVersion')||':'||(public.routine_mesh_content_pack_v1()->>'packHash');")
+      === `1.5R:${EXPECTED_FRIDGE_PACK_HASH}`);
+
+  const preview = actorJson(ACTIVATION_MANAGER_ID, "public.preview_mesh_routine_content_1_5r_activation_recovery()");
+  if (!preview.valid) console.log(`PHASE10AB_REHEARSAL_PREVIEW|${OWNER_CONTEXT}|${JSON.stringify(preview)}`);
+  check("production-shaped Phase 10AB preview is green after Phase 10AC",
+    preview.valid === true
+      && preview.operationAlreadyComplete === false
+      && preview.resourceDifferences?.length === 7
+      && preview.resourceDifferences.every((entry) => entry.status === "baseline")
+      && Object.values(preview.counts ?? {}).every((count) => count === 0));
+  check("production-shaped preview pins exact preserved drafts, provider, settings, and zero operative state",
+    preview.provider?.packHash === EXPECTED_FRIDGE_PACK_HASH
+      && preview.settings?.mode === "shadow"
+      && preview.settings?.stage === "staff_preview"
+      && preview.settings?.revision === 4
+      && preview.settings?.sharedDeviceEnabled === false
+      && preview.preservedDraftEvidence?.opening?.draftId === expectedOpeningDraft
+      && preview.preservedDraftEvidence?.opening?.contentHash === expectedOpeningHash
+      && preview.preservedDraftEvidence?.closing?.draftId === expectedClosingDraft
+      && preview.preservedDraftEvidence?.closing?.contentHash === expectedClosingHash);
+
+  const note = "Phase 10AC disposable exact production-shaped activation recovery rehearsal.";
+  const beforeInjectedFailure = existingObjectSnapshot();
+  psql(String.raw`
+    create or replace function public.phase10ac_injected_post_install_failure()
+    returns trigger language plpgsql set search_path=pg_catalog as $failure$
+    begin
+      if new.organization_id='${ACTIVATION_ORGANIZATION_ID}' and new.pack_version='1.5R' then
+        raise exception 'Injected Phase 10AC post-install rollback probe.';
+      end if;
+      return new;
+    end;
+    $failure$;
+    create trigger phase10ac_injected_post_install_failure
+    after insert on public.routine_content_pack_installations
+    for each row execute function public.phase10ac_injected_post_install_failure();
+  `, { transaction: true });
+  const injectedApply = psql(actorSql(ACTIVATION_MANAGER_ID,
+    `select public.apply_mesh_routine_content_1_5r_activation_recovery(`+
+      `'${preview.stateHash}','${note} rollback probe','ae200000-0000-4000-8000-000000000002');`),
+  { allowFailure: true });
+  psql(String.raw`
+    drop trigger phase10ac_injected_post_install_failure on public.routine_content_pack_installations;
+    drop function public.phase10ac_injected_post_install_failure();
+  `, { transaction: true });
+  check("injected post-install failure aborts the real Phase 10AB apply",
+    injectedApply.status !== 0 && /Injected Phase 10AC post-install rollback probe/i.test(injectedApply.stderr));
+  check("injected post-install failure rolls back resource alignment, draft replacement, installation, and operation atomically",
+    existingObjectSnapshot() === beforeInjectedFailure);
+
+  const applyExpression = `public.apply_mesh_routine_content_1_5r_activation_recovery(`+
+    `'${preview.stateHash}','${note}','${ACTIVATION_RECOVERY_KEY}')`;
+  const applied = actorJson(ACTIVATION_MANAGER_ID, applyExpression);
+  check("real Phase 10AB apply succeeds after Phase 10AC with authoritative completion readback",
+    applied.valid === true
+      && applied.operationAlreadyComplete === true
+      && applied.idempotentReplay === false
+      && applied.installResult?.packHash === EXPECTED_FRIDGE_PACK_HASH
+      && applied.installResult?.published === false
+      && applied.installResult?.runsCreated === false);
+  check("real recovery aligns seven resources and creates all four exact Main Storage location types",
+    applied.resourceDifferences?.length === 7
+      && applied.resourceDifferences.every((entry) => entry.status === "target")
+      && scalar(String.raw`
+        select count(*)=4
+          and count(*) filter(where location_key='main-storage-fridge' and location_type='storage')=1
+          and count(*) filter(where location_key='main-storage-left-reserve' and location_type='storage_zone')=1
+          and count(*) filter(where location_key='main-storage-express-shelf' and location_type='shelf')=1
+          and count(*) filter(where location_key='main-storage-keg-storage' and location_type='storage_zone')=1
+        from public.routine_locations where organization_id='${ACTIVATION_ORGANIZATION_ID}'
+          and location_key like 'main-storage-%';
+      `) === "t");
+  const foundationWorkspace = actorJson(
+    ACTIVATION_MANAGER_ID,
+    "public.get_routine_foundation_editor_workspace()",
+  );
+  const locationStandard = foundationWorkspace.standards.find(
+    (standard) => standard.stableKey === "main-storage-express-shelf-refill",
+  );
+  const providerLocationStandard = targetPack.standards.find(
+    (standard) => standard.key === "main-storage-express-shelf-refill",
+  );
+  check("real installer creates the exact provider location_standards standard with system/read-only manager readback",
+    locationStandard?.sourceKind === "location_standards"
+      && locationStandard?.externalReadonly === true
+      && locationStandard?.currentRevisionId
+      && canonicalJson(locationStandard.revisions?.[0]?.value) === canonicalJson(providerLocationStandard?.currentRevision?.value));
+
+  const openingWorkspace = actorJson(
+    ACTIVATION_MANAGER_ID,
+    `public.get_routine_template_editor_workspace('${expectedOpeningTemplate}')`,
+  );
+  const closingWorkspace = actorJson(
+    ACTIVATION_MANAGER_ID,
+    `public.get_routine_template_editor_workspace('${expectedClosingTemplate}')`,
+  );
+  const workspaceDependencies = [...openingWorkspace.dependencies, ...closingWorkspace.dependencies];
+  const taskKeysById = new Map([...openingWorkspace.tasks, ...closingWorkspace.tasks]
+    .map((taskRow) => [taskRow.id, taskRow.metadata?.authoritativeSourceId]));
+  const automaticDependencyPairs = workspaceDependencies
+    .filter((dependency) => dependency.dependency_type === "complete_predecessor_on_successor")
+    .map((dependency) => `${taskKeysById.get(dependency.predecessor_task_id)}>${taskKeysById.get(dependency.successor_task_id)}`)
+    .sort();
+  check("real installer persists the exact 38/3 dependency distribution and manager workspace values",
+    workspaceDependencies.filter((dependency) => dependency.dependency_type === "must_complete").length === 38
+      && workspaceDependencies.filter((dependency) => dependency.dependency_type === "complete_predecessor_on_successor").length === 3
+      && workspaceDependencies.length === 41
+      && JSON.stringify(automaticDependencyPairs) === JSON.stringify(["C05>C15", "O27>O29", "O33>O35"]));
+  const publicationValidation = actorJson(
+    ACTIVATION_MANAGER_ID,
+    `public.validate_routine_template_version(`+
+      `'${applied.newDrafts.opening.id}',array['${applied.newDrafts.opening.id}'::uuid,'${applied.newDrafts.closing.id}'::uuid])`,
+  );
+  check("all three provider dependencies pass authoritative publication validation without coercion",
+    publicationValidation.valid === true
+      && publicationValidation.blockers?.length === 0
+      && publicationValidation.computed_content_hash?.length === 64);
+  check("real recovery preserves immutable old drafts and installs exact fresh 1.5R draft counts",
+    applied.preservedDrafts?.opening?.id === expectedOpeningDraft
+      && applied.preservedDrafts?.opening?.contentHash === expectedOpeningHash
+      && applied.preservedDrafts?.closing?.id === expectedClosingDraft
+      && applied.preservedDrafts?.closing?.contentHash === expectedClosingHash
+      && applied.installResult?.installedResourceSummary?.openingSections === 3
+      && applied.installResult?.installedResourceSummary?.openingTasks === 37
+      && applied.installResult?.installedResourceSummary?.closingSections === 2
+      && applied.installResult?.installedResourceSummary?.closingTasks === 46
+      && applied.newDrafts?.opening?.id !== expectedOpeningDraft
+      && applied.newDrafts?.closing?.id !== expectedClosingDraft
+      && scalar(`select count(*)=2 and bool_and(state='discarded' and discarded_at is not null) from public.routine_template_versions where id in('${expectedOpeningDraft}','${expectedClosingDraft}');`) === "t");
+  check("discarded Opening and Closing preserve every exact historical child count",
+    scalar(String.raw`
+      select
+        jsonb_array_length(public.routine_template_version_canonical_json('${expectedOpeningDraft}')->'sections')=3
+        and jsonb_array_length(public.routine_template_version_canonical_json('${expectedOpeningDraft}')->'tasks')=37
+        and jsonb_array_length(public.routine_template_version_canonical_json('${expectedOpeningDraft}')->'taskItems')=239
+        and jsonb_array_length(public.routine_template_version_canonical_json('${expectedOpeningDraft}')->'dependencies')=9
+        and jsonb_array_length(public.routine_template_version_canonical_json('${expectedOpeningDraft}')->'relations')=12
+        and jsonb_array_length(public.routine_template_version_canonical_json('${expectedOpeningDraft}')->'referenceImages')=30
+        and jsonb_array_length(public.routine_template_version_canonical_json('${expectedClosingDraft}')->'sections')=2
+        and jsonb_array_length(public.routine_template_version_canonical_json('${expectedClosingDraft}')->'tasks')=46
+        and jsonb_array_length(public.routine_template_version_canonical_json('${expectedClosingDraft}')->'taskItems')=358
+        and jsonb_array_length(public.routine_template_version_canonical_json('${expectedClosingDraft}')->'dependencies')=32
+        and jsonb_array_length(public.routine_template_version_canonical_json('${expectedClosingDraft}')->'relations')=6
+        and jsonb_array_length(public.routine_template_version_canonical_json('${expectedClosingDraft}')->'referenceImages')=58;
+    `) === "t");
+  check("real recovery creates exactly one 1.5R installation and no publication, membership, E2E, work, mode/stage, or Stock Count side effect",
+    scalar(String.raw`
+      select
+        (select count(*) from public.routine_content_pack_installations where organization_id='${ACTIVATION_ORGANIZATION_ID}' and pack_version='1.5R' and pack_hash='${EXPECTED_FRIDGE_PACK_HASH}')=1
+        and (select count(*) from public.routine_template_versions where organization_id='${ACTIVATION_ORGANIZATION_ID}' and state='published')=0
+        and (select count(*) from public.routine_pilot_memberships where organization_id='${ACTIVATION_ORGANIZATION_ID}')=0
+        and (select count(*) from public.routine_e2e_verification_attestations where organization_id='${ACTIVATION_ORGANIZATION_ID}')=0
+        and (select count(*) from public.routine_runs where organization_id='${ACTIVATION_ORGANIZATION_ID}')=0
+        and (select count(*) from public.routine_bundles where organization_id='${ACTIVATION_ORGANIZATION_ID}')=0
+        and (select count(*) from public.inventory_count_sessions where organization_id='${ACTIVATION_ORGANIZATION_ID}')=0
+        and (select mode='shadow' and ui_release_stage='staff_preview' and revision=4 and not shared_device_enabled from public.routine_organization_settings where organization_id='${ACTIVATION_ORGANIZATION_ID}');
+    `) === "t");
+
+  const replay = actorJson(ACTIVATION_MANAGER_ID, applyExpression);
+  check("Phase 10AB exact request replay is idempotent and returns the original operation",
+    replay.idempotentReplay === true && replay.operationId === applied.operationId
+      && scalar(`select count(*) from public.routine_ui_operations where organization_id='${ACTIVATION_ORGANIZATION_ID}' and operation_type='activate_mesh_content_1_5r_recovery';`) === "1");
+  const completedPreview = actorJson(ACTIVATION_MANAGER_ID, "public.preview_mesh_routine_content_1_5r_activation_recovery()");
+  check("completed recovery preview reports operationAlreadyComplete without another write",
+    completedPreview.valid === true && completedPreview.operationAlreadyComplete === true);
+  const changedRequest = psql(actorSql(ACTIVATION_MANAGER_ID,
+    `select public.apply_mesh_routine_content_1_5r_activation_recovery('${preview.stateHash}','${note} changed','${ACTIVATION_RECOVERY_KEY}');`),
+  { allowFailure: true });
+  check("Phase 10AB same-key/different-request replay is rejected without a second operation",
+    changedRequest.status !== 0
+      && /different (?:UI )?request/i.test(changedRequest.stderr)
+      && scalar(`select count(*) from public.routine_ui_operations where organization_id='${ACTIVATION_ORGANIZATION_ID}' and operation_type='activate_mesh_content_1_5r_recovery';`) === "1");
 }
 
 function productionShapedLocationAlignmentChecks() {
@@ -2082,7 +2529,7 @@ async function main() {
     assertEndState(`sequence ${sequence}`, state, protectedBaseline);
     console.log(`Sequence ${sequence} fingerprints: protected-schema=${state.protectedSchema} protected-data=${state.protectedData} protected-realtime=${state.protectedRealtime} routine-schema=${state.routineSchema} raw-acl=${state.rawAclFingerprint} effective-acl=${state.effectiveAclFingerprint}`);
   }
-  check("three complete 30-migration sequences apply exactly 90 migrations", migrationApplications === 90);
+  check("three complete 31-migration sequences apply exactly 93 migrations", migrationApplications === 93);
 
   const aclDrift = [...new Set([
     ...Object.keys(states[0].routineFunctions),
@@ -2125,6 +2572,7 @@ async function main() {
   check("third complete sequence is fully schema/data/state stable", JSON.stringify(states[2]) === JSON.stringify(states[0]));
   check("published/content/run/timing/delivery/bundle hashes are stable", JSON.stringify(states[0].operational.hashes) === JSON.stringify(states[2].operational.hashes));
   check("validation blockers, warnings, and content hash are stable", JSON.stringify(states[0].validationProbe) === JSON.stringify(states[2].validationProbe));
+  productionShapedActivationRecoveryChecks();
   productionShapedLocationAlignmentChecks();
   futureOrganizationChecks();
   namedArgumentChecks();
@@ -2144,7 +2592,7 @@ async function main() {
   console.log(`DEFAULT_ACL_ATTESTATION|${OWNER_CONTEXT}|PASS|current_user=${states[0].environment.execution.currentUser}`);
   console.log(`OWNER_PLATFORM_REPORT|${OWNER_CONTEXT}|${canonicalJson(states[0].environment)}`);
   console.log(`PORTABLE_RESULT|${OWNER_CONTEXT}|${states[0].portableSchema}`);
-  console.log(`PASS ${passCount} full Phase 10 migration reapply checks (${OWNER_CONTEXT}, 90/90)`);
+  console.log(`PASS ${passCount} full Phase 10 migration reapply checks (${OWNER_CONTEXT}, 93/93)`);
   return states[0].portableSchema;
 }
 
@@ -2170,5 +2618,5 @@ if (!process.exitCode && OWNER_CONTEXT === "rehearsal" && process.env.PHASE10O_C
   check("rehearsal and production-shaped owner contexts have the identical portable fingerprint",
     portableResult === EXPECTED_PORTABLE_SCHEMA_FINGERPRINT
       && productionMatch?.[1] === EXPECTED_PORTABLE_SCHEMA_FINGERPRINT);
-  console.log("PASS owner-context matrix: rehearsal 90/90 + production-shaped 90/90");
+  console.log("PASS owner-context matrix: rehearsal 93/93 + production-shaped 93/93");
 }

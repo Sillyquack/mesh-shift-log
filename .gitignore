@@ -6,3 +6,4 @@ dist
 .env.local
 docs/production/artifacts/inventory-location-browser/
 docs/production/artifacts/activation-browser/
+docs/production/artifacts/routine-provider-vocabulary-browser/

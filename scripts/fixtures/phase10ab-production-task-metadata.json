@@ -1,0 +1,362 @@
+{
+  "C03": {
+    "packHash": "c149a8416a867dcb7d87224f3ae8e2a214e5ca4954613b118521ebe5ae3aff2a",
+    "stableKey": "closing.c03.first-serviceware-recovery-sweep",
+    "sourceHash": "0a6f1cb0386ec970cdd078acd0ffa97f9f4554a17d03a27329543ea7903c7bcb",
+    "sourceType": "measurement",
+    "deviationRules": [
+      "A floor or kitchen is inaccessible: do not wait or bypass access control; notify the manager, record the specific area and continue the remainder.",
+      "The shared route or Workbar default restoration is incomplete.",
+      "Clean and dirty serviceware is mixed.",
+      "Serviceware is missing or damaged.",
+      "An item remains unlocated without owner/follow-up.",
+      "The normal approximately 13:30 target is missed; record the actual completion/deviation without skipping the route."
+    ],
+    "timingSourceText": "Perform after lunch service and staff lunch; the normal daily-recovery target is approximately 13:30. C27 later verifies the evidence and final state without forcing a second route.",
+    "referenceGuidance": [
+      "Shared route source: `serviceware-office-recovery-route-confirmation`; no image or route diagram is mandatory.",
+      "Use `ordinary-coffee-cup-layout`, `cappuccino-cup-shelf-layout`, `cappuccino-and-espresso-machine-top-layout` and `wine-glass-layout` when recovered items are returned."
+    ],
+    "authoritativeSourceId": "C03",
+    "structuredItemsSource": "- `recovery_locations_checked` — recovery locations checked\n- `coffee_cups_recovered` — coffee cups recovered\n- `wine_glasses_recovered` — wine glasses recovered\n- `plates_and_cutlery_recovered` — plates and cutlery recovered\n- `items_in_washing` — items in washing\n- `items_in_known_use` — items in known use\n- `items_unlocated` — items unlocated\n- `areas_requiring_later_return` — areas requiring later return",
+    "operationalStandardsAmendment": {
+      "date": "2026-08-07",
+      "decisionHash": "8ebedb39be888dfa118a429fa2046ba2b7b5dc49c868d9d5b811f2aa89b45351"
+    }
+  },
+  "C06": {
+    "packHash": "c149a8416a867dcb7d87224f3ae8e2a214e5ca4954613b118521ebe5ae3aff2a",
+    "stableKey": "closing.c06.rinse-empty-canisters-preserve-service",
+    "sourceHash": "06e5aa61b000b13ffa4ac0666d548096ec69fd74af9fb7aa2c51a6365a1a6ae2",
+    "sourceType": "measurement",
+    "deviationRules": [
+      "Coffee Canisters or parts missing/damaged.",
+      "Cleaning equipment unavailable.",
+      "Remaining service capacity cannot be preserved.",
+      "Canister location/state is unknown."
+    ],
+    "timingSourceText": "Throughout pre-close as canisters become empty; final accounting is C17.",
+    "referenceGuidance": [
+      "`coffee-canister-rinsed-storage`."
+    ],
+    "authoritativeSourceId": "C06",
+    "structuredItemsSource": "- `empty_canisters_recovered`\n- `empty_canisters_rinsed`\n- `canisters_still_in_service`\n- `canisters_in_washing`\n- `canisters_clean_and_ready`\n- `service_capacity_preserved`\n- `missing_or_damaged_parts`"
+  },
+  "C14": {
+    "packHash": "c149a8416a867dcb7d87224f3ae8e2a214e5ca4954613b118521ebe5ae3aff2a",
+    "stableKey": "closing.c14.pre-close-readiness-checkpoint-1745",
+    "sourceHash": "03e1adae0a332ed970d1443e0e3ca4b238121d200e48f40307797f52b158b7ed",
+    "sourceType": "checkpoint",
+    "deviationRules": [
+      "Any critical pre-close scope is unprepared.",
+      "Responsibility or final service timing is unclear.",
+      "Stock/serviceware/equipment blocker has no owner.",
+      "Checkpoint is assumed from earlier tasks instead of physically checked."
+    ],
+    "timingSourceText": "Visible 17:35; target 17:45; overdue 17:55. Server time is authoritative.",
+    "referenceGuidance": [
+      "Use task-specific references rather than a new generic image."
+    ],
+    "authoritativeSourceId": "C14",
+    "structuredItemsSource": "- `remaining_bookings_events_current`\n- `closing_responsibilities_confirmed`\n- `first_serviceware_sweep_complete`\n- `project_room_reset_plan_current`\n- `workbar_atrium_tables_maintained`\n- `coffee_canister_service_capacity_preserved`\n- `self_service_pre_restocked`\n- `workbar_nonalcoholic_fridge_pre_restocked`\n- `milk_fridge_pre_restocked`\n- `active_bar_fridges_pre_restocked`\n- `opened_wine_first_check_complete`\n- `too_good_to_go_svinn_prepared_without_early_close`\n- `cleaning_station_ready_for_final_close`\n- `no_hidden_preclose_blocker`",
+    "runtimeContractAlignment": {
+      "date": "2026-08-09",
+      "decisionHash": "56cc1ac9b6fc1cdc89586f8539e185dfef6e6a5d54d483bbdffcbb1d7ff4c2af",
+      "operationalTaskType": "checkpoint",
+      "originalSourceClassification": "checkpoint"
+    }
+  },
+  "C15": {
+    "packHash": "c149a8416a867dcb7d87224f3ae8e2a214e5ca4954613b118521ebe5ae3aff2a",
+    "stableKey": "closing.c15.confirm-final-service-end-by-zone",
+    "sourceHash": "6b491d3d38b4e93205549ee6259e92a555add2a6b28a644f0bd6bd6dacde0094",
+    "sourceType": "checkpoint",
+    "deviationRules": [
+      "Guests/orders remain without responsible service owner.",
+      "Event close time/authority unclear.",
+      "Transfer cannot be accepted.",
+      "Zone is being closed early."
+    ],
+    "timingSourceText": "At the actual final service end for each zone; no zone may be closed early for convenience.",
+    "referenceGuidance": [
+      "No image is required."
+    ],
+    "authoritativeSourceId": "C15",
+    "structuredItemsSource": "- `workbar_final_service_state`\n- `atrium_final_service_state`\n- `cornerbar_final_service_state`\n- `other_active_zone_state`\n- `event_transfer_target_and_due_time`\n- `remaining_guest_or_order_check`",
+    "runtimeContractAlignment": {
+      "date": "2026-08-09",
+      "decisionHash": "56cc1ac9b6fc1cdc89586f8539e185dfef6e6a5d54d483bbdffcbb1d7ff4c2af",
+      "operationalTaskType": "gate",
+      "originalSourceClassification": "checkpoint"
+    }
+  },
+  "C17": {
+    "packHash": "c149a8416a867dcb7d87224f3ae8e2a214e5ca4954613b118521ebe5ae3aff2a",
+    "stableKey": "closing.c17.recover-clean-account-all-coffee-canisters",
+    "sourceHash": "42738792a149e91aa6e19828986669bf9e06d64ae6814507e90f71f7e94ef335",
+    "sourceType": "measurement",
+    "deviationRules": [
+      "Any of the four Workbar-assigned Coffee Canisters or required parts is missing or damaged.",
+      "Old coffee cannot be removed or cleaning cannot be completed.",
+      "Approved storage condition cannot be met.",
+      "Event transfer is incomplete or unsupported.",
+      "Do not include other hospitality Coffee Canisters to satisfy the four-item scope."
+    ],
+    "timingSourceText": "After final coffee service, or through a completed Event-transfer for canisters still in event use.",
+    "referenceGuidance": [
+      "`coffee-canister-rinsed-storage` — fixed Workbar bar cupboard and approved stored state."
+    ],
+    "authoritativeSourceId": "C17",
+    "structuredItemsSource": "- `workbar_assigned_canisters` — exactly four Coffee Canisters assigned to Workbar\n- `physically_located_count` — physically located Workbar-assigned Coffee Canisters\n- `old_coffee_removed` — old coffee emptied from all four\n- `clean_and_complete` — all four cleaned and complete with required parts\n- `dry_or_approved_storage` — all four dry or stored under the approved procedure\n- `returned_to_workbar_cupboard` — all four returned to the fixed Workbar bar Coffee Canisters cupboard\n- `missing_workbar_canisters` — missing Workbar-assigned Coffee Canisters; must be zero\n- `event_transfer_evidence` — completed transfer evidence when one of the four remains in authorized event use",
+    "operationalStandardsAmendment": {
+      "date": "2026-08-07",
+      "decisionHash": "8ebedb39be888dfa118a429fa2046ba2b7b5dc49c868d9d5b811f2aa89b45351"
+    }
+  },
+  "C27": {
+    "packHash": "c149a8416a867dcb7d87224f3ae8e2a214e5ca4954613b118521ebe5ae3aff2a",
+    "stableKey": "closing.c27.final-serviceware-accountability",
+    "sourceHash": "6576306fbbe542d87d558f8267849cd3d343fd5ff8b9a36d7e44f352616e3e71",
+    "sourceType": "measurement",
+    "deviationRules": [
+      "C03 route evidence is absent, stale, incomplete or does not match the shared standard.",
+      "The full configured Workbar default is not physically restored.",
+      "Any layout position is empty or contains the wrong type.",
+      "Any item remains in washing or unlocated.",
+      "Required serviceware cannot be washed and returned.",
+      "Event transfer/evidence is incomplete."
+    ],
+    "timingSourceText": "After final ordinary serviceware use; event-used items require completed transfer evidence.",
+    "referenceGuidance": [
+      "Shared route source and C03 evidence: `serviceware-office-recovery-route-confirmation`; do not walk a duplicate route solely for C27.",
+      "`ordinary-coffee-cup-layout`.",
+      "`cappuccino-cup-shelf-layout`.",
+      "`cappuccino-and-espresso-machine-top-layout`.",
+      "`wine-glass-layout`."
+    ],
+    "authoritativeSourceId": "C27",
+    "structuredItemsSource": "- `coffee_cups_full_layout` — final coffee-cup visual layout physically complete\n- `ordinary_cups_four_high_handles_right` — ordinary cups four high with handles right\n- `cappuccino_shelf_and_machine_top_filled` — cappuccino shelf and machine-top positions filled\n- `espresso_machine_top_filled` — espresso machine-top positions filled\n- `coffee_cups_in_washing` — coffee cups still in washing; must be zero for ordinary final Closing\n- `coffee_cups_transferred_with_evidence` — coffee-cup event scope transferred with completed evidence\n- `coffee_cups_unlocated` — unlocated coffee cups; must be zero\n- `wine_glasses_full_layout` — final wine-glass visual layout physically complete\n- `wine_glasses_in_washing` — wine glasses still in washing; must be zero for ordinary final Closing\n- `wine_glasses_transferred_with_evidence` — wine-glass event scope transferred with completed evidence\n- `wine_glasses_unlocated` — unlocated wine glasses; must be zero\n- `full_recovery_route_checked` — approved recovery route physically checked; office-floor completion remains unresolved",
+    "operationalStandardsAmendment": {
+      "date": "2026-08-07",
+      "decisionHash": "8ebedb39be888dfa118a429fa2046ba2b7b5dc49c868d9d5b811f2aa89b45351"
+    }
+  },
+  "O02": {
+    "packHash": "c149a8416a867dcb7d87224f3ae8e2a214e5ca4954613b118521ebe5ae3aff2a",
+    "stableKey": "opening.o02.review-meeting-room-coffee-orders",
+    "sourceHash": "f58a0452cd892f76b98063f7c54b5979ac589167f4c5ad3d71a49c1bd6dbc12e",
+    "sourceType": "control",
+    "deviationRules": [
+      "Order details are unclear or contradictory.",
+      "Required delivery time cannot be met.",
+      "Available Coffee Canisters or brewing capacity are insufficient.",
+      "Room or booking cannot be matched."
+    ],
+    "timingSourceText": "Immediately after O01 and before the first brewing plan for Coffee Canisters is finalized.",
+    "referenceGuidance": [
+      "No image is required."
+    ],
+    "authoritativeSourceId": "O02",
+    "structuredItemsSource": "- `orders_checked` — all order sources checked.\n- `room` — exact room.\n- `service_time` — expected delivery time.\n- `quantity_or_service_need` — order demand recorded without inventing an amount.\n- `change_or_uncertainty` — change, cancellation or unclear order recorded."
+  },
+  "O15": {
+    "packHash": "c149a8416a867dcb7d87224f3ae8e2a214e5ca4954613b118521ebe5ae3aff2a",
+    "stableKey": "opening.o15.restore-cups-wine-glasses-full-targets",
+    "sourceHash": "64c8fe606f51a2282affec75ac75df552500385a6851826934a6c784da16d55b",
+    "sourceType": "measurement",
+    "deviationRules": [
+      "The shared route is incomplete or the 10:45 deadline is missed.",
+      "A floor or kitchen is inaccessible: do not wait or bypass access control; notify the manager, record the specific area and continue the remainder.",
+      "Clean and dirty serviceware is mixed.",
+      "Any defined layout position remains empty or contains the wrong type.",
+      "Any required item remains in washing or unlocated.",
+      "Workbar's configured default is not physically restored.",
+      "Broken, lost or damaged serviceware."
+    ],
+    "timingSourceText": "Perform at any appropriate point during Opening; the shared route and full Workbar default restoration must be complete no later than 10:45.",
+    "referenceGuidance": [
+      "Shared route source: `serviceware-office-recovery-route-confirmation`; no image or route diagram is mandatory.",
+      "`ordinary-coffee-cup-layout`.",
+      "`cappuccino-cup-shelf-layout`.",
+      "`cappuccino-and-espresso-machine-top-layout`.",
+      "`wine-glass-layout`.",
+      "Previous Closing evidence is context only and never completes this Opening task."
+    ],
+    "authoritativeSourceId": "O15",
+    "structuredItemsSource": "- `coffee_cups_full_layout` — all defined coffee-cup positions filled\n- `ordinary_cups_four_high` — ordinary coffee cups stacked four high\n- `ordinary_cup_handles_right` — ordinary coffee-cup handles point right\n- `cappuccino_shelf_positions_filled` — all defined cappuccino shelf positions filled\n- `cappuccino_machine_top_positions_filled` — all defined cappuccino machine-top positions filled\n- `espresso_machine_top_positions_filled` — all defined espresso machine-top positions filled\n- `coffee_cups_in_washing` — coffee cups still in washing; must be zero before readiness\n- `coffee_cups_unlocated` — unlocated coffee cups; must be zero\n- `wine_glasses_full_layout` — all defined wine-glass positions filled with the correct type and layout\n- `wine_glasses_in_washing` — wine glasses still in washing; must be zero before readiness\n- `wine_glasses_unlocated` — unlocated wine glasses; must be zero\n- `recovery_route_checked` — known recovery points checked; complete office-floor route remains unresolved",
+    "operationalStandardsAmendment": {
+      "date": "2026-08-07",
+      "decisionHash": "8ebedb39be888dfa118a429fa2046ba2b7b5dc49c868d9d5b811f2aa89b45351"
+    }
+  },
+  "O22": {
+    "packHash": "c149a8416a867dcb7d87224f3ae8e2a214e5ca4954613b118521ebe5ae3aff2a",
+    "stableKey": "opening.o22.set-out-seasonal-candles",
+    "sourceHash": "730124b8ecb5fa4861e72ad6a17e8da18319098418cb521b22a865b1f5344395",
+    "sourceType": "conditional",
+    "deviationRules": [
+      "Required candle or holder missing.",
+      "Approved placement cannot be completed.",
+      "Safety concern.",
+      "Employees cannot choose N/A; false condition excludes the task."
+    ],
+    "timingSourceText": "Before guest service when the system condition is matched.",
+    "referenceGuidance": [
+      "`seasonal-candle-placement` — optional future reference.",
+      "Closing C22 receives the conditional companion to remove/extinguish them after use."
+    ],
+    "authoritativeSourceId": "O22",
+    "structuredItemsSource": "- `approved_positions_complete`\n- `holders_present_and_safe`\n- `damaged_items_removed`",
+    "runtimeContractAlignment": {
+      "date": "2026-08-09",
+      "decisionHash": "56cc1ac9b6fc1cdc89586f8539e185dfef6e6a5d54d483bbdffcbb1d7ff4c2af",
+      "operationalTaskType": "action",
+      "originalSourceClassification": "conditional"
+    }
+  },
+  "O23": {
+    "packHash": "c149a8416a867dcb7d87224f3ae8e2a214e5ca4954613b118521ebe5ae3aff2a",
+    "stableKey": "opening.o23.final-opening-readiness-check",
+    "sourceHash": "a69ba58ac6d3693d63a2440a80005fd8408b378c9ffac90ec52201b6654cb4c6",
+    "sourceType": "checkpoint",
+    "deviationRules": [
+      "Any critical setup is not ready.",
+      "Unresolved stock, serviceware, machine, access, cash or safety blocker.",
+      "An item is merely assumed from an earlier check.",
+      "Do not use a manager override to display ordinary green readiness."
+    ],
+    "timingSourceText": "Final Opening gate; target completion by 08:00.",
+    "referenceGuidance": [
+      "This checkpoint may link to the task-specific references but does not require a new generic image. # Block 2 — Opening 08:00–10:00"
+    ],
+    "authoritativeSourceId": "O23",
+    "structuredItemsSource": "- `bookings_and_events_understood`\n- `coffee_orders_understood`\n- `espresso_machine_ready`\n- `workbar_dishwashers_ready`\n- `kitchen_dishwashers_ready`\n- `four_coffee_canisters_ready`\n- `cleaning_station_ready`\n- `coffee_machine_milk_ready`\n- `milk_fridge_2_plus_2`\n- `members_lounge_ready`\n- `baked_goods_fruit_snacks_ready`\n- `food_nonalcoholic_fridge_ready`\n- `self_service_ready`\n- `cups_and_glasses_full`\n- `project_rooms_ready`\n- `register_pos_music_screen_lighting_ready`\n- `seasonal_task_handled_when_included`\n- `no_unresolved_opening_blocker`",
+    "runtimeContractAlignment": {
+      "date": "2026-08-09",
+      "decisionHash": "56cc1ac9b6fc1cdc89586f8539e185dfef6e6a5d54d483bbdffcbb1d7ff4c2af",
+      "operationalTaskType": "checkpoint",
+      "originalSourceClassification": "checkpoint"
+    }
+  },
+  "O28": {
+    "packHash": "c149a8416a867dcb7d87224f3ae8e2a214e5ca4954613b118521ebe5ae3aff2a",
+    "stableKey": "opening.o28.restore-lunch-coffee-reserve",
+    "sourceHash": "d71b1489f8b4b17ac8fe0c16fa3b09e363b84e52611035403bc725b07b0ebd05",
+    "sourceType": "measurement",
+    "deviationRules": [
+      "Fewer than four ready canisters.",
+      "Canister, lid or part missing or damaged.",
+      "Insufficient coffee or brewing capacity.",
+      "Do not count a canister still being washed or not service-ready."
+    ],
+    "timingSourceText": "Complete before O29.",
+    "referenceGuidance": [
+      "`coffee-canister-lunch-reserve`."
+    ],
+    "authoritativeSourceId": "O28",
+    "structuredItemsSource": "- `members_lounge_ready_count` — target 1.\n- `kitchen_reserve_ready_count` — target 3.\n- `total_ready_count` — target 4.\n- `canisters_accounted_for_and_serviceable`"
+  },
+  "O29": {
+    "packHash": "c149a8416a867dcb7d87224f3ae8e2a214e5ca4954613b118521ebe5ae3aff2a",
+    "stableKey": "opening.o29.full-restock-checkpoint-0945",
+    "sourceHash": "235444e6c60d44e4a0da8be2aba11a6574fe707fc7018a1845fe935cbfdade65",
+    "sourceType": "checkpoint",
+    "deviationRules": [
+      "Any defined cup/glass position is empty, has the wrong type, or still depends on washing; service-ready is not a lower minimum.",
+      "Any category cannot be restored.",
+      "Missing stock, serviceware, Coffee Canisters or access.",
+      "Do not link normal morning consumption to the previous Closing automatically; record the current finding accurately."
+    ],
+    "timingSourceText": "Visible 09:35; start permitted 09:40; target 09:45; overdue 09:55. Server time is authoritative.",
+    "referenceGuidance": [
+      "`ordinary-coffee-cup-layout`.",
+      "`cappuccino-cup-shelf-layout`.",
+      "`cappuccino-and-espresso-machine-top-layout`.",
+      "`wine-glass-layout`.",
+      "`workbar-food-non-alcoholic-fridge`.",
+      "`workbar-milk-fridge`.",
+      "`coffee-canister-lunch-reserve`."
+    ],
+    "authoritativeSourceId": "O29",
+    "structuredItemsSource": "- `food_nonalcoholic_fridge_including_eggs` — food nonalcoholic fridge including eggs\n- `milk_fridge_two_regular_two_oatly` — milk fridge two regular two oatly\n- `self_service_components` — self service components\n- `baked_goods_fruit_snacks` — baked goods fruit snacks\n- `coffee_canisters_one_plus_three` — coffee canisters one plus three\n- `coffee_cups_service_ready_target` — new physical check: full coffee-cup visual layout, with no inherited completion\n- `wine_glasses_service_ready_target` — new physical check: full wine-glass visual layout, with no inherited completion\n- `members_lounge_coffee_point` — members lounge coffee point\n- `ordinary_cups_four_high_handles_right` — ordinary cups four high with handles right\n- `cappuccino_shelf_and_machine_top_filled` — cappuccino shelf and machine-top positions filled\n- `espresso_machine_top_filled` — espresso machine-top positions filled",
+    "operationalStandardsAmendment": {
+      "date": "2026-08-07",
+      "decisionHash": "8ebedb39be888dfa118a429fa2046ba2b7b5dc49c868d9d5b811f2aa89b45351"
+    }
+  },
+  "O34": {
+    "packHash": "c149a8416a867dcb7d87224f3ae8e2a214e5ca4954613b118521ebe5ae3aff2a",
+    "stableKey": "opening.o34.restore-four-coffee-canisters-before-1045",
+    "sourceHash": "0164dcd8bfe5fd5ff1221b505fcaef9fc7f1cbeb32c81a656b57f844a32a7504",
+    "sourceType": "measurement",
+    "deviationRules": [
+      "Fewer than four ready.",
+      "One or more Coffee Canisters or parts are missing or damaged.",
+      "Insufficient brewing supplies or capacity."
+    ],
+    "timingSourceText": "Complete before O35.",
+    "referenceGuidance": [
+      "`coffee-canister-lunch-reserve`."
+    ],
+    "authoritativeSourceId": "O34",
+    "structuredItemsSource": "- `members_lounge_ready_count` — target 1.\n- `kitchen_reserve_ready_count` — target 3.\n- `total_ready_count` — target 4.\n- `all_canisters_serviceable`"
+  },
+  "O35": {
+    "packHash": "c149a8416a867dcb7d87224f3ae8e2a214e5ca4954613b118521ebe5ae3aff2a",
+    "stableKey": "opening.o35.final-full-restock-checkpoint-1045",
+    "sourceHash": "ad1fca341561a271772b6e92b327d3a2ee131b4b76dcad81acdba1bc99930f7d",
+    "sourceType": "checkpoint",
+    "deviationRules": [
+      "Any defined cup/glass position is empty, has the wrong type, or still depends on washing; service-ready is not a lower minimum.",
+      "Any product, serviceware or Coffee Canisters shortage.",
+      "Hard deadline missed — nonblocking timing deviation is recorded, but corrective completion is still required.",
+      "Do not mark complete with unresolved stock."
+    ],
+    "timingSourceText": "Visible 10:35; start permitted 10:40; target 10:45; overdue 10:50; hard deadline 10:55. Server time is authoritative.",
+    "referenceGuidance": [
+      "`ordinary-coffee-cup-layout`.",
+      "`cappuccino-cup-shelf-layout`.",
+      "`cappuccino-and-espresso-machine-top-layout`.",
+      "`wine-glass-layout`.",
+      "`workbar-food-non-alcoholic-fridge`.",
+      "`workbar-milk-fridge`.",
+      "`coffee-canister-lunch-reserve`."
+    ],
+    "authoritativeSourceId": "O35",
+    "structuredItemsSource": "- `food_nonalcoholic_fridge_including_eggs` — food nonalcoholic fridge including eggs\n- `milk_fridge_two_regular_two_oatly` — milk fridge two regular two oatly\n- `self_service_components` — self service components\n- `baked_goods_fruit_snacks` — baked goods fruit snacks\n- `coffee_canisters_one_plus_three` — coffee canisters one plus three\n- `coffee_cups_service_ready_target` — new physical check: full coffee-cup visual layout, with no inherited completion\n- `wine_glasses_service_ready_target` — new physical check: full wine-glass visual layout, with no inherited completion\n- `members_lounge_coffee_point` — members lounge coffee point\n- `ordinary_cups_four_high_handles_right` — ordinary cups four high with handles right\n- `cappuccino_shelf_and_machine_top_filled` — cappuccino shelf and machine-top positions filled\n- `espresso_machine_top_filled` — espresso machine-top positions filled",
+    "operationalStandardsAmendment": {
+      "date": "2026-08-07",
+      "decisionHash": "8ebedb39be888dfa118a429fa2046ba2b7b5dc49c868d9d5b811f2aa89b45351"
+    }
+  },
+  "O37": {
+    "packHash": "c149a8416a867dcb7d87224f3ae8e2a214e5ca4954613b118521ebe5ae3aff2a",
+    "stableKey": "opening.o37.confirm-lunch-readiness-1100",
+    "sourceHash": "c035a8189c68c70a281dfe1a54cb7f502bfe6f5131bac002eaf9fe1ce3a8ffbd",
+    "sourceType": "gate",
+    "deviationRules": [
+      "Any required dependency is incomplete.",
+      "Critical stock, serviceware, room, toilet, equipment or system blocker.",
+      "Checkpoint result is stale or assumed.",
+      "An override remains visible and cannot be presented as ordinary green readiness."
+    ],
+    "timingSourceText": "Final target 11:00. It cannot complete before the 10:45 checkpoint and all required dependencies.",
+    "referenceGuidance": [
+      "This is an aggregate gate; use the task-specific references rather than a generic image.",
+      "Previous Closing evidence remains context and never auto-completes Opening.",
+      "O29 and O35 remain independent physical checkpoints."
+    ],
+    "authoritativeSourceId": "O37",
+    "structuredItemsSource": "- `bookings_events_and_coffee_orders_final` — bookings events and coffee orders final\n- `project_rooms_ready_or_owned` — project rooms ready or owned\n- `workbar_toilets_ready` — workbar toilets ready\n- `guest_service_zone_maintained` — guest service zone maintained\n- `four_ready_coffee_canisters` — four ready coffee canisters\n- `final_1045_restock_passed` — final 1045 restock passed\n- `pos_and_weorder_aligned` — pos and weorder aligned\n- `no_unresolved_critical_blocker` — no unresolved critical blocker\n- `known_deviations_have_owner` — known deviations have owner\n- `workbar_assigned_canisters_four_ready` — four Workbar-assigned Coffee Canisters ready in the 1 + 3 service distribution\n- `cornerbar_event_scope_ready_or_transferred` — Cornerbar event scope ready or formally transferred with evidence",
+    "runtimeContractAlignment": {
+      "date": "2026-08-09",
+      "decisionHash": "56cc1ac9b6fc1cdc89586f8539e185dfef6e6a5d54d483bbdffcbb1d7ff4c2af",
+      "operationalTaskType": "gate",
+      "originalSourceClassification": "gate"
+    },
+    "operationalStandardsAmendment": {
+      "date": "2026-08-07",
+      "decisionHash": "8ebedb39be888dfa118a429fa2046ba2b7b5dc49c868d9d5b811f2aa89b45351"
+    }
+  }
+}
