@@ -13,6 +13,7 @@ const RoutineHistoryWorkspace = lazy(() => import("../history/RoutineHistoryWork
 const RoutineManagerReviewDashboard = lazy(() => import("../history/RoutineManagerReviewDashboard.jsx"));
 const RoutineReleaseGate = lazy(() => import("../history/RoutineReleaseGate.jsx"));
 const RoutineContentPackManager = lazy(() => import("./RoutineContentPackManager.jsx"));
+const RoutineActivationRecovery = lazy(() => import("./RoutineActivationRecovery.jsx"));
 
 const GROUPS = Object.freeze([
   { id: "today", label: "Today", caption: "Run the operation" },
@@ -38,6 +39,7 @@ export default function RoutineManagerWorkspace({
   reviewProps = {},
   historyProps = {},
   releaseProps = {},
+  activationProps = {},
 }) {
   const workspace = useRoutineManagerWorkspace({ loader });
   const [tab, setTab] = useState(initialTab);
@@ -115,6 +117,7 @@ export default function RoutineManagerWorkspace({
     ),
     history: <RoutineHistoryWorkspace manager {...historyProps} />,
     foundation: <RoutineFoundationManager data={data} onRefresh={workspace.refresh} />,
+    activation: <RoutineActivationRecovery {...activationProps} />,
     release: <RoutineReleaseGate {...releaseProps} />,
   };
 

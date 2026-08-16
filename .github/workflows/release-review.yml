@@ -48,6 +48,9 @@ jobs:
       - name: Verify production migration plan
         run: npm run verify:production-migration-plan
 
+      - name: Verify Phase 10AB activation recovery
+        run: npm run verify:phase10ab-activation-recovery
+
       - name: Verify full migration reapply in rehearsal and production-shaped owner contexts
         run: npm run verify:routine-full-migration-reapply
 
@@ -169,6 +172,9 @@ jobs:
 
       - name: Run inventory location Chromium and WebKit matrix
         run: npm run verify:inventory-location-alignment-browser
+
+      - name: Run Activation Chromium and WebKit matrix
+        run: npm run verify:activation-browser
 
       - name: Verify fresh exact-head browser evidence
         shell: bash

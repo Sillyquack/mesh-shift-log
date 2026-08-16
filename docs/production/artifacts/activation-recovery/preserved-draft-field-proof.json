@@ -1,0 +1,51 @@
+{
+  "contractVersion": "phase10ab-preserved-draft-proof-v1",
+  "purpose": "Sanitized immutable pre-1.5R reviewed-draft chain proof",
+  "generatedAt": "2026-08-16T05:39:20.258Z",
+  "sourceReportSha256": "7ce653388b1c5c815ee07e7f642492bf388c2de6333d063d0c3d42eda6efc02a",
+  "evidencePolicy": "Hashes are SHA-256 over recursively key-sorted JSON. Only exact values in the reviewed 1.1R through 1.5R pack chain are accepted.",
+  "packChain": [
+    { "version": "1.1R", "hash": "c149a8416a867dcb7d87224f3ae8e2a214e5ca4954613b118521ebe5ae3aff2a" },
+    { "version": "1.2R", "hash": "2dcfc69b822f973c23e54934b6799faa5b9400ae0529096f049067811a417f25" },
+    { "version": "1.3R", "hash": "b416001c2885bbf54bdb029b8e7164cbb903a76b8344396a4e9fcffa26107fe1" },
+    { "version": "1.4R", "hash": "48b7c4dfdb1340ddff14748a3c6d57df504f33fe822f25b6dde0d4ab48a6caf8" },
+    { "version": "1.5R", "hash": "710c9412eabc8f2e9c5a6488499ac4654cd7c94b62138eaed9563ab5f0203c9c" }
+  ],
+  "opening": {
+    "templateId": "20377d92-bf85-4fb6-a4c9-5db847fd5f57",
+    "draftId": "73896e75-1509-4215-ac4a-a36b033e6d18",
+    "revision": 18,
+    "contentHash": "a3d2038b7bc0d3b3e75baee5ce63a1c0ffeea8c4b13331c88ea474e10a4f2e4a",
+    "canonicalExportSha256": "352ecad48ece237345657d116fd2abbb8ac49b7b792c6a525963b95965f5f54c",
+    "counts": { "sections": 3, "tasks": 37, "items": 239, "references": 30, "relations": 12, "dependencies": 9 }
+  },
+  "closing": {
+    "templateId": "ede9b1ca-44b6-489e-97ea-3abab57ab6a1",
+    "draftId": "072fee93-eda7-406c-87b3-d5186cd26944",
+    "revision": 25,
+    "contentHash": "04124b4ab3ddc94e384012e85201cf271efd335187e75f3dd1475fb81aa50d98",
+    "canonicalExportSha256": "9d39148cb1ee65ff0efa23ac28aaf83584586540314a80aa3928929fd4a86f06",
+    "counts": { "sections": 2, "tasks": 46, "items": 358, "references": 58, "relations": 6, "dependencies": 32 }
+  },
+  "fieldLevelProof": {
+    "editedTasks": 15,
+    "editedItems": 19,
+    "fieldDifferences": 129,
+    "targetAlreadyPresent": 121,
+    "reviewedTargetSupersedesPriorDraftValue": 8,
+    "conflicts": 0,
+    "unknownEdits": 0,
+    "unaccountedCustomTasks": 0,
+    "unaccountedCustomItems": 0,
+    "missingAuthoritativeIds": 0,
+    "duplicateAuthoritativeIds": 0,
+    "pass": true
+  },
+  "sanitization": {
+    "credentials": false,
+    "tokens": false,
+    "passwords": false,
+    "rawTaskOrItemText": false,
+    "localFilesystemPaths": false
+  }
+}

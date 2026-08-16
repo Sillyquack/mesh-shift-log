@@ -8,6 +8,7 @@ export const MANAGER_TABS = Object.freeze([
   { id: "pilot", label: "Access", group: "people" },
   { id: "history", label: "History", group: "history" },
   { id: "foundation", label: "Places & standards", group: "system" },
+  { id: "activation", label: "Activation", group: "system" },
   { id: "release", label: "Publish", group: "system" },
 ]);
 

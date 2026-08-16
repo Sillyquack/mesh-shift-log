@@ -44,9 +44,9 @@ const EXPECTED_FRIDGE_SOURCE_HASHES = [
   "2a57f578128b6a6b696bf4f93d721fd6c56837ae413c9599a2845885c6c7a834",
 ];
 const EXPECTED_ARGUMENT_NAMES = ["input_version_id", "input_publication_version_ids"];
-const EXPECTED_PORTABLE_SCHEMA_FINGERPRINT = "f53315ccdfa8d2636c0baad8cd8c3a9d90e5a4033a9225cb0b7493c6ffb05f4f";
-const EXPECTED_AUTHENTICATED_FUNCTION_COUNT = 218;
-const EXPECTED_AUTHENTICATED_FUNCTION_HASH = "61446c15b10333748c65a652f01f6c9e91df67b81593f4db65bc7f0c2bee2a0e";
+const EXPECTED_PORTABLE_SCHEMA_FINGERPRINT = "34d7797a5e8b992d422dbc39bb6dc91c83082d09f2fef749d9ca58a61be0da3d";
+const EXPECTED_AUTHENTICATED_FUNCTION_COUNT = 220;
+const EXPECTED_AUTHENTICATED_FUNCTION_HASH = "35627e2aad45a00ef4103daebf1a93e400c679c01ff6f0096f136e0fd11991c9";
 const EXPECTED_AUTHENTICATED_RELATION_SELECT_COUNT = 65;
 const EXPECTED_AUTHENTICATED_RELATION_SELECT_HASH = "9f02d0f0f22ef6c607f793210fda83deb88e23cbb68943834ba41dabb206f5bd";
 const EXPECTED_OWNER_ROLES = new Set(["pg_database_owner", "postgres", "supabase_admin", "supabase_storage_admin"]);
@@ -215,6 +215,7 @@ const migrations = [
   "supabase/phase10y_mesh_routine_content_pack_1_5r.sql",
   "supabase/phase10z_inventory_location_and_express_shelf_alignment.sql",
   "supabase/phase10aa_event_floor_manager_pilot_membership.sql",
+  "supabase/phase10ab_mesh_routine_content_1_5r_activation_recovery.sql",
 ];
 const phase10Sql = () => migrations.map((path) => readFileSync(absolute(path), "utf8")).join("\n");
 
@@ -306,7 +307,7 @@ function sourceChecks() {
   const audit = auditRepeatedFunctionArguments();
   console.log(`Static function audit: ${audit.definitions.length} definitions, ${audit.repeated.length} repeated identities, ${audit.drifts.length} drifts`);
   check("all repeated Phase 10 function identities have stable input argument names", audit.drifts.length === 0);
-  check("function argument audit covers the full Phase 10 definition set", audit.definitions.length === 571 && audit.repeated.length === 95);
+  check("function argument audit covers the full Phase 10 definition set", audit.definitions.length === 573 && audit.repeated.length === 95);
   check("validator has six layered public definitions", audit.target.length === 6);
   check("every validator definition uses the canonical input names", audit.target.every((entry) => JSON.stringify(entry.names) === JSON.stringify(EXPECTED_ARGUMENT_NAMES)));
   check("ACL hardening inventory contains the reproduced 17 signatures", REPRODUCED_ACL_SIGNATURES.length === 17);
@@ -320,23 +321,24 @@ function sourceChecks() {
     verifierSource.indexOf("function applySequence("),
     verifierSource.indexOf("function futureOrganizationChecks("),
   );
-  check("full Phase 10 manifest contains 29 ordered migrations through 10AA", migrations.length === 29
+  check("full Phase 10 manifest contains 30 ordered migrations through 10AB", migrations.length === 30
     && migrations[0].endsWith("phase10a_routine_engine_foundation.sql")
     && migrations[1].endsWith("phase10a1_routine_organization_settings_bootstrap.sql")
-    && migrations.at(-14).endsWith("phase10l_mesh_routine_content_pack.sql")
-    && migrations.at(-13).endsWith("phase10p_routine_readiness_finalization.sql")
-    && migrations.at(-12).endsWith("phase10q_mesh_routine_content_pack_1_2r.sql")
-    && migrations.at(-11).endsWith("phase10o_routine_default_privilege_hardening.sql")
-    && migrations.at(-10).endsWith("phase10r_mesh_routine_content_pack_1_3r.sql")
-    && migrations.at(-9).endsWith("phase10s_mesh_routine_content_pack_1_4r.sql")
-    && migrations.at(-8).endsWith("phase10t_routine_participant_identity_conflict_alignment.sql")
-    && migrations.at(-7).endsWith("phase10u_routine_operation_idempotency_convergence.sql")
-    && migrations.at(-6).endsWith("phase10v_routine_creation_idempotency_provenance_alignment.sql")
-    && migrations.at(-5).endsWith("phase10w_event_visual_reference_bridge.sql")
-    && migrations.at(-4).endsWith("phase10x_event_visual_library_expansion.sql")
-    && migrations.at(-3).endsWith("phase10y_mesh_routine_content_pack_1_5r.sql")
-    && migrations.at(-2).endsWith("phase10z_inventory_location_and_express_shelf_alignment.sql")
-    && migrations.at(-1).endsWith("phase10aa_event_floor_manager_pilot_membership.sql"));
+    && migrations.at(-15).endsWith("phase10l_mesh_routine_content_pack.sql")
+    && migrations.at(-14).endsWith("phase10p_routine_readiness_finalization.sql")
+    && migrations.at(-13).endsWith("phase10q_mesh_routine_content_pack_1_2r.sql")
+    && migrations.at(-12).endsWith("phase10o_routine_default_privilege_hardening.sql")
+    && migrations.at(-11).endsWith("phase10r_mesh_routine_content_pack_1_3r.sql")
+    && migrations.at(-10).endsWith("phase10s_mesh_routine_content_pack_1_4r.sql")
+    && migrations.at(-9).endsWith("phase10t_routine_participant_identity_conflict_alignment.sql")
+    && migrations.at(-8).endsWith("phase10u_routine_operation_idempotency_convergence.sql")
+    && migrations.at(-7).endsWith("phase10v_routine_creation_idempotency_provenance_alignment.sql")
+    && migrations.at(-6).endsWith("phase10w_event_visual_reference_bridge.sql")
+    && migrations.at(-5).endsWith("phase10x_event_visual_library_expansion.sql")
+    && migrations.at(-4).endsWith("phase10y_mesh_routine_content_pack_1_5r.sql")
+    && migrations.at(-3).endsWith("phase10z_inventory_location_and_express_shelf_alignment.sql")
+    && migrations.at(-2).endsWith("phase10aa_event_floor_manager_pilot_membership.sql")
+    && migrations.at(-1).endsWith("phase10ab_mesh_routine_content_1_5r_activation_recovery.sql"));
   check("10A1 is a system bootstrap with no manager RPC installation step",
     !/create_or_update_routine_organization_settings|auth\.uid\s*\(|\bgrant\b|\bcreate\s+(?:or\s+replace\s+)?function\b/i.test(bootstrapSql));
   check("full-reapply migration sequence contains no out-of-band settings manager bootstrap",
@@ -1171,7 +1173,8 @@ function assertEndState(label, state, protectedBaseline) {
       const authenticated = executableGrantees(state.routineFunctions[signature]).includes("authenticated");
       return authenticated === (ACL_EXPECTATIONS[signature] === "public");
     }) && state.clientAcl.reviewedCount === 32);
-  check(`${label}: authenticated function EXECUTE is the exact reviewed 218-signature allowlist`,
+  console.log(`AUTHENTICATED_FUNCTION_DIAGNOSTIC|${label}|count=${state.clientAcl.authenticatedFunctions.length}|hash=${state.clientAcl.authenticatedFunctionHash}`);
+  check(`${label}: authenticated function EXECUTE is the exact reviewed 220-signature allowlist`,
     state.clientAcl.authenticatedFunctions.length === EXPECTED_AUTHENTICATED_FUNCTION_COUNT
       && state.clientAcl.authenticatedFunctionHash === EXPECTED_AUTHENTICATED_FUNCTION_HASH);
   check(`${label}: authenticated relation SELECT is the exact reviewed 65-relation allowlist`,
@@ -1407,8 +1410,51 @@ function phase10aaEligibilityChecks() {
     result.stdout.includes('phase10aa_eligibility_ok'));
 }
 
+function phase10abAuthorizationChecks() {
+  const preview = JSON.parse(scalar(managerSql(
+    "select public.preview_mesh_routine_content_1_5r_activation_recovery()::text;",
+  )).split("\n").at(-1));
+  check("10AB personal manager can call the scoped preview and receives a deterministic organization state hash",
+    preview.contractVersion === "phase10ab-v1"
+      && /^[0-9a-f]{64}$/.test(preview.stateHash || "")
+      && preview.valid === false
+      && Array.isArray(preview.blockers));
+
+  const rejectionCases = [
+    { label: "staff", actor: STAFF_ID, setup: "" },
+    { label: "shared device", actor: SHARED_DEVICE_ID, setup: "" },
+    { label: "Event Floor Manager", actor: STAFF_ID, setup: `update public.user_profiles set role='event_floor_manager' where id='${STAFF_ID}';` },
+    { label: "counter", actor: STAFF_ID, setup: `update public.user_profiles set role='counter' where id='${STAFF_ID}';` },
+  ];
+  for (const entry of rejectionCases) {
+    const result = psql(String.raw`
+      begin;
+      ${entry.setup}
+      select set_config('request.jwt.claim.sub','${entry.actor}',true);
+      set local role authenticated;
+      do $phase10ab_auth$
+      declare v_preview_rejected boolean:=false; v_apply_rejected boolean:=false;
+      begin
+        begin perform public.preview_mesh_routine_content_1_5r_activation_recovery();
+        exception when insufficient_privilege then v_preview_rejected:=true; end;
+        begin perform public.apply_mesh_routine_content_1_5r_activation_recovery(
+          repeat('0',64),'Authorization rejection probe only.','ab200000-0000-4000-8000-000000000001');
+        exception when insufficient_privilege then v_apply_rejected:=true; end;
+        if not v_preview_rejected or not v_apply_rejected then
+          raise exception 'Phase 10AB accepted an unauthorized caller.';
+        end if;
+      end
+      $phase10ab_auth$;
+      select 'phase10ab_auth_rejected';
+      rollback;
+    `);
+    check(`10AB rejects ${entry.label} from both preview and apply without mutation`,
+      result.stdout.includes("phase10ab_auth_rejected"));
+  }
+}
+
 function applySequence(sequenceNumber) {
-  console.log(`Applying full Phase 10A-A1-L-P-Q-O-R-S-T-U-V-W-X-Y-Z-AA sequence ${sequenceNumber} as ${ROLE}`);
+  console.log(`Applying full Phase 10A-A1-L-P-Q-O-R-S-T-U-V-W-X-Y-Z-AA-AB sequence ${sequenceNumber} as ${ROLE}`);
   let stateAfterK4 = null;
   for (let index = 0; index < migrations.length; index += 1) {
     const path = migrations[index];
@@ -1659,6 +1705,29 @@ function applySequence(sequenceNumber) {
               and (select count(*) from public.routine_runs)=0
               and (select count(*) from public.routine_bundles)=0;
           `) === "t");
+    }
+    if (path.endsWith("phase10ab_mesh_routine_content_1_5r_activation_recovery.sql")) {
+      check(`sequence ${sequenceNumber}: 10AB installs the exact two fixed-search-path manager entry points`, scalar(String.raw`
+        select
+          to_regprocedure('public.preview_mesh_routine_content_1_5r_activation_recovery()') is not null
+          and to_regprocedure('public.apply_mesh_routine_content_1_5r_activation_recovery(text,text,uuid)') is not null
+          and has_function_privilege('authenticated','public.preview_mesh_routine_content_1_5r_activation_recovery()','EXECUTE')
+          and has_function_privilege('authenticated','public.apply_mesh_routine_content_1_5r_activation_recovery(text,text,uuid)','EXECUTE')
+          and not has_function_privilege('anon','public.preview_mesh_routine_content_1_5r_activation_recovery()','EXECUTE')
+          and not has_function_privilege('anon','public.apply_mesh_routine_content_1_5r_activation_recovery(text,text,uuid)','EXECUTE')
+          and (select coalesce(array_to_string(proconfig,','),'')='search_path=pg_catalog' from pg_proc where oid='public.preview_mesh_routine_content_1_5r_activation_recovery()'::regprocedure)
+          and (select coalesce(array_to_string(proconfig,','),'')='search_path=pg_catalog' from pg_proc where oid='public.apply_mesh_routine_content_1_5r_activation_recovery(text,text,uuid)'::regprocedure);
+      `) === "t");
+      check(`sequence ${sequenceNumber}: 10AB migration itself changes no content settings memberships inventory or operative rows`,
+        JSON.stringify(settingsState()) === JSON.stringify(stateAfterK4)
+          && scalar(String.raw`
+            select (select count(*) from public.routine_pilot_memberships)=0
+              and (select count(*) from public.routine_content_pack_installations)=0
+              and (select count(*) from public.routine_templates)=0
+              and (select count(*) from public.routine_runs)=0
+              and (select count(*) from public.routine_bundles)=0;
+          `) === "t");
+      if (sequenceNumber === 1) phase10abAuthorizationChecks();
     }
     if (path.endsWith("phase10o_routine_default_privilege_hardening.sql")) {
       check(`sequence ${sequenceNumber}: 10O changes only pg_default_acl`,
@@ -2013,7 +2082,7 @@ async function main() {
     assertEndState(`sequence ${sequence}`, state, protectedBaseline);
     console.log(`Sequence ${sequence} fingerprints: protected-schema=${state.protectedSchema} protected-data=${state.protectedData} protected-realtime=${state.protectedRealtime} routine-schema=${state.routineSchema} raw-acl=${state.rawAclFingerprint} effective-acl=${state.effectiveAclFingerprint}`);
   }
-  check("three complete 29-migration sequences apply exactly 87 migrations", migrationApplications === 87);
+  check("three complete 30-migration sequences apply exactly 90 migrations", migrationApplications === 90);
 
   const aclDrift = [...new Set([
     ...Object.keys(states[0].routineFunctions),
@@ -2075,7 +2144,7 @@ async function main() {
   console.log(`DEFAULT_ACL_ATTESTATION|${OWNER_CONTEXT}|PASS|current_user=${states[0].environment.execution.currentUser}`);
   console.log(`OWNER_PLATFORM_REPORT|${OWNER_CONTEXT}|${canonicalJson(states[0].environment)}`);
   console.log(`PORTABLE_RESULT|${OWNER_CONTEXT}|${states[0].portableSchema}`);
-  console.log(`PASS ${passCount} full Phase 10 migration reapply checks (${OWNER_CONTEXT}, 87/87)`);
+  console.log(`PASS ${passCount} full Phase 10 migration reapply checks (${OWNER_CONTEXT}, 90/90)`);
   return states[0].portableSchema;
 }
 
@@ -2101,5 +2170,5 @@ if (!process.exitCode && OWNER_CONTEXT === "rehearsal" && process.env.PHASE10O_C
   check("rehearsal and production-shaped owner contexts have the identical portable fingerprint",
     portableResult === EXPECTED_PORTABLE_SCHEMA_FINGERPRINT
       && productionMatch?.[1] === EXPECTED_PORTABLE_SCHEMA_FINGERPRINT);
-  console.log("PASS owner-context matrix: rehearsal 87/87 + production-shaped 87/87");
+  console.log("PASS owner-context matrix: rehearsal 90/90 + production-shaped 90/90");
 }
