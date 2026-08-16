@@ -32,21 +32,29 @@ const pilotMembership = readFileSync(
   absolute('supabase/phase10aa_event_floor_manager_pilot_membership.sql'),
   'utf8',
 );
+const activationRecovery = readFileSync(
+  absolute('supabase/phase10ab_mesh_routine_content_1_5r_activation_recovery.sql'),
+  'utf8',
+);
 const reviewWorkflow = readFileSync(
   absolute('.github/workflows/release-review.yml'),
   'utf8',
 );
 
-test('production migration manifest is unique, complete on disk and terminal at Phase 10AA', () => {
-  assert.equal(PHASE10_PRODUCTION_MIGRATIONS.length, 29);
-  assert.equal(new Set(PHASE10_PRODUCTION_MIGRATIONS).size, 29);
+test('production migration manifest is unique, complete on disk and terminal at Phase 10AB', () => {
+  assert.equal(PHASE10_PRODUCTION_MIGRATIONS.length, 30);
+  assert.equal(new Set(PHASE10_PRODUCTION_MIGRATIONS).size, 30);
   assert.ok(PHASE10_PRODUCTION_MIGRATIONS.every((path) => existsSync(absolute(path))));
   assert.equal(
     PHASE10_PRODUCTION_TERMINAL_MIGRATION,
-    'supabase/phase10aa_event_floor_manager_pilot_membership.sql',
+    'supabase/phase10ab_mesh_routine_content_1_5r_activation_recovery.sql',
   );
   assert.equal(
     PHASE10_PRODUCTION_MIGRATIONS.at(-2),
+    'supabase/phase10aa_event_floor_manager_pilot_membership.sql',
+  );
+  assert.equal(
+    PHASE10_PRODUCTION_MIGRATIONS.at(-3),
     'supabase/phase10z_inventory_location_and_express_shelf_alignment.sql',
   );
 });
@@ -124,6 +132,25 @@ test('Phase 10AA only widens personal pilot eligibility to non-coordinating Even
   assert.equal((pilotMembership.match(/create or replace function/gi) || []).length, 1);
   assert.doesNotMatch(pilotMembership, /\b(?:insert|update|delete|truncate)\s+(?:into\s+|from\s+)?public\.(?!routine_pilot_memberships|routine_organization_settings)/i);
   assert.doesNotMatch(pilotMembership, /install_mesh_routine_content_pack|publish_routine_template_versions|ui_release_stage\s*=|mode\s*=\s*'pilot'|storage\.objects/i);
+});
+
+test('Phase 10AB exposes only the exact authenticated activation-recovery pair', () => {
+  assert.match(activationRecovery, /^-- Phase 10AB:/);
+  assert.match(activationRecovery, /begin;[\s\S]*commit;\s*$/i);
+  assert.equal((activationRecovery.match(/create or replace function public\./gi) || []).length, 2);
+  for (const statement of [
+    'revoke all on function public.preview_mesh_routine_content_1_5r_activation_recovery()',
+    'revoke all on function public.apply_mesh_routine_content_1_5r_activation_recovery(text,text,uuid)',
+    'grant execute on function public.preview_mesh_routine_content_1_5r_activation_recovery()',
+    'grant execute on function public.apply_mesh_routine_content_1_5r_activation_recovery(text,text,uuid)',
+  ]) assert.ok(activationRecovery.includes(statement), statement);
+  assert.match(activationRecovery, /710c9412eabc8f2e9c5a6488499ac4654cd7c94b62138eaed9563ab5f0203c9c/);
+  assert.match(activationRecovery, /routine_phase10k2_require_personal_manager/);
+  assert.match(activationRecovery, /pg_advisory_xact_lock/);
+  assert.match(activationRecovery, /routine_mesh_content_pack_analysis/);
+  assert.match(activationRecovery, /install_mesh_routine_content_pack_v1/);
+  assert.doesNotMatch(activationRecovery, /\b(?:insert|update|delete|truncate)\s+(?:into\s+|from\s+)?public\.(?:inventory_|event_)/i);
+  assert.doesNotMatch(activationRecovery, /storage\.objects|ui_release_stage\s*=|mode\s*=\s*'(?:pilot|active)'/i);
 });
 
 test('runbook declares the authorized Oslo cutover windows and Monday go/no-go', () => {

@@ -3,3 +3,6 @@
 @media(max-width:640px){.rm-topbar,.rm-section-heading,.rm-subheading,.rm-card>header,.rm-hero-card{align-items:stretch;flex-direction:column}.rm-panel,.rm-topbar{padding-inline:12px}.rm-tabs{padding-inline:12px}.rm-field-grid,.rm-split,.rm-two-json,.rm-readiness-grid,.rm-choice-grid,.rm-diff-summary{grid-template-columns:1fr}.rm-policy-grid,.rm-timing-grid,.rm-metric-grid{grid-template-columns:1fr}.rm-card,.rm-subpanel,.rm-conflict{padding:14px}.rm-dialog-backdrop{padding:8px}.rm-dialog{max-height:96vh}.rm-actions>button{flex:1 1 150px}.rm-list-row{align-items:flex-start}.rm-move{flex-wrap:nowrap}}
 @media(prefers-reduced-motion:reduce){.rm-workspace *{scroll-behavior:auto!important;transition-duration:.01ms!important}}
 .rm-issues a{display:flex;align-items:center;min-height:48px}
+.rm-activation-record{display:grid;gap:5px;margin:10px 0;padding:12px;border-radius:10px;background:var(--surface-strong)}
+.rm-activation-record strong,.rm-activation-record small{overflow-wrap:anywhere}
+.rm-activation[data-activation-complete=true] .rm-card{border-color:color-mix(in srgb,#27a769 32%,var(--line))}
