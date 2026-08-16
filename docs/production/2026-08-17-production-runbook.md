@@ -44,6 +44,18 @@ The only approved later merge operation for this release is:
 
 PR #17 contains the complete combined release diff. PR #13, PR #14, PR #15 and PR #16 remain historical and review evidence; do not merge them as separate cutover steps. The merge still requires Bobby's explicit approval and must use the exact PR #17 head that passed the final release check.
 
+The accepted application head before the infrastructure-only release-control pass is `af308ed3c1560dc5091f7a6cefd8d7ed97c8f8c5`. The exact successor commit is authoritative only when both split Release review jobs succeed on that same `REVIEWED_SHA`; PR #17 and the GitHub Actions job summaries must record it. The CI architecture, run #8 cancellation analysis, amber dev-tooling audit finding, and protected artifact hashes are recorded in [Release-control finalization — 16 August 2026](./2026-08-16-release-control-finalization.md).
+
+Protected release values for the final review are:
+
+- draft provider: `mesh-routine-content@1.5R`;
+- 1.5R canonical pack hash: `710c9412eabc8f2e9c5a6488499ac4654cd7c94b62138eaed9563ab5f0203c9c`;
+- 1.5R file SHA-256: `6254ae1e961bf2cd30e831ea3d7a31be19c841128649d3f6266fa6902f73a2a4`;
+- Phase 10Y SQL SHA-256: `31118f78b22271f6cce6259b8af44931da18a4506cca0852d39784dc9b89d1ac`;
+- Phase 10Z SQL SHA-256: `caaf7c10970a97a5bc5928df967cd7683cff98a0f208888f6d162bdcd9f4fdab`;
+- portable migration fingerprint: `3bd0a3227b56a64a4f4b5a3ccc3e810c74758458e426d30ddbc8a8a0053d7024`;
+- historical 1.4R SHA-256: `a69042a4e8f25d07e952821a0fdcadb24a8f1cb55a4e53044b6f28909ea8fba4`.
+
 ## Database migration order
 
 The production preflight must first establish the exact migration currently installed in production. Apply only migrations not already installed, while preserving this repository order:

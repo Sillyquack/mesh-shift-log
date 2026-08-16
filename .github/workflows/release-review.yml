@@ -9,14 +9,29 @@ on:
 permissions:
   contents: read
 
+env:
+  REVIEWED_SHA: ${{ github.event.pull_request.head.sha || github.sha }}
+  PLAYWRIGHT_VERSION: 1.62.1
+  PLAYWRIGHT_IMAGE: mcr.microsoft.com/playwright:v1.62.1-noble@sha256:c091b21d9fae78c76e85cd4356431e9b018402f172a214fc7d7a5e9a7e29d8ac
+
 jobs:
-  release-review:
-    name: Release review
+  core-release-verification:
+    name: Core release verification
     runs-on: ubuntu-latest
     timeout-minutes: 60
     steps:
-      - name: Check out reviewed commit
+      - name: Check out exact reviewed head
         uses: actions/checkout@v4
+        with:
+          ref: ${{ env.REVIEWED_SHA }}
+
+      - name: Attest exact reviewed head
+        shell: bash
+        run: |
+          set -euo pipefail
+          actual_sha="$(git rev-parse HEAD)"
+          test "$actual_sha" = "$REVIEWED_SHA"
+          echo "Reviewed head: \`$actual_sha\`" >> "$GITHUB_STEP_SUMMARY"
 
       - name: Set up Node.js
         uses: actions/setup-node@v4
@@ -26,9 +41,6 @@ jobs:
 
       - name: Install locked dependencies
         run: npm ci
-
-      - name: Install pinned review browsers
-        run: npx playwright install --with-deps chromium webkit
 
       - name: Pull pinned disposable PostgreSQL image
         run: docker pull public.ecr.aws/supabase/postgres:17.6.1.141
@@ -87,6 +99,65 @@ jobs:
       - name: Verify Routine history and pilot controls
         run: npm run verify:routine-history-pilot
 
+      - name: Build production bundle
+        run: npm run build
+
+      - name: Verify clean patch formatting
+        run: git diff --check
+
+  browser-review:
+    name: Browser review (Chromium and WebKit)
+    runs-on: ubuntu-latest
+    timeout-minutes: 35
+    container:
+      image: mcr.microsoft.com/playwright:v1.62.1-noble@sha256:c091b21d9fae78c76e85cd4356431e9b018402f172a214fc7d7a5e9a7e29d8ac
+      options: --ipc=host
+    steps:
+      - name: Check out exact reviewed head
+        uses: actions/checkout@v4
+        with:
+          ref: ${{ env.REVIEWED_SHA }}
+
+      - name: Attest exact reviewed head
+        shell: bash
+        run: |
+          set -euo pipefail
+          actual_sha="$(git rev-parse HEAD)"
+          test "$actual_sha" = "$REVIEWED_SHA"
+          echo "Reviewed head: \`$actual_sha\`" >> "$GITHUB_STEP_SUMMARY"
+          echo "Container: \`$PLAYWRIGHT_IMAGE\`" >> "$GITHUB_STEP_SUMMARY"
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 24
+          cache: npm
+
+      - name: Install locked dependencies
+        run: npm ci
+
+      - name: Verify Playwright package and container browsers
+        shell: bash
+        run: |
+          set -euo pipefail
+          node --input-type=module - <<'NODE'
+          import fs from "node:fs";
+          import { createRequire } from "node:module";
+          import { chromium, webkit } from "playwright";
+
+          const require = createRequire(import.meta.url);
+          const installedVersion = require("playwright/package.json").version;
+          if (installedVersion !== process.env.PLAYWRIGHT_VERSION) {
+            throw new Error(`Expected Playwright ${process.env.PLAYWRIGHT_VERSION}, received ${installedVersion}`);
+          }
+          for (const browserType of [chromium, webkit]) {
+            fs.accessSync(browserType.executablePath(), fs.constants.X_OK);
+          }
+          NODE
+          test "$(npx playwright --version)" = "Version $PLAYWRIGHT_VERSION"
+          echo "Playwright package: \`$PLAYWRIGHT_VERSION\`" >> "$GITHUB_STEP_SUMMARY"
+          touch /tmp/mesh-release-browser-review-start
+
       - name: Run Event visual Chromium and WebKit matrix
         run: npm run verify:event-visual-library-browser
 
@@ -99,18 +170,41 @@ jobs:
       - name: Run inventory location Chromium and WebKit matrix
         run: npm run verify:inventory-location-alignment-browser
 
-      - name: Build production bundle
-        run: npm run build
+      - name: Verify fresh exact-head browser evidence
+        shell: bash
+        run: |
+          set -euo pipefail
+          for evidence_dir in \
+            docs/production/artifacts/event-visual-browser \
+            docs/production/artifacts/release-review-browser \
+            docs/production/artifacts/count-mode-browser \
+            docs/production/artifacts/inventory-location-browser
+          do
+            test -n "$(find "$evidence_dir" -type f -name '*.png' -newer /tmp/mesh-release-browser-review-start -print -quit)"
+          done
+          mkdir -p docs/production/artifacts/release-control
+          printf 'reviewed_sha=%s\nplaywright_version=%s\ncontainer_image=%s\n' \
+            "$REVIEWED_SHA" \
+            "$PLAYWRIGHT_VERSION" \
+            "$PLAYWRIGHT_IMAGE" \
+            > docs/production/artifacts/release-control/review-manifest.txt
 
-      - name: Upload read-only browser review evidence
-        if: always()
+      - name: Upload fresh browser review evidence
+        id: evidence
         uses: actions/upload-artifact@v4
         with:
-          name: release-review-browser-evidence
+          name: release-review-browser-evidence-${{ env.REVIEWED_SHA }}
           path: |
             docs/production/artifacts/event-visual-browser
             docs/production/artifacts/release-review-browser
             docs/production/artifacts/count-mode-browser
             docs/production/artifacts/inventory-location-browser
+            docs/production/artifacts/release-control/review-manifest.txt
           if-no-files-found: error
           retention-days: 14
+
+      - name: Record browser evidence artifact
+        shell: bash
+        run: |
+          echo "Artifact URL: ${{ steps.evidence.outputs.artifact-url }}" >> "$GITHUB_STEP_SUMMARY"
+          echo "Artifact SHA-256: \`${{ steps.evidence.outputs.artifact-digest }}\`" >> "$GITHUB_STEP_SUMMARY"
