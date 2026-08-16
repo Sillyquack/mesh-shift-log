@@ -6,3 +6,4 @@
 .rm-activation-record{display:grid;gap:5px;margin:10px 0;padding:12px;border-radius:10px;background:var(--surface-strong)}
 .rm-activation-record strong,.rm-activation-record small{overflow-wrap:anywhere}
 .rm-activation[data-activation-complete=true] .rm-card{border-color:color-mix(in srgb,#27a769 32%,var(--line))}
+.rm-field select,.rm-actions select,.rm-three-grid select,.rm-membership select{height:48px}

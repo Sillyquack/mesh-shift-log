@@ -51,6 +51,12 @@ jobs:
       - name: Verify Phase 10AB activation recovery
         run: npm run verify:phase10ab-activation-recovery
 
+      - name: Verify Phase 10AC provider vocabulary
+        run: npm run verify:phase10ac-provider-vocabulary
+
+      - name: Verify complete Routine provider-vocabulary parity
+        run: npm run verify:routine-provider-vocabulary-parity
+
       - name: Verify full migration reapply in rehearsal and production-shaped owner contexts
         run: npm run verify:routine-full-migration-reapply
 
@@ -176,6 +182,9 @@ jobs:
       - name: Run Activation Chromium and WebKit matrix
         run: npm run verify:activation-browser
 
+      - name: Run Routine provider vocabulary Chromium and WebKit matrix
+        run: npm run verify:routine-provider-vocabulary-browser
+
       - name: Verify fresh exact-head browser evidence
         shell: bash
         run: |
@@ -184,7 +193,8 @@ jobs:
             docs/production/artifacts/event-visual-browser \
             docs/production/artifacts/release-review-browser \
             docs/production/artifacts/count-mode-browser \
-            docs/production/artifacts/inventory-location-browser
+            docs/production/artifacts/inventory-location-browser \
+            docs/production/artifacts/routine-provider-vocabulary-browser
           do
             test -n "$(find "$evidence_dir" -type f -name '*.png' -newer /tmp/mesh-release-browser-review-start -print -quit)"
           done
@@ -205,6 +215,7 @@ jobs:
             docs/production/artifacts/release-review-browser
             docs/production/artifacts/count-mode-browser
             docs/production/artifacts/inventory-location-browser
+            docs/production/artifacts/routine-provider-vocabulary-browser
             docs/production/artifacts/release-control/review-manifest.txt
           if-no-files-found: error
           retention-days: 14

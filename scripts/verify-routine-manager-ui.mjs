@@ -4,6 +4,7 @@ import { dirname, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 import { spawnSync } from "node:child_process";
 import {
+  DEPENDENCY_TYPES,
   buildTaskPayload,
   conditionGroup,
   conditionLeaf,
@@ -20,6 +21,7 @@ import {
   readinessState,
   shortHash,
 } from "../src/features/routines-v2/data/routineManagerModel.js";
+import { ROUTINE_LOCATION_TYPES } from "../src/features/routines-v2/data/routineLocationTypes.js";
 
 const ROOT = resolve(dirname(fileURLToPath(import.meta.url)), "..");
 const IMAGE = "public.ecr.aws/supabase/postgres:17.6.1.141";
@@ -202,6 +204,8 @@ function sourceChecks() {
   check("inactive Opening and Closing are explicit blockers", managerSql.includes("Published Opening template is inactive.") && managerSql.includes("Published Closing template is inactive."));
   check("location guard makes stable key immutable", managerSql.includes("Routine location stable keys are immutable"));
   check("location guard blocks cycles", managerSql.includes("hierarchy cannot contain a cycle"));
+  check("manager location types use the exact canonical twelve-value vocabulary", JSON.stringify(ROUTINE_LOCATION_TYPES) === JSON.stringify(["zone","room","station","storage","storage_zone","shelf","fridge","toilet","door","equipment","collection_point","other"]));
+  check("RoutineLocationsManager consumes the canonical list without an inline fallback", sources["RoutineLocationsManager.jsx"].includes("ROUTINE_LOCATION_TYPES.map") && !sources["RoutineLocationsManager.jsx"].includes('["zone", "room", "station", "storage"'));
   check("diff rejects cross-template comparison", managerSql.includes("same logical template"));
   check("publication preview has no DML", !/create or replace function public\.preview_routine_template_publication_batch[\s\S]*?\$\$;[\s\S]*?\b(insert|update|delete)\b/i.test(managerSql.match(/create or replace function public\.preview_routine_template_publication_batch[\s\S]*?end \$\$;/)?.[0] || ""));
   check("readiness never marks release ready", managerSql.includes("'ready',false"));
@@ -270,6 +274,10 @@ function sourceChecks() {
   check("task item JSON is validated not evaluated", sources["RoutineTaskItemEditor.jsx"].includes("JSON.parse") && !/\beval\s*\(/.test(sources["RoutineTaskItemEditor.jsx"]));
   check("dependency editor warns cycles", sources["RoutineDependencyEditor.jsx"].includes("Cycle warning"));
   check("dependency editor supports must-reach time", sources["RoutineDependencyEditor.jsx"].includes("Must-reach-time boundary"));
+  check("dependency editor consumes the exact canonical provider vocabulary without changing the must_complete default",
+    JSON.stringify(DEPENDENCY_TYPES) === JSON.stringify(["must_complete","must_resolve","must_reach_time","must_receive_transfer","complete_predecessor_on_successor"])
+      && sources["RoutineDependencyEditor.jsx"].includes("DEPENDENCY_TYPES.map")
+      && sources["RoutineDependencyEditor.jsx"].includes('dependencyType: "must_complete"'));
   check("relation editor structures delivery metadata", ["deliveryKey", "comparisonMode", "evidenceItemKeys", "requireRunVerification"].every((key) => sources["RoutineRelationEditor.jsx"].includes(key)));
   check("reference links replace desired state atomically", sources["RoutineReferenceLinkEditor.jsx"].includes("Save complete reference list") && refClient.includes("replace_routine_draft_task_reference_images"));
   check("reference upload validates magic bytes", refClient.includes("validateRoutineReferenceFileContent"));
@@ -303,6 +311,10 @@ function sourceChecks() {
   check("harness is isolated from production entry", !main.includes("routineManagerHarnessEntry") && !app.includes("routineManagerHarnessEntry"));
   check("harness contains all 36 scenario tokens", ["manager-desktop", "manager-320", "dark-mode", "zoom-200", "empty-foundation", "locations-editor", "location-set-reorder", "standard-history", "empty-template-list", "template-list", "section-editor", "task-editor", "task-item-editor", "condition-builder", "timing-editor", "dependency-editor", "delivery-relation", "validation-blockers", "validation-warnings", "human-diff", "publish-confirmation", "batch-preview", "published-readonly", "reference-placeholder", "image-upload", "full-image", "operator-admin", "pin-dialog", "pilot-membership", "readiness-blockers", "stale-conflict", "network-preserved", "staff-no-manager", "shared-no-manager", "keyboard-flow", "legacy-back"].every((token) => harness.includes(token) || token === "manager-320" || token === "dark-mode" || token === "zoom-200" || token === "locations-editor" || token === "location-set-reorder" || token === "standard-history" || token === "template-list" || token === "reference-placeholder" || token === "image-upload" || token === "operator-admin" || token === "pin-dialog" || token === "pilot-membership" || token === "readiness-blockers" || token === "keyboard-flow"));
   check("harness contains all 10 template-state completion scenarios", ["active-template-action", "deactivate-confirmation-390", "deactivate-reason-required", "inactive-template-state", "reactivate-action", "deactivate-stale-reason", "inactive-published-readonly", "staff-template-actions-hidden", "shared-template-actions-hidden", "dark-keyboard-deactivation"].every((token) => harness.includes(token)));
+  check("harness contains provider dependency editable and read-only round-trip scenarios",
+    harness.includes('scenario==="dependency-vocabulary"')
+      && harness.includes('scenario==="dependency-vocabulary-readonly"')
+      && harness.includes('dependencyType:"complete_predecessor_on_successor"'));
   check("combined source has no production project ref", !combined.includes("jzuegkbzgynknnvivhia"));
   check("combined source has no forbidden alternate project marker", !combined.toLowerCase().includes("koalafrog"));
   check("combined source has no service role key", !combined.toLowerCase().includes("service_role"));

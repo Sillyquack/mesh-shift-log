@@ -36,26 +36,30 @@ const activationRecovery = readFileSync(
   absolute('supabase/phase10ab_mesh_routine_content_1_5r_activation_recovery.sql'),
   'utf8',
 );
+const providerVocabulary = readFileSync(
+  absolute('supabase/phase10ac_routine_provider_vocabulary_alignment.sql'),
+  'utf8',
+);
 const reviewWorkflow = readFileSync(
   absolute('.github/workflows/release-review.yml'),
   'utf8',
 );
 
-test('production migration manifest is unique, complete on disk and terminal at Phase 10AB', () => {
-  assert.equal(PHASE10_PRODUCTION_MIGRATIONS.length, 30);
-  assert.equal(new Set(PHASE10_PRODUCTION_MIGRATIONS).size, 30);
+test('production migration manifest is unique, complete on disk and terminal at Phase 10AC', () => {
+  assert.equal(PHASE10_PRODUCTION_MIGRATIONS.length, 31);
+  assert.equal(new Set(PHASE10_PRODUCTION_MIGRATIONS).size, 31);
   assert.ok(PHASE10_PRODUCTION_MIGRATIONS.every((path) => existsSync(absolute(path))));
   assert.equal(
     PHASE10_PRODUCTION_TERMINAL_MIGRATION,
-    'supabase/phase10ab_mesh_routine_content_1_5r_activation_recovery.sql',
+    'supabase/phase10ac_routine_provider_vocabulary_alignment.sql',
   );
   assert.equal(
     PHASE10_PRODUCTION_MIGRATIONS.at(-2),
-    'supabase/phase10aa_event_floor_manager_pilot_membership.sql',
+    'supabase/phase10ab_mesh_routine_content_1_5r_activation_recovery.sql',
   );
   assert.equal(
     PHASE10_PRODUCTION_MIGRATIONS.at(-3),
-    'supabase/phase10z_inventory_location_and_express_shelf_alignment.sql',
+    'supabase/phase10aa_event_floor_manager_pilot_membership.sql',
   );
 });
 
@@ -153,6 +157,25 @@ test('Phase 10AB exposes only the exact authenticated activation-recovery pair',
   assert.doesNotMatch(activationRecovery, /storage\.objects|ui_release_stage\s*=|mode\s*=\s*'(?:pilot|active)'/i);
 });
 
+test('Phase 10AC aligns only the two exact fail-closed provider constraints and preserves manager authority', () => {
+  assert.match(providerVocabulary, /^-- Phase 10AC:/);
+  assert.match(providerVocabulary, /begin;[\s\S]*commit;\s*$/i);
+  assert.match(providerVocabulary, /routine_locations_type_check/);
+  assert.match(providerVocabulary, /rejected THIRD_STATE routine_locations_type_check/);
+  assert.match(providerVocabulary, /storage_zone/);
+  assert.match(providerVocabulary, /shelf/);
+  assert.match(providerVocabulary, /routine_standards_source_kind_check/);
+  assert.match(providerVocabulary, /rejected THIRD_STATE routine_standards_source_kind_check/);
+  assert.match(providerVocabulary, /location_standards/);
+  assert.match(providerVocabulary, /provider\/system managed and cannot be created through the manager standard contract/);
+  assert.match(providerVocabulary, /add constraint routine_locations_type_check[\s\S]*not valid/i);
+  assert.match(providerVocabulary, /validate constraint routine_locations_type_check/i);
+  assert.match(providerVocabulary, /add constraint routine_standards_source_kind_check[\s\S]*not valid/i);
+  assert.match(providerVocabulary, /validate constraint routine_standards_source_kind_check/i);
+  assert.doesNotMatch(providerVocabulary, /drop constraint if exists/i);
+  assert.doesNotMatch(providerVocabulary, /inventory_locations|install_mesh_routine_content_pack|ui_release_stage\s*=|mode\s*=/i);
+});
+
 test('runbook declares the authorized Oslo cutover windows and Monday go/no-go', () => {
   for (const phrase of [
     'Saturday 15 August 23:30',
@@ -167,16 +190,16 @@ test('runbook declares the authorized Oslo cutover windows and Monday go/no-go',
   }
 });
 
-test('runbook names PR #17 as the only combined release merge', () => {
+test('runbook names PR #20 as the only next provider-vocabulary merge', () => {
   for (const phrase of [
-    'merge **PR #17** only',
-    'head: `codex/release-2026-08-17`',
+    'merge **PR #20** only',
+    'head: `codex/routine-location-vocabulary-2026-08-16`',
     'base: `phase-9a-inventory-par-levels-stocktaking`',
-    'PR #13, PR #14, PR #15 and PR #16 remain historical and review evidence',
+    'accepted merged production source before Phase 10AC is `0bc44806395a5dc1f5fb9448073f81321142dd91`',
   ]) {
     assert.ok(runbook.includes(phrase), phrase);
   }
-  assert.doesNotMatch(runbook, /^\s*\d+\.\s+\*\*PR #1[3-6]\*\*/m);
+  assert.doesNotMatch(runbook, /^\s*\d+\.\s+\*\*PR #(1[3-9])\*\*/m);
   assert.doesNotMatch(runbook, /Each PR is stacked|PR stack is conflict-free|Production-candidate PR/i);
 });
 
@@ -242,6 +265,8 @@ test('review-only GitHub Actions workflow runs every required release check with
   const commands = [
     'npm ci',
     'npm run verify:production-migration-plan',
+    'npm run verify:phase10ac-provider-vocabulary',
+    'npm run verify:routine-provider-vocabulary-parity',
     'npm run verify:production-candidate-experience',
     'npm run verify:event-routine-content',
     'npm run verify:event-visual-library',

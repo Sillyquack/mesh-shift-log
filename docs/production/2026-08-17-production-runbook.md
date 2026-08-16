@@ -34,17 +34,17 @@ These are recommended working windows, not automatic jobs.
 
 Do not continue past a stop condition merely to preserve the preferred date. A controlled fallback is better than a half-working Monday launch.
 
-## Single combined release PR
+## Final provider-vocabulary alignment PR
 
-The only approved later merge operation for this release is:
+The only approved next merge operation for this release is:
 
-- merge **PR #17** only;
-- head: `codex/release-2026-08-17`;
+- merge **PR #20** only;
+- head: `codex/routine-location-vocabulary-2026-08-16`;
 - base: `phase-9a-inventory-par-levels-stocktaking`.
 
-PR #17 contains the complete combined release diff. PR #13, PR #14, PR #15 and PR #16 remain historical and review evidence; do not merge them as separate cutover steps. The merge still requires Bobby's explicit approval and must use the exact PR #17 head that passed the final release check.
+PR #20 contains only the focused Phase 10AC provider-vocabulary alignment and matching manager-editor parity. Earlier release PRs remain merged history and review evidence; do not replay or merge them as separate cutover steps. The merge still requires Bobby's explicit approval and must use the exact PR #20 head that passed the final release check.
 
-The accepted application head before the infrastructure-only release-control pass is `af308ed3c1560dc5091f7a6cefd8d7ed97c8f8c5`. The exact successor commit is authoritative only when both split Release review jobs succeed on that same `REVIEWED_SHA`; PR #17 and the GitHub Actions job summaries must record it. The CI architecture, run #8 cancellation analysis, amber dev-tooling audit finding, and protected artifact hashes are recorded in [Release-control finalization — 16 August 2026](./2026-08-16-release-control-finalization.md).
+The accepted merged production source before Phase 10AC is `0bc44806395a5dc1f5fb9448073f81321142dd91`. The exact PR #20 successor commit is authoritative only when both split Release review jobs succeed on that same `REVIEWED_SHA`; PR #20 and the GitHub Actions job summaries must record it. The CI architecture, run #8 cancellation analysis, amber dev-tooling audit finding, and protected artifact hashes are recorded in [Release-control finalization — 16 August 2026](./2026-08-16-release-control-finalization.md).
 
 Protected release values for the final review are:
 
@@ -55,7 +55,8 @@ Protected release values for the final review are:
 - Phase 10Z SQL SHA-256: `caaf7c10970a97a5bc5928df967cd7683cff98a0f208888f6d162bdcd9f4fdab`;
 - Phase 10AA SQL SHA-256: `1f16dac64b1e66317d28c7fcbe20e87d62a7ff7db5ee12cc20e27e622eea8d4c`;
 - Phase 10AB SQL SHA-256: `2935a960b2cd22429d02d4594ce68bb874d909fcdbd5eeea64e120a09e5160a3`;
-- portable migration fingerprint: `34d7797a5e8b992d422dbc39bb6dc91c83082d09f2fef749d9ca58a61be0da3d`;
+- Phase 10AC SQL SHA-256: `a13b20a2329626bf0ce9f0d547d7683413863f50022b39283612210ec5eecf60`;
+- portable migration fingerprint: `6196f6f2657494badbb85cf9e0c0d2a07a9aea7a74d56e2b35726b7da0ab1f91`;
 - historical 1.4R SHA-256: `a69042a4e8f25d07e952821a0fdcadb24a8f1cb55a4e53044b6f28909ea8fba4`.
 
 ## Database migration order
@@ -92,15 +93,16 @@ The production preflight must first establish the exact migration currently inst
 28. `phase10z_inventory_location_and_express_shelf_alignment.sql`
 29. `phase10aa_event_floor_manager_pilot_membership.sql`
 30. `phase10ab_mesh_routine_content_1_5r_activation_recovery.sql`
+31. `phase10ac_routine_provider_vocabulary_alignment.sql`
 
-Phase 10W creates the least-privilege Event visual metadata and private Storage bridge for current allowlisted images. Phase 10X expands that bridge to the canonical visual allowlist, fixes `set_updated_at()` search-path configuration, and removes unintended anonymous Event Ops execution while preserving the existing authenticated RPC boundaries. Phase 10Y replaces only the private canonical provider with the additive 1.5R draft containing the confirmed refrigerator standards; it does not install that provider. This is the corrected 1.5R provider, not a new pack version. Phase 10Z performs the guarded physical-location alignment: it preserves the existing Main Storage identity, creates non-countable Express Shelf, creates Workbar Milk Fridge with exactly ten targetless profile-v2-mapped wine lines, leaves Planeta unlinked, and adds the manager-attention path for unlisted opened wine. Phase 10AA replaces only `replace_routine_pilot_memberships`: personal `event_floor_manager` profiles may receive preview or participant access, while coordinator remains exclusive to `shift_lead`. Phase 10AB adds only the authenticated personal-manager preview/apply recovery pair used by the separately reviewed Activation workflow; applying the migration performs no recovery operation. Security-advisor and privilege readback acceptance is evaluated after Phase 10X, not after Phase 10W alone. None of these migrations installs or publishes content, changes Routine Engine mode or UI release stage, uploads a file, creates a pilot membership, or grants manager access to Event Floor Managers merely by applying the migration. Phase 10Z fingerprints and preserves immutable Millum profile v2 and creates no profile v3.
+Phase 10W creates the least-privilege Event visual metadata and private Storage bridge for current allowlisted images. Phase 10X expands that bridge to the canonical visual allowlist, fixes `set_updated_at()` search-path configuration, and removes unintended anonymous Event Ops execution while preserving the existing authenticated RPC boundaries. Phase 10Y replaces only the private canonical provider with the additive 1.5R draft containing the confirmed refrigerator standards; it does not install that provider. This is the corrected 1.5R provider, not a new pack version. Phase 10Z performs the guarded physical-location alignment: it preserves the existing Main Storage identity, creates non-countable Express Shelf, creates Workbar Milk Fridge with exactly ten targetless profile-v2-mapped wine lines, leaves Planeta unlinked, and adds the manager-attention path for unlisted opened wine. Phase 10AA replaces only `replace_routine_pilot_memberships`: personal `event_floor_manager` profiles may receive preview or participant access, while coordinator remains exclusive to `shift_lead`. Phase 10AB adds only the authenticated personal-manager preview/apply recovery pair used by the separately reviewed Activation workflow; applying the migration performs no recovery operation. Phase 10AC classifies both exact historical/target constraints before mutation, adds only `storage_zone` and `shelf` to `routine_locations_type_check`, adds only provider/system-managed `location_standards` to `routine_standards_source_kind_check`, preserves the existing manager-creatable standard vocabulary, and changes no row or operational state. The frontend appends `complete_predecessor_on_successor` to the one canonical dependency-editor vocabulary because the existing database/runtime contract already accepts it. Security-advisor and privilege readback acceptance is evaluated after Phase 10X, not after Phase 10W alone. None of these migrations installs or publishes content, changes Routine Engine mode or UI release stage, uploads a file, creates a pilot membership, or grants manager access to Event Floor Managers merely by applying the migration. Phase 10Z fingerprints and preserves immutable Millum profile v2 and creates no profile v3.
 
 ## Required evidence before the first window
 
 All of the following must be present before Saturday 15 August 23:30:
 
-- PR #17 is open, approved for the later merge, conflict-free and still targets `phase-9a-inventory-par-levels-stocktaking` from `codex/release-2026-08-17`.
-- The exact PR #17 head has a clean release-review GitHub Actions check.
+- PR #20 is open, approved for the later merge, conflict-free and still targets `phase-9a-inventory-par-levels-stocktaking` from `codex/routine-location-vocabulary-2026-08-16`.
+- The exact PR #20 head has clean Core and Browser release-review GitHub Actions checks.
 - Production build succeeds from a clean dependency install.
 - Event routine content verification passes.
 - Event Mode, Shift Mode and Count Mode experience verification passes.
@@ -133,7 +135,7 @@ Complete before 23:00:
 - Confirm current time and announce the write freeze.
 - Confirm no user is actively completing a critical workflow.
 - Confirm production backup / PITR health.
-- Confirm the exact PR #17 head has not changed since verification and its release-review check is green.
+- Confirm the exact PR #20 head has not changed since verification and both release-review checks are green.
 - Re-run the final static/build checks against that exact commit.
 
 **Stop immediately** if the candidate differs from the verified commit or backup health cannot be confirmed.

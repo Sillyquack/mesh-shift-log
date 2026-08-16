@@ -1,5 +1,6 @@
 import { useState } from "react";
 import { routineConfigurationClient } from "../api/routineConfigurationClient.js";
+import { ROUTINE_LOCATION_TYPES } from "../data/routineLocationTypes.js";
 import { Field, StatusPill } from "./RoutineManagerPrimitives.jsx";
 
 const empty = { stableKey: "", name: "", locationType: "room", parentLocationId: "", sortOrder: 0, active: true, metadata: { description: "" } };
@@ -29,7 +30,7 @@ export default function RoutineLocationsManager({ locations, onRefresh, client =
         <Field id="location-key" label="Stable key" help="Immutable after creation; a database trigger rejects changes."><input id="location-key" value={draft.stableKey} readOnly={Boolean(draft.id)} onChange={(event) => setDraft({ ...draft, stableKey: event.target.value })} /></Field>
         <Field id="location-name" label="Name" help="Visible manager and future operator label."><input id="location-name" value={draft.name} onChange={(event) => setDraft({ ...draft, name: event.target.value })} /></Field>
         <div className="rm-three-grid">
-          <Field id="location-type" label="Type" help="Closed server vocabulary."><select id="location-type" value={draft.locationType} onChange={(event) => setDraft({ ...draft, locationType: event.target.value })}>{["zone", "room", "station", "storage", "fridge", "toilet", "door", "equipment", "collection_point", "other"].map((value) => <option key={value}>{value}</option>)}</select></Field>
+          <Field id="location-type" label="Type" help="Closed server vocabulary."><select id="location-type" value={draft.locationType} onChange={(event) => setDraft({ ...draft, locationType: event.target.value })}>{ROUTINE_LOCATION_TYPES.map((value) => <option key={value}>{value}</option>)}</select></Field>
           <Field id="location-parent" label="Parent" help="Same organization; cycles are blocked by server and trigger."><select id="location-parent" value={draft.parentLocationId} onChange={(event) => setDraft({ ...draft, parentLocationId: event.target.value })}><option value="">No parent</option>{locations.filter((location) => location.id !== draft.id).map((location) => <option value={location.id} key={location.id}>{location.name}</option>)}</select></Field>
           <Field id="location-order" label="Order" help="Keyboard-editable display order."><input id="location-order" type="number" min="0" max="100000" value={draft.sortOrder} onChange={(event) => setDraft({ ...draft, sortOrder: Number(event.target.value) })} /></Field>
         </div>

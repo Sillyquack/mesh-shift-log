@@ -10,7 +10,7 @@ export const REPEAT_POLICIES = Object.freeze(["once_per_run","once_per_phase","a
 export const AVAILABILITY_MODES = Object.freeze(["immediate","time_window","after_task","condition","continuous"]);
 export const ITEM_TYPES = Object.freeze(["check","count","quantity","measurement","text","choice","location","asset","product","status"]);
 export const SOURCE_KINDS = Object.freeze(["static","location_set","routine_standard","inventory_readonly","asset_registry_readonly","event_context"]);
-export const DEPENDENCY_TYPES = Object.freeze(["must_complete","must_resolve","must_reach_time","must_receive_transfer"]);
+export const DEPENDENCY_TYPES = Object.freeze(["must_complete","must_resolve","must_reach_time","must_receive_transfer","complete_predecessor_on_successor"]);
 export const RELATION_TYPES = Object.freeze(["shared_context","repeat_required","complementary_action","carry_forward_until_resolved","independent_verification","conditional_companion","delivery_comparison"]);
 
 export function conditionLeaf(fact = "weekday", operator = "equals", value = "") { return { fact, operator, ...(operator === "exists" ? {} : { value }) }; }
