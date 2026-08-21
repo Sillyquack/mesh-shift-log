@@ -1,3 +1,8 @@
+import {
+  WORKBAR_VISUAL_STANDARD_KEYS,
+  workbarVisualStandards,
+} from './workbarVisualStandards.js';
+
 export const staffCodes = [
   { code: '1001', name: 'Bobby', role: 'manager', isManager: true },
   { code: '1002', name: 'Ivana', role: 'staff', isManager: false },
@@ -134,7 +139,7 @@ export const defaultRoutines = [
     ['Turn on espresso machine', { area: 'workbar', priority: 'important' }],
     ['Place coffee in members lounge and remove used cups', { area: 'lounge' }],
     ['Refill milk and oat milk in coffee machine', { area: 'workbar', priority: 'important' }],
-    ['Refill Workbar milk fridge', { area: 'workbar' }],
+    ['Refill Workbar milk fridge', { area: 'workbar', guideId: 'workbar-fridge-standard', imageRefs: [WORKBAR_VISUAL_STANDARD_KEYS.BAR_MILK_FRIDGE] }],
     ['Open POS/register and count cash drawer', { description: 'Expected cash drawer: 1000 NOK.', area: 'pos', priority: 'critical', inputType: 'number', criticalConfirm: true, guideId: 'shopbox-pos-guide' }],
     ['Turn on music and check Q-SYS/Soundtrack', { area: 'general', priority: 'important', guideId: 'qsys-controller-guide', imageRefs: ['qsys-landing-placeholder'] }],
     ['Turn on Workbar dishwashers', { area: 'workbar' }],
@@ -142,7 +147,7 @@ export const defaultRoutines = [
     ['Turn on kitchen dishwashers', { area: 'kitchen' }],
     ['Check project rooms, cups and glasses match chair count', { area: 'project_rooms', priority: 'important', guideId: 'project-room-preparation-standard' }],
     ['Put out baked goods', { area: 'workbar' }],
-    ['Stock food/drink fridge', { area: 'workbar' }],
+    ['Stock food/drink fridge', { area: 'workbar', guideId: 'workbar-fridge-standard', imageRefs: [WORKBAR_VISUAL_STANDARD_KEYS.NON_ALCO_FRIDGE] }],
     ['Refill self-service station', { area: 'workbar' }],
     ['Adjust lights to from "Cleaning lights" to "Cafe lights"', { area: 'general' }],
     ['Light candles (winter task)', { area: 'general', inputType: 'comment' }],
@@ -152,7 +157,7 @@ export const defaultRoutines = [
   section('opening-0800', 'opening', 'Opening 08:00-10:00', [
     ['Recheck calendar for new bookings', { area: 'event', priority: 'important', guideId: 'google-calendar-guide' }],
     ['Change dirty cups/glasses from lounge', { area: 'lounge' }],
-    ['Refill drink fridge, check dates', { area: 'workbar', priority: 'important' }],
+    ['Refill drink fridge, check dates', { area: 'workbar', priority: 'important', guideId: 'workbar-fridge-standard', imageRefs: [WORKBAR_VISUAL_STANDARD_KEYS.NON_ALCO_FRIDGE] }],
     ['Refill cutlery, napkins, glasses, cups, plates, salt and pepper', { area: 'workbar' }],
     ['Refill takeaway cups and lids', { area: 'workbar' }],
     ['Check venues and furniture placement', { area: 'event', priority: 'important' }],
@@ -322,15 +327,15 @@ export const defaultRoutines = [
     ['Friday: Deep clean coffee machine milk system', { recurring: { type: 'weekdays', days: ['friday'] }, area: 'workbar', priority: 'important' }],
     ['Friday: Check fridges and dates before weekend', { recurring: { type: 'weekdays', days: ['friday'] }, area: 'workbar', priority: 'important' }],
     ['Weekly: Check batteries and technical basics', { area: 'event', priority: 'important' }],
-    ['Weekly: Check fridge layout against standard', { area: 'workbar', priority: 'important' }],
+    ['Weekly: Check fridge layout against standard', { area: 'workbar', priority: 'important', guideId: 'workbar-fridge-standard', imageRefs: [WORKBAR_VISUAL_STANDARD_KEYS.BAR_MILK_FRIDGE, WORKBAR_VISUAL_STANDARD_KEYS.NON_ALCO_FRIDGE] }],
   ]),
   section('monthly-quiet-time', 'monthly', 'Monthly / Quiet-time tasks', [
-    ['Deep clean Workbar fridge shelves', { area: 'workbar', priority: 'normal', optional: true, recurring: { type: 'quiet_time' }, guideId: 'workbar-fridge-standard', imageRefs: ['workbar-fridge-standard-placeholder'] }],
+    ['Deep clean Workbar fridge shelves', { area: 'workbar', priority: 'normal', optional: true, recurring: { type: 'quiet_time' }, guideId: 'workbar-fridge-standard', imageRefs: [WORKBAR_VISUAL_STANDARD_KEYS.BAR_MILK_FRIDGE, WORKBAR_VISUAL_STANDARD_KEYS.NON_ALCO_FRIDGE] }],
     ['Check all expiry dates in Workbar fridge', { area: 'workbar', priority: 'normal', optional: true, recurring: { type: 'quiet_time' }, guideId: 'workbar-fridge-standard' }],
     ['Clean behind beer taps', { area: 'workbar', priority: 'normal', optional: true, recurring: { type: 'quiet_time' } }],
     ['Check venue storage', { area: 'event', priority: 'normal', optional: true, recurring: { type: 'quiet_time' }, guideId: 'cornerbar-standard-event-setup' }],
     ['Check cable/microphone/battery box', { area: 'event', priority: 'normal', optional: true, recurring: { type: 'quiet_time' }, guideId: 'technical-equipment-standard', imageRefs: ['technical-equipment-placeholder'] }],
-    ['Check fridge layout against standard', { area: 'workbar', priority: 'normal', optional: true, recurring: { type: 'quiet_time' }, guideId: 'workbar-fridge-standard', imageRefs: ['workbar-fridge-standard-placeholder'] }],
+    ['Check fridge layout against standard', { area: 'workbar', priority: 'normal', optional: true, recurring: { type: 'quiet_time' }, guideId: 'workbar-fridge-standard', imageRefs: [WORKBAR_VISUAL_STANDARD_KEYS.BAR_MILK_FRIDGE, WORKBAR_VISUAL_STANDARD_KEYS.NON_ALCO_FRIDGE] }],
     ['Check event setup photos and report if outdated', { area: 'event', priority: 'normal', optional: true, recurring: { type: 'quiet_time' }, guideId: 'venue-setup-library', imageRefs: ['atrium-standard-setup-placeholder', 'cornerbar-standard-event-setup-placeholder'] }],
   ], {
     optional: true,
@@ -342,7 +347,7 @@ export const defaultRoutines = [
     ['Check cable/microphone/battery box', { area: 'event', optional: true, recurring: { type: 'quiet_time' }, guideId: 'technical-equipment-standard', imageRefs: ['technical-equipment-placeholder'] }],
     ['Tidy project room supplies', { area: 'project_rooms', optional: true, recurring: { type: 'quiet_time' }, guideId: 'project-room-preparation-standard', imageRefs: ['project-room-standard-placeholder'] }],
     ['Refill pens/post-its/whiteboard markers', { area: 'project_rooms', optional: true, recurring: { type: 'quiet_time' }, guideId: 'project-room-preparation-standard', imageRefs: ['project-room-standard-placeholder'] }],
-    ['Check fridge layout against standard', { area: 'workbar', optional: true, recurring: { type: 'quiet_time' }, guideId: 'workbar-fridge-standard', imageRefs: ['workbar-fridge-standard-placeholder'] }],
+    ['Check fridge layout against standard', { area: 'workbar', optional: true, recurring: { type: 'quiet_time' }, guideId: 'workbar-fridge-standard', imageRefs: [WORKBAR_VISUAL_STANDARD_KEYS.BAR_MILK_FRIDGE, WORKBAR_VISUAL_STANDARD_KEYS.NON_ALCO_FRIDGE] }],
     ['Check mailroom/package area', { area: 'general', optional: true, recurring: { type: 'quiet_time' }, guideId: 'mail-in-workbar-guide' }],
     ['Restock disposables', { area: 'workbar', optional: true, recurring: { type: 'quiet_time' } }],
     ['Deep clean selected Workbar area', { area: 'workbar', optional: true, recurring: { type: 'quiet_time' } }],
@@ -468,7 +473,7 @@ export const knowledgeBase = [
     title: 'Workbar fridge standard setup',
     category: 'Fridges',
     area: 'workbar',
-    body: 'Use this as the standard layout for the Workbar fridge.',
+    body: 'Use these photographs as the canonical standards for the Workbar Bar milk-fridge and the Workbar non-alcoholic fridge.',
     steps: [
       'Check that all shelves are clean.',
       'Place products according to the standard layout.',
@@ -476,13 +481,15 @@ export const knowledgeBase = [
       'Report low stock or deviations in handover notes.',
     ],
     images: [
-      {
-        id: 'workbar-fridge-standard-placeholder',
-        label: 'Correct Workbar fridge setup',
-        src: '/mesh-shift-log/guides/workbar-fridge-standard.svg',
-      },
+      workbarVisualStandards[WORKBAR_VISUAL_STANDARD_KEYS.BAR_MILK_FRIDGE],
+      workbarVisualStandards[WORKBAR_VISUAL_STANDARD_KEYS.NON_ALCO_FRIDGE],
     ],
-    relatedTaskIds: ['preclosing-1500-restock-workbar-and-bar-fridges-with-soda-beer-prosecco-and-wine', 'monthly-quiet-time-check-fridge-layout-against-standard'],
+    relatedTaskIds: [
+      'opening-opening-07-00-08-00-refill-workbar-milk-fridge',
+      'opening-opening-07-00-08-00-stock-food-drink-fridge',
+      'preclosing-1500-restock-workbar-and-bar-fridges-with-soda-beer-prosecco-and-wine',
+      'monthly-quiet-time-check-fridge-layout-against-standard',
+    ],
     tags: ['fridge', 'workbar', 'standard'],
   },
   {

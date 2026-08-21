@@ -1,4 +1,8 @@
 import React, { useState } from 'react';
+import {
+  WORKBAR_VISUAL_STANDARD_KEYS,
+  getWorkbarVisualStandard,
+} from './data/workbarVisualStandards.js';
 
 const sections = [
   {
@@ -31,10 +35,10 @@ const sections = [
     id: 'fridges',
     title: 'Fridges & beverage storage',
     items: [
-      ['Non-alcoholic fridge', 'Use the photographed setup as the standard. Closing: switch off the fridge light and pull down the front grille.'],
+      ['Non-alcoholic fridge', 'Use the photographed setup as the standard. Closing: switch off the fridge light and pull down the front grille.', WORKBAR_VISUAL_STANDARD_KEYS.NON_ALCO_FRIDGE],
       ['Workbar left fridge', 'Use the photographed layout as the standard; no extra category rule is currently defined.'],
       ['Workbar right fridge', 'Use the photographed layout as the standard; no extra category rule is currently defined.'],
-      ['Milk / opened-wine fridge', 'Milk shelf serves the espresso station. Space below the milk shelf is for opened wine bottles with corks and date labels.'],
+      ['Milk / opened-wine fridge', 'Use the photographed milk shelf and opened-wine storage as the standard. Milk serves the espresso station; opened wine bottles below must have corks and date labels.', WORKBAR_VISUAL_STANDARD_KEYS.BAR_MILK_FRIDGE],
       ['Milk system', 'One two-part container: LEFT = regular milk / blue hose. RIGHT = Oatly / green hose.'],
       ['Locks', 'All bar cabinets / fridges are locked at close using the key kept in the cash drawer.'],
     ],
@@ -114,11 +118,25 @@ const sections = [
   },
 ];
 
-function GuideCard({ title, text }) {
+function GuideCard({ title, text, visualKey }) {
+  const image = visualKey ? getWorkbarVisualStandard(visualKey) : null;
   return (
     <div style={{ border: '1px solid #d8d8d8', borderRadius: 12, padding: 12, background: '#fff' }}>
       <strong style={{ display: 'block', marginBottom: 5 }}>{title}</strong>
       <div style={{ color: '#3d3d3d', lineHeight: 1.45 }}>{text}</div>
+      {image && (
+        <figure style={{ margin: '12px 0 0' }}>
+          <img
+            src={image.src}
+            alt={image.label}
+            loading="lazy"
+            style={{ display: 'block', width: '100%', height: 'auto', borderRadius: 10 }}
+          />
+          <figcaption style={{ marginTop: 6, color: '#606060', fontSize: '.82rem', fontWeight: 700 }}>
+            {image.label}
+          </figcaption>
+        </figure>
+      )}
     </div>
   );
 }
@@ -157,7 +175,7 @@ export default function WorkbarGuideOverlay() {
                 <section key={section.id} style={{ background: '#ecece8', borderRadius: 14, padding: 12 }}>
                   <h3 style={{ margin: '0 0 10px' }}>{section.title}</h3>
                   <div style={{ display: 'grid', gap: 8 }}>
-                    {section.items.map(([title, text]) => <GuideCard key={title} title={title} text={text} />)}
+                    {section.items.map(([title, text, visualKey]) => <GuideCard key={title} title={title} text={text} visualKey={visualKey} />)}
                   </div>
                 </section>
               ))}
