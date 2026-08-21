@@ -348,12 +348,20 @@ function RunbookScene({ chapter, progress }) {
   );
 }
 
-function FinalScene({ chapter, replay, exit }) {
+function FinalScene({ chapter, progress, replay, exit }) {
+  const activeStep = Math.min(
+    julieEventDemo.storyProgression.length - 1,
+    Math.floor(progress * julieEventDemo.storyProgression.length),
+  );
   return (
     <SceneFrame chapter={chapter} className="ct-final-scene">
       <div className="ct-final-content">
         <div className="ct-final-mark" aria-hidden="true"><span /><i>✓</i></div>
-        <p>Preparation → live control → verified closeout</p>
+        <div className="ct-story-progression" aria-label="Plan, assign, execute, see change, act, close, review">
+          {julieEventDemo.storyProgression.map((step, index) => (
+            <span key={step} className={index <= activeStep ? "is-active" : ""}>{step}</span>
+          ))}
+        </div>
         <div className="ct-final-actions">
           <button type="button" className="ct-primary-action" onClick={exit}>Enter Event Floor Manager <span aria-hidden="true">→</span></button>
           <button type="button" className="ct-secondary-action" onClick={replay}>Replay the event</button>

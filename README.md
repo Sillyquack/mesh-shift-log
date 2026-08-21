@@ -113,7 +113,7 @@ Julie is seeded as an `event_floor_manager` default user. Event floor managers l
 
 The dashboard shows local event cards, readiness checks, during-event checks, closeout checks, weekly/monthly event floor tasks, cash/invoice status and asset checks. There is no calendar integration yet.
 
-The dashboard also includes a replayable, roughly two-minute cinematic event story. The tour runs entirely in isolated in-memory demo state, keeps captions on by default, provides pause/next/back/skip/replay and chapter navigation, and never mutates operational records. See the [narrator script](docs/demos/event-floor-manager-narrator-script.md) and [capability map](docs/demos/event-floor-manager-capability-map.md).
+The dashboard also includes a replayable 3:45 cinematic event story. Its narration-led beats give readiness, standards, ownership, live exceptions, management visibility and the planned live runbook room to breathe. The tour runs entirely in isolated in-memory demo state, keeps captions on by default, provides silent playback plus narration-ready audio controls, and never mutates operational records. See the [production narrator script](docs/demos/event-floor-manager-narrator-script.md) and [capability map](docs/demos/event-floor-manager-capability-map.md).
 
 The repository now contains authenticated Google Calendar import/linking foundations for the newer event operations cockpit. This remains a configured pilot capability rather than a general production integration; the older local event-card model still has no direct calendar sync.
 
