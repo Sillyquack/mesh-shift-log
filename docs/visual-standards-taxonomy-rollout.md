@@ -1,44 +1,71 @@
 # Visual Standards taxonomy/detail rollout
 
-Status: prepared locally on 21 August 2026; not applied to the remote database,
-not deployed, and no production photo has been published.
+Status: production database reconciled and verified on 21 August 2026. PR #26
+remains unmerged; its web application and Edge Function changes remain
+undeployed, and no production photo was published during reconciliation.
 
 ## Change boundary
 
-The forward-only migration is:
+Production already contained this accidental ledger entry with only SQL
+comments and no schema-changing statement:
 
-`supabase/migrations/20260821115700_visual_standard_details_and_taxonomy.sql`
+`supabase/migrations/20260821124543_visual_standard_details_and_taxonomy.sql`
+
+The entry was preserved and represented locally as a no-op. The exact reviewed
+SQL from the former `20260821115700` file was moved without content changes to
+the newly generated forward-only recovery migration:
+
+`supabase/migrations/20260821125127_recover_visual_standard_details_and_taxonomy.sql`
+
+The recovery file retains SHA-256
+`44ba4a05fcb87fc0e286a16bff9783f25c9cc900f10b1251894edf14831ca752`.
 
 It preserves the existing private bucket and immutable primary assets. It adds
 `visual_standards.is_visible`, four explicit legacy aliases, detail metadata on
 the existing audit table, ordered detail slots, and manager-only detail
 publish/restore RPCs. The four legacy rows and any history remain retained but
-are hidden from active lists. No migration repair or ledger rewrite is needed.
+are hidden from active lists. No migration repair or ledger rewrite was used.
 
-The application and Edge Function depend on the new column/table. Roll out in
-this order only after the pull request and all verification are approved:
+The repository also restores the 34 exact migration files for the production
+ledger versions from 2–16 August. Their byte counts and MD5 hashes match the SQL
+stored in production. This makes the linked migration history fully aligned.
 
-1. Confirm the linked Supabase project and review migration history read-only.
-2. Run `npx --yes supabase@2.115.0 db push --linked --dry-run` and confirm that
-   `20260821115700_visual_standard_details_and_taxonomy.sql` is the only pending
-   migration. Stop if any other migration appears.
-3. Apply that one forward migration with the normal approved production change
-   process. Do not use migration repair and do not edit either migration file.
-4. Verify read-only that there are exactly nine visible Self-Service rows, four
-   hidden legacy rows, four aliases, and three awaiting backstock detail slots.
-5. Deploy only `visual-standard-image` with the same intentionally configured
+## Reconciliation record
+
+1. Read-only inspection confirmed the pre-PR26 schema, ten existing standards,
+   no taxonomy/detail objects, and the comment-only accidental ledger entry.
+2. Preservation fingerprints were captured for the ten existing standards,
+   version history, Storage object names and two Workbar fridge rows.
+3. A linked dry-run selected only
+   `20260821125127_recover_visual_standard_details_and_taxonomy.sql`.
+4. The recovery migration was applied once with `db push`; no seed or role file
+   ran, and `migration repair` was not used.
+5. Read-only verification confirmed exactly nine visible Self-Service rows,
+   four retained hidden legacy rows, four aliases, three awaiting Cabinet
+   detail slots, expected RLS/grants and all four secured RPCs.
+6. The preservation fingerprints remained unchanged; there were still zero
+   image versions and zero private Storage objects.
+7. The final linked migration comparison matched every local and remote version,
+   and the final dry-run reported the production database up to date with no
+   pending migrations.
+
+The application and Edge Function depend on the reconciled column/table. Their
+rollout remains intentionally pending. Only after PR #26 is approved:
+
+1. Confirm a fresh database dry-run remains empty. Stop if any migration appears.
+2. Deploy only `visual-standard-image` with the same intentionally configured
    gateway setting as the existing function:
    `npx --yes supabase@2.115.0 functions deploy visual-standard-image --no-verify-jwt`.
-6. Run active-primary, active-detail, manager-history, staff denial, and direct
+3. Run active-primary, active-detail, manager-history, staff denial, and direct
    private-Storage denial smoke checks before deploying the web application.
-7. Deploy the approved web application through the normal release process.
-8. On an iPhone-width device, open Manager Dashboard → Default Standards →
+4. Deploy the approved web application through the normal release process.
+5. On an iPhone-width device, open Manager Dashboard → Default Standards →
    Self-Service Station, select the overview row, take a non-sensitive test
    photo, confirm the local preview, and press Save.
-9. Confirm immutable upload, audited version creation, active-row readback,
+6. Confirm immutable upload, audited version creation, active-row readback,
    signed image refresh, immediate row thumbnail update, and ordinary-staff
    active-only visibility.
-10. Only after the smoke test succeeds, manually publish the real overview and
+7. Only after the smoke test succeeds, manually publish the real overview and
     any optional cabinet details through Manager Dashboard.
 
 ## Rollback boundary

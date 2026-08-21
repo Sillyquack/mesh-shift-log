@@ -121,16 +121,22 @@ It creates/configures:
 No ordinary-user Storage read/list policy is created. Active delivery is
 performed by the Edge Function after its canonical active-row lookup.
 
-This follow-up adds one new, unapplied, forward-only migration:
+The taxonomy/detail follow-up was reconciled forward-only after production
+recorded an accidental comment-only migration:
 
-`supabase/migrations/20260821115700_visual_standard_details_and_taxonomy.sql`
+- `20260821124543_visual_standard_details_and_taxonomy.sql` mirrors the existing
+  no-op production ledger entry;
+- `20260821125127_recover_visual_standard_details_and_taxonomy.sql` contains the
+  exact SQL previously reviewed as version `20260821115700` and is the only
+  migration that changed the production schema.
 
-It adds the nine-section Self-Service taxonomy, hides but does not delete four
-legacy canonical rows, records their aliases, extends the existing audit table
-for primary/detail roles, adds ordered detail slots, and adds manager-only
-detail publish/restore RPCs. It does not rewrite the applied migration above,
-repair migration history, or remove any immutable Storage object or version.
-See `docs/visual-standards-taxonomy-rollout.md` for the exact future rollout.
+The recovery adds the nine-section Self-Service taxonomy, hides but does not
+delete four legacy canonical rows, records their aliases, extends the existing
+audit table for primary/detail roles, adds ordered detail slots, and adds
+manager-only detail publish/restore RPCs. Production history was not repaired
+or rewritten, and no immutable Storage object or version was removed. See
+`docs/visual-standards-taxonomy-rollout.md` for the reconciliation record and
+the still-pending application rollout.
 
 ## Initial production rollout status — 21 August 2026
 
@@ -159,8 +165,10 @@ complete on project `mesh-shift-log`:
    project security debt is tracked separately.
 
 The initial rollout's application steps were completed by PR #25. The
-taxonomy/detail follow-up described above is intentionally not applied,
-deployed or published by this coding pass.
+taxonomy/detail database recovery described above was applied and verified on
+21 August 2026. PR #26 remains unmerged, and neither its web application nor
+its Edge Function change has been deployed. No production Visual Standard
+photo was published during reconciliation.
 
 ## Production smoke test
 
