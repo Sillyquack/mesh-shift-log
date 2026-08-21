@@ -1,6 +1,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { build as buildWithEsbuild } from 'esbuild';
+import { createClient } from '@supabase/supabase-js';
 import {
   CANONICAL_VISUAL_STANDARD_KEYS,
   LEGACY_SELF_SERVICE_VISUAL_STANDARD_KEYS,
@@ -163,6 +164,74 @@ test('manager history delivery sends a version id, never a Storage path or share
   ]);
   assert.equal(Object.hasOwn(calls[0][1], 'assetPath'), false);
   assert.equal(calls.length, 2);
+});
+
+test('frontend signed-delivery requests keep the publishable apikey and switch Authorization by session', async () => {
+  clearVisualStandardSignedUrlCache();
+  const requests = [];
+  const publishableKey = 'sb_publishable_test_visual_standard_delivery';
+  const managerJwt = 'manager-user-jwt';
+  const now = Date.parse('2026-08-21T15:30:00.000Z');
+  const client = createClient('https://project-ref.supabase.co', publishableKey, {
+    auth: {
+      persistSession: false,
+      autoRefreshToken: false,
+      detectSessionInUrl: false,
+    },
+    global: {
+      fetch: async (input, init = {}) => {
+        const headers = new Headers(init.headers);
+        requests.push({
+          url: String(input),
+          apikey: headers.get('apikey'),
+          authorization: headers.get('authorization'),
+          body: JSON.parse(String(init.body)),
+        });
+        return new Response(JSON.stringify({
+          ok: true,
+          signedUrl: 'https://assets.test/private-visual-standard',
+          expiresAt: new Date(now + (60 * 60 * 1000)).toISOString(),
+        }), {
+          status: 200,
+          headers: { 'Content-Type': 'application/json' },
+        });
+      },
+    },
+  });
+
+  const active = await resolveVisualStandardSignedUrlWithClient({
+    client,
+    canonicalKey: SELF_SERVICE_VISUAL_STANDARD_KEYS.OVERVIEW,
+    activeVersionId: 'active-version-1',
+    now,
+  });
+  client.functions.setAuth(managerJwt);
+  const history = await resolveVisualStandardSignedUrlWithClient({
+    client,
+    canonicalKey: SELF_SERVICE_VISUAL_STANDARD_KEYS.OVERVIEW,
+    versionId: '3d366ecb-cb86-4257-9ced-4deb0c37214b',
+    now,
+  });
+
+  assert.equal(active.ok, true);
+  assert.equal(history.ok, true);
+  assert.deepEqual(requests, [
+    {
+      url: 'https://project-ref.supabase.co/functions/v1/visual-standard-image',
+      apikey: publishableKey,
+      authorization: `Bearer ${publishableKey}`,
+      body: { canonicalKey: SELF_SERVICE_VISUAL_STANDARD_KEYS.OVERVIEW },
+    },
+    {
+      url: 'https://project-ref.supabase.co/functions/v1/visual-standard-image',
+      apikey: publishableKey,
+      authorization: `Bearer ${managerJwt}`,
+      body: {
+        canonicalKey: SELF_SERVICE_VISUAL_STANDARD_KEYS.OVERVIEW,
+        versionId: '3d366ecb-cb86-4257-9ced-4deb0c37214b',
+      },
+    },
+  ]);
 });
 
 test('file validation and versioned logical paths are deterministic and safe', () => {
