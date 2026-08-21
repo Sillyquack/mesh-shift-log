@@ -1,4 +1,4 @@
-const CACHE_NAME = 'mesh-shift-log-v0.8.2-phase10k4-shell-v1';
+const CACHE_NAME = 'mesh-shift-log-v0.7.0-phase-5a-financial-signoffs';
 const APP_SHELL = ['./', './index.html', './manifest.webmanifest', './icon.svg'];
 const APP_ORIGIN = self.location.origin;
 
@@ -33,22 +33,12 @@ self.addEventListener('fetch', (event) => {
     return;
   }
 
-  const credentialBearing = event.request.headers.has('authorization')
-    || event.request.headers.has('x-mesh-routine-operator-session');
-  const privatePath = /^\/(?:auth|rest|storage|functions)\/v1\//.test(requestUrl.pathname);
-  if (credentialBearing || privatePath) {
-    event.respondWith(fetch(event.request));
-    return;
-  }
-
   if (event.request.mode === 'navigate') {
     event.respondWith(
       fetch(event.request)
         .then((response) => {
-          if (response.ok && response.headers.get('content-type')?.includes('text/html')) {
-            const copy = response.clone();
-            caches.open(CACHE_NAME).then((cache) => cache.put('./index.html', copy));
-          }
+          const copy = response.clone();
+          caches.open(CACHE_NAME).then((cache) => cache.put('./index.html', copy));
           return response;
         })
         .catch(() => caches.match('./index.html').then((cached) => cached || caches.match('./'))),
@@ -56,21 +46,10 @@ self.addEventListener('fetch', (event) => {
     return;
   }
 
-  const cacheableStatic = requestUrl.search === '' && (
-    requestUrl.pathname.startsWith('/assets/')
-    || ['/manifest.webmanifest', '/icon.svg'].includes(requestUrl.pathname)
-  );
-  if (!cacheableStatic) {
-    event.respondWith(fetch(event.request));
-    return;
-  }
-
   event.respondWith(
     caches.match(event.request).then((cached) => cached || fetch(event.request).then((response) => {
-      if (response.ok && ['basic', 'default'].includes(response.type)) {
-        const copy = response.clone();
-        caches.open(CACHE_NAME).then((cache) => cache.put(event.request, copy));
-      }
+      const copy = response.clone();
+      caches.open(CACHE_NAME).then((cache) => cache.put(event.request, copy));
       return response;
     })),
   );
