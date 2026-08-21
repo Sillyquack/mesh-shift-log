@@ -8,9 +8,11 @@ import {
 } from '../src/data/workbarVisualStandards.js';
 import {
   buildVisualStandardAssetPath,
+  clearVisualStandardSignedUrlCache,
   publishVisualStandardWithClient,
   resolveAllVisualStandards,
   resolveVisualStandard,
+  resolveVisualStandardSignedUrlWithClient,
   validateVisualStandardFile,
 } from '../src/lib/visualStandards.js';
 import { canManageVisualStandards } from '../src/lib/permissions.js';
@@ -47,11 +49,99 @@ test('resolver uses backend asset, then bundled fallback, then placeholder', () 
   assert.equal(resolved.src, 'https://assets.test/fridge.jpg');
   assert.equal(resolved.activeVersion, 1);
 
-  const all = resolveAllVisualStandards(
-    [{ ...backend, canonicalKey: fridgeKey, activeAssetPath: backend.active_asset_path }],
-    (path) => `https://assets.test/${path}`,
-  );
+  const all = resolveAllVisualStandards([{
+    ...backend,
+    canonicalKey: fridgeKey,
+    activeAssetPath: backend.active_asset_path,
+    signedUrl: 'https://assets.test/signed/fridge.jpg',
+  }]);
   assert.equal(all.find((item) => item.canonicalKey === fridgeKey).source, 'backend');
+});
+
+test('signed delivery uses canonical keys only and caches until near expiry', async () => {
+  clearVisualStandardSignedUrlCache();
+  const calls = [];
+  const now = Date.parse('2026-08-21T10:00:00.000Z');
+  let clock = now;
+  const client = {
+    functions: {
+      async invoke(name, options) {
+        calls.push([name, options.body]);
+        return {
+          data: {
+            ok: true,
+            signedUrl: 'https://assets.test/private-active',
+            expiresAt: new Date(clock + (60 * 60 * 1000)).toISOString(),
+          },
+          error: null,
+        };
+      },
+    },
+  };
+  const input = {
+    client,
+    canonicalKey: WORKBAR_VISUAL_STANDARD_KEYS.BAR_MILK_FRIDGE,
+    activeVersionId: 'version-1',
+    now,
+  };
+
+  const first = await resolveVisualStandardSignedUrlWithClient(input);
+  const second = await resolveVisualStandardSignedUrlWithClient(input);
+  clock = now + (56 * 60 * 1000);
+  const nearExpiry = await resolveVisualStandardSignedUrlWithClient({
+    ...input,
+    now: clock,
+  });
+
+  assert.equal(first.ok, true);
+  assert.equal(first.fromCache, false);
+  assert.equal(second.fromCache, true);
+  assert.equal(nearExpiry.fromCache, false);
+  assert.equal(calls.length, 2);
+  assert.deepEqual(calls[0], [
+    'visual-standard-image',
+    { canonicalKey: WORKBAR_VISUAL_STANDARD_KEYS.BAR_MILK_FRIDGE },
+  ]);
+});
+
+test('manager history delivery sends a version id, never a Storage path or shared-role cache entry', async () => {
+  clearVisualStandardSignedUrlCache();
+  const calls = [];
+  const now = Date.parse('2026-08-21T10:00:00.000Z');
+  const client = {
+    functions: {
+      async invoke(name, options) {
+        calls.push([name, options.body]);
+        return {
+          data: {
+            ok: true,
+            signedUrl: 'https://assets.test/private-history',
+            expiresAt: new Date(now + (60 * 60 * 1000)).toISOString(),
+          },
+          error: null,
+        };
+      },
+    },
+  };
+
+  const input = {
+    client,
+    canonicalKey: WORKBAR_VISUAL_STANDARD_KEYS.BAR_MILK_FRIDGE,
+    versionId: '20000000-0000-4000-8000-000000000002',
+    now,
+  };
+  await resolveVisualStandardSignedUrlWithClient(input);
+  await resolveVisualStandardSignedUrlWithClient(input);
+
+  assert.deepEqual(calls[0], [
+    'visual-standard-image',
+    {
+      canonicalKey: WORKBAR_VISUAL_STANDARD_KEYS.BAR_MILK_FRIDGE,
+      versionId: '20000000-0000-4000-8000-000000000002',
+    },
+  ]);
+  assert.equal(Object.hasOwn(calls[0][1], 'assetPath'), false);
+  assert.equal(calls.length, 2);
 });
 
 test('file validation and versioned logical paths are deterministic and safe', () => {

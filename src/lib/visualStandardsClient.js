@@ -4,10 +4,10 @@ import {
   supabaseAuthClient,
 } from './supabaseAuthClient.js';
 import {
-  VISUAL_STANDARDS_BUCKET,
   normalizeVisualStandardRow,
   normalizeVisualStandardVersionRow,
   publishVisualStandardWithClient,
+  resolveVisualStandardSignedUrlWithClient,
   validateVisualStandardFile,
 } from './visualStandards.js';
 
@@ -44,12 +44,20 @@ async function requireAuthenticatedSession() {
   return session?.user?.id ? session : null;
 }
 
-export function getVisualStandardPublicUrl(assetPath) {
-  if (!assetPath || !supabaseAuthClient) return '';
-  const { data } = supabaseAuthClient.storage
-    .from(VISUAL_STANDARDS_BUCKET)
-    .getPublicUrl(assetPath);
-  return data?.publicUrl || '';
+async function withActiveSignedUrl(record, { forceRefresh = false } = {}) {
+  if (!record?.activeAssetPath || record.status !== 'published') return record;
+  const delivery = await resolveVisualStandardSignedUrlWithClient({
+    client: supabaseAuthClient,
+    canonicalKey: record.canonicalKey,
+    activeVersionId: record.activeVersionId,
+    forceRefresh,
+  });
+  return {
+    ...record,
+    signedUrl: delivery.signedUrl || '',
+    signedUrlExpiresAt: delivery.expiresAt || '',
+    signedDeliveryError: delivery.ok ? '' : delivery.message,
+  };
 }
 
 export async function fetchVisualStandards() {
@@ -67,12 +75,28 @@ export async function fetchVisualStandards() {
     return errorResult(error, 'Could not load live Visual Standards.');
   }
 
+  const records = await Promise.all(
+    (data || [])
+      .map(normalizeVisualStandardRow)
+      .filter(Boolean)
+      .map((record) => withActiveSignedUrl(record)),
+  );
+  const failedDeliveries = records.filter(
+    (record) => record.activeAssetPath && !record.signedUrl,
+  );
+
   return {
     ok: true,
-    mode: 'backend',
-    message: 'Visual Standards loaded.',
+    mode: failedDeliveries.length ? 'backend_partial' : 'backend',
+    message: failedDeliveries.length
+      ? 'Visual Standard metadata loaded; some private images are using fallbacks.'
+      : 'Visual Standards loaded.',
     record: null,
-    records: (data || []).map(normalizeVisualStandardRow).filter(Boolean),
+    records,
+    deliveryErrors: failedDeliveries.map((record) => ({
+      canonicalKey: record.canonicalKey,
+      message: record.signedDeliveryError,
+    })),
   };
 }
 
@@ -92,14 +116,34 @@ export async function fetchVisualStandardVersions(canonicalKey) {
     return errorResult(error, 'Could not load Visual Standard history.');
   }
 
+  const records = await Promise.all(
+    (data || [])
+      .map(normalizeVisualStandardVersionRow)
+      .filter(Boolean)
+      .map(async (record) => {
+        const delivery = await resolveVisualStandardSignedUrlWithClient({
+          client: supabaseAuthClient,
+          canonicalKey: record.canonicalKey,
+          versionId: record.id,
+        });
+        return {
+          ...record,
+          signedUrl: delivery.signedUrl || '',
+          signedUrlExpiresAt: delivery.expiresAt || '',
+          signedDeliveryError: delivery.ok ? '' : delivery.message,
+        };
+      }),
+  );
+  const failedDeliveries = records.filter((record) => !record.signedUrl);
+
   return {
     ok: true,
-    mode: 'backend',
-    message: 'Visual Standard history loaded.',
+    mode: failedDeliveries.length ? 'backend_partial' : 'backend',
+    message: failedDeliveries.length
+      ? 'Visual Standard history loaded; some private previews are unavailable.'
+      : 'Visual Standard history loaded.',
     record: null,
-    records: (data || [])
-      .map(normalizeVisualStandardVersionRow)
-      .filter(Boolean),
+    records,
   };
 }
 
@@ -118,12 +162,17 @@ export async function publishVisualStandard({ canonicalKey, file, notes = '' }) 
     file,
     notes,
   });
-  return result.ok
-    ? {
-      ...result,
-      publicUrl: getVisualStandardPublicUrl(result.record.activeAssetPath),
-    }
-    : result;
+  if (!result.ok) return result;
+  const record = await withActiveSignedUrl(result.record, { forceRefresh: true });
+  return {
+    ...result,
+    record,
+    records: [record],
+    deliveryError: record.signedDeliveryError || '',
+    message: record.signedUrl
+      ? result.message
+      : 'Visual Standard published, but its private image could not be refreshed yet.',
+  };
 }
 
 export async function restoreVisualStandardVersion({
@@ -157,12 +206,15 @@ export async function restoreVisualStandardVersion({
     );
   }
 
+  const signedRecord = await withActiveSignedUrl(record, { forceRefresh: true });
   return {
     ok: true,
     mode: 'backend',
-    message: 'Previous image restored as a new active version.',
-    record,
-    records: [record],
-    publicUrl: getVisualStandardPublicUrl(record.activeAssetPath),
+    message: signedRecord.signedUrl
+      ? 'Previous image restored as a new active version.'
+      : 'Previous image restored, but its private image could not be refreshed yet.',
+    record: signedRecord,
+    records: [signedRecord],
+    deliveryError: signedRecord.signedDeliveryError || '',
   };
 }

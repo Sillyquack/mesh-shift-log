@@ -8,7 +8,6 @@ import {
 } from 'react';
 import {
   fetchVisualStandards,
-  getVisualStandardPublicUrl,
   publishVisualStandard,
   restoreVisualStandardVersion,
 } from '../lib/visualStandardsClient.js';
@@ -63,7 +62,7 @@ export function VisualStandardsProvider({ children }) {
   }, [refresh]);
 
   const standards = useMemo(
-    () => resolveAllVisualStandards(backendRecords, getVisualStandardPublicUrl),
+    () => resolveAllVisualStandards(backendRecords),
     [backendRecords],
   );
   const standardsByKey = useMemo(

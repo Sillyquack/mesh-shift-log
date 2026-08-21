@@ -140,7 +140,12 @@ export default function VisualStandardsManager({ user }) {
       return;
     }
     resetSelectedFile();
-    setMessage({ type: 'success', text: 'Saved. The new image is now the live canonical standard.' });
+    setMessage({
+      type: result.deliveryError ? 'warning' : 'success',
+      text: result.deliveryError
+        ? result.message
+        : 'Saved. The new image is now the live canonical standard.',
+    });
   }
 
   async function restoreVersion(version) {
@@ -155,7 +160,7 @@ export default function VisualStandardsManager({ user }) {
     });
     setSaving(false);
     setMessage({
-      type: result.ok ? 'success' : 'error',
+      type: result.ok ? (result.deliveryError ? 'warning' : 'success') : 'error',
       text: result.message,
     });
   }
@@ -360,6 +365,22 @@ export default function VisualStandardsManager({ user }) {
               const isActive = version.id === selectedStandard.activeVersionId;
               return (
                 <article key={version.id} className="visual-standard-version-row">
+                  {version.signedUrl ? (
+                    <img
+                      className="visual-standard-version-preview"
+                      src={version.signedUrl}
+                      alt={`Version ${version.version} preview`}
+                      loading="lazy"
+                    />
+                  ) : (
+                    <div
+                      className="visual-standard-version-preview visual-standard-version-preview-empty"
+                      role="img"
+                      aria-label={`Version ${version.version} preview unavailable`}
+                    >
+                      Private preview unavailable
+                    </div>
+                  )}
                   <div>
                     <strong>Version {version.version}{isActive ? ' · Active' : ''}</strong>
                     <span>{formatUpdatedAt(version.createdAt)}</span>

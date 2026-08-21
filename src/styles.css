@@ -3268,7 +3268,7 @@ textarea {
   color: #0b1714;
 }
 
-.visual-standards-manager > .critical-warning {
+.visual-standards-manager .critical-warning {
   color: #ff9b9b;
 }
 
@@ -3404,7 +3404,7 @@ textarea {
 .visual-standard-editor-actions {
   position: sticky;
   bottom: 8px;
-  z-index: 5;
+  z-index: 95;
   display: grid;
   grid-template-columns: repeat(2, minmax(0, 1fr));
   gap: 8px;
@@ -3430,13 +3430,32 @@ textarea {
 
 .visual-standard-version-row {
   display: grid;
-  grid-template-columns: minmax(0, 1fr) auto;
+  grid-template-columns: 72px minmax(0, 1fr) auto;
   align-items: center;
   gap: 10px;
   border: 1px solid var(--line);
   border-radius: 8px;
   background: var(--surface);
   padding: 11px;
+}
+
+.visual-standard-version-preview {
+  width: 72px;
+  aspect-ratio: 1;
+  border-radius: 7px;
+  background: var(--surface-strong);
+  object-fit: cover;
+}
+
+.visual-standard-version-preview-empty {
+  display: grid;
+  place-content: center;
+  border: 1px dashed var(--line);
+  color: var(--muted);
+  padding: 6px;
+  font-size: 0.62rem;
+  line-height: 1.15;
+  text-align: center;
 }
 
 .visual-standard-version-row > div {

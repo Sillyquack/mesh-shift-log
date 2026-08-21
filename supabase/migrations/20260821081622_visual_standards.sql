@@ -14,7 +14,7 @@ insert into storage.buckets (
 values (
   'visual-standards',
   'visual-standards',
-  true,
+  false,
   15728640,
   array['image/jpeg', 'image/png', 'image/webp', 'image/gif', 'image/avif']
 )
@@ -156,6 +156,16 @@ to authenticated
 with check (
   bucket_id = 'visual-standards'
   and public.current_user_is_manager()
+  and owner_id = auth.uid()::text
+  and exists (
+    select 1
+    from public.visual_standards standard
+    where storage.objects.name ~ (
+      '^'
+      || standard.canonical_key
+      || '/[0-9]+-[A-Za-z0-9-]+\.(jpg|jpeg|png|webp|gif|avif)$'
+    )
+  )
 );
 
 drop policy if exists "visual_standard_assets_select_manager" on storage.objects;
@@ -208,9 +218,9 @@ begin
     raise exception 'Manager access required to publish a Visual Standard.';
   end if;
 
-  if input_asset_path is null
-     or input_asset_path not like input_canonical_key || '/%' then
-    raise exception 'Asset path must be versioned under its canonical key.';
+  if input_canonical_key is null
+     or input_canonical_key !~ '^[a-z0-9]+(?:-[a-z0-9]+)*$' then
+    raise exception 'A valid canonical Visual Standard key is required.';
   end if;
 
   select standard.*
@@ -221,6 +231,15 @@ begin
 
   if not found then
     raise exception 'Unknown canonical Visual Standard: %', input_canonical_key;
+  end if;
+
+  if input_asset_path is null
+     or input_asset_path !~ (
+       '^'
+       || v_standard.canonical_key
+       || '/[0-9]+-[A-Za-z0-9-]+\.(jpg|jpeg|png|webp|gif|avif)$'
+     ) then
+    raise exception 'Asset path must be an immutable versioned object under its canonical key.';
   end if;
 
   select object.metadata
@@ -235,8 +254,8 @@ begin
     raise exception 'Uploaded Visual Standard asset was not found or is not owned by the current manager.';
   end if;
 
-  v_mime_type := coalesce(nullif(v_object_metadata ->> 'mimetype', ''), input_mime_type);
-  v_byte_size := coalesce(nullif(v_object_metadata ->> 'size', '')::bigint, input_byte_size);
+  v_mime_type := nullif(v_object_metadata ->> 'mimetype', '');
+  v_byte_size := nullif(v_object_metadata ->> 'size', '')::bigint;
 
   if v_mime_type not in ('image/jpeg', 'image/png', 'image/webp', 'image/gif', 'image/avif') then
     raise exception 'Unsupported Visual Standard image type.';
@@ -317,6 +336,11 @@ begin
     raise exception 'Manager access required to restore a Visual Standard.';
   end if;
 
+  if input_canonical_key is null
+     or input_canonical_key !~ '^[a-z0-9]+(?:-[a-z0-9]+)*$' then
+    raise exception 'A valid canonical Visual Standard key is required.';
+  end if;
+
   select standard.*
   into v_standard
   from public.visual_standards standard
@@ -335,6 +359,14 @@ begin
 
   if not found then
     raise exception 'The requested version does not belong to this canonical Visual Standard.';
+  end if;
+
+  if v_source.asset_path !~ (
+    '^'
+    || v_standard.canonical_key
+    || '/[0-9]+-[A-Za-z0-9-]+\.(jpg|jpeg|png|webp|gif|avif)$'
+  ) then
+    raise exception 'The retained asset path is outside the canonical namespace.';
   end if;
 
   if not exists (
@@ -407,5 +439,5 @@ $$;
 
 revoke all on function public.publish_visual_standard(text, text, text, bigint, text) from public, anon;
 revoke all on function public.restore_visual_standard_version(text, uuid, text) from public, anon;
-grant execute on function public.publish_visual_standard(text, text, text, bigint, text) to authenticated, service_role;
-grant execute on function public.restore_visual_standard_version(text, uuid, text) to authenticated, service_role;
+grant execute on function public.publish_visual_standard(text, text, text, bigint, text) to authenticated;
+grant execute on function public.restore_visual_standard_version(text, uuid, text) to authenticated;

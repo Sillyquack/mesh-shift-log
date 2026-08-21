@@ -5,6 +5,9 @@ import {
 
 export const VISUAL_STANDARDS_BUCKET = 'visual-standards';
 export const VISUAL_STANDARD_MAX_FILE_BYTES = 15 * 1024 * 1024;
+export const VISUAL_STANDARD_SIGNED_URL_REFRESH_BUFFER_MS = 5 * 60 * 1000;
+
+const visualStandardSignedUrlCache = new Map();
 
 export const VISUAL_STANDARD_IMAGE_TYPES = Object.freeze([
   'image/jpeg',
@@ -39,6 +42,8 @@ export function normalizeVisualStandardRow(row) {
     updatedAt: row.updated_at || row.updatedAt || '',
     updatedBy: row.updated_by || row.updatedBy || '',
     updatedByName: row.updated_by_name || row.updatedByName || '',
+    signedUrl: row.signed_url || row.signedUrl || '',
+    signedUrlExpiresAt: row.signed_url_expires_at || row.signedUrlExpiresAt || '',
   };
 }
 
@@ -57,7 +62,80 @@ export function normalizeVisualStandardVersionRow(row) {
     createdBy: row.created_by || '',
     createdByName: row.created_by_name || '',
     restoredFromVersionId: row.restored_from_version_id || '',
+    signedUrl: row.signed_url || row.signedUrl || '',
+    signedUrlExpiresAt: row.signed_url_expires_at || row.signedUrlExpiresAt || '',
   };
+}
+
+export function clearVisualStandardSignedUrlCache() {
+  visualStandardSignedUrlCache.clear();
+}
+
+function cachedSignedUrl(cacheKey, now) {
+  const cached = visualStandardSignedUrlCache.get(cacheKey);
+  if (!cached) return null;
+  const expiresAt = new Date(cached.expiresAt).getTime();
+  if (
+    !Number.isFinite(expiresAt)
+    || expiresAt <= now + VISUAL_STANDARD_SIGNED_URL_REFRESH_BUFFER_MS
+  ) {
+    visualStandardSignedUrlCache.delete(cacheKey);
+    return null;
+  }
+  return cached;
+}
+
+export async function resolveVisualStandardSignedUrlWithClient({
+  client,
+  canonicalKey,
+  versionId = '',
+  activeVersionId = '',
+  forceRefresh = false,
+  now = Date.now(),
+}) {
+  if (!client?.functions?.invoke || !getCanonicalVisualStandard(canonicalKey)) {
+    return {
+      ok: false,
+      message: 'Visual Standard signed delivery is unavailable.',
+      signedUrl: '',
+      expiresAt: '',
+    };
+  }
+
+  const cacheKey = versionId
+    ? `history:${canonicalKey}:${versionId}`
+    : `active:${canonicalKey}:${activeVersionId || 'current'}`;
+  const cacheActiveDelivery = !versionId;
+  if (forceRefresh && cacheActiveDelivery) visualStandardSignedUrlCache.delete(cacheKey);
+  if (cacheActiveDelivery) {
+    const cached = cachedSignedUrl(cacheKey, now);
+    if (cached) return { ok: true, ...cached, fromCache: true };
+  }
+
+  const body = versionId ? { canonicalKey, versionId } : { canonicalKey };
+  const { data, error } = await client.functions.invoke('visual-standard-image', { body });
+  const signedUrl = data?.signedUrl || '';
+  const expiresAt = data?.expiresAt || '';
+  const expiresAtMs = new Date(expiresAt).getTime();
+  if (
+    error
+    || data?.ok !== true
+    || !signedUrl
+    || !Number.isFinite(expiresAtMs)
+    || expiresAtMs <= now
+  ) {
+    return {
+      ok: false,
+      message: data?.error || error?.message || 'Could not authorize the Visual Standard image.',
+      error: error || null,
+      signedUrl: '',
+      expiresAt: '',
+    };
+  }
+
+  const resolved = { signedUrl, expiresAt };
+  if (cacheActiveDelivery) visualStandardSignedUrlCache.set(cacheKey, resolved);
+  return { ok: true, ...resolved, fromCache: false };
 }
 
 export function resolveVisualStandard(
@@ -104,7 +182,7 @@ export function resolveVisualStandard(
   };
 }
 
-export function resolveAllVisualStandards(backendRows = [], publicUrlForPath = () => '') {
+export function resolveAllVisualStandards(backendRows = []) {
   const backendByKey = new Map(
     backendRows
       .map(normalizeVisualStandardRow)
@@ -114,10 +192,7 @@ export function resolveAllVisualStandards(backendRows = [], publicUrlForPath = (
 
   return canonicalVisualStandards.map((standard) => {
     const backend = backendByKey.get(standard.id) || null;
-    const url = backend?.activeAssetPath
-      ? publicUrlForPath(backend.activeAssetPath)
-      : '';
-    return resolveVisualStandard(standard.id, backend, url);
+    return resolveVisualStandard(standard.id, backend, backend?.signedUrl || '');
   });
 }
 
