@@ -1,18 +1,18 @@
 import React, { useState } from 'react';
+import GuideSubsections from './components/GuideSubsections.jsx';
+import { useVisualStandards } from './components/VisualStandardsProvider.jsx';
+import {
+  WORKBAR_VISUAL_STANDARD_KEYS,
+  getWorkbarVisualStandard,
+} from './data/workbarVisualStandards.js';
+import { selfServiceStationStandard } from './data/selfServiceStation.js';
 
 const sections = [
   {
-    id: 'self-service',
-    title: 'Self-service & coffee retail',
-    items: [
-      ['Self-service condiment station', 'Sugar/tea service, stirrers, teaspoons, napkins and the small waste bin. Photo captured 18 Aug — final image wiring pending.'],
-      ['Tea shelf', 'Use the photographed shelf setup as the visual standard. Photo captured 18 Aug — final image wiring pending.'],
-      ['Water glasses / snacks', 'Water glasses plus chips/nuts are reset to the photographed layout. Photo captured 18 Aug — final image wiring pending.'],
-      ['Espresso station', 'Cappuccino and espresso cups are stored on top of the Eversys as photographed.'],
-      ['Take-away station', 'Large cups left, small cups right. Reserve cabinet below stores cups and matching lids. Service organiser holds large/small lids, teaspoons and the knife basket.'],
-      ['Coffee retail display', 'Startup Blend on the left display shelf. Kvadraturen Espresso on the right display shelf. Refill the display from buffer stock.'],
-      ['Baked goods display', 'Use the photographed glass-cabinet presentation as the visual standard.'],
-    ],
+    id: selfServiceStationStandard.id,
+    title: selfServiceStationStandard.title,
+    body: selfServiceStationStandard.body,
+    subsections: selfServiceStationStandard.sections,
   },
   {
     id: 'coffee',
@@ -31,10 +31,10 @@ const sections = [
     id: 'fridges',
     title: 'Fridges & beverage storage',
     items: [
-      ['Non-alcoholic fridge', 'Use the photographed setup as the standard. Closing: switch off the fridge light and pull down the front grille.'],
+      ['Non-alcoholic fridge', 'Use the photographed setup as the standard. Closing: switch off the fridge light and pull down the front grille.', WORKBAR_VISUAL_STANDARD_KEYS.NON_ALCO_FRIDGE],
       ['Workbar left fridge', 'Use the photographed layout as the standard; no extra category rule is currently defined.'],
       ['Workbar right fridge', 'Use the photographed layout as the standard; no extra category rule is currently defined.'],
-      ['Milk / opened-wine fridge', 'Milk shelf serves the espresso station. Space below the milk shelf is for opened wine bottles with corks and date labels.'],
+      ['Milk / opened-wine fridge', 'Use the photographed milk shelf and opened-wine storage as the standard. Milk serves the espresso station; opened wine bottles below must have corks and date labels.', WORKBAR_VISUAL_STANDARD_KEYS.BAR_MILK_FRIDGE],
       ['Milk system', 'One two-part container: LEFT = regular milk / blue hose. RIGHT = Oatly / green hose.'],
       ['Locks', 'All bar cabinets / fridges are locked at close using the key kept in the cash drawer.'],
     ],
@@ -114,11 +114,28 @@ const sections = [
   },
 ];
 
-function GuideCard({ title, text }) {
+function GuideCard({ title, text, visualKey }) {
+  const { resolve } = useVisualStandards();
+  const image = visualKey
+    ? resolve(visualKey, getWorkbarVisualStandard(visualKey))
+    : null;
   return (
     <div style={{ border: '1px solid #d8d8d8', borderRadius: 12, padding: 12, background: '#fff' }}>
       <strong style={{ display: 'block', marginBottom: 5 }}>{title}</strong>
       <div style={{ color: '#3d3d3d', lineHeight: 1.45 }}>{text}</div>
+      {image?.src && (
+        <figure style={{ margin: '12px 0 0' }}>
+          <img
+            src={image.src}
+            alt={image.label}
+            loading="lazy"
+            style={{ display: 'block', width: '100%', height: 'auto', borderRadius: 10 }}
+          />
+          <figcaption style={{ marginTop: 6, color: '#606060', fontSize: '.82rem', fontWeight: 700 }}>
+            {image.label}
+          </figcaption>
+        </figure>
+      )}
     </div>
   );
 }
@@ -132,7 +149,7 @@ export default function WorkbarGuideOverlay() {
         type="button"
         onClick={() => setOpen(true)}
         style={{
-          position: 'fixed', right: 14, bottom: 14, zIndex: 9998,
+          position: 'fixed', right: 14, bottom: 14, zIndex: 90,
           border: 0, borderRadius: 999, padding: '11px 15px',
           background: '#111', color: '#fff', fontWeight: 700,
           boxShadow: '0 5px 20px rgba(0,0,0,.25)', cursor: 'pointer'
@@ -143,22 +160,29 @@ export default function WorkbarGuideOverlay() {
 
       {open && (
         <div style={{ position: 'fixed', inset: 0, zIndex: 9999, background: 'rgba(0,0,0,.52)', overflow: 'auto' }}>
-          <div style={{ maxWidth: 820, margin: '18px auto', background: '#f6f6f4', borderRadius: 18, padding: 16, minHeight: '90vh' }}>
+          <div className="workbar-guide-panel" style={{ maxWidth: 820, margin: '18px auto', background: '#f6f6f4', borderRadius: 18, padding: 16, minHeight: '90vh' }}>
             <div style={{ display: 'flex', justifyContent: 'space-between', gap: 12, alignItems: 'flex-start', position: 'sticky', top: 0, background: '#f6f6f4', paddingBottom: 10, zIndex: 2 }}>
               <div>
                 <h2 style={{ margin: 0 }}>Workbar operating guide</h2>
-                <p style={{ margin: '5px 0 0', color: '#555' }}>Working v1 · 18 Aug 2026. Captured photos are being wired into these exact slots; unfinished procedures are clearly marked.</p>
+                <p style={{ margin: '5px 0 0', color: '#555' }}>Working v1 · 18 Aug 2026. Canonical standards are linked below; visual slots stay empty until approved photos are added.</p>
               </div>
-              <button type="button" onClick={() => setOpen(false)} style={{ border: '1px solid #bbb', borderRadius: 10, background: '#fff', padding: '8px 11px', cursor: 'pointer' }}>Close</button>
+              <button type="button" onClick={() => setOpen(false)} style={{ flexShrink: 0, whiteSpace: 'nowrap', border: '1px solid #bbb', borderRadius: 10, background: '#fff', padding: '8px 11px', cursor: 'pointer' }}>Close</button>
             </div>
 
             <div style={{ display: 'grid', gap: 16 }}>
               {sections.map((section) => (
                 <section key={section.id} style={{ background: '#ecece8', borderRadius: 14, padding: 12 }}>
                   <h3 style={{ margin: '0 0 10px' }}>{section.title}</h3>
-                  <div style={{ display: 'grid', gap: 8 }}>
-                    {section.items.map(([title, text]) => <GuideCard key={title} title={title} text={text} />)}
-                  </div>
+                  {section.subsections ? (
+                    <>
+                      <p style={{ margin: '0 0 10px', color: '#555', lineHeight: 1.45 }}>{section.body}</p>
+                      <GuideSubsections sections={section.subsections} />
+                    </>
+                  ) : (
+                    <div style={{ display: 'grid', gap: 8 }}>
+                      {section.items.map(([title, text, visualKey]) => <GuideCard key={title} title={title} text={text} visualKey={visualKey} />)}
+                    </div>
+                  )}
                 </section>
               ))}
             </div>

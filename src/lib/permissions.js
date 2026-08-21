@@ -38,6 +38,10 @@ export function canViewAuthProfiles(user) {
   return isManager(user);
 }
 
+export function canManageVisualStandards(user) {
+  return isManager(user) && user?.loginSource === 'supabase_auth';
+}
+
 export function canUseEventFloorDashboard(user) {
   return !isSharedDeviceUser(user) && roleOf(user) === 'event_floor_manager';
 }
