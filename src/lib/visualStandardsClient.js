@@ -5,9 +5,9 @@ import {
 } from './supabaseAuthClient.js';
 import {
   VISUAL_STANDARDS_BUCKET,
-  buildVisualStandardAssetPath,
   normalizeVisualStandardRow,
   normalizeVisualStandardVersionRow,
+  publishVisualStandardWithClient,
   validateVisualStandardFile,
 } from './visualStandards.js';
 
@@ -112,68 +112,18 @@ export async function publishVisualStandard({ canonicalKey, file, notes = '' }) 
     return unavailableResult('Email login with manager access is required to publish.');
   }
 
-  let assetPath = '';
-  try {
-    assetPath = buildVisualStandardAssetPath(canonicalKey, file);
-    const { error: uploadError } = await supabaseAuthClient.storage
-      .from(VISUAL_STANDARDS_BUCKET)
-      .upload(assetPath, file, {
-        cacheControl: '31536000',
-        contentType: file.type,
-        upsert: false,
-      });
-
-    if (uploadError) {
-      return errorResult(uploadError, 'Image upload failed. The current standard is unchanged.');
+  const result = await publishVisualStandardWithClient({
+    client: supabaseAuthClient,
+    canonicalKey,
+    file,
+    notes,
+  });
+  return result.ok
+    ? {
+      ...result,
+      publicUrl: getVisualStandardPublicUrl(result.record.activeAssetPath),
     }
-
-    const { data, error: publishError } = await supabaseAuthClient.rpc(
-      'publish_visual_standard',
-      {
-        input_canonical_key: canonicalKey,
-        input_asset_path: assetPath,
-        input_mime_type: file.type,
-        input_byte_size: file.size,
-        input_notes: notes.trim() || null,
-      },
-    );
-
-    if (publishError) {
-      const { error: cleanupError } = await supabaseAuthClient.storage
-        .from(VISUAL_STANDARDS_BUCKET)
-        .remove([assetPath]);
-      return errorResult(
-        publishError,
-        'Publishing failed. The current standard is unchanged.',
-        {
-          cleanupError: cleanupError || null,
-          uploadedAssetPath: assetPath,
-        },
-      );
-    }
-
-    const record = rpcRecord(data);
-    if (!record || record.activeAssetPath !== assetPath) {
-      return errorResult(
-        new Error('The database did not confirm the published asset.'),
-        'Publishing could not be confirmed.',
-        { publicationCommitted: Boolean(record), uploadedAssetPath: assetPath },
-      );
-    }
-
-    return {
-      ok: true,
-      mode: 'backend',
-      message: 'Visual Standard published.',
-      record,
-      records: [record],
-      publicUrl: getVisualStandardPublicUrl(record.activeAssetPath),
-    };
-  } catch (error) {
-    return errorResult(error, 'Publishing failed. The current standard is unchanged.', {
-      uploadedAssetPath: assetPath,
-    });
-  }
+    : result;
 }
 
 export async function restoreVisualStandardVersion({

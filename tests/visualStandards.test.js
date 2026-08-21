@@ -8,6 +8,7 @@ import {
 } from '../src/data/workbarVisualStandards.js';
 import {
   buildVisualStandardAssetPath,
+  publishVisualStandardWithClient,
   resolveAllVisualStandards,
   resolveVisualStandard,
   validateVisualStandardFile,
@@ -78,4 +79,83 @@ test('local UI write gate requires an authenticated manager', () => {
     canManageVisualStandards({ role: 'manager', loginSource: 'supabase_auth', isSharedDevice: true }),
     false,
   );
+});
+
+function publicationClient({ uploadError = null, publishError = null } = {}) {
+  const events = [];
+  const bucket = {
+    async upload(path) {
+      events.push(['upload', path]);
+      return { error: uploadError };
+    },
+    async remove(paths) {
+      events.push(['remove', paths]);
+      return { error: null };
+    },
+  };
+  return {
+    events,
+    storage: {
+      from(name) {
+        assert.equal(name, 'visual-standards');
+        return bucket;
+      },
+    },
+    async rpc(name, input) {
+      events.push(['rpc', name]);
+      return {
+        error: publishError,
+        data: publishError
+          ? null
+          : {
+            canonical_key: input.input_canonical_key,
+            active_asset_path: input.input_asset_path,
+            active_version: 1,
+            status: 'published',
+          },
+      };
+    },
+  };
+}
+
+test('publication uploads first and activates only after confirmed RPC readback', async () => {
+  const client = publicationClient();
+  const result = await publishVisualStandardWithClient({
+    client,
+    canonicalKey: WORKBAR_VISUAL_STANDARD_KEYS.BAR_MILK_FRIDGE,
+    file: { name: 'standard.jpg', type: 'image/jpeg', size: 2048 },
+    pathOptions: { now: 1234, uuid: 'publish-test' },
+  });
+
+  assert.equal(result.ok, true);
+  assert.equal(result.record.activeVersion, 1);
+  assert.deepEqual(client.events.map(([event]) => event), ['upload', 'rpc']);
+});
+
+test('failed upload never calls publication RPC', async () => {
+  const client = publicationClient({ uploadError: new Error('upload unavailable') });
+  const result = await publishVisualStandardWithClient({
+    client,
+    canonicalKey: WORKBAR_VISUAL_STANDARD_KEYS.BAR_MILK_FRIDGE,
+    file: { name: 'standard.jpg', type: 'image/jpeg', size: 2048 },
+    pathOptions: { now: 1234, uuid: 'upload-failure' },
+  });
+
+  assert.equal(result.ok, false);
+  assert.equal(result.record, null);
+  assert.deepEqual(client.events.map(([event]) => event), ['upload']);
+});
+
+test('failed database publication cleans up the inactive uploaded object', async () => {
+  const client = publicationClient({ publishError: new Error('transaction rejected') });
+  const result = await publishVisualStandardWithClient({
+    client,
+    canonicalKey: WORKBAR_VISUAL_STANDARD_KEYS.BAR_MILK_FRIDGE,
+    file: { name: 'standard.jpg', type: 'image/jpeg', size: 2048 },
+    pathOptions: { now: 1234, uuid: 'publish-failure' },
+  });
+
+  assert.equal(result.ok, false);
+  assert.equal(result.record, null);
+  assert.deepEqual(client.events.map(([event]) => event), ['upload', 'rpc', 'remove']);
 });

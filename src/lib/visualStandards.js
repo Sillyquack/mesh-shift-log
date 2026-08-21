@@ -155,3 +155,111 @@ export function buildVisualStandardAssetPath(
   const extension = imageExtensionByType[file.type];
   return `${canonicalKey}/${now}-${uuid}.${extension}`;
 }
+
+function publicationError(error, fallbackMessage, details = {}) {
+  return {
+    ok: false,
+    mode: 'sync_error',
+    message: error?.message || fallbackMessage,
+    error,
+    record: null,
+    records: [],
+    ...details,
+  };
+}
+
+function publicationRecord(data) {
+  const row = Array.isArray(data) ? data[0] : data;
+  return normalizeVisualStandardRow(row);
+}
+
+export async function publishVisualStandardWithClient({
+  client,
+  canonicalKey,
+  file,
+  notes = '',
+  pathOptions,
+}) {
+  const validation = validateVisualStandardFile(file);
+  if (!validation.ok) {
+    return publicationError(new Error(validation.message), validation.message);
+  }
+
+  let assetPath = '';
+  let uploadCompleted = false;
+  try {
+    assetPath = buildVisualStandardAssetPath(canonicalKey, file, pathOptions);
+    const bucket = client.storage.from(VISUAL_STANDARDS_BUCKET);
+    const { error: uploadError } = await bucket.upload(assetPath, file, {
+      cacheControl: '31536000',
+      contentType: file.type,
+      upsert: false,
+    });
+
+    if (uploadError) {
+      return publicationError(
+        uploadError,
+        'Image upload failed. The current standard is unchanged.',
+      );
+    }
+    uploadCompleted = true;
+
+    const { data, error: publishError } = await client.rpc(
+      'publish_visual_standard',
+      {
+        input_canonical_key: canonicalKey,
+        input_asset_path: assetPath,
+        input_mime_type: file.type,
+        input_byte_size: file.size,
+        input_notes: notes.trim() || null,
+      },
+    );
+
+    if (publishError) {
+      const { error: cleanupError } = await bucket.remove([assetPath]);
+      return publicationError(
+        publishError,
+        'Publishing failed. The current standard is unchanged.',
+        {
+          cleanupError: cleanupError || null,
+          uploadedAssetPath: assetPath,
+        },
+      );
+    }
+
+    const record = publicationRecord(data);
+    if (!record || record.activeAssetPath !== assetPath) {
+      return publicationError(
+        new Error('The database did not confirm the published asset.'),
+        'Publishing could not be confirmed.',
+        { publicationCommitted: Boolean(record), uploadedAssetPath: assetPath },
+      );
+    }
+
+    return {
+      ok: true,
+      mode: 'backend',
+      message: 'Visual Standard published.',
+      record,
+      records: [record],
+      uploadedAssetPath: assetPath,
+    };
+  } catch (error) {
+    let cleanupError = null;
+    if (uploadCompleted && assetPath) {
+      try {
+        const cleanup = await client.storage
+          .from(VISUAL_STANDARDS_BUCKET)
+          .remove([assetPath]);
+        cleanupError = cleanup.error || null;
+      } catch (cleanupFailure) {
+        cleanupError = cleanupFailure;
+      }
+    }
+    return publicationError(
+      error,
+      'Publishing failed. The current standard is unchanged.',
+      { cleanupError, uploadedAssetPath: assetPath },
+    );
+  }
+}
