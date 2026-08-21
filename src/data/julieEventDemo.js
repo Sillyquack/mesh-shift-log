@@ -4,6 +4,14 @@ export const CAPABILITY_LEVELS = {
   proposed: "PROPOSED NEXT",
 };
 
+function createChapter({ narrationBeats, ...chapter }) {
+  return {
+    ...chapter,
+    narrationBeats,
+    caption: narrationBeats.map((beat) => beat.text).join(" "),
+  };
+}
+
 export const julieEventDemo = {
   id: "event-floor-manager-introduction",
   title: "Event Floor Manager",
@@ -58,139 +66,207 @@ export const julieEventDemo = {
     "SETTLEMENT",
     "LOCK / ALARM",
   ],
+  storyProgression: [
+    "PLAN",
+    "ASSIGN",
+    "EXECUTE",
+    "SEE CHANGE",
+    "ACT",
+    "CLOSE",
+    "REVIEW",
+  ],
+  narration: {
+    language: "en-GB",
+    targetWordsPerMinute: "115–130",
+    audioSrc: null,
+    audioMimeType: "audio/mpeg",
+    replacementAssetPath: "public/audio/event-floor-manager-narration.mp3",
+    assetIncluded: false,
+    voiceDirection: [
+      "British English",
+      "warm, calm, sophisticated and reassuring",
+      "measured premium-documentary delivery",
+      "mature, understated authority",
+      "subtle cinematic quality without trailer or sales cadence",
+    ],
+  },
   chapters: [
-    {
+    createChapter({
       id: "opening",
       number: "00",
       label: "Opening",
       title: "Your event, live.",
       scene: "opening",
-      durationSeconds: 9,
+      durationSeconds: 14,
       capability: CAPABILITY_LEVELS.live,
       uiSummary: "From event plan to operational state",
-      caption:
-        "An event plan is useful. An event plan that knows what is ready, what is late, who owns it, and what happens next is operational.",
-    },
-    {
+      narrationBeats: [
+        { atSeconds: 0, visualProgress: 0.05, text: "A good event plan begins before anyone steps onto the floor." },
+        { atSeconds: 4.5, visualProgress: 0.42, text: "It becomes operational when readiness, ownership and the next action are visible." },
+        { atSeconds: 9.5, visualProgress: 1, text: "That is the story we will follow." },
+      ],
+    }),
+    createChapter({
       id: "before-doors",
       number: "01",
       label: "Before doors",
       title: "Readiness, without the rounds of questions.",
       scene: "readiness",
-      durationSeconds: 14,
+      durationSeconds: 25,
       capability: CAPABILITY_LEVELS.live,
       uiSummary: "Event card · readiness · dependencies · critical confirmation",
-      caption:
-        "Before doors, Julie can see the event, its timing, every setup dependency, and the critical confirmations still missing. She does not need to carry the whole plan in her head, or ask the same question twice.",
-    },
-    {
+      narrationBeats: [
+        { atSeconds: 0, visualProgress: 0.05, text: "Before the doors open, every dependency has somewhere to live." },
+        { atSeconds: 6, visualProgress: 0.22, text: "Julie can see the event, its timings, and the checks that make the room ready." },
+        { atSeconds: 12, visualProgress: 0.58, text: "She can see what is confirmed, what is still open, and which final check is critical." },
+        { atSeconds: 19, visualProgress: 1, text: "No repeated questions. No plan held together in one person’s head." },
+      ],
+    }),
+    createChapter({
       id: "standards",
       number: "02",
       label: "Point-of-work standards",
       title: "The standard travels with the task.",
       scene: "standards",
-      durationSeconds: 14,
+      durationSeconds: 23,
       capability: CAPABILITY_LEVELS.pilot,
       uiSummary: "Rich instructions · visual reference slots · repeatable setup",
-      caption:
-        "A task can explain exactly what good looks like, at the point of work. The reference areas are ready for approved setup photos, so a new team member can work to the same standard without waiting for a manager.",
-    },
-    {
+      narrationBeats: [
+        { atSeconds: 0, visualProgress: 0.05, text: "A standard is most useful where the work happens." },
+        { atSeconds: 5, visualProgress: 0.2, text: "Each task can show the exact arrangement and finish the team is aiming for." },
+        { atSeconds: 10.5, visualProgress: 0.55, text: "An approved setup photograph can sit beside the instruction, making the expectation clear at a glance." },
+        { atSeconds: 17.5, visualProgress: 0.9, text: "The result is consistency, without waiting for a manager." },
+      ],
+    }),
+    createChapter({
       id: "ownership",
       number: "03",
       label: "Who owns what",
       title: "Leadership is not the same as owning everything.",
       scene: "ownership",
-      durationSeconds: 12,
+      durationSeconds: 22,
       capability: CAPABILITY_LEVELS.live,
       uiSummary: "One event lead · six explicit responsibilities",
-      caption:
-        "Julie leads the event. That does not automatically make her responsible for closing, settlement, locking, or every asset. Mesh makes each responsibility explicit before it can become an assumption.",
-    },
-    {
+      narrationBeats: [
+        { atSeconds: 0, visualProgress: 0.08, text: "Julie leads the event. She does not own every responsibility." },
+        { atSeconds: 5, visualProgress: 0.3, text: "Closing, settlement, locking, assets and the overall shift each have a named owner." },
+        { atSeconds: 10.5, visualProgress: 0.72, text: "When responsibility is clear, managers spend less time asking who is doing what." },
+        { atSeconds: 16.5, visualProgress: 1, text: "Julie remains focused on the whole floor." },
+      ],
+    }),
+    createChapter({
       id: "during-event",
       number: "04",
       label: "During the event",
       title: "When the plan changes, the operation changes with it.",
       scene: "live-control",
-      durationSeconds: 14,
+      durationSeconds: 28,
       capability: CAPABILITY_LEVELS.pilot,
       uiSummary: "Now · next · exceptions · acknowledgement · handover context",
-      caption:
-        "During service, progress and exceptions stay visible. If something changes, the information moves with the operation. It does not stay in one person’s head or disappear into a verbal message.",
-    },
-    {
+      narrationBeats: [
+        { atSeconds: 0, visualProgress: 0.05, text: "Once guests arrive, the plan must stay useful." },
+        { atSeconds: 5, visualProgress: 0.18, text: "A missing presenter adapter appears as an exception, with an owner and a deadline." },
+        { atSeconds: 11, visualProgress: 0.46, text: "Mircea acknowledges it. The welcome speech moves by six minutes, and everyone sees the change." },
+        { atSeconds: 17.5, visualProgress: 0.68, text: "If something changes on the floor, the plan changes with it." },
+        { atSeconds: 22, visualProgress: 0.92, text: "The message is resolved, but its context remains for the next person." },
+      ],
+    }),
+    createChapter({
       id: "financial-control",
       number: "05",
       label: "Financial control",
       title: "A clear owner. A clear state.",
       scene: "financial",
-      durationSeconds: 9,
+      durationSeconds: 14,
       capability: CAPABILITY_LEVELS.live,
       uiSummary: "Cash / invoice · settlement checks · responsible sign-off",
-      caption:
-        "Important financial closeout stays fast and operational. The right person confirms the checks, records settlement, and signs off. Everyone else can see the state without turning the floor into an accounting office.",
-    },
-    {
+      narrationBeats: [
+        { atSeconds: 0, visualProgress: 0.08, text: "Financial closeout has one clear owner and one visible state." },
+        { atSeconds: 4.5, visualProgress: 0.5, text: "Rebekka confirms the checks, records settlement, and signs off." },
+        { atSeconds: 9.5, visualProgress: 0.95, text: "The floor can see completion without becoming an accounting office." },
+      ],
+    }),
+    createChapter({
       id: "assets",
       number: "06",
       label: "Asset control",
       title: "Equipment cannot quietly disappear.",
       scene: "assets",
-      durationSeconds: 12,
+      durationSeconds: 17,
       capability: CAPABILITY_LEVELS.pilot,
       uiSummary: "Location · condition · charging · serial · needs attention",
-      caption:
-        "Payment terminals and shared devices are checked where they belong. Missing, damaged, misplaced, or uncharged equipment becomes visible while there is still time to act.",
-    },
-    {
+      narrationBeats: [
+        { atSeconds: 0, visualProgress: 0.05, text: "Shared equipment is checked where it belongs." },
+        { atSeconds: 4, visualProgress: 0.18, text: "A misplaced iPad is visible early, with its serial number and the action required." },
+        { atSeconds: 9, visualProgress: 0.66, text: "Mircea returns it before settlement." },
+        { atSeconds: 12.5, visualProgress: 0.95, text: "Small exceptions are handled before they become expensive ones." },
+      ],
+    }),
+    createChapter({
       id: "closeout",
       number: "07",
       label: "Closeout",
       title: "Closed means closed.",
       scene: "closeout",
-      durationSeconds: 10,
+      durationSeconds: 20,
       capability: CAPABILITY_LEVELS.live,
       uiSummary: "Final tasks · critical checks · calm completion",
-      caption:
-        "At the end, Julie is not leaving with a vague sense that things were probably done. Closeout gives her a calm, verifiable finish: the event is closed, responsibilities are signed, and the next shift has what it needs.",
-    },
-    {
+      narrationBeats: [
+        { atSeconds: 0, visualProgress: 0.05, text: "Closeout should feel calm, not uncertain." },
+        { atSeconds: 4, visualProgress: 0.24, text: "Client goodbye, sales, settlement, assets, reset, waste, handover and locking are confirmed in one place." },
+        { atSeconds: 10, visualProgress: 0.68, text: "At the end of the event, completion is no longer an assumption. It is visible." },
+        { atSeconds: 15.5, visualProgress: 1, text: "Nothing critical is left open." },
+      ],
+    }),
+    createChapter({
       id: "management",
       number: "08",
       label: "Management visibility",
       title: "Visibility without interrupting the floor.",
       scene: "management",
-      durationSeconds: 10,
+      durationSeconds: 21,
       capability: CAPABILITY_LEVELS.pilot,
       uiSummary: "Progress · exceptions · handovers · sign-offs · history",
-      caption:
-        "Management can zoom out to see progress, missing and critical work, handovers, alerts, ownership, sign-offs, history, and asset issues. The floor keeps moving; leadership keeps control.",
-    },
-    {
+      narrationBeats: [
+        { atSeconds: 0, visualProgress: 0.05, text: "Management does not need to interrupt the floor to understand it." },
+        { atSeconds: 5, visualProgress: 0.22, text: "Progress, critical work, handovers, sign-offs and resolved exceptions are visible from one view." },
+        { atSeconds: 11, visualProgress: 0.65, text: "The record shows who acted, what changed, and when." },
+        { atSeconds: 16, visualProgress: 0.95, text: "The floor keeps moving. Leadership keeps control." },
+      ],
+    }),
+    createChapter({
       id: "runbook",
       number: "09",
       label: "Live event runbook",
       title: "The next step: operate the run-of-show.",
       scene: "runbook",
-      durationSeconds: 16,
+      durationSeconds: 30,
       capability: CAPABILITY_LEVELS.proposed,
       uiSummary: "From static document to live, event-specific operating plan",
-      caption:
-        "The next step is a complete live runbook: exact cues, owners, dependencies, notes, changes, blockers, references, and escalation in one event-specific plan. A run-of-show should not remain trapped in a Word file, PDF, or paper sheet. It should be operated by the same team, in the same system, throughout the event.",
-    },
-    {
+      narrationBeats: [
+        { atSeconds: 0, visualProgress: 0.04, text: "Now consider the live event runbook — the kjøreplan." },
+        { atSeconds: 4.5, visualProgress: 0.14, text: "It follows the rhythm from setup, through doors and service, to teardown and locking." },
+        { atSeconds: 10, visualProgress: 0.32, text: "Every cue has a time, an owner, a dependency and a current state." },
+        { atSeconds: 15.5, visualProgress: 0.52, text: "When one cue moves, the plan moves with it." },
+        { atSeconds: 20, visualProgress: 0.74, text: "Notes, blockers and escalation stay beside the work." },
+        { atSeconds: 24, visualProgress: 0.96, text: "The team operates the run-of-show, instead of chasing a document." },
+      ],
+    }),
+    createChapter({
       id: "final",
       number: "10",
       label: "Ready",
       title: "Less chasing. Less guessing. More control on the floor.",
       scene: "final",
-      durationSeconds: 8,
+      durationSeconds: 11,
       capability: CAPABILITY_LEVELS.live,
       uiSummary: "The event story is ready to explore",
-      caption:
-        "Mesh Shift Log is not another checklist. It is an operational execution layer: clearer ownership, faster onboarding, stronger handovers, and live control from preparation to closeout.",
-    },
+      narrationBeats: [
+        { atSeconds: 0, visualProgress: 0.25, text: "Good hospitality operations are not hurried." },
+        { atSeconds: 3.5, visualProgress: 0.68, text: "They are prepared, clearly owned, responsive to change, and finished with certainty." },
+        { atSeconds: 7.5, visualProgress: 1, text: "Plan. Assign. Execute. See change. Act. Close. Review." },
+      ],
+    }),
   ],
 };
 
@@ -254,5 +330,13 @@ export const julieDemoCapabilityMap = [
 
 export const julieDemoRuntimeSeconds = julieEventDemo.chapters.reduce(
   (total, chapter) => total + chapter.durationSeconds,
+  0,
+);
+
+export const julieDemoNarrationWordCount = julieEventDemo.chapters.reduce(
+  (total, chapter) => total + chapter.narrationBeats.reduce(
+    (chapterTotal, beat) => chapterTotal + beat.text.trim().split(/\s+/).length,
+    0,
+  ),
   0,
 );
