@@ -7,6 +7,9 @@ import {
   useRef,
   useState,
 } from "react";
+import GuideSubsections from "./components/GuideSubsections.jsx";
+import VisualStandardsManager from "./components/VisualStandardsManager.jsx";
+import { useVisualStandards } from "./components/VisualStandardsProvider.jsx";
 import {
   areas,
   defaultRoutines,
@@ -1577,12 +1580,14 @@ function isOptionalTask(task) {
 function normalizeGuide(guide) {
   return {
     id: guide.id || slug(guide.title || "guide"),
+    aliases: Array.isArray(guide.aliases) ? guide.aliases : [],
     title: guide.title || "Guide",
     category: guide.category || "Guide",
     area: guide.area || "general",
     body: guide.body || "",
     steps: Array.isArray(guide.steps) ? guide.steps : [],
     images: Array.isArray(guide.images) ? guide.images : [],
+    sections: Array.isArray(guide.sections) ? guide.sections : [],
     relatedTaskIds: Array.isArray(guide.relatedTaskIds)
       ? guide.relatedTaskIds
       : [],
@@ -1592,7 +1597,9 @@ function normalizeGuide(guide) {
 
 function findGuideById(guideId) {
   if (!guideId) return null;
-  return knowledgeBase.map(normalizeGuide).find((guide) => guide.id === guideId);
+  return knowledgeBase
+    .map(normalizeGuide)
+    .find((guide) => guide.id === guideId || guide.aliases.includes(guideId));
 }
 
 function getTaskImages(task, guide) {
@@ -3806,6 +3813,7 @@ function TaskInput({ task, value, onChange }) {
 
 function GuideImages({ images = [] }) {
   const [failedImages, setFailedImages] = useState({});
+  const { resolve } = useVisualStandards();
   if (!images.length) {
     return (
       <div className="image-placeholder">
@@ -3816,14 +3824,15 @@ function GuideImages({ images = [] }) {
   return (
     <div className="guide-images">
       {images.map((image) => {
-        const imageKey = image.id || image.src || image.label;
-        const hasImage = image.src && !failedImages[imageKey];
+        const resolvedImage = resolve(image.id, image) || image;
+        const imageKey = resolvedImage.id || resolvedImage.src || resolvedImage.label;
+        const hasImage = resolvedImage.src && !failedImages[imageKey];
         return (
           <figure key={imageKey} className="guide-image-frame">
             {hasImage ? (
               <img
-                src={image.src}
-                alt={image.label || "Guide image"}
+                src={resolvedImage.src}
+                alt={resolvedImage.label || "Guide image"}
                 onError={() =>
                   setFailedImages((current) => ({
                     ...current,
@@ -3836,7 +3845,7 @@ function GuideImages({ images = [] }) {
                 Image placeholder - add final photo later.
               </div>
             )}
-            {image.label && <figcaption>{image.label}</figcaption>}
+            {resolvedImage.label && <figcaption>{resolvedImage.label}</figcaption>}
           </figure>
         );
       })}
@@ -3863,6 +3872,7 @@ function GuideCard({ guide, compact = false }) {
           ))}
         </ol>
       )}
+      <GuideSubsections sections={normalizedGuide.sections} />
       {normalizedGuide.images.length > 0 && (
         <GuideImages images={normalizedGuide.images} />
       )}
@@ -10532,6 +10542,7 @@ function DemoStudio({ demos, onPreviewDemo }) {
 function ManagerDashboardJumpIndex() {
   const jumpItems = [
     { label: "Top", needles: ["dashboard"] },
+    { label: "Visual Standards", needles: ["default standards", "visual standards"] },
     { label: "Demo Studio", needles: ["internal screening room"] },
     { label: "Backend", needles: ["backend status"] },
     { label: "Checklist", needles: ["checklist backend"] },
@@ -14060,6 +14071,8 @@ function ManagerDashboard({
   }
 />
       <ManagerDailyReviewHistory user={user} date={date} />
+
+      <VisualStandardsManager user={user} />
 
       {message && <p className="status-message">{message}</p>}
 
