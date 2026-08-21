@@ -13,6 +13,9 @@ const ACTIVE_VERSION_ID = '20000000-0000-4000-8000-000000000001';
 const HISTORY_VERSION_ID = '20000000-0000-4000-8000-000000000002';
 const ACTIVE_PATH = `${CANONICAL_KEY}/100-active.jpg`;
 const HISTORY_PATH = `${CANONICAL_KEY}/50-history.jpg`;
+const DETAIL_KEY = 'cabinet-1';
+const DETAIL_VERSION_ID = '20000000-0000-4000-8000-000000000003';
+const DETAIL_PATH = `${CANONICAL_KEY}/details/${DETAIL_KEY}/150-detail.jpg`;
 
 function queryResult(result) {
   const query = {
@@ -33,6 +36,7 @@ function createClients({
     active_version_id: ACTIVE_VERSION_ID,
     active_version: 2,
     status: 'published',
+    is_visible: true,
   },
   version = {
     id: HISTORY_VERSION_ID,
@@ -40,6 +44,18 @@ function createClients({
     canonical_key: CANONICAL_KEY,
     asset_path: HISTORY_PATH,
     version: 1,
+    asset_role: 'primary',
+    detail_key: null,
+  },
+  detail = {
+    id: '40000000-0000-4000-8000-000000000001',
+    visual_standard_id: STANDARD_ID,
+    canonical_key: CANONICAL_KEY,
+    detail_key: DETAIL_KEY,
+    active_asset_path: DETAIL_PATH,
+    active_version_id: DETAIL_VERSION_ID,
+    active_version: 3,
+    status: 'published',
   },
 } = {}) {
   const calls = [];
@@ -48,6 +64,7 @@ function createClients({
       calls.push(['from', table]);
       if (table === 'visual_standards') return queryResult({ data: standard, error: null });
       if (table === 'visual_standard_versions') return queryResult({ data: version, error: null });
+      if (table === 'visual_standard_detail_slots') return queryResult({ data: detail, error: null });
       if (table === 'user_profiles') return queryResult({ data: profile, error: null });
       throw new Error(`Unexpected table: ${table}`);
     },
@@ -131,6 +148,62 @@ test('active delivery requires the application project credential', async () => 
   assert.equal(clients.calls.length, 0);
 });
 
+test('ordinary staff delivery signs only a currently published active detail slot', async () => {
+  const clients = createClients();
+  const response = await handlerFor(clients)(request({
+    canonicalKey: CANONICAL_KEY,
+    detailKey: DETAIL_KEY,
+    versionId: '',
+  }));
+  const body = await response.json();
+
+  assert.equal(response.status, 200);
+  assert.equal(body.scope, 'active_detail');
+  assert.equal(body.detailKey, DETAIL_KEY);
+  assert.equal(body.versionId, DETAIL_VERSION_ID);
+  assert.deepEqual(
+    clients.calls.filter(([name]) => name === 'sign'),
+    [['sign', DETAIL_PATH, 3600]],
+  );
+
+  const unpublishedClients = createClients({
+    detail: {
+      id: '40000000-0000-4000-8000-000000000001',
+      visual_standard_id: STANDARD_ID,
+      canonical_key: CANONICAL_KEY,
+      detail_key: DETAIL_KEY,
+      active_asset_path: null,
+      active_version_id: null,
+      active_version: 0,
+      status: 'awaiting_asset',
+    },
+  });
+  const unpublishedResponse = await handlerFor(unpublishedClients)(request({
+    canonicalKey: CANONICAL_KEY,
+    detailKey: DETAIL_KEY,
+  }));
+  assert.equal(unpublishedResponse.status, 404);
+  assert.equal(unpublishedClients.calls.some(([name]) => name === 'sign'), false);
+});
+
+test('hidden legacy standards cannot be retrieved as active assets', async () => {
+  const clients = createClients({
+    standard: {
+      id: STANDARD_ID,
+      canonical_key: CANONICAL_KEY,
+      active_asset_path: ACTIVE_PATH,
+      active_version_id: ACTIVE_VERSION_ID,
+      active_version: 2,
+      status: 'published',
+      is_visible: false,
+    },
+  });
+  const response = await handlerFor(clients)(request({ canonicalKey: CANONICAL_KEY }));
+
+  assert.equal(response.status, 404);
+  assert.equal(clients.calls.some(([name]) => name === 'sign'), false);
+});
+
 test('staff and staff-code callers cannot obtain historical signed URLs', async () => {
   const staffCodeClients = createClients();
   const staffCodeResponse = await handlerFor(staffCodeClients)(request({
@@ -203,6 +276,14 @@ test('canonical asset path validation rejects nested and arbitrary object names'
   assert.equal(isCanonicalVisualStandardAssetPath(CANONICAL_KEY, ACTIVE_PATH), true);
   assert.equal(
     isCanonicalVisualStandardAssetPath(CANONICAL_KEY, `${CANONICAL_KEY}/nested/100.jpg`),
+    false,
+  );
+  assert.equal(
+    isCanonicalVisualStandardAssetPath(CANONICAL_KEY, DETAIL_PATH, DETAIL_KEY),
+    true,
+  );
+  assert.equal(
+    isCanonicalVisualStandardAssetPath(CANONICAL_KEY, DETAIL_PATH, 'cabinet-2'),
     false,
   );
   assert.equal(

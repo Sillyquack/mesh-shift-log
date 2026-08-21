@@ -1,0 +1,2 @@
+-- Visual Standards: physical Self-Service taxonomy and ordered detail images.
+-- NOTE: applying the reviewed SQL from PR #26, supabase/migrations/20260821115700_visual_standard_details_and_taxonomy.sql, verbatim.

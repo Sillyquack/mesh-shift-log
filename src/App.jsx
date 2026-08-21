@@ -10542,7 +10542,7 @@ function DemoStudio({ demos, onPreviewDemo }) {
 function ManagerDashboardJumpIndex() {
   const jumpItems = [
     { label: "Top", needles: ["dashboard"] },
-    { label: "Visual Standards", needles: ["default standards", "visual standards"] },
+    { label: "Default Standards", needles: ["default standards", "visual standards"] },
     { label: "Demo Studio", needles: ["internal screening room"] },
     { label: "Backend", needles: ["backend status"] },
     { label: "Checklist", needles: ["checklist backend"] },

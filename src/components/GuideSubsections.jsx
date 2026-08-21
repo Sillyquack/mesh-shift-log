@@ -55,6 +55,25 @@ export default function GuideSubsections({ sections = [] }) {
                   <code>{section.visualKey}</code>
                 </div>
               )}
+              {visualStandard?.details?.length > 0 && (
+                <div className="canonical-visual-details" aria-label={`${section.title} detail images`}>
+                  <h4>Detail images</h4>
+                  <div className="canonical-visual-detail-list">
+                    {visualStandard.details.map((detail) => (
+                      <details key={detail.detailKey} className="canonical-visual-detail">
+                        <summary>
+                          <img src={detail.src} alt="" loading="lazy" />
+                          <span>{detail.label}</span>
+                        </summary>
+                        <figure>
+                          <img src={detail.src} alt={`${section.title}: ${detail.label}`} loading="lazy" />
+                          <figcaption>{detail.label}</figcaption>
+                        </figure>
+                      </details>
+                    ))}
+                  </div>
+                </div>
+              )}
             </div>
           </details>
         );

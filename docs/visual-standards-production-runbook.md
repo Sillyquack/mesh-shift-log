@@ -13,8 +13,14 @@ existing canonical-key registry and resolves through `VisualStandardsProvider`:
 2. existing bundled repository image;
 3. awaiting-approved-photo state.
 
-The two Workbar fridge images remain bundled. The eight Self-Service keys keep
+The two Workbar fridge images remain bundled. The nine Self-Service keys keep
 their awaiting-photo fallback until a manager publishes them.
+
+The primary image remains the default guide image. A standard may also expose
+ordered, labelled detail slots. Detail assets use the same private bucket,
+immutable object naming, audited version history and signed-delivery boundary
+as primary assets. Only published active detail slots are readable by ordinary
+staff; unpublished slots and historical detail versions remain manager-only.
 
 Signed URLs are issued for 3,600 seconds (60 minutes). The client caches active
 delivery by canonical key and active version and reuses it until five minutes
@@ -42,12 +48,13 @@ codes or promote them to authenticated users.
 `supabase/functions/visual-standard-image` is the only Visual Standards URL
 signer used by the app.
 
-For active delivery it:
+For active primary or detail delivery it:
 
 1. requires the project's anon/publishable application credential;
 2. accepts a canonical key, not a Storage path;
-3. loads that canonical row with the service-role client;
-4. requires `status = 'published'` and uses only `active_asset_path`;
+3. loads a visible canonical row with the service-role client;
+4. requires `status = 'published'` and uses only the canonical primary active
+   path or the requested detail slot's published active path;
 5. validates the immutable canonical object namespace;
 6. returns a 60-minute signed URL.
 
@@ -88,9 +95,14 @@ to the canonical standard, confirms the retained object exists, creates a new
 monotonic audited version with `restored_from_version_id`, switches the active
 pointer transactionally, and refreshes active signed delivery.
 
+Primary and detail publication share the same ordering: immutable upload,
+transactional publish RPC, persisted-row confirmation, fresh signed readback,
+then provider update. A selected camera/file image remains local-only until the
+explicit Save action.
+
 ## Production migration
 
-The production ledger records the applied Visual Standards migration as:
+The production ledger records the already-applied Visual Standards migration as:
 
 `supabase/migrations/20260821102613_visual_standards.sql`
 
@@ -109,7 +121,24 @@ It creates/configures:
 No ordinary-user Storage read/list policy is created. Active delivery is
 performed by the Edge Function after its canonical active-row lookup.
 
-## Production rollout status — 21 August 2026
+The taxonomy/detail follow-up was reconciled forward-only after production
+recorded an accidental comment-only migration:
+
+- `20260821124543_visual_standard_details_and_taxonomy.sql` mirrors the existing
+  no-op production ledger entry;
+- `20260821125127_recover_visual_standard_details_and_taxonomy.sql` contains the
+  exact SQL previously reviewed as version `20260821115700` and is the only
+  migration that changed the production schema.
+
+The recovery adds the nine-section Self-Service taxonomy, hides but does not
+delete four legacy canonical rows, records their aliases, extends the existing
+audit table for primary/detail roles, adds ordered detail slots, and adds
+manager-only detail publish/restore RPCs. Production history was not repaired
+or rewritten, and no immutable Storage object or version was removed. See
+`docs/visual-standards-taxonomy-rollout.md` for the reconciliation record and
+the still-pending application rollout.
+
+## Initial production rollout status — 21 August 2026
 
 Owner approval was given for the rollout. The following production actions are
 complete on project `mesh-shift-log`:
@@ -135,11 +164,11 @@ complete on project `mesh-shift-log`:
    and restore functions perform explicit manager checks internally. Existing
    project security debt is tracked separately.
 
-The remaining rollout steps are:
-
-1. merge the approved application PR;
-2. deploy the application through the normal GitHub Pages release process;
-3. run the authenticated manager/staff/staff-code device smoke test below.
+The initial rollout's application steps were completed by PR #25. The
+taxonomy/detail database recovery described above was applied and verified on
+21 August 2026. PR #26 remains unmerged, and neither its web application nor
+its Edge Function change has been deployed. No production Visual Standard
+photo was published during reconciliation.
 
 ## Production smoke test
 

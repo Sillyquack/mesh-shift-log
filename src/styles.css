@@ -1609,6 +1609,69 @@ textarea {
   font-weight: 800;
 }
 
+.canonical-visual-details {
+  display: grid;
+  gap: 8px;
+}
+
+.canonical-visual-details h4 {
+  margin: 0;
+}
+
+.canonical-visual-detail-list {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(120px, 1fr));
+  gap: 8px;
+}
+
+.canonical-visual-detail {
+  min-width: 0;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  background: var(--surface);
+  padding: 7px;
+}
+
+.canonical-visual-detail > summary {
+  display: grid;
+  gap: 6px;
+  min-height: 44px;
+  color: var(--text);
+  font-weight: 800;
+  cursor: pointer;
+  list-style: none;
+}
+
+.canonical-visual-detail > summary::-webkit-details-marker {
+  display: none;
+}
+
+.canonical-visual-detail > summary img {
+  display: block;
+  width: 100%;
+  aspect-ratio: 4 / 3;
+  border-radius: 6px;
+  object-fit: cover;
+}
+
+.canonical-visual-detail figure {
+  display: grid;
+  gap: 5px;
+  margin: 8px 0 0;
+}
+
+.canonical-visual-detail figure img {
+  display: block;
+  width: 100%;
+  height: auto;
+  border-radius: 6px;
+}
+
+.canonical-visual-detail figcaption {
+  color: var(--muted);
+  font-size: 0.8rem;
+}
+
 .compact-guide {
   border: 0;
   box-shadow: none;
@@ -3486,6 +3549,417 @@ textarea {
 
   .visual-standard-editor-actions .primary-button {
     margin-left: auto;
+  }
+}
+
+/* Compact Visual Standards capture flow. Legacy card/editor rules above are
+   retained only for cached markup during a rolling application update. */
+body:has([data-manager-section="visual-standards"]) .workbar-guide-launcher {
+  display: none;
+}
+
+body:has(.visual-standard-capture) button[aria-label="Back to dashboard top"] {
+  display: none;
+}
+
+.visual-standard-manager-heading {
+  align-items: start;
+}
+
+.visual-standard-area-select {
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr);
+  align-items: center;
+  gap: 10px;
+  max-width: 460px;
+  font-weight: 850;
+}
+
+.visual-standard-area-select select {
+  width: 100%;
+  min-width: 0;
+  min-height: 48px;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  background: var(--surface-strong);
+  color: var(--text);
+  padding: 8px 38px 8px 12px;
+  font: inherit;
+}
+
+.visual-standard-list {
+  display: grid;
+  gap: 8px;
+  min-width: 0;
+}
+
+.visual-standard-row {
+  display: grid;
+  grid-template-columns: 64px minmax(0, 1fr);
+  gap: 10px;
+  min-width: 0;
+  overflow: hidden;
+  border: 1px solid var(--line);
+  border-radius: 9px;
+  background: var(--surface-strong);
+  padding: 10px;
+}
+
+.visual-standard-row-thumbnail {
+  display: block;
+  width: 64px;
+  height: 64px;
+  min-width: 0;
+  border-radius: 7px;
+  background: var(--surface);
+  object-fit: cover;
+}
+
+.visual-standard-empty.visual-standard-row-thumbnail {
+  place-content: center;
+  gap: 2px;
+  padding: 4px;
+  font-size: 0.62rem;
+}
+
+.visual-standard-empty.visual-standard-row-thumbnail > span {
+  color: var(--brand-strong);
+  font-size: 1.1rem;
+}
+
+.visual-standard-row-copy {
+  display: grid;
+  align-content: center;
+  justify-items: start;
+  gap: 4px;
+  min-width: 0;
+}
+
+.visual-standard-row-copy > strong,
+.visual-standard-row-copy > small {
+  max-width: 100%;
+  overflow-wrap: anywhere;
+}
+
+.visual-standard-row-copy > small {
+  color: var(--muted);
+}
+
+.visual-standard-row-copy .visual-standard-source {
+  padding: 2px 6px;
+  font-size: 0.65rem;
+}
+
+.visual-standard-row-actions {
+  display: grid;
+  grid-column: 1 / -1;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: 6px;
+  min-width: 0;
+}
+
+.visual-standard-row-actions button {
+  min-width: 0;
+  min-height: 46px;
+  padding-inline: 6px;
+}
+
+.visual-standard-row > .all-clear,
+.visual-standard-row > .status-message {
+  grid-column: 1 / -1;
+  margin: 0;
+}
+
+.visual-standard-capture {
+  display: grid;
+  gap: 14px;
+  min-width: 0;
+  scroll-margin-top: 84px;
+  border: 2px solid color-mix(in srgb, var(--brand) 52%, var(--line));
+  border-radius: 11px;
+  background: color-mix(in srgb, var(--brand) 4%, var(--surface));
+  padding: 12px;
+}
+
+.visual-standard-capture-heading,
+.visual-standard-history-heading {
+  display: flex;
+  align-items: start;
+  justify-content: space-between;
+  gap: 12px;
+  min-width: 0;
+}
+
+.visual-standard-capture-heading > div,
+.visual-standard-history-heading > div {
+  min-width: 0;
+}
+
+.visual-standard-capture-heading > button,
+.visual-standard-history-heading > button {
+  flex-shrink: 0;
+  min-height: 44px;
+  white-space: nowrap;
+}
+
+.visual-standard-capture-heading h3,
+.visual-standard-history-heading h4,
+.visual-standard-capture-heading p,
+.visual-standard-capture-heading small,
+.visual-standard-history-heading p {
+  margin: 0;
+  overflow-wrap: anywhere;
+}
+
+.visual-standard-replacement-preview {
+  display: grid;
+  gap: 8px;
+  margin: 0;
+}
+
+.visual-standard-replacement-preview > img {
+  display: block;
+  width: 100%;
+  max-height: min(58vh, 620px);
+  aspect-ratio: 4 / 3;
+  border-radius: 9px;
+  background: var(--surface-strong);
+  object-fit: contain;
+}
+
+.visual-standard-replacement-preview figcaption {
+  display: grid;
+  gap: 2px;
+}
+
+.visual-standard-replacement-preview figcaption span {
+  color: var(--muted);
+  font-size: 0.8rem;
+}
+
+.visual-standard-capture-empty {
+  display: grid;
+  place-content: center;
+  gap: 5px;
+  min-height: 150px;
+  border: 1px dashed color-mix(in srgb, var(--brand) 45%, var(--line));
+  border-radius: 9px;
+  background: var(--surface);
+  padding: 18px;
+  text-align: center;
+}
+
+.visual-standard-capture-empty span {
+  color: var(--muted);
+}
+
+.visual-standard-current-compact {
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  background: var(--surface);
+  padding: 8px;
+}
+
+.visual-standard-current-compact > summary {
+  display: grid;
+  grid-template-columns: 48px minmax(0, 1fr);
+  align-items: center;
+  gap: 9px;
+  min-height: 48px;
+  cursor: pointer;
+  list-style: none;
+}
+
+.visual-standard-current-compact > summary::-webkit-details-marker {
+  display: none;
+}
+
+.visual-standard-current-compact > summary > img,
+.visual-standard-current-compact > summary > span:first-child {
+  display: grid;
+  width: 48px;
+  height: 48px;
+  place-items: center;
+  border-radius: 6px;
+  background: var(--surface-strong);
+  object-fit: cover;
+}
+
+.visual-standard-current-compact > summary > span:last-child {
+  display: grid;
+  gap: 2px;
+}
+
+.visual-standard-current-compact summary small {
+  color: var(--muted);
+}
+
+.visual-standard-current-compact > img {
+  display: block;
+  width: 100%;
+  max-height: 420px;
+  margin-top: 8px;
+  border-radius: 7px;
+  object-fit: contain;
+}
+
+.visual-standard-capture-actions {
+  position: sticky;
+  bottom: 8px;
+  z-index: 95;
+  display: grid;
+  grid-template-columns: minmax(0, 1.35fr) minmax(0, 1fr);
+  gap: 7px;
+  border: 1px solid var(--line);
+  border-radius: 9px;
+  background: color-mix(in srgb, var(--surface) 94%, transparent);
+  box-shadow: 0 10px 26px rgba(22, 32, 29, 0.16);
+  padding: 9px;
+  backdrop-filter: blur(12px);
+}
+
+.visual-standard-capture-actions button {
+  min-width: 0;
+  min-height: 48px;
+}
+
+.visual-standard-capture-actions .primary-button {
+  grid-column: 1;
+  grid-row: 1;
+}
+
+.visual-standard-capture-actions > button:nth-child(2) {
+  grid-column: 1;
+  grid-row: 2;
+}
+
+.visual-standard-capture-actions > button:nth-child(3) {
+  grid-column: 2;
+  grid-row: 2;
+}
+
+.visual-standard-capture-actions > button:last-child {
+  grid-column: 2;
+  grid-row: 1;
+}
+
+.visual-standard-detail-manager,
+.visual-standard-history {
+  border-top: 1px solid var(--line);
+  padding-top: 12px;
+}
+
+.visual-standard-detail-manager > summary {
+  min-height: 46px;
+  padding-block: 12px;
+  color: var(--brand-strong);
+  font-weight: 850;
+  cursor: pointer;
+}
+
+.visual-standard-detail-manager > div {
+  display: grid;
+  gap: 8px;
+}
+
+.visual-standard-detail-row {
+  display: grid;
+  grid-template-columns: 48px minmax(0, 1fr);
+  gap: 7px;
+  min-width: 0;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  background: var(--surface);
+  padding: 8px;
+}
+
+.visual-standard-detail-row > img,
+.visual-standard-detail-row > span {
+  display: grid;
+  width: 48px;
+  height: 48px;
+  place-items: center;
+  border-radius: 6px;
+  background: var(--surface-strong);
+  object-fit: cover;
+}
+
+.visual-standard-detail-row > div {
+  display: grid;
+  align-content: center;
+  min-width: 0;
+}
+
+.visual-standard-detail-row small {
+  color: var(--muted);
+}
+
+.visual-standard-detail-row > button {
+  min-height: 44px;
+}
+
+.visual-standard-detail-row > button:first-of-type,
+.visual-standard-detail-row > button:nth-of-type(3) {
+  grid-column: 1;
+}
+
+.visual-standard-detail-row > button:nth-of-type(2) {
+  grid-column: 2;
+  grid-row: 2;
+}
+
+.visual-standard-history-trigger {
+  justify-self: start;
+  min-height: 44px;
+}
+
+@media (min-width: 760px) {
+  .visual-standard-row {
+    grid-template-columns: 72px minmax(220px, 1fr) auto;
+    align-items: center;
+  }
+
+  .visual-standard-row-thumbnail {
+    width: 72px;
+    height: 72px;
+  }
+
+  .visual-standard-row-actions {
+    grid-column: auto;
+    grid-template-columns: repeat(4, auto);
+  }
+
+  .visual-standard-row > .all-clear,
+  .visual-standard-row > .status-message {
+    grid-column: 2 / -1;
+  }
+
+  .visual-standard-capture {
+    padding: 16px;
+  }
+
+  .visual-standard-capture-actions {
+    position: static;
+    display: flex;
+    box-shadow: none;
+    backdrop-filter: none;
+  }
+
+  .visual-standard-capture-actions .primary-button {
+    order: 4;
+    margin-left: auto;
+  }
+
+  .visual-standard-detail-row {
+    grid-template-columns: 48px minmax(0, 1fr) repeat(3, auto);
+    align-items: center;
+  }
+
+  .visual-standard-detail-row > button:first-of-type,
+  .visual-standard-detail-row > button:nth-of-type(2),
+  .visual-standard-detail-row > button:nth-of-type(3) {
+    grid-column: auto;
+    grid-row: auto;
   }
 }
 

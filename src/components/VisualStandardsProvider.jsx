@@ -9,17 +9,22 @@ import {
 import {
   fetchVisualStandards,
   publishVisualStandard,
+  publishVisualStandardDetail,
+  restoreVisualStandardDetailVersion,
   restoreVisualStandardVersion,
 } from '../lib/visualStandardsClient.js';
 import {
+  attachVisualStandardDetails,
   resolveAllVisualStandards,
   resolveVisualStandard,
 } from '../lib/visualStandards.js';
+import { resolveCanonicalVisualStandardKey } from '../data/workbarVisualStandards.js';
 
 const VisualStandardsContext = createContext(null);
 
 export function VisualStandardsProvider({ children }) {
   const [backendRecords, setBackendRecords] = useState([]);
+  const [backendDetailRecords, setBackendDetailRecords] = useState([]);
   const [status, setStatus] = useState({
     state: 'loading',
     message: 'Loading Visual Standards…',
@@ -30,6 +35,7 @@ export function VisualStandardsProvider({ children }) {
     const result = await fetchVisualStandards();
     if (result.ok) {
       setBackendRecords(result.records);
+      setBackendDetailRecords(result.detailRecords || []);
       setStatus({
         state: 'ready',
         message: result.message,
@@ -62,8 +68,11 @@ export function VisualStandardsProvider({ children }) {
   }, [refresh]);
 
   const standards = useMemo(
-    () => resolveAllVisualStandards(backendRecords),
-    [backendRecords],
+    () => attachVisualStandardDetails(
+      resolveAllVisualStandards(backendRecords),
+      backendDetailRecords,
+    ),
+    [backendRecords, backendDetailRecords],
   );
   const standardsByKey = useMemo(
     () => new Map(standards.map((standard) => [standard.canonicalKey, standard])),
@@ -71,10 +80,12 @@ export function VisualStandardsProvider({ children }) {
   );
 
   const resolve = useCallback(
-    (canonicalKey, fallback = null) =>
-      standardsByKey.get(canonicalKey) ||
-      resolveVisualStandard(canonicalKey) ||
-      fallback,
+    (canonicalKey, fallback = null) => {
+      const resolvedKey = resolveCanonicalVisualStandardKey(canonicalKey);
+      return standardsByKey.get(resolvedKey)
+        || resolveVisualStandard(resolvedKey)
+        || fallback;
+    },
     [standardsByKey],
   );
 
@@ -114,9 +125,60 @@ export function VisualStandardsProvider({ children }) {
     return result;
   }, []);
 
+  const publishDetail = useCallback(async (input) => {
+    const result = await publishVisualStandardDetail(input);
+    if (result.ok && result.record) {
+      setBackendDetailRecords((current) => [
+        ...current.filter(
+          (record) => !(
+            record.canonicalKey === result.record.canonicalKey
+            && record.detailKey === result.record.detailKey
+          ),
+        ),
+        result.record,
+      ]);
+      setStatus({
+        state: 'ready',
+        message: result.message,
+        lastRefreshedAt: new Date().toISOString(),
+      });
+    }
+    return result;
+  }, []);
+
+  const restoreDetail = useCallback(async (input) => {
+    const result = await restoreVisualStandardDetailVersion(input);
+    if (result.ok && result.record) {
+      setBackendDetailRecords((current) => [
+        ...current.filter(
+          (record) => !(
+            record.canonicalKey === result.record.canonicalKey
+            && record.detailKey === result.record.detailKey
+          ),
+        ),
+        result.record,
+      ]);
+      setStatus({
+        state: 'ready',
+        message: result.message,
+        lastRefreshedAt: new Date().toISOString(),
+      });
+    }
+    return result;
+  }, []);
+
   const value = useMemo(
-    () => ({ standards, resolve, refresh, publish, restore, status }),
-    [standards, resolve, refresh, publish, restore, status],
+    () => ({
+      standards,
+      resolve,
+      refresh,
+      publish,
+      publishDetail,
+      restore,
+      restoreDetail,
+      status,
+    }),
+    [standards, resolve, refresh, publish, publishDetail, restore, restoreDetail, status],
   );
 
   return (

@@ -1,6 +1,7 @@
 import {
   canonicalVisualStandards,
   getCanonicalVisualStandard,
+  resolveCanonicalVisualStandardKey,
 } from '../data/workbarVisualStandards.js';
 
 export const VISUAL_STANDARDS_BUCKET = 'visual-standards';
@@ -8,6 +9,7 @@ export const VISUAL_STANDARD_MAX_FILE_BYTES = 15 * 1024 * 1024;
 export const VISUAL_STANDARD_SIGNED_URL_REFRESH_BUFFER_MS = 5 * 60 * 1000;
 
 const visualStandardSignedUrlCache = new Map();
+const detailKeyPattern = /^[a-z0-9]+(?:-[a-z0-9]+)*$/;
 
 export const VISUAL_STANDARD_IMAGE_TYPES = Object.freeze([
   'image/jpeg',
@@ -26,7 +28,8 @@ const imageExtensionByType = Object.freeze({
 });
 
 export function normalizeVisualStandardRow(row) {
-  const canonicalKey = row?.canonical_key || row?.canonicalKey;
+  const sourceCanonicalKey = row?.canonical_key || row?.canonicalKey;
+  const canonicalKey = resolveCanonicalVisualStandardKey(sourceCanonicalKey);
   if (!canonicalKey) return null;
   return {
     id: row.id || '',
@@ -44,6 +47,7 @@ export function normalizeVisualStandardRow(row) {
     updatedByName: row.updated_by_name || row.updatedByName || '',
     signedUrl: row.signed_url || row.signedUrl || '',
     signedUrlExpiresAt: row.signed_url_expires_at || row.signedUrlExpiresAt || '',
+    isVisible: row.is_visible ?? row.isVisible ?? true,
   };
 }
 
@@ -62,6 +66,35 @@ export function normalizeVisualStandardVersionRow(row) {
     createdBy: row.created_by || '',
     createdByName: row.created_by_name || '',
     restoredFromVersionId: row.restored_from_version_id || '',
+    assetRole: row.asset_role || row.assetRole || 'primary',
+    detailKey: row.detail_key || row.detailKey || '',
+    detailLabel: row.detail_label || row.detailLabel || '',
+    detailOrder: Number(row.detail_order ?? row.detailOrder ?? 0),
+    signedUrl: row.signed_url || row.signedUrl || '',
+    signedUrlExpiresAt: row.signed_url_expires_at || row.signedUrlExpiresAt || '',
+  };
+}
+
+export function normalizeVisualStandardDetailRow(row) {
+  const sourceCanonicalKey = row?.canonical_key || row?.canonicalKey;
+  const canonicalKey = resolveCanonicalVisualStandardKey(sourceCanonicalKey);
+  const detailKey = row?.detail_key || row?.detailKey;
+  if (!canonicalKey || !detailKey) return null;
+  return {
+    id: row.id || '',
+    visualStandardId: row.visual_standard_id || row.visualStandardId || '',
+    canonicalKey,
+    detailKey,
+    label: row.label || detailKey,
+    order: Number(row.sort_order ?? row.order ?? 0),
+    activeAssetPath: row.active_asset_path || row.activeAssetPath || '',
+    activeVersionId: row.active_version_id || row.activeVersionId || '',
+    activeVersion: Number(row.active_version || row.activeVersion || 0),
+    status: row.status || 'awaiting_asset',
+    notes: row.notes || '',
+    updatedAt: row.updated_at || row.updatedAt || '',
+    updatedBy: row.updated_by || row.updatedBy || '',
+    updatedByName: row.updated_by_name || row.updatedByName || '',
     signedUrl: row.signed_url || row.signedUrl || '',
     signedUrlExpiresAt: row.signed_url_expires_at || row.signedUrlExpiresAt || '',
   };
@@ -89,6 +122,7 @@ export async function resolveVisualStandardSignedUrlWithClient({
   client,
   canonicalKey,
   versionId = '',
+  detailKey = '',
   activeVersionId = '',
   forceRefresh = false,
   now = Date.now(),
@@ -102,9 +136,12 @@ export async function resolveVisualStandardSignedUrlWithClient({
     };
   }
 
+  const resolvedCanonicalKey = resolveCanonicalVisualStandardKey(canonicalKey);
   const cacheKey = versionId
-    ? `history:${canonicalKey}:${versionId}`
-    : `active:${canonicalKey}:${activeVersionId || 'current'}`;
+    ? `history:${resolvedCanonicalKey}:${versionId}`
+    : detailKey
+      ? `detail:${resolvedCanonicalKey}:${detailKey}:${activeVersionId || 'current'}`
+      : `active:${resolvedCanonicalKey}:${activeVersionId || 'current'}`;
   const cacheActiveDelivery = !versionId;
   if (forceRefresh && cacheActiveDelivery) visualStandardSignedUrlCache.delete(cacheKey);
   if (cacheActiveDelivery) {
@@ -112,7 +149,11 @@ export async function resolveVisualStandardSignedUrlWithClient({
     if (cached) return { ok: true, ...cached, fromCache: true };
   }
 
-  const body = versionId ? { canonicalKey, versionId } : { canonicalKey };
+  const body = versionId
+    ? { canonicalKey: resolvedCanonicalKey, versionId }
+    : detailKey
+      ? { canonicalKey: resolvedCanonicalKey, detailKey }
+      : { canonicalKey: resolvedCanonicalKey };
   const { data, error } = await client.functions.invoke('visual-standard-image', { body });
   const signedUrl = data?.signedUrl || '';
   const expiresAt = data?.expiresAt || '';
@@ -143,7 +184,8 @@ export function resolveVisualStandard(
   backendRecord = null,
   backendAssetUrl = '',
 ) {
-  const bundled = getCanonicalVisualStandard(canonicalKey);
+  const resolvedCanonicalKey = resolveCanonicalVisualStandardKey(canonicalKey);
+  const bundled = getCanonicalVisualStandard(resolvedCanonicalKey);
   if (!bundled) return null;
 
   const backend = normalizeVisualStandardRow(backendRecord) || backendRecord;
@@ -196,6 +238,32 @@ export function resolveAllVisualStandards(backendRows = []) {
   });
 }
 
+export function attachVisualStandardDetails(standards, backendDetailRows = []) {
+  const detailsByKey = new Map();
+  backendDetailRows
+    .map(normalizeVisualStandardDetailRow)
+    .filter(Boolean)
+    .filter((detail) => detail.status === 'published' && detail.activeAssetPath && detail.signedUrl)
+    .forEach((detail) => {
+      const current = detailsByKey.get(detail.canonicalKey) || [];
+      current.push({
+        ...detail,
+        src: detail.signedUrl,
+        source: 'backend',
+        sourceLabel: 'Published detail image',
+      });
+      detailsByKey.set(detail.canonicalKey, current);
+    });
+
+  return standards.map((standard) => ({
+    ...standard,
+    details: Object.freeze(
+      (detailsByKey.get(standard.canonicalKey) || [])
+        .sort((left, right) => left.order - right.order || left.label.localeCompare(right.label)),
+    ),
+  }));
+}
+
 export function validateVisualStandardFile(file) {
   if (!file) {
     return { ok: false, message: 'Choose or take a photo first.' };
@@ -218,17 +286,32 @@ export function validateVisualStandardFile(file) {
 export function buildVisualStandardAssetPath(
   canonicalKey,
   file,
-  { now = Date.now(), uuid = globalThis.crypto?.randomUUID?.() } = {},
+  pathOptions = {},
 ) {
-  if (!getCanonicalVisualStandard(canonicalKey)) {
+  const resolvedCanonicalKey = resolveCanonicalVisualStandardKey(canonicalKey);
+  if (!getCanonicalVisualStandard(resolvedCanonicalKey)) {
     throw new Error('Unknown canonical visual standard.');
   }
   const validation = validateVisualStandardFile(file);
   if (!validation.ok) throw new Error(validation.message);
+
+  const now = pathOptions.now ?? Date.now();
+  // Keep the receiver lookup inside the function body. An optional call in a
+  // default parameter previously minified to an out-of-scope Safari receiver.
+  const cryptoApi = globalThis.crypto;
+  const uuid = pathOptions.uuid
+    ?? (typeof cryptoApi?.randomUUID === 'function' ? cryptoApi.randomUUID() : '');
   if (!uuid) throw new Error('Secure asset identifier generation is unavailable.');
 
   const extension = imageExtensionByType[file.type];
-  return `${canonicalKey}/${now}-${uuid}.${extension}`;
+  const detailKey = pathOptions.detailKey || '';
+  if (detailKey && !detailKeyPattern.test(detailKey)) {
+    throw new Error('A valid Visual Standard detail key is required.');
+  }
+  const namespace = detailKey
+    ? `${resolvedCanonicalKey}/details/${detailKey}`
+    : resolvedCanonicalKey;
+  return `${namespace}/${now}-${uuid}.${extension}`;
 }
 
 function publicationError(error, fallbackMessage, details = {}) {
@@ -246,6 +329,11 @@ function publicationError(error, fallbackMessage, details = {}) {
 function publicationRecord(data) {
   const row = Array.isArray(data) ? data[0] : data;
   return normalizeVisualStandardRow(row);
+}
+
+function publicationDetailRecord(data) {
+  const row = Array.isArray(data) ? data[0] : data;
+  return normalizeVisualStandardDetailRow(row);
 }
 
 export async function publishVisualStandardWithClient({
@@ -282,7 +370,7 @@ export async function publishVisualStandardWithClient({
     const { data, error: publishError } = await client.rpc(
       'publish_visual_standard',
       {
-        input_canonical_key: canonicalKey,
+        input_canonical_key: resolveCanonicalVisualStandardKey(canonicalKey),
         input_asset_path: assetPath,
         input_mime_type: file.type,
         input_byte_size: file.size,
@@ -337,4 +425,163 @@ export async function publishVisualStandardWithClient({
       { cleanupError, uploadedAssetPath: assetPath },
     );
   }
+}
+
+export async function publishVisualStandardAndResolveWithClient(input) {
+  const result = await publishVisualStandardWithClient(input);
+  if (!result.ok) return result;
+  const delivery = await resolveVisualStandardSignedUrlWithClient({
+    client: input.client,
+    canonicalKey: result.record.canonicalKey,
+    activeVersionId: result.record.activeVersionId,
+    forceRefresh: true,
+  });
+  const record = {
+    ...result.record,
+    signedUrl: delivery.signedUrl || '',
+    signedUrlExpiresAt: delivery.expiresAt || '',
+    signedDeliveryError: delivery.ok ? '' : delivery.message,
+  };
+  return {
+    ...result,
+    record,
+    records: [record],
+    deliveryError: record.signedDeliveryError,
+    message: record.signedUrl
+      ? result.message
+      : 'Visual Standard published, but its private image could not be refreshed yet.',
+  };
+}
+
+export async function publishVisualStandardDetailWithClient({
+  client,
+  canonicalKey,
+  detailKey,
+  label,
+  order,
+  file,
+  notes = '',
+  pathOptions = {},
+}) {
+  const validation = validateVisualStandardFile(file);
+  if (!validation.ok) {
+    return publicationError(new Error(validation.message), validation.message);
+  }
+  if (!detailKeyPattern.test(detailKey || '')) {
+    return publicationError(
+      new Error('A valid Visual Standard detail key is required.'),
+      'A valid Visual Standard detail key is required.',
+    );
+  }
+  if (!label?.trim() || !Number.isInteger(order) || order < 0) {
+    return publicationError(
+      new Error('A detail label and non-negative order are required.'),
+      'A detail label and non-negative order are required.',
+    );
+  }
+
+  let assetPath = '';
+  let uploadCompleted = false;
+  try {
+    assetPath = buildVisualStandardAssetPath(canonicalKey, file, {
+      ...pathOptions,
+      detailKey,
+    });
+    const bucket = client.storage.from(VISUAL_STANDARDS_BUCKET);
+    const { error: uploadError } = await bucket.upload(assetPath, file, {
+      cacheControl: '31536000',
+      contentType: file.type,
+      upsert: false,
+    });
+    if (uploadError) {
+      return publicationError(
+        uploadError,
+        'Detail image upload failed. The current detail is unchanged.',
+      );
+    }
+    uploadCompleted = true;
+
+    const { data, error: publishError } = await client.rpc(
+      'publish_visual_standard_detail',
+      {
+        input_canonical_key: resolveCanonicalVisualStandardKey(canonicalKey),
+        input_detail_key: detailKey,
+        input_label: label.trim(),
+        input_sort_order: order,
+        input_asset_path: assetPath,
+        input_mime_type: file.type,
+        input_byte_size: file.size,
+        input_notes: notes.trim() || null,
+      },
+    );
+    if (publishError) {
+      const { error: cleanupError } = await bucket.remove([assetPath]);
+      return publicationError(
+        publishError,
+        'Publishing the detail failed. The current detail is unchanged.',
+        { cleanupError: cleanupError || null, uploadedAssetPath: assetPath },
+      );
+    }
+
+    const record = publicationDetailRecord(data);
+    if (!record || record.activeAssetPath !== assetPath) {
+      return publicationError(
+        new Error('The database did not confirm the published detail asset.'),
+        'Publishing the detail could not be confirmed.',
+        { publicationCommitted: Boolean(record), uploadedAssetPath: assetPath },
+      );
+    }
+    return {
+      ok: true,
+      mode: 'backend',
+      message: 'Visual Standard detail published.',
+      record,
+      records: [record],
+      uploadedAssetPath: assetPath,
+    };
+  } catch (error) {
+    let cleanupError = null;
+    if (uploadCompleted && assetPath) {
+      try {
+        const cleanup = await client.storage
+          .from(VISUAL_STANDARDS_BUCKET)
+          .remove([assetPath]);
+        cleanupError = cleanup.error || null;
+      } catch (cleanupFailure) {
+        cleanupError = cleanupFailure;
+      }
+    }
+    return publicationError(
+      error,
+      'Publishing the detail failed. The current detail is unchanged.',
+      { cleanupError, uploadedAssetPath: assetPath },
+    );
+  }
+}
+
+export async function publishVisualStandardDetailAndResolveWithClient(input) {
+  const result = await publishVisualStandardDetailWithClient(input);
+  if (!result.ok) return result;
+  const delivery = await resolveVisualStandardSignedUrlWithClient({
+    client: input.client,
+    canonicalKey: result.record.canonicalKey,
+    detailKey: result.record.detailKey,
+    activeVersionId: result.record.activeVersionId,
+    forceRefresh: true,
+  });
+  const record = {
+    ...result.record,
+    signedUrl: delivery.signedUrl || '',
+    signedUrlExpiresAt: delivery.expiresAt || '',
+    signedDeliveryError: delivery.ok ? '' : delivery.message,
+  };
+  return {
+    ...result,
+    record,
+    records: [record],
+    deliveryError: record.signedDeliveryError,
+    message: record.signedUrl
+      ? result.message
+      : 'Visual Standard detail published, but its private image could not be refreshed yet.',
+  };
 }
