@@ -88,11 +88,11 @@ to the canonical standard, confirms the retained object exists, creates a new
 monotonic audited version with `restored_from_version_id`, switches the active
 pointer transactionally, and refreshes active signed delivery.
 
-## Prepared local changes
+## Production migration
 
-Migration:
+The production ledger records the applied Visual Standards migration as:
 
-`supabase/migrations/20260821081622_visual_standards.sql`
+`supabase/migrations/20260821102613_visual_standards.sql`
 
 It creates/configures:
 
@@ -109,69 +109,50 @@ It creates/configures:
 No ordinary-user Storage read/list policy is created. Active delivery is
 performed by the Edge Function after its canonical active-row lookup.
 
-## Production actions requiring owner approval
+## Production rollout status — 21 August 2026
 
-No command below has been run against a remote project.
+Owner approval was given for the rollout. The following production actions are
+complete on project `mesh-shift-log`:
 
-1. Confirm the target project has active `public.user_profiles` rows and that
-   authorized publishers use the existing `manager` role on non-shared users.
-2. Take or confirm a current database backup.
-3. From a clean checkout of the approved PR, set the target project ref and a
-   percent-encoded direct or session-pooler connection string in shell
-   variables named for this rollout.
-4. Review the pending migration without applying it:
+1. Production prerequisites were verified, including active manager profile and
+   required helper functions.
+2. Local migration history was reconciled to the production ledger without
+   using `migration repair`.
+3. A production dry run confirmed that only the Visual Standards migration was
+   pending.
+4. The Visual Standards migration was applied successfully. Supabase recorded
+   it as version `20260821102613`, name `visual_standards`.
+5. Read-only verification confirmed the bucket is private, ten canonical rows
+   exist, no image versions exist before the first manager publication, and
+   publish/restore RPCs exist.
+6. Edge Function `visual-standard-image` version 1 was deployed and is ACTIVE
+   with gateway JWT verification disabled intentionally for the existing
+   staff-code/project-key flow. The handler performs its own scoped credential
+   checks and manager authentication for history access.
+7. Supabase Security Advisor was reviewed. No new Visual Standards-specific RLS
+   failure was reported. Generic SECURITY DEFINER warnings remain because the
+   authenticated role can invoke RPC endpoints; the Visual Standards publish
+   and restore functions perform explicit manager checks internally. Existing
+   project security debt is tracked separately.
 
-   ```sh
-   npx --yes supabase@2.115.0 db push --db-url "$VISUAL_STANDARDS_DB_URL" --dry-run
-   ```
+The remaining rollout steps are:
 
-5. With explicit owner approval, apply the migration:
-
-   ```sh
-   npx --yes supabase@2.115.0 db push --db-url "$VISUAL_STANDARDS_DB_URL"
-   ```
-
-6. Run database lint after application:
-
-   ```sh
-   npx --yes supabase@2.115.0 db lint --db-url "$VISUAL_STANDARDS_DB_URL" --schema public,storage --level warning --fail-on error
-   ```
-
-7. Link the separately approved target project and deploy only the signing
-   function. `--no-verify-jwt` is required for the existing staff-code / public
-   project-key flow; the handler performs the scoped credential and manager
-   checks described above.
-
-   ```sh
-   npx --yes supabase@2.115.0 functions deploy visual-standard-image --project-ref "$VISUAL_STANDARDS_PROJECT_REF" --no-verify-jwt
-   ```
-
-8. Verify in Supabase Dashboard or with read-only queries:
-
-   - bucket `visual-standards` has `public = false` and the expected limits;
-   - ten `visual_standards` rows exist;
-   - `anon` and ordinary authenticated staff cannot select/list
-     `storage.objects` in this bucket;
-   - ordinary staff cannot read `visual_standard_versions`;
-   - only managers can upload or execute publish/restore;
-   - the signing function has its standard `SUPABASE_URL`, project public key
-     and service-role/secret-key environment values.
-
-9. Only after the migration and function are verified, deploy the approved app
-   build through the normal release process.
+1. merge the approved application PR;
+2. deploy the application through the normal GitHub Pages release process;
+3. run the authenticated manager/staff/staff-code device smoke test below.
 
 ## Production smoke test
 
-Use non-sensitive test content and a standard approved for the smoke test.
+Use non-sensitive test content and an empty Self-Service standard for the first
+publication, preferably `self-service-station-overview-standard`.
 
 ### Manager
 
 1. Sign in through Supabase email/password as an active manager.
-2. Open Visual Standards and confirm the current active signed image and signed
-   history previews load.
+2. Open Visual Standards and confirm the current bundled/awaiting state loads.
 3. Use Camera, confirm the preview is local-only, then Save.
-4. Confirm the persisted readback reports the new monotonic version and the new
-   active image appears immediately.
+4. Confirm the persisted readback reports version 1 and the new active image
+   appears immediately.
 
 ### Authenticated staff
 
@@ -188,18 +169,22 @@ Use non-sensitive test content and a standard approved for the smoke test.
 
 ### Historical protection
 
-1. Retain a previously issued historical object path for the test.
-2. Confirm an ordinary staff or staff-code client cannot list it, download it
-   directly, or request it by path/version through the active flow.
-3. Confirm the manager can still view its signed history preview.
+After a second version exists:
+
+1. retain a historical object path/version ID from manager history;
+2. confirm an ordinary staff or staff-code client cannot list it, download it
+   directly, or request it by path/version through the active flow;
+3. confirm the manager can still view its signed history preview.
 
 ### Restore
 
-1. As manager, restore the prior version.
-2. Confirm a new audited version is created and links to the restored source.
-3. Confirm manager, authenticated staff and staff-code views resolve the
-   restored active image after refresh/focus.
-4. Confirm the image that was active before restore remains retained in
+After at least two versions exist:
+
+1. as manager, restore the prior version;
+2. confirm a new audited version is created and links to the restored source;
+3. confirm manager, authenticated staff and staff-code views resolve the
+   restored active image after refresh/focus;
+4. confirm the image that was active before restore remains retained in
    manager history but is no longer ordinary-staff-visible as an active image.
 
 ### Public internet check
