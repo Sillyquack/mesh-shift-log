@@ -19,6 +19,13 @@ import {
 import { eventTaskTemplates } from "./data/eventTaskTemplates.js";
 import { eventRigGuides } from "./data/eventRigGuides.js";
 import {
+  DEMO_IDS,
+  demoRegistry,
+  getDemoById,
+  getManagerPreviewDemos,
+  isDemoAvailableToRole,
+} from "./data/demoRegistry.js";
+import {
   deriveEventPlanOperationalWindow,
   recalculateEventPlanTimes,
   suggestEventPlan,
@@ -152,9 +159,35 @@ const EventCockpitSummaryCard = lazy(() =>
     default: module.EventCockpitSummaryCard,
   })),
 );
-const EventFloorManagerDemo = lazy(() =>
-  import("./components/cinematic-tour/EventFloorManagerDemo.jsx"),
+
+const registeredDemoComponents = new Map(
+  demoRegistry.map((demo) => [demo.id, lazy(demo.loadComponent)]),
 );
+const managerPreviewDemos = getManagerPreviewDemos();
+const eventFloorManagerDemo = getDemoById(DEMO_IDS.julieEventFloorManager);
+const eventFloorManagerDemoAvailableToRole = isDemoAvailableToRole(
+  DEMO_IDS.julieEventFloorManager,
+  "event_floor_manager",
+);
+
+function RegisteredDemoPreview({ demo, onExit }) {
+  const DemoComponent = demo ? registeredDemoComponents.get(demo.id) : null;
+  if (!DemoComponent) return null;
+
+  return (
+    <Suspense
+      fallback={(
+        <div className="modal-backdrop" role="status" aria-live="polite">
+          <section className="pilot-modal">
+            <p className="muted">Preparing {demo.title}...</p>
+          </section>
+        </div>
+      )}
+    >
+      <DemoComponent onExit={onExit} />
+    </Suspense>
+  );
+}
 
 function FocusedViewLoading({ label = "Loading event view..." }) {
   return (
@@ -9358,13 +9391,15 @@ function EventFloorDashboard({
         <h1>Event Floor Manager</h1>
         <p className="muted">{user.name}</p>
         <div className="backup-actions">
-          <button
-            type="button"
-            className="primary-button compact-button"
-            onClick={() => setShowCinematicDemo(true)}
-          >
-            Play 2-minute event story
-          </button>
+          {eventFloorManagerDemoAvailableToRole && (
+            <button
+              type="button"
+              className="primary-button compact-button"
+              onClick={() => setShowCinematicDemo(true)}
+            >
+              Play 2-minute event story
+            </button>
+          )}
           {onBackToManager && (
             <button
               type="button"
@@ -9545,16 +9580,11 @@ function EventFloorDashboard({
         setAssetChecks={setAssetChecks}
         requestWriteAccess={requestWriteAccess}
       />
-      {showCinematicDemo && (
-        <Suspense
-          fallback={(
-            <div className="modal-backdrop" role="status" aria-live="polite">
-              <section className="pilot-modal"><p className="muted">Preparing the event story...</p></section>
-            </div>
-          )}
-        >
-          <EventFloorManagerDemo onExit={() => setShowCinematicDemo(false)} />
-        </Suspense>
+      {showCinematicDemo && eventFloorManagerDemoAvailableToRole && (
+        <RegisteredDemoPreview
+          demo={eventFloorManagerDemo}
+          onExit={() => setShowCinematicDemo(false)}
+        />
       )}
     </main>
   );
@@ -10417,9 +10447,92 @@ function Checklist({
   );
 }
 
+function DemoStudio({ demos, onPreviewDemo }) {
+  return (
+    <section
+      id="demo-studio"
+      className="manager-list demo-studio"
+      aria-labelledby="demo-studio-title"
+    >
+      <div className="demo-studio-heading">
+        <div>
+          <p className="eyebrow">Demo Studio</p>
+          <h2 id="demo-studio-title">Internal screening room</h2>
+          <p className="muted">
+            Review role stories here before deciding whether they should be
+            available in day-to-day operations.
+          </p>
+        </div>
+        <span className="demo-studio-count">
+          {demos.length} {demos.length === 1 ? "demo" : "demos"}
+        </span>
+      </div>
+
+      <div className="demo-studio-grid">
+        {demos.map((demo) => (
+          <article key={demo.id} className="demo-studio-card">
+            <div className="demo-studio-card-heading">
+              <div>
+                <span className="demo-audience">For {demo.intendedAudience.label}</span>
+                <h3>{demo.title}</h3>
+              </div>
+              <span className="demo-review-status">{demo.reviewStatus}</span>
+            </div>
+
+            <p className="demo-description">{demo.description}</p>
+
+            <dl className="demo-metadata">
+              <div>
+                <dt>Audience</dt>
+                <dd>{demo.intendedAudience.label}</dd>
+              </div>
+              <div>
+                <dt>Runtime</dt>
+                <dd>{demo.runtimeLabel}</dd>
+              </div>
+              <div>
+                <dt>Chapters</dt>
+                <dd>{demo.chapterCount}</dd>
+              </div>
+              <div>
+                <dt>Role release</dt>
+                <dd>{demo.availableToRole ? "Available" : "Not released"}</dd>
+              </div>
+            </dl>
+
+            <div>
+              <span className="demo-meta-label">Capability mix</span>
+              <ul className="demo-capability-mix" aria-label="Capability mix">
+                {demo.capabilityMix.map((capability) => (
+                  <li key={capability.label}>
+                    <strong>{capability.count}</strong> {capability.label}
+                  </li>
+                ))}
+              </ul>
+            </div>
+
+            <div className="demo-studio-actions">
+              <button
+                type="button"
+                className="primary-button"
+                aria-label={`Preview ${demo.title}`}
+                onClick={() => onPreviewDemo(demo.id)}
+              >
+                Preview demo
+              </button>
+              <small>Deterministic preview · no operational data is changed</small>
+            </div>
+          </article>
+        ))}
+      </div>
+    </section>
+  );
+}
+
 function ManagerDashboardJumpIndex() {
   const jumpItems = [
     { label: "Top", needles: ["dashboard"] },
+    { label: "Demo Studio", needles: ["internal screening room"] },
     { label: "Backend", needles: ["backend status"] },
     { label: "Checklist", needles: ["checklist backend"] },
     { label: "Auth", needles: ["auth status"] },
@@ -10484,7 +10597,7 @@ function ManagerDashboardJumpIndex() {
           position: "fixed",
           right: "1rem",
           bottom: "1rem",
-          zIndex: 9999,
+          zIndex: 90,
           padding: "0.75rem 1rem",
           borderRadius: "999px",
           border: "1px solid rgba(255, 255, 255, 0.35)",
@@ -12296,6 +12409,7 @@ function ManagerDashboard({
   }, []);
 
   const [date, setDate] = useState(todayKey());
+  const [activeDemoId, setActiveDemoId] = useState("");
   const [staffFilter, setStaffFilter] = useState("all");
   const [shiftFilter, setShiftFilter] = useState("all");
   const [showAllCritical, setShowAllCritical] = useState(false);
@@ -13948,6 +14062,11 @@ function ManagerDashboard({
       <ManagerDailyReviewHistory user={user} date={date} />
 
       {message && <p className="status-message">{message}</p>}
+
+      <DemoStudio
+        demos={managerPreviewDemos}
+        onPreviewDemo={setActiveDemoId}
+      />
 
       <EventCodeGeneratorPanel user={user} />
 
@@ -16854,6 +16973,12 @@ values
           </button>
         </form>
       </section>
+      {activeDemoId && (
+        <RegisteredDemoPreview
+          demo={getDemoById(activeDemoId)}
+          onExit={() => setActiveDemoId("")}
+        />
+      )}
     </main>
   );
 }
