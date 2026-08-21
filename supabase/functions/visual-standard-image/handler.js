@@ -2,6 +2,7 @@ export const VISUAL_STANDARD_SIGNED_URL_LIFETIME_SECONDS = 60 * 60;
 
 const VISUAL_STANDARDS_BUCKET = 'visual-standards';
 const canonicalKeyPattern = /^[a-z0-9]+(?:-[a-z0-9]+)*$/;
+const detailKeyPattern = /^[a-z0-9]+(?:-[a-z0-9]+)*$/;
 const versionIdPattern = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
 const corsHeaders = {
   'Access-Control-Allow-Origin': '*',
@@ -31,12 +32,16 @@ function hasAcceptedAppCredential(request, acceptedPublicKeys) {
   return acceptedPublicKeys.some((key) => key && (key === apiKey || key === bearer));
 }
 
-export function isCanonicalVisualStandardAssetPath(canonicalKey, assetPath) {
+export function isCanonicalVisualStandardAssetPath(canonicalKey, assetPath, detailKey = '') {
   if (!canonicalKeyPattern.test(canonicalKey) || typeof assetPath !== 'string') return false;
   const immutableNamePattern = /^[0-9]+-[A-Za-z0-9-]+\.(?:jpg|jpeg|png|webp|gif|avif)$/;
-  const prefix = `${canonicalKey}/`;
+  if (detailKey && !detailKeyPattern.test(detailKey)) return false;
+  const prefix = detailKey
+    ? `${canonicalKey}/details/${detailKey}/`
+    : `${canonicalKey}/`;
   return assetPath.startsWith(prefix)
-    && immutableNamePattern.test(assetPath.slice(prefix.length));
+    && immutableNamePattern.test(assetPath.slice(prefix.length))
+    && Boolean(detailKey || !assetPath.slice(prefix.length).includes('/'));
 }
 
 async function requireManager(userClient, adminClient) {
@@ -66,11 +71,13 @@ async function requireManager(userClient, adminClient) {
 async function loadCanonicalStandard(adminClient, canonicalKey) {
   const { data, error } = await adminClient
     .from('visual_standards')
-    .select('id, canonical_key, active_asset_path, active_version_id, active_version, status')
+    .select('id, canonical_key, active_asset_path, active_version_id, active_version, status, is_visible')
     .eq('canonical_key', canonicalKey)
     .maybeSingle();
   if (error) return { ok: false, status: 500, error: 'Visual Standard lookup failed.' };
-  if (!data) return { ok: false, status: 404, error: 'Visual Standard was not found.' };
+  if (!data || data.is_visible !== true) {
+    return { ok: false, status: 404, error: 'Visual Standard was not found.' };
+  }
   return { ok: true, record: data };
 }
 
@@ -115,11 +122,20 @@ export function createVisualStandardImageHandler({
     const versionId = typeof payload?.versionId === 'string'
       ? payload.versionId.trim()
       : '';
+    const detailKey = typeof payload?.detailKey === 'string'
+      ? payload.detailKey.trim()
+      : '';
     if (!canonicalKeyPattern.test(canonicalKey)) {
       return jsonResponse({ ok: false, error: 'A valid canonical Visual Standard key is required.' }, 400);
     }
     if (versionId && !versionIdPattern.test(versionId)) {
       return jsonResponse({ ok: false, error: 'A valid Visual Standard version is required.' }, 400);
+    }
+    if (detailKey && !detailKeyPattern.test(detailKey)) {
+      return jsonResponse({ ok: false, error: 'A valid Visual Standard detail key is required.' }, 400);
+    }
+    if (versionId && detailKey) {
+      return jsonResponse({ ok: false, error: 'Choose either active detail delivery or one history version.' }, 400);
     }
 
     const standardResult = await loadCanonicalStandard(adminClient, canonicalKey);
@@ -130,6 +146,7 @@ export function createVisualStandardImageHandler({
 
     let assetPath = '';
     let scope = 'active';
+    let assetDetailKey = '';
     if (versionId) {
       const userClient = userClientForRequest?.(request);
       if (!userClient) {
@@ -142,7 +159,7 @@ export function createVisualStandardImageHandler({
 
       const { data: version, error: versionError } = await adminClient
         .from('visual_standard_versions')
-        .select('id, visual_standard_id, canonical_key, asset_path, version')
+        .select('id, visual_standard_id, canonical_key, asset_path, version, asset_role, detail_key')
         .eq('id', versionId)
         .eq('visual_standard_id', standard.id)
         .eq('canonical_key', canonicalKey)
@@ -154,7 +171,27 @@ export function createVisualStandardImageHandler({
         return jsonResponse({ ok: false, error: 'Visual Standard version was not found.' }, 404);
       }
       assetPath = version.asset_path;
+      assetDetailKey = version.asset_role === 'detail' ? version.detail_key : '';
       scope = 'history';
+    } else if (detailKey) {
+      const { data: detail, error: detailError } = await adminClient
+        .from('visual_standard_detail_slots')
+        .select('id, visual_standard_id, canonical_key, detail_key, active_asset_path, active_version_id, active_version, status')
+        .eq('visual_standard_id', standard.id)
+        .eq('canonical_key', canonicalKey)
+        .eq('detail_key', detailKey)
+        .maybeSingle();
+      if (detailError) {
+        return jsonResponse({ ok: false, error: 'Visual Standard detail lookup failed.' }, 500);
+      }
+      if (!detail || detail.status !== 'published' || !detail.active_asset_path) {
+        return jsonResponse({ ok: false, error: 'No active Visual Standard detail image is published.' }, 404);
+      }
+      assetPath = detail.active_asset_path;
+      assetDetailKey = detailKey;
+      scope = 'active_detail';
+      standard.active_version_id = detail.active_version_id;
+      standard.active_version = detail.active_version;
     } else {
       if (standard.status !== 'published' || !standard.active_asset_path) {
         return jsonResponse({ ok: false, error: 'No active Visual Standard image is published.' }, 404);
@@ -162,7 +199,7 @@ export function createVisualStandardImageHandler({
       assetPath = standard.active_asset_path;
     }
 
-    if (!isCanonicalVisualStandardAssetPath(canonicalKey, assetPath)) {
+    if (!isCanonicalVisualStandardAssetPath(canonicalKey, assetPath, assetDetailKey)) {
       return jsonResponse({ ok: false, error: 'Stored Visual Standard asset path is invalid.' }, 500);
     }
 
@@ -176,6 +213,7 @@ export function createVisualStandardImageHandler({
       ok: true,
       canonicalKey,
       scope,
+      detailKey: assetDetailKey || undefined,
       versionId: versionId || standard.active_version_id,
       activeVersion: standard.active_version,
       signedUrl: signed.signedUrl,

@@ -23,34 +23,67 @@ function CurrentStandardImage({ standard, className = '' }) {
   if (!standard?.src) {
     return (
       <div className={`visual-standard-empty ${className}`} role="img" aria-label="Awaiting approved photo">
-        <strong>Awaiting approved photo</strong>
-        <span>No bundled or backend image is active.</span>
+        <span aria-hidden="true">＋</span>
+        <strong>Awaiting photo</strong>
       </div>
     );
   }
-  return (
-    <img
-      className={className}
-      src={standard.src}
-      alt={standard.label}
-      loading="lazy"
-    />
+  return <img className={className} src={standard.src} alt={standard.label} loading="lazy" />;
+}
+
+function detailSlotsFor(standard) {
+  const slots = new Map(
+    (standard?.detailSlots || []).map((slot) => [slot.key, {
+      detailKey: slot.key,
+      label: slot.label,
+      order: slot.order,
+      src: '',
+      activeVersion: 0,
+      activeVersionId: '',
+      updatedAt: '',
+    }]),
+  );
+  (standard?.details || []).forEach((detail) => {
+    slots.set(detail.detailKey, { ...slots.get(detail.detailKey), ...detail });
+  });
+  return [...slots.values()].sort(
+    (left, right) => left.order - right.order || left.label.localeCompare(right.label),
   );
 }
 
+function captureTargetFor(standard, detail = null) {
+  return {
+    canonicalKey: standard.canonicalKey,
+    assetRole: detail ? 'detail' : 'primary',
+    detailKey: detail?.detailKey || '',
+    label: detail?.label || standard.label,
+    order: detail?.order ?? 0,
+  };
+}
+
 export default function VisualStandardsManager({ user }) {
-  const { standards, publish, restore, status: resolverStatus } = useVisualStandards();
+  const {
+    standards,
+    publish,
+    publishDetail,
+    restore,
+    restoreDetail,
+    status: resolverStatus,
+  } = useVisualStandards();
   const [areaFilter, setAreaFilter] = useState('All');
-  const [selectedKey, setSelectedKey] = useState('');
+  const [target, setTarget] = useState(null);
   const [selectedFile, setSelectedFile] = useState(null);
   const [previewUrl, setPreviewUrl] = useState('');
   const [message, setMessage] = useState({ type: '', text: '' });
+  const [rowFeedback, setRowFeedback] = useState(null);
   const [saving, setSaving] = useState(false);
+  const [historyOpen, setHistoryOpen] = useState(false);
   const [history, setHistory] = useState([]);
   const [historyState, setHistoryState] = useState('idle');
+  const [historyNonce, setHistoryNonce] = useState(0);
   const uploadInputRef = useRef(null);
   const cameraInputRef = useRef(null);
-  const editorRef = useRef(null);
+  const focusRef = useRef(null);
 
   const canPublish = canManageVisualStandards(user);
   const areas = useMemo(
@@ -60,24 +93,32 @@ export default function VisualStandardsManager({ user }) {
   const visibleStandards = areaFilter === 'All'
     ? standards
     : standards.filter((standard) => standard.area === areaFilter);
-  const selectedStandard = standards.find(
-    (standard) => standard.canonicalKey === selectedKey,
-  ) || null;
+  const targetStandard = target
+    ? standards.find((standard) => standard.canonicalKey === target.canonicalKey) || null
+    : null;
+  const targetDetailSlots = useMemo(
+    () => detailSlotsFor(targetStandard),
+    [targetStandard],
+  );
+  const targetAsset = target?.assetRole === 'detail'
+    ? targetDetailSlots.find((detail) => detail.detailKey === target.detailKey) || null
+    : targetStandard;
 
   useEffect(() => () => {
     if (previewUrl) URL.revokeObjectURL(previewUrl);
   }, [previewUrl]);
 
   useEffect(() => {
-    if (!selectedStandard || !canPublish) {
+    if (!historyOpen || !target || !canPublish) {
       setHistory([]);
       setHistoryState('idle');
-      return;
+      return undefined;
     }
-
     let cancelled = false;
     setHistoryState('loading');
-    fetchVisualStandardVersions(selectedStandard.canonicalKey).then((result) => {
+    fetchVisualStandardVersions(target.canonicalKey, {
+      detailKey: target.assetRole === 'detail' ? target.detailKey : '',
+    }).then((result) => {
       if (cancelled) return;
       if (result.ok) {
         setHistory(result.records);
@@ -90,7 +131,15 @@ export default function VisualStandardsManager({ user }) {
     return () => {
       cancelled = true;
     };
-  }, [selectedStandard?.canonicalKey, selectedStandard?.activeVersion, canPublish]);
+  }, [
+    historyOpen,
+    target?.canonicalKey,
+    target?.assetRole,
+    target?.detailKey,
+    targetAsset?.activeVersion,
+    canPublish,
+    historyNonce,
+  ]);
 
   function resetSelectedFile() {
     setSelectedFile(null);
@@ -99,12 +148,23 @@ export default function VisualStandardsManager({ user }) {
     if (cameraInputRef.current) cameraInputRef.current.value = '';
   }
 
-  function openEditor(canonicalKey) {
+  function focusTarget(nextTarget, { showHistory = false } = {}) {
     resetSelectedFile();
+    setTarget(nextTarget);
     setMessage({ type: '', text: '' });
-    setSelectedKey(canonicalKey);
+    setHistoryOpen(showHistory);
     window.requestAnimationFrame(() => {
-      editorRef.current?.scrollIntoView({ behavior: 'smooth', block: 'start' });
+      focusRef.current?.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
+    });
+  }
+
+  function openPicker(standard, inputType, detail = null) {
+    if (!canPublish || saving) return;
+    const nextTarget = captureTargetFor(standard, detail);
+    focusTarget(nextTarget);
+    window.requestAnimationFrame(() => {
+      const input = inputType === 'camera' ? cameraInputRef.current : uploadInputRef.current;
+      input?.click();
     });
   }
 
@@ -117,63 +177,89 @@ export default function VisualStandardsManager({ user }) {
     }
     setSelectedFile(file);
     setPreviewUrl(URL.createObjectURL(file));
-    setMessage({ type: 'pending', text: 'Preview ready. The live standard is unchanged until Save.' });
+    setMessage({
+      type: 'pending',
+      text: 'Preview ready. Nothing is live until you press Save.',
+    });
+  }
+
+  function cancelCapture() {
+    resetSelectedFile();
+    setTarget(null);
+    setHistoryOpen(false);
+    setMessage({ type: '', text: '' });
   }
 
   async function saveReplacement() {
-    if (!selectedStandard || !selectedFile || saving) return;
+    if (!target || !selectedFile || saving) return;
+    const fileToPublish = selectedFile;
+    const targetToPublish = target;
     setSaving(true);
     setMessage({ type: 'pending', text: 'Uploading and publishing…' });
-    const result = await publish({
-      canonicalKey: selectedStandard.canonicalKey,
-      file: selectedFile,
-    });
+    const result = targetToPublish.assetRole === 'detail'
+      ? await publishDetail({
+        canonicalKey: targetToPublish.canonicalKey,
+        detailKey: targetToPublish.detailKey,
+        label: targetToPublish.label,
+        order: targetToPublish.order,
+        file: fileToPublish,
+      })
+      : await publish({
+        canonicalKey: targetToPublish.canonicalKey,
+        file: fileToPublish,
+      });
     setSaving(false);
     if (!result.ok) {
       const cleanupNote = result.cleanupError
-        ? ' The inactive upload could not be cleaned up automatically; the previous live standard is still active.'
+        ? ' The inactive upload could not be cleaned up automatically; the previous live image remains active.'
         : '';
-      setMessage({
-        type: 'error',
-        text: `${result.message}${cleanupNote}`,
-      });
+      setMessage({ type: 'error', text: `${result.message}${cleanupNote}` });
       return;
     }
     resetSelectedFile();
-    setMessage({
+    setTarget(null);
+    setHistoryOpen(false);
+    setRowFeedback({
+      canonicalKey: targetToPublish.canonicalKey,
       type: result.deliveryError ? 'warning' : 'success',
       text: result.deliveryError
         ? result.message
-        : 'Saved. The new image is now the live canonical standard.',
+        : `${targetToPublish.label} saved and published.`,
     });
   }
 
   async function restoreVersion(version) {
-    if (!selectedStandard || saving) return;
-    if (!window.confirm(`Restore version ${version.version} as the live standard?`)) return;
+    if (!target || saving) return;
+    if (!window.confirm(`Restore version ${version.version} as the live image?`)) return;
     setSaving(true);
     setMessage({ type: 'pending', text: `Restoring version ${version.version}…` });
-    const result = await restore({
-      canonicalKey: selectedStandard.canonicalKey,
-      versionId: version.id,
-      notes: `Restored from version ${version.version}`,
-    });
+    const result = target.assetRole === 'detail'
+      ? await restoreDetail({
+        canonicalKey: target.canonicalKey,
+        detailKey: target.detailKey,
+        versionId: version.id,
+        notes: `Restored from version ${version.version}`,
+      })
+      : await restore({
+        canonicalKey: target.canonicalKey,
+        versionId: version.id,
+        notes: `Restored from version ${version.version}`,
+      });
     setSaving(false);
     setMessage({
       type: result.ok ? (result.deliveryError ? 'warning' : 'success') : 'error',
       text: result.message,
     });
+    if (result.ok) setHistoryNonce((current) => current + 1);
   }
 
   return (
     <section className="panel visual-standards-manager" data-manager-section="visual-standards">
-      <div className="section-heading static-heading">
+      <div className="section-heading static-heading visual-standard-manager-heading">
         <div>
           <p className="eyebrow">Manager content</p>
-          <h2>Default Standards / Visual Standards</h2>
-          <p className="muted">
-            One canonical image per key. Saving publishes that key everywhere it is referenced.
-          </p>
+          <h2>Default Standards</h2>
+          <p className="muted">Take or choose a photo from its row. Save is always explicit.</p>
         </div>
         <span>{standards.length} standards</span>
       </div>
@@ -189,147 +275,151 @@ export default function VisualStandardsManager({ user }) {
         </p>
       )}
 
-      <div className="visual-standard-area-filters" role="group" aria-label="Filter Visual Standards by area">
-        {areas.map((area) => (
-          <button
-            key={area}
-            type="button"
-            className={areaFilter === area ? 'is-active' : ''}
-            aria-pressed={areaFilter === area}
-            onClick={() => setAreaFilter(area)}
-          >
-            {area}
-          </button>
-        ))}
-      </div>
+      <label className="visual-standard-area-select">
+        <span>Area</span>
+        <select value={areaFilter} onChange={(event) => setAreaFilter(event.target.value)}>
+          {areas.map((area) => <option key={area} value={area}>{area}</option>)}
+        </select>
+      </label>
 
-      <div className="visual-standard-grid">
+      <input
+        ref={uploadInputRef}
+        className="visually-hidden"
+        type="file"
+        tabIndex="-1"
+        aria-label="Choose a Visual Standard image"
+        accept={VISUAL_STANDARD_IMAGE_TYPES.join(',')}
+        onChange={(event) => chooseFile(event.target.files?.[0])}
+      />
+      <input
+        ref={cameraInputRef}
+        className="visually-hidden"
+        type="file"
+        tabIndex="-1"
+        aria-label="Take a Visual Standard photo"
+        accept="image/*"
+        capture="environment"
+        onChange={(event) => chooseFile(event.target.files?.[0])}
+      />
+
+      <div className="visual-standard-list">
         {visibleStandards.map((standard) => (
-          <button
-            key={standard.canonicalKey}
-            type="button"
-            className="visual-standard-card"
-            onClick={() => openEditor(standard.canonicalKey)}
-          >
-            <CurrentStandardImage standard={standard} />
-            <span className={`visual-standard-source source-${standard.source}`}>
-              {standard.sourceLabel}
-            </span>
-            <strong>{standard.label}</strong>
-            <small>{standard.section}</small>
-            <small>
-              {formatUpdatedAt(
-                standard.updatedAt,
-                standard.source === 'bundled' ? 'Bundled with app' : 'Not published',
-              )}
-            </small>
-          </button>
+          <article key={standard.canonicalKey} className="visual-standard-row">
+            <CurrentStandardImage standard={standard} className="visual-standard-row-thumbnail" />
+            <div className="visual-standard-row-copy">
+              <strong>{standard.label}</strong>
+              <span className={`visual-standard-source source-${standard.source}`}>
+                {standard.sourceLabel}
+              </span>
+              <small>
+                {standard.activeVersion ? `v${standard.activeVersion} · ` : ''}
+                {formatUpdatedAt(
+                  standard.updatedAt,
+                  standard.source === 'bundled' ? 'Bundled with app' : 'Not published',
+                )}
+              </small>
+            </div>
+            <div
+              className="visual-standard-row-actions"
+              role="group"
+              aria-label={`${standard.label} actions`}
+            >
+              <button
+                type="button"
+                className="text-button"
+                onClick={() => focusTarget(captureTargetFor(standard))}
+              >
+                View
+              </button>
+              <button
+                type="button"
+                className="ghost-button"
+                disabled={!canPublish || saving}
+                onClick={() => openPicker(standard, 'camera')}
+                aria-label={`Camera for ${standard.label}`}
+              >
+                Camera
+              </button>
+              <button
+                type="button"
+                className="ghost-button"
+                disabled={!canPublish || saving}
+                onClick={() => openPicker(standard, 'upload')}
+                aria-label={`Upload for ${standard.label}`}
+              >
+                Upload
+              </button>
+              <button
+                type="button"
+                className="text-button"
+                disabled={!canPublish}
+                onClick={() => focusTarget(captureTargetFor(standard), { showHistory: true })}
+              >
+                History
+              </button>
+            </div>
+            {rowFeedback?.canonicalKey === standard.canonicalKey && (
+              <p
+                className={rowFeedback.type === 'success' ? 'all-clear' : 'status-message'}
+                role="status"
+              >
+                {rowFeedback.text}
+              </p>
+            )}
+          </article>
         ))}
       </div>
 
-      {selectedStandard && (
-        <section ref={editorRef} className="visual-standard-editor" aria-label={`Edit ${selectedStandard.label}`}>
-          <div className="section-heading static-heading">
+      {targetStandard && (
+        <section
+          ref={focusRef}
+          className="visual-standard-capture"
+          aria-label={`Update ${target.label}`}
+        >
+          <div className="visual-standard-capture-heading">
             <div>
-              <p className="eyebrow">{selectedStandard.area} · {selectedStandard.section}</p>
-              <h3>{selectedStandard.label}</h3>
-              <code>{selectedStandard.canonicalKey}</code>
-            </div>
-            <button
-              type="button"
-              className="text-button"
-              onClick={() => {
-                resetSelectedFile();
-                setSelectedKey('');
-                setMessage({ type: '', text: '' });
-              }}
-            >
-              Close editor
-            </button>
-          </div>
-
-          <div className="visual-standard-comparison">
-            <article>
-              <h4>Current live image</h4>
-              <CurrentStandardImage standard={selectedStandard} className="visual-standard-editor-image" />
-              <p>
-                <span className={`visual-standard-source source-${selectedStandard.source}`}>
-                  {selectedStandard.sourceLabel}
-                </span>
+              <p className="eyebrow">
+                {target.assetRole === 'detail' ? 'Detail image' : targetStandard.area}
               </p>
-              <small>
-                {selectedStandard.activeVersion
-                  ? `Version ${selectedStandard.activeVersion} · ${formatUpdatedAt(selectedStandard.updatedAt)}`
-                  : 'No backend version published yet'}
-              </small>
-            </article>
-
-            <article>
-              <h4>Replacement preview</h4>
-              {previewUrl ? (
-                <img
-                  className="visual-standard-editor-image"
-                  src={previewUrl}
-                  alt="Selected replacement preview"
-                />
-              ) : (
-                <div className="visual-standard-empty visual-standard-editor-image">
-                  <strong>No replacement selected</strong>
-                  <span>Choose Upload image or Camera.</span>
-                </div>
-              )}
-              {selectedFile && <small>{selectedFile.name} · {Math.ceil(selectedFile.size / 1024)} KB</small>}
-            </article>
+              <h3>{target.label}</h3>
+              <small>{targetStandard.section}</small>
+            </div>
+            <button type="button" className="text-button" onClick={cancelCapture}>
+              Close
+            </button>
           </div>
 
-          <input
-            ref={uploadInputRef}
-            className="visually-hidden"
-            type="file"
-            tabIndex="-1"
-            aria-hidden="true"
-            accept={VISUAL_STANDARD_IMAGE_TYPES.join(',')}
-            onChange={(event) => chooseFile(event.target.files?.[0])}
-          />
-          <input
-            ref={cameraInputRef}
-            className="visually-hidden"
-            type="file"
-            tabIndex="-1"
-            aria-hidden="true"
-            accept="image/*"
-            capture="environment"
-            onChange={(event) => chooseFile(event.target.files?.[0])}
-          />
+          {previewUrl ? (
+            <figure className="visual-standard-replacement-preview">
+              <img src={previewUrl} alt={`Replacement preview for ${target.label}`} />
+              <figcaption>
+                <strong>Replacement preview</strong>
+                <span>{selectedFile.name} · {Math.ceil(selectedFile.size / 1024)} KB</span>
+              </figcaption>
+            </figure>
+          ) : (
+            <div className="visual-standard-capture-empty">
+              <strong>Ready for a new photo</strong>
+              <span>Use Camera or Upload. The live image will not change until Save.</span>
+            </div>
+          )}
 
-          <div className="visual-standard-editor-actions">
-            <button
-              type="button"
-              className="ghost-button"
-              disabled={!canPublish || saving}
-              onClick={() => uploadInputRef.current?.click()}
-            >
-              Upload image
-            </button>
-            <button
-              type="button"
-              className="ghost-button"
-              disabled={!canPublish || saving}
-              onClick={() => cameraInputRef.current?.click()}
-            >
-              Camera
-            </button>
-            <button
-              type="button"
-              className="text-button"
-              disabled={!selectedFile || saving}
-              onClick={() => {
-                resetSelectedFile();
-                setMessage({ type: '', text: '' });
-              }}
-            >
-              Cancel selected image
-            </button>
+          <details className="visual-standard-current-compact">
+            <summary>
+              {targetAsset?.src ? <img src={targetAsset.src} alt="" /> : <span aria-hidden="true">＋</span>}
+              <span>
+                <strong>View current</strong>
+                <small>{targetAsset?.src ? `Version ${targetAsset.activeVersion || targetStandard.activeVersion}` : 'No published image'}</small>
+              </span>
+            </summary>
+            {targetAsset?.src ? (
+              <img src={targetAsset.src} alt={`Current live ${target.label}`} />
+            ) : (
+              <p className="muted">This slot is awaiting its first approved photo.</p>
+            )}
+          </details>
+
+          <div className="visual-standard-capture-actions">
             <button
               type="button"
               className="primary-button"
@@ -338,11 +428,36 @@ export default function VisualStandardsManager({ user }) {
             >
               {saving ? 'Saving…' : 'Save'}
             </button>
+            <button
+              type="button"
+              className="ghost-button"
+              disabled={!canPublish || saving}
+              onClick={() => openPicker(targetStandard, 'camera', target.assetRole === 'detail' ? target : null)}
+            >
+              {selectedFile ? 'Retake' : 'Camera'}
+            </button>
+            <button
+              type="button"
+              className="ghost-button"
+              disabled={!canPublish || saving}
+              onClick={() => openPicker(targetStandard, 'upload', target.assetRole === 'detail' ? target : null)}
+            >
+              {selectedFile ? 'Choose another' : 'Upload'}
+            </button>
+            <button type="button" className="text-button" disabled={saving} onClick={cancelCapture}>
+              Cancel
+            </button>
           </div>
 
           {message.text && (
             <p
-              className={message.type === 'error' ? 'critical-warning' : message.type === 'success' ? 'all-clear' : 'status-message'}
+              className={
+                message.type === 'error'
+                  ? 'critical-warning'
+                  : message.type === 'success'
+                    ? 'all-clear'
+                    : 'status-message'
+              }
               role="status"
               aria-live="polite"
             >
@@ -350,57 +465,108 @@ export default function VisualStandardsManager({ user }) {
             </p>
           )}
 
-          <section className="visual-standard-history">
-            <div className="section-heading static-heading">
+          {target.assetRole === 'primary' && targetDetailSlots.length > 0 && (
+            <details className="visual-standard-detail-manager">
+              <summary>Detail images ({targetStandard.details?.length || 0} published)</summary>
               <div>
-                <h4>Version history</h4>
-                <p className="muted">Restoring creates a new audited version and retains every previous asset.</p>
-              </div>
-              <span>{history.length} versions</span>
-            </div>
-            {historyState === 'loading' && <p className="muted">Loading history…</p>}
-            {historyState === 'error' && <p className="critical-warning">Version history is unavailable.</p>}
-            {historyState === 'ready' && history.length === 0 && <p className="muted">No backend versions yet.</p>}
-            {history.map((version) => {
-              const isActive = version.id === selectedStandard.activeVersionId;
-              return (
-                <article key={version.id} className="visual-standard-version-row">
-                  {version.signedUrl ? (
-                    <img
-                      className="visual-standard-version-preview"
-                      src={version.signedUrl}
-                      alt={`Version ${version.version} preview`}
-                      loading="lazy"
-                    />
-                  ) : (
-                    <div
-                      className="visual-standard-version-preview visual-standard-version-preview-empty"
-                      role="img"
-                      aria-label={`Version ${version.version} preview unavailable`}
-                    >
-                      Private preview unavailable
+                {targetDetailSlots.map((detail) => (
+                  <article key={detail.detailKey} className="visual-standard-detail-row">
+                    {detail.src ? <img src={detail.src} alt="" /> : <span aria-hidden="true">＋</span>}
+                    <div>
+                      <strong>{detail.label}</strong>
+                      <small>{detail.src ? `Version ${detail.activeVersion}` : 'Optional · not published'}</small>
                     </div>
-                  )}
-                  <div>
-                    <strong>Version {version.version}{isActive ? ' · Active' : ''}</strong>
-                    <span>{formatUpdatedAt(version.createdAt)}</span>
-                    <small>{version.createdByName || version.createdBy || 'Unknown updater'}</small>
-                    {version.restoredFromVersionId && <small>Restored from an earlier version</small>}
-                  </div>
-                  {!isActive && (
                     <button
                       type="button"
-                      className="ghost-button compact-button"
+                      className="ghost-button"
                       disabled={!canPublish || saving}
-                      onClick={() => restoreVersion(version)}
+                      onClick={() => openPicker(targetStandard, 'camera', detail)}
                     >
-                      Restore
+                      Camera
                     </button>
-                  )}
-                </article>
-              );
-            })}
-          </section>
+                    <button
+                      type="button"
+                      className="ghost-button"
+                      disabled={!canPublish || saving}
+                      onClick={() => openPicker(targetStandard, 'upload', detail)}
+                    >
+                      Upload
+                    </button>
+                    {detail.activeVersion > 0 && (
+                      <button
+                        type="button"
+                        className="text-button"
+                        disabled={!canPublish || saving}
+                        onClick={() => focusTarget(captureTargetFor(targetStandard, detail), { showHistory: true })}
+                      >
+                        History
+                      </button>
+                    )}
+                  </article>
+                ))}
+              </div>
+            </details>
+          )}
+
+          {!historyOpen ? (
+            <button
+              type="button"
+              className="text-button visual-standard-history-trigger"
+              disabled={!canPublish}
+              onClick={() => setHistoryOpen(true)}
+            >
+              History & restore
+            </button>
+          ) : (
+            <section className="visual-standard-history">
+              <div className="visual-standard-history-heading">
+                <div>
+                  <h4>Version history</h4>
+                  <p className="muted">Restore creates a new audited version.</p>
+                </div>
+                <button type="button" className="text-button" onClick={() => setHistoryOpen(false)}>
+                  Hide
+                </button>
+              </div>
+              {historyState === 'loading' && <p className="muted">Loading history…</p>}
+              {historyState === 'error' && <p className="critical-warning">Version history is unavailable.</p>}
+              {historyState === 'ready' && history.length === 0 && <p className="muted">No published versions yet.</p>}
+              {history.map((version) => {
+                const isActive = version.id === targetAsset?.activeVersionId;
+                return (
+                  <article key={version.id} className="visual-standard-version-row">
+                    {version.signedUrl ? (
+                      <img
+                        className="visual-standard-version-preview"
+                        src={version.signedUrl}
+                        alt={`Version ${version.version} preview`}
+                        loading="lazy"
+                      />
+                    ) : (
+                      <div className="visual-standard-version-preview visual-standard-version-preview-empty">
+                        Preview unavailable
+                      </div>
+                    )}
+                    <div>
+                      <strong>Version {version.version}{isActive ? ' · Active' : ''}</strong>
+                      <span>{formatUpdatedAt(version.createdAt)}</span>
+                      <small>{version.createdByName || version.createdBy || 'Unknown updater'}</small>
+                    </div>
+                    {!isActive && (
+                      <button
+                        type="button"
+                        className="ghost-button compact-button"
+                        disabled={!canPublish || saving}
+                        onClick={() => restoreVersion(version)}
+                      >
+                        Restore
+                      </button>
+                    )}
+                  </article>
+                );
+              })}
+            </section>
+          )}
         </section>
       )}
     </section>

@@ -8,11 +8,25 @@ import {
 import { SELF_SERVICE_VISUAL_STANDARD_KEYS } from '../src/data/workbarVisualStandards.js';
 import { eventLifecycle } from '../src/data/eventReadinessRules.js';
 
-test('Self-Service sections preserve all eight canonical visual keys', () => {
-  assert.equal(selfServiceStationSections.length, 8);
+test('Self-Service guide exposes exactly the nine physical canonical standards', () => {
+  assert.equal(selfServiceStationSections.length, 9);
   assert.deepEqual(
     new Set(selfServiceStationSections.map((section) => section.visualKey)),
     new Set(Object.values(SELF_SERVICE_VISUAL_STANDARD_KEYS)),
+  );
+  assert.deepEqual(
+    selfServiceStationSections.map((section) => section.title),
+    [
+      'Full station overview',
+      'Bakery & fruit display',
+      'Coffee retail & filter coffee',
+      'Espresso machine & cups',
+      'Tea & condiments',
+      'Snacks',
+      'Water & glassware',
+      'Serviceware & takeaway',
+      'Backstock / three cabinets',
+    ],
   );
   assert.equal(
     knowledgeBase.some((guide) => guide.id === SELF_SERVICE_STATION_GUIDE_ID),

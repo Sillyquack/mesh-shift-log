@@ -147,6 +147,7 @@ export default function WorkbarGuideOverlay() {
     <>
       <button
         type="button"
+        className="workbar-guide-launcher"
         onClick={() => setOpen(true)}
         style={{
           position: 'fixed', right: 14, bottom: 14, zIndex: 90,

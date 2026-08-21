@@ -1,14 +1,20 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
+import { build as buildWithEsbuild } from 'esbuild';
 import {
   CANONICAL_VISUAL_STANDARD_KEYS,
+  LEGACY_SELF_SERVICE_VISUAL_STANDARD_KEYS,
   SELF_SERVICE_VISUAL_STANDARD_KEYS,
+  VISUAL_STANDARD_KEY_ALIASES,
   WORKBAR_VISUAL_STANDARD_KEYS,
   canonicalVisualStandards,
 } from '../src/data/workbarVisualStandards.js';
 import {
+  attachVisualStandardDetails,
   buildVisualStandardAssetPath,
   clearVisualStandardSignedUrlCache,
+  publishVisualStandardAndResolveWithClient,
+  publishVisualStandardDetailWithClient,
   publishVisualStandardWithClient,
   resolveAllVisualStandards,
   resolveVisualStandard,
@@ -17,16 +23,31 @@ import {
 } from '../src/lib/visualStandards.js';
 import { canManageVisualStandards } from '../src/lib/permissions.js';
 
-test('canonical registry contains the two fridge keys and eight Self-Service keys once', () => {
+test('canonical registry contains exactly nine visible Self-Service standards and two Workbar standards', () => {
   const requiredKeys = [
     ...Object.values(WORKBAR_VISUAL_STANDARD_KEYS),
     ...Object.values(SELF_SERVICE_VISUAL_STANDARD_KEYS),
   ];
 
-  assert.equal(requiredKeys.length, 10);
-  assert.equal(canonicalVisualStandards.length, 10);
+  assert.equal(Object.values(SELF_SERVICE_VISUAL_STANDARD_KEYS).length, 9);
+  assert.equal(requiredKeys.length, 11);
+  assert.equal(canonicalVisualStandards.length, 11);
   assert.deepEqual(new Set(CANONICAL_VISUAL_STANDARD_KEYS), new Set(requiredKeys));
-  assert.equal(new Set(CANONICAL_VISUAL_STANDARD_KEYS).size, 10);
+  assert.equal(new Set(CANONICAL_VISUAL_STANDARD_KEYS).size, 11);
+  assert.equal(
+    canonicalVisualStandards.filter((standard) => standard.area === 'Self-Service Station').length,
+    9,
+  );
+  Object.values(LEGACY_SELF_SERVICE_VISUAL_STANDARD_KEYS).forEach((legacyKey) => {
+    assert.equal(CANONICAL_VISUAL_STANDARD_KEYS.includes(legacyKey), false);
+    assert.ok(VISUAL_STANDARD_KEY_ALIASES[legacyKey]);
+  });
+});
+
+test('legacy Self-Service aliases resolve to one visible replacement without duplicate cards', () => {
+  Object.entries(VISUAL_STANDARD_KEY_ALIASES).forEach(([legacyKey, canonicalKey]) => {
+    assert.equal(resolveVisualStandard(legacyKey).canonicalKey, canonicalKey);
+  });
 });
 
 test('resolver uses backend asset, then bundled fallback, then placeholder', () => {
@@ -151,13 +172,49 @@ test('file validation and versioned logical paths are deterministic and safe', (
   assert.equal(validateVisualStandardFile({ ...file, size: 16 * 1024 * 1024 }).ok, false);
 
   const path = buildVisualStandardAssetPath(
-    SELF_SERVICE_VISUAL_STANDARD_KEYS.COFFEE_SERVICE,
+    SELF_SERVICE_VISUAL_STANDARD_KEYS.COFFEE_RETAIL_FILTER,
     file,
     { now: 1234, uuid: 'test-uuid' },
   );
   assert.equal(
     path,
-    'self-service-coffee-service-standard/1234-test-uuid.jpg',
+    'self-service-coffee-retail-filter-standard/1234-test-uuid.jpg',
+  );
+
+  const detailPath = buildVisualStandardAssetPath(
+    SELF_SERVICE_VISUAL_STANDARD_KEYS.BACKSTOCK,
+    file,
+    { now: 1234, uuid: 'detail-test', detailKey: 'cabinet-2' },
+  );
+  assert.equal(
+    detailPath,
+    'self-service-backstock-standard/details/cabinet-2/1234-detail-test.jpg',
+  );
+});
+
+test('production-minified asset path generation never references an undefined UUID receiver', async () => {
+  const build = await buildWithEsbuild({
+    entryPoints: ['src/lib/visualStandards.js'],
+    absWorkingDir: process.cwd(),
+    bundle: true,
+    format: 'esm',
+    minify: true,
+    platform: 'browser',
+    write: false,
+  });
+  const bundledSource = build.outputFiles[0].text;
+  const bundledModule = await import(
+    `data:text/javascript;base64,${Buffer.from(bundledSource).toString('base64')}`
+  );
+
+  const path = bundledModule.buildVisualStandardAssetPath(
+    SELF_SERVICE_VISUAL_STANDARD_KEYS.OVERVIEW,
+    { name: 'iphone-camera.jpeg', type: 'image/jpeg', size: 2048 },
+  );
+
+  assert.match(
+    path,
+    /^self-service-station-overview-standard\/\d+-[0-9a-f-]+\.jpg$/i,
   );
 });
 
@@ -174,8 +231,8 @@ test('local UI write gate requires an authenticated manager', () => {
 function publicationClient({ uploadError = null, publishError = null } = {}) {
   const events = [];
   const bucket = {
-    async upload(path) {
-      events.push(['upload', path]);
+    async upload(path, file) {
+      events.push(['upload', path, file]);
       return { error: uploadError };
     },
     async remove(paths) {
@@ -193,6 +250,24 @@ function publicationClient({ uploadError = null, publishError = null } = {}) {
     },
     async rpc(name, input) {
       events.push(['rpc', name]);
+      if (name === 'publish_visual_standard_detail') {
+        return {
+          error: publishError,
+          data: publishError
+            ? null
+            : {
+              visual_standard_id: 'standard-1',
+              canonical_key: input.input_canonical_key,
+              detail_key: input.input_detail_key,
+              label: input.input_label,
+              sort_order: input.input_sort_order,
+              active_asset_path: input.input_asset_path,
+              active_version_id: 'detail-version-1',
+              active_version: 2,
+              status: 'published',
+            },
+        };
+      }
       return {
         error: publishError,
         data: publishError
@@ -200,26 +275,42 @@ function publicationClient({ uploadError = null, publishError = null } = {}) {
           : {
             canonical_key: input.input_canonical_key,
             active_asset_path: input.input_asset_path,
+            active_version_id: 'primary-version-1',
             active_version: 1,
             status: 'published',
           },
       };
+    },
+    functions: {
+      async invoke(name, options) {
+        events.push(['invoke', name, options.body]);
+        return {
+          data: {
+            ok: true,
+            signedUrl: 'https://assets.test/signed/active.jpg',
+            expiresAt: new Date(Date.now() + (60 * 60 * 1000)).toISOString(),
+          },
+          error: null,
+        };
+      },
     },
   };
 }
 
 test('publication uploads first and activates only after confirmed RPC readback', async () => {
   const client = publicationClient();
+  const selectedFile = { name: 'standard.jpg', type: 'image/jpeg', size: 2048 };
   const result = await publishVisualStandardWithClient({
     client,
     canonicalKey: WORKBAR_VISUAL_STANDARD_KEYS.BAR_MILK_FRIDGE,
-    file: { name: 'standard.jpg', type: 'image/jpeg', size: 2048 },
+    file: selectedFile,
     pathOptions: { now: 1234, uuid: 'publish-test' },
   });
 
   assert.equal(result.ok, true);
   assert.equal(result.record.activeVersion, 1);
   assert.deepEqual(client.events.map(([event]) => event), ['upload', 'rpc']);
+  assert.equal(client.events[0][2], selectedFile);
 });
 
 test('failed upload never calls publication RPC', async () => {
@@ -248,4 +339,57 @@ test('failed database publication cleans up the inactive uploaded object', async
   assert.equal(result.ok, false);
   assert.equal(result.record, null);
   assert.deepEqual(client.events.map(([event]) => event), ['upload', 'rpc', 'remove']);
+});
+
+test('full successful Save readback refreshes signed delivery and updates the active resolver record', async () => {
+  clearVisualStandardSignedUrlCache();
+  const client = publicationClient();
+  const selectedFile = { name: 'iphone-camera.jpg', type: 'image/jpeg', size: 2048 };
+  const prior = resolveAllVisualStandards([]);
+  const result = await publishVisualStandardAndResolveWithClient({
+    client,
+    canonicalKey: SELF_SERVICE_VISUAL_STANDARD_KEYS.OVERVIEW,
+    file: selectedFile,
+    pathOptions: { now: 1234, uuid: 'iphone-save' },
+  });
+  const next = resolveAllVisualStandards([result.record]);
+  const active = next.find(
+    (standard) => standard.canonicalKey === SELF_SERVICE_VISUAL_STANDARD_KEYS.OVERVIEW,
+  );
+
+  assert.equal(result.ok, true);
+  assert.equal(result.record.signedUrl, 'https://assets.test/signed/active.jpg');
+  assert.equal(active.source, 'backend');
+  assert.equal(active.src, result.record.signedUrl);
+  assert.equal(
+    prior.find((standard) => standard.canonicalKey === active.canonicalKey).source,
+    'placeholder',
+  );
+  assert.deepEqual(client.events.map(([event]) => event), ['upload', 'rpc', 'invoke']);
+});
+
+test('optional ordered detail publication preserves primary behavior and attaches only published details', async () => {
+  const client = publicationClient();
+  const result = await publishVisualStandardDetailWithClient({
+    client,
+    canonicalKey: SELF_SERVICE_VISUAL_STANDARD_KEYS.BACKSTOCK,
+    detailKey: 'cabinet-2',
+    label: 'Cabinet 2',
+    order: 2,
+    file: { name: 'cabinet-2.jpg', type: 'image/jpeg', size: 2048 },
+    pathOptions: { now: 1234, uuid: 'cabinet-2' },
+  });
+
+  assert.equal(result.ok, true);
+  assert.match(result.record.activeAssetPath, /\/details\/cabinet-2\//);
+  const standards = attachVisualStandardDetails(resolveAllVisualStandards([]), [{
+    ...result.record,
+    signedUrl: 'https://assets.test/cabinet-2.jpg',
+  }]);
+  const backstock = standards.find(
+    (standard) => standard.canonicalKey === SELF_SERVICE_VISUAL_STANDARD_KEYS.BACKSTOCK,
+  );
+  assert.equal(backstock.source, 'placeholder');
+  assert.equal(backstock.details.length, 1);
+  assert.equal(backstock.details[0].label, 'Cabinet 2');
 });
