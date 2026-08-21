@@ -152,6 +152,9 @@ const EventCockpitSummaryCard = lazy(() =>
     default: module.EventCockpitSummaryCard,
   })),
 );
+const EventFloorManagerDemo = lazy(() =>
+  import("./components/cinematic-tour/EventFloorManagerDemo.jsx"),
+);
 
 function FocusedViewLoading({ label = "Loading event view..." }) {
   return (
@@ -9274,6 +9277,7 @@ function EventFloorDashboard({
 }) {
   const date = todayKey();
   const todayEvents = events.filter((event) => event.date === date);
+  const [showCinematicDemo, setShowCinematicDemo] = useState(false);
   const [activeEventId, setActiveEventId] = useState(todayEvents[0]?.id || "");
   const activeEvent =
     todayEvents.find((event) => event.id === activeEventId) || todayEvents[0];
@@ -9354,6 +9358,13 @@ function EventFloorDashboard({
         <h1>Event Floor Manager</h1>
         <p className="muted">{user.name}</p>
         <div className="backup-actions">
+          <button
+            type="button"
+            className="primary-button compact-button"
+            onClick={() => setShowCinematicDemo(true)}
+          >
+            Play 2-minute event story
+          </button>
           {onBackToManager && (
             <button
               type="button"
@@ -9534,6 +9545,17 @@ function EventFloorDashboard({
         setAssetChecks={setAssetChecks}
         requestWriteAccess={requestWriteAccess}
       />
+      {showCinematicDemo && (
+        <Suspense
+          fallback={(
+            <div className="modal-backdrop" role="status" aria-live="polite">
+              <section className="pilot-modal"><p className="muted">Preparing the event story...</p></section>
+            </div>
+          )}
+        >
+          <EventFloorManagerDemo onExit={() => setShowCinematicDemo(false)} />
+        </Suspense>
+      )}
     </main>
   );
 }
