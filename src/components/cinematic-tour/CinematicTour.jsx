@@ -203,7 +203,7 @@ export default function CinematicTour({
         <span style={{ width: `${overallProgress * 100}%` }} />
       </div>
 
-      <main ref={stageRef} className="ct-stage" aria-live="polite">
+      <main ref={stageRef} className="ct-stage">
         <div key={chapter.id} className="ct-scene-enter">
           {renderScene({
             chapter,
@@ -217,7 +217,11 @@ export default function CinematicTour({
         </div>
       </main>
 
-      <div className={`ct-caption${captionsVisible ? "" : " is-hidden"}`}>
+      <div
+        className={`ct-caption${captionsVisible ? "" : " is-hidden"}`}
+        aria-live="polite"
+        aria-atomic="true"
+      >
         {captionsVisible ? (
           <p><span>CAPTIONS</span>{chapter.caption}</p>
         ) : (

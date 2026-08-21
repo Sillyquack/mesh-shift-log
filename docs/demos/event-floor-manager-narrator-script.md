@@ -1,6 +1,6 @@
 # Event Floor Manager cinematic demo — narrator script
 
-Target runtime: **127 seconds**. Delivery should be warm, calm, intelligent and assured. Leave a small breath between chapters. This is narrator copy, not interface-label copy.
+Target runtime: **128 seconds**. Delivery should be warm, calm, intelligent and assured. Leave a small breath between chapters. This is narrator copy, not interface-label copy.
 
 Audio is intentionally not included in the application. If narration is produced later, playback must remain opt-in. The on-screen captions are on by default.
 
