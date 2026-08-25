@@ -24,17 +24,18 @@ import {
 } from '../src/lib/visualStandards.js';
 import { canManageVisualStandards } from '../src/lib/permissions.js';
 
-test('canonical registry contains exactly nine visible Self-Service standards and two Workbar standards', () => {
+test('canonical registry contains nine Self-Service and twelve Workbar standards without duplicates', () => {
   const requiredKeys = [
     ...Object.values(WORKBAR_VISUAL_STANDARD_KEYS),
     ...Object.values(SELF_SERVICE_VISUAL_STANDARD_KEYS),
   ];
 
   assert.equal(Object.values(SELF_SERVICE_VISUAL_STANDARD_KEYS).length, 9);
-  assert.equal(requiredKeys.length, 11);
-  assert.equal(canonicalVisualStandards.length, 11);
+  assert.equal(Object.values(WORKBAR_VISUAL_STANDARD_KEYS).length, 12);
+  assert.equal(requiredKeys.length, 21);
+  assert.equal(canonicalVisualStandards.length, 21);
   assert.deepEqual(new Set(CANONICAL_VISUAL_STANDARD_KEYS), new Set(requiredKeys));
-  assert.equal(new Set(CANONICAL_VISUAL_STANDARD_KEYS).size, 11);
+  assert.equal(new Set(CANONICAL_VISUAL_STANDARD_KEYS).size, 21);
   assert.equal(
     canonicalVisualStandards.filter((standard) => standard.area === 'Self-Service Station').length,
     9,
@@ -42,6 +43,29 @@ test('canonical registry contains exactly nine visible Self-Service standards an
   Object.values(LEGACY_SELF_SERVICE_VISUAL_STANDARD_KEYS).forEach((legacyKey) => {
     assert.equal(CANONICAL_VISUAL_STANDARD_KEYS.includes(legacyKey), false);
     assert.ok(VISUAL_STANDARD_KEY_ALIASES[legacyKey]);
+  });
+});
+
+test('new Workbar standards await approved photos while both bundled fridge fallbacks remain valid', () => {
+  assert.equal(
+    resolveVisualStandard(WORKBAR_VISUAL_STANDARD_KEYS.BAR_MILK_FRIDGE).src,
+    './guides/workbar-bar-milk-fridge-standard.jpeg',
+  );
+  assert.equal(
+    resolveVisualStandard(WORKBAR_VISUAL_STANDARD_KEYS.NON_ALCO_FRIDGE).src,
+    './guides/workbar-non-alco-fridge-standard.jpeg',
+  );
+
+  const newEmptyKeys = Object.values(WORKBAR_VISUAL_STANDARD_KEYS).filter(
+    (key) => ![
+      WORKBAR_VISUAL_STANDARD_KEYS.BAR_MILK_FRIDGE,
+      WORKBAR_VISUAL_STANDARD_KEYS.NON_ALCO_FRIDGE,
+    ].includes(key),
+  );
+  newEmptyKeys.forEach((key) => {
+    const resolved = resolveVisualStandard(key);
+    assert.equal(resolved.source, 'placeholder');
+    assert.equal(resolved.sourceLabel, 'Awaiting approved photo');
   });
 });
 
@@ -461,4 +485,41 @@ test('optional ordered detail publication preserves primary behavior and attache
   assert.equal(backstock.source, 'placeholder');
   assert.equal(backstock.details.length, 1);
   assert.equal(backstock.details[0].label, 'Cabinet 2');
+});
+
+test('configured Workbar detail slots retain deterministic ordering', () => {
+  const standards = attachVisualStandardDetails(resolveAllVisualStandards([]), [
+    {
+      canonical_key: WORKBAR_VISUAL_STANDARD_KEYS.LOWER_BACK_BAR_GLASS_SETUP,
+      detail_key: 'second-view',
+      label: 'Second glass-setup view',
+      sort_order: 1,
+      active_asset_path: `${WORKBAR_VISUAL_STANDARD_KEYS.LOWER_BACK_BAR_GLASS_SETUP}/details/second-view/1-test.jpg`,
+      active_version_id: 'version-detail-1',
+      active_version: 1,
+      status: 'published',
+      signed_url: 'https://assets.test/second-view.jpg',
+    },
+    {
+      canonical_key: WORKBAR_VISUAL_STANDARD_KEYS.BACK_BAR_BOTTLE_LAYOUT,
+      detail_key: 'right-side-layout',
+      label: 'Right-side red-wine / spirit layout',
+      sort_order: 1,
+      active_asset_path: `${WORKBAR_VISUAL_STANDARD_KEYS.BACK_BAR_BOTTLE_LAYOUT}/details/right-side-layout/1-test.jpg`,
+      active_version_id: 'version-detail-2',
+      active_version: 1,
+      status: 'published',
+      signed_url: 'https://assets.test/right-side.jpg',
+    },
+  ]);
+
+  assert.deepEqual(
+    standards
+      .filter((standard) => standard.details.length > 0)
+      .map((standard) => [standard.canonicalKey, standard.details.map((detail) => detail.detailKey)]),
+    [
+      [WORKBAR_VISUAL_STANDARD_KEYS.LOWER_BACK_BAR_GLASS_SETUP, ['second-view']],
+      [WORKBAR_VISUAL_STANDARD_KEYS.BACK_BAR_BOTTLE_LAYOUT, ['right-side-layout']],
+    ],
+  );
 });

@@ -1,5 +1,6 @@
 import React, { useState } from 'react';
 import GuideSubsections from './components/GuideSubsections.jsx';
+import VisualStandardDisplay from './components/VisualStandardDisplay.jsx';
 import { useVisualStandards } from './components/VisualStandardsProvider.jsx';
 import {
   WORKBAR_VISUAL_STANDARD_KEYS,
@@ -7,7 +8,7 @@ import {
 } from './data/workbarVisualStandards.js';
 import { selfServiceStationStandard } from './data/selfServiceStation.js';
 
-const sections = [
+export const workbarGuideSections = [
   {
     id: selfServiceStationStandard.id,
     title: selfServiceStationStandard.title,
@@ -32,8 +33,8 @@ const sections = [
     title: 'Fridges & beverage storage',
     items: [
       ['Non-alcoholic fridge', 'Use the photographed setup as the standard. Closing: switch off the fridge light and pull down the front grille.', WORKBAR_VISUAL_STANDARD_KEYS.NON_ALCO_FRIDGE],
-      ['Workbar left fridge', 'Use the photographed layout as the standard; no extra category rule is currently defined.'],
-      ['Workbar right fridge', 'Use the photographed layout as the standard; no extra category rule is currently defined.'],
+      ['Workbar left fridge', 'Use the photographed layout as the standard; no extra category rule is currently defined.', WORKBAR_VISUAL_STANDARD_KEYS.BAR_LEFT_FRIDGE],
+      ['Workbar right fridge', 'Use the photographed layout as the standard; no extra category rule is currently defined.', WORKBAR_VISUAL_STANDARD_KEYS.BAR_RIGHT_FRIDGE],
       ['Milk / opened-wine fridge', 'Use the photographed milk shelf and opened-wine storage as the standard. Milk serves the espresso station; opened wine bottles below must have corks and date labels.', WORKBAR_VISUAL_STANDARD_KEYS.BAR_MILK_FRIDGE],
       ['Milk system', 'One two-part container: LEFT = regular milk / blue hose. RIGHT = Oatly / green hose.'],
       ['Locks', 'All bar cabinets / fridges are locked at close using the key kept in the cash drawer.'],
@@ -43,13 +44,13 @@ const sections = [
     id: 'bar',
     title: 'Back bar, glassware & POS stations',
     items: [
-      ['Lower back-bar glass setup', 'Left → right: drink/soda glasses, highball glasses, beer glasses. Shot glasses sit behind. Use the two captured photos together as the standard.'],
-      ['Wine / prosecco glasses', 'Use the photographed wine/prosecco shelf setup as the standard.'],
-      ['Back-bar bottles', 'Use the photographed left-side spirit layout and right-side red-wine/spirit layout as the standard.'],
-      ['Hanging glasses', 'Reset hanging red/white wine and prosecco glasses to the photographed layout.'],
+      ['Lower back-bar glass setup', 'Left → right: drink/soda glasses, highball glasses, beer glasses. Shot glasses sit behind. Use the two captured photos together as the standard.', WORKBAR_VISUAL_STANDARD_KEYS.LOWER_BACK_BAR_GLASS_SETUP],
+      ['Wine / prosecco glasses', 'Use the photographed wine/prosecco shelf setup as the standard.', WORKBAR_VISUAL_STANDARD_KEYS.WINE_PROSECCO_SHELF],
+      ['Back-bar bottles', 'Use the photographed left-side spirit layout and right-side red-wine/spirit layout as the standard.', WORKBAR_VISUAL_STANDARD_KEYS.BACK_BAR_BOTTLE_LAYOUT],
+      ['Hanging glasses', 'Reset hanging red/white wine and prosecco glasses to the photographed layout.', WORKBAR_VISUAL_STANDARD_KEYS.HANGING_WINE_PROSECCO_GLASS_LAYOUT],
       ['Left POS + main computer', 'iPad, printer and payment terminal at the left POS. Devices charge via the printer. The main Workbar computer sits directly beside it.'],
       ['Right POS', 'iPad, printer and payment terminal. Devices charge via the printer.'],
-      ['Glass-rack storage', 'Use the photographed racks below the POS/main-PC zones as the storage standard.'],
+      ['Glass-rack storage', 'Use the photographed racks below the POS/main-PC zones as the storage standard.', WORKBAR_VISUAL_STANDARD_KEYS.GLASS_RACK_STORAGE],
       ['Small Workbar TV', 'Two Workbar screens exist. The large one remains on. The smaller screen is switched ON in the morning and OFF at closing. Remote is in the basket below the cash drawer.'],
     ],
   },
@@ -72,7 +73,8 @@ const sections = [
       ['Lower racks', 'Both lower black racks = plates / bowls / similar tableware.'],
       ['Waste holes', 'Four round holes left → right: PANT, GLASS/METAL, MIXED, FOOD.'],
       ['Cutlery', 'Rectangular opening on the right = CUTLERY. Under it: fine-mesh cutlery rack on a drip tray, raised on two empty racks so the cutlery rack sits high enough.'],
-      ['Opening vs closing', 'Opening uses the fully assembled photographed setup. Closing uses the stripped / reset photographed setup. Final task-level photo wiring pending.'],
+      ['Opening setup', 'Use the fully assembled photographed setup as the opening standard.', WORKBAR_VISUAL_STANDARD_KEYS.CLEANING_STATION_OPENING],
+      ['Closing reset', 'Use the stripped / reset photographed setup as the closing standard.', WORKBAR_VISUAL_STANDARD_KEYS.CLEANING_STATION_CLOSING],
     ],
   },
   {
@@ -106,7 +108,7 @@ const sections = [
       ['Office / meeting-room supplies', 'Upper-left cabinet right of the coffee brewer: daily stationery and refill supplies for project / meeting rooms.'],
       ['Technical cabinet', 'Upper-right cabinet: bar technical equipment, laminator, electrical/chargers, laminated signs, podcast gear, Community Stage microphones and small Lost & Found.'],
       ['Batteries + clean coffee canisters', 'Lower-left cabinet: battery stock and empty clean Workbar coffee canisters. Keep new batteries separate from used batteries for recycling.'],
-      ['Cabinet below main PC', 'Cash drawer at top; below it emergency high-vis vest, PPD basket, Workbar-TV remote and AC remote; tool basket below; used-battery recycling at bottom. Use the captured overview photo as the location standard.'],
+      ['Cabinet below main PC', 'Cash drawer at top; below it emergency high-vis vest, PPD basket, Workbar-TV remote and AC remote; tool basket below; used-battery recycling at bottom. Use the captured overview photo as the location standard.', WORKBAR_VISUAL_STANDARD_KEYS.CABINET_BELOW_MAIN_PC_STORAGE],
       ['Cash count', 'Cash drawer must count 1000 NOK at opening and closing. Excess cash goes into an envelope in the safe.'],
       ['Safe', 'Safe is in technical storage, entered from Atrium. It is the steel cabinet furthest right of the three. Key ring is in the fuse box to the right of the technical-storage entrance; of the three keys, use the one without a label.'],
       ['Shopbox', 'Use the existing Notion guides for opening/closing register and invoicing. Do not duplicate the illustrated Shopbox guide here.'],
@@ -123,18 +125,8 @@ function GuideCard({ title, text, visualKey }) {
     <div style={{ border: '1px solid #d8d8d8', borderRadius: 12, padding: 12, background: '#fff' }}>
       <strong style={{ display: 'block', marginBottom: 5 }}>{title}</strong>
       <div style={{ color: '#3d3d3d', lineHeight: 1.45 }}>{text}</div>
-      {image?.src && (
-        <figure style={{ margin: '12px 0 0' }}>
-          <img
-            src={image.src}
-            alt={image.label}
-            loading="lazy"
-            style={{ display: 'block', width: '100%', height: 'auto', borderRadius: 10 }}
-          />
-          <figcaption style={{ marginTop: 6, color: '#606060', fontSize: '.82rem', fontWeight: 700 }}>
-            {image.label}
-          </figcaption>
-        </figure>
+      {visualKey && (
+        <VisualStandardDisplay visualStandard={image} visualKey={visualKey} title={title} />
       )}
     </div>
   );
@@ -171,7 +163,7 @@ export default function WorkbarGuideOverlay() {
             </div>
 
             <div style={{ display: 'grid', gap: 16 }}>
-              {sections.map((section) => (
+              {workbarGuideSections.map((section) => (
                 <section key={section.id} style={{ background: '#ecece8', borderRadius: 14, padding: 12 }}>
                   <h3 style={{ margin: '0 0 10px' }}>{section.title}</h3>
                   {section.subsections ? (

@@ -1538,6 +1538,16 @@ textarea {
   margin: 0;
 }
 
+.visual-standard-display {
+  display: grid;
+  gap: 12px;
+  min-width: 0;
+}
+
+.workbar-guide-panel .visual-standard-display {
+  margin-top: 12px;
+}
+
 .canonical-standard-list {
   display: grid;
   gap: 8px;
@@ -1582,6 +1592,10 @@ textarea {
 .visual-standard-slot code {
   color: var(--muted);
   font-size: 0.76rem;
+}
+
+.canonical-visual-detail-list > .visual-standard-slot {
+  min-width: 0;
 }
 
 .visual-standard-slot code {
@@ -3960,6 +3974,153 @@ body:has(.visual-standard-capture) button[aria-label="Back to dashboard top"] {
   .visual-standard-detail-row > button:nth-of-type(3) {
     grid-column: auto;
     grid-row: auto;
+  }
+}
+
+.inventory-defaults-manager {
+  display: grid;
+  gap: 16px;
+  margin-bottom: 16px;
+}
+
+.inventory-default-area,
+.inventory-default-list {
+  display: grid;
+  gap: 10px;
+}
+
+.inventory-default-area > h3 {
+  margin: 0;
+}
+
+.inventory-default-row {
+  display: grid;
+  gap: 12px;
+  min-width: 0;
+  border: 1px solid var(--line);
+  border-radius: 9px;
+  background: var(--surface-strong);
+  padding: 12px;
+}
+
+.inventory-default-row-heading {
+  display: flex;
+  align-items: start;
+  justify-content: space-between;
+  gap: 10px;
+}
+
+.inventory-default-row-heading > div,
+.inventory-location-reference-copy,
+.inventory-template-state > div {
+  display: grid;
+  gap: 4px;
+  min-width: 0;
+}
+
+.inventory-default-row-heading code,
+.inventory-location-reference-copy span,
+.inventory-location-reference-copy small,
+.inventory-template-state span,
+.inventory-template-state small {
+  color: var(--muted);
+  overflow-wrap: anywhere;
+}
+
+.inventory-location-reference-state {
+  display: grid;
+  grid-template-columns: 84px minmax(0, 1fr);
+  align-items: center;
+  gap: 10px;
+}
+
+.inventory-location-reference-state > img,
+.inventory-reference-placeholder {
+  width: 84px;
+  height: 84px;
+  border-radius: 8px;
+  background: var(--surface);
+  object-fit: cover;
+}
+
+.inventory-reference-placeholder {
+  display: grid;
+  place-content: center;
+  gap: 3px;
+  border: 1px dashed color-mix(in srgb, var(--brand) 38%, var(--line));
+  color: var(--muted);
+  padding: 6px;
+  font-size: 0.66rem;
+  text-align: center;
+}
+
+.inventory-reference-placeholder > span {
+  color: var(--brand-strong);
+  font-size: 1.25rem;
+}
+
+.inventory-default-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
+.inventory-default-actions button {
+  min-height: 44px;
+}
+
+.inventory-template-state {
+  display: grid;
+  gap: 10px;
+  border-top: 1px solid var(--line);
+  padding-top: 10px;
+}
+
+.inventory-template-state ul {
+  margin: 2px 0 0;
+  padding-left: 20px;
+}
+
+.inventory-template-state.template-verified > div > strong {
+  color: var(--brand-strong);
+}
+
+.inventory-reference-capture {
+  display: grid;
+  gap: 12px;
+  scroll-margin-top: 84px;
+  border: 2px solid color-mix(in srgb, var(--brand) 52%, var(--line));
+  border-radius: 10px;
+  background: color-mix(in srgb, var(--brand) 4%, var(--surface));
+  padding: 12px;
+}
+
+.inventory-reference-capture figure {
+  display: grid;
+  gap: 6px;
+  margin: 0;
+}
+
+.inventory-reference-capture figure img {
+  display: block;
+  width: 100%;
+  max-height: 520px;
+  border-radius: 8px;
+  object-fit: contain;
+}
+
+.inventory-reference-capture figcaption {
+  color: var(--muted);
+}
+
+@media (min-width: 760px) {
+  .inventory-default-list {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+
+  .inventory-template-state {
+    grid-template-columns: minmax(0, 1fr) auto;
+    align-items: start;
   }
 }
 
