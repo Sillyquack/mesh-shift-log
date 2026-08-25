@@ -47,9 +47,11 @@ test('manager mobile baseline renders compact rows with direct Camera and Upload
   const cameraCount = (html.match(/>Camera<\/button>/g) || []).length;
   const uploadCount = (html.match(/>Upload<\/button>/g) || []).length;
 
-  assert.equal(rowCount, 11);
-  assert.equal(cameraCount, 11);
-  assert.equal(uploadCount, 11);
+  assert.equal(rowCount, 21);
+  assert.equal(cameraCount, 21);
+  assert.equal(uploadCount, 21);
+  assert.match(html, /Workbar · Fridges/);
+  assert.match(html, /Self-Service Station · Overview/);
   assert.match(html, /<select/);
   assert.doesNotMatch(html, /visual-standard-card/);
   assert.doesNotMatch(html, /visual-standard-editor/);

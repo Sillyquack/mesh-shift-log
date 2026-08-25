@@ -13,8 +13,17 @@ begin
     select count(*)
     from public.visual_standards
     where is_visible
-  ) <> 11 then
-    raise exception 'Expected eleven visible standards including the two Workbar standards.';
+  ) <> 21 then
+    raise exception 'Expected 21 visible standards including twelve Workbar standards.';
+  end if;
+
+  if (
+    select count(*)
+    from public.visual_standards
+    where is_visible
+      and area = 'Workbar'
+  ) <> 12 then
+    raise exception 'Expected twelve visible Workbar standards.';
   end if;
 
   if (

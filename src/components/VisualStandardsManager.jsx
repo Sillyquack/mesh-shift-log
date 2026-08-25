@@ -22,9 +22,14 @@ function formatUpdatedAt(value, emptyLabel = 'Not published') {
 function CurrentStandardImage({ standard, className = '' }) {
   if (!standard?.src) {
     return (
-      <div className={`visual-standard-empty ${className}`} role="img" aria-label="Awaiting approved photo">
+      <div
+        className={`visual-standard-empty ${className}`}
+        role="img"
+        aria-label="Awaiting approved photo"
+        data-visual-key={standard?.canonicalKey}
+      >
         <span aria-hidden="true">＋</span>
-        <strong>Awaiting photo</strong>
+        <strong>Awaiting approved photo</strong>
       </div>
     );
   }
@@ -56,7 +61,7 @@ function captureTargetFor(standard, detail = null) {
     canonicalKey: standard.canonicalKey,
     assetRole: detail ? 'detail' : 'primary',
     detailKey: detail?.detailKey || '',
-    label: detail?.label || standard.label,
+    label: detail?.label || standard.primaryLabel || standard.label,
     order: detail?.order ?? 0,
   };
 }
@@ -304,10 +309,15 @@ export default function VisualStandardsManager({ user }) {
 
       <div className="visual-standard-list">
         {visibleStandards.map((standard) => (
-          <article key={standard.canonicalKey} className="visual-standard-row">
+          <article
+            key={standard.canonicalKey}
+            className="visual-standard-row"
+            data-visual-key={standard.canonicalKey}
+          >
             <CurrentStandardImage standard={standard} className="visual-standard-row-thumbnail" />
             <div className="visual-standard-row-copy">
               <strong>{standard.label}</strong>
+              <small>{standard.area} · {standard.section}</small>
               <span className={`visual-standard-source source-${standard.source}`}>
                 {standard.sourceLabel}
               </span>
@@ -474,7 +484,7 @@ export default function VisualStandardsManager({ user }) {
                     {detail.src ? <img src={detail.src} alt="" /> : <span aria-hidden="true">＋</span>}
                     <div>
                       <strong>{detail.label}</strong>
-                      <small>{detail.src ? `Version ${detail.activeVersion}` : 'Optional · not published'}</small>
+                      <small>{detail.src ? `Version ${detail.activeVersion}` : 'Awaiting approved photo'}</small>
                     </div>
                     <button
                       type="button"

@@ -9,6 +9,7 @@ import {
 } from "react";
 import GuideSubsections from "./components/GuideSubsections.jsx";
 import VisualStandardsManager from "./components/VisualStandardsManager.jsx";
+import InventoryDefaultsManager from "./components/InventoryDefaultsManager.jsx";
 import { useVisualStandards } from "./components/VisualStandardsProvider.jsx";
 import {
   areas,
@@ -14073,6 +14074,7 @@ function ManagerDashboard({
       <ManagerDailyReviewHistory user={user} date={date} />
 
       <VisualStandardsManager user={user} />
+      <InventoryDefaultsManager user={user} />
 
       {message && <p className="status-message">{message}</p>}
 
