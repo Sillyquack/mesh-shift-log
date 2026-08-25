@@ -32,12 +32,23 @@ function registerDemo({ tour, ...configuration }) {
     (total, chapter) => total + chapter.durationSeconds,
     0,
   );
+  const narrationWordCount = tour.chapters.reduce(
+    (total, chapter) => total + chapter.narrationBeats.reduce(
+      (chapterTotal, beat) => chapterTotal + beat.text.trim().split(/\s+/).length,
+      0,
+    ),
+    0,
+  );
 
   return Object.freeze({
     ...configuration,
     runtimeSeconds,
     runtimeLabel: formatRuntime(runtimeSeconds),
     chapterCount: tour.chapters.length,
+    narrationWordCount,
+    narrationLanguage: tour.narration.language,
+    audioAssetIncluded: tour.narration.assetIncluded,
+    playbackModes: Object.freeze(["Narration-ready", "Silent + captions"]),
     capabilityMix: Object.freeze(capabilityMix(tour.chapters)),
   });
 }

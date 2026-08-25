@@ -37,7 +37,9 @@ They demonstrate how current capabilities or a clearly marked proposed capabilit
 - No Supabase or storage client is imported by the cinematic tour components.
 - No live app record is passed into the tour.
 - Playback state is held in component memory and disappears on exit.
-- Start, pause, chapter navigation, skip, replay and exit are presentation actions only.
+- Start, pause, chapter navigation, skip, replay, mute and exit are presentation actions only.
+- The 3:45 master timeline, narration beats, captions and visual states are deterministic and do not depend on operational data.
+- Optional narration is a replaceable static file. No audio asset, synthesis service or external audio runtime is included in this revision.
 - Returning to Event Floor Manager reveals the same live app state that existed before the tour opened.
 
 ## Review screenshots

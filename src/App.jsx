@@ -9408,7 +9408,7 @@ function EventFloorDashboard({
               className="primary-button compact-button"
               onClick={() => setShowCinematicDemo(true)}
             >
-              Play 2-minute event story
+              Play {eventFloorManagerDemo.runtimeLabel} event story
             </button>
           )}
           {onBackToManager && (
@@ -10506,6 +10506,14 @@ function DemoStudio({ demos, onPreviewDemo }) {
                 <dd>{demo.chapterCount}</dd>
               </div>
               <div>
+                <dt>Playback</dt>
+                <dd>{demo.playbackModes.join(" / ")}</dd>
+              </div>
+              <div>
+                <dt>Narration</dt>
+                <dd>{demo.audioAssetIncluded ? "Audio included" : "Script + timing prepared"}</dd>
+              </div>
+              <div>
                 <dt>Role release</dt>
                 <dd>{demo.availableToRole ? "Available" : "Not released"}</dd>
               </div>
@@ -10529,9 +10537,9 @@ function DemoStudio({ demos, onPreviewDemo }) {
                 aria-label={`Preview ${demo.title}`}
                 onClick={() => onPreviewDemo(demo.id)}
               >
-                Preview demo
+                Preview playback options
               </button>
-              <small>Deterministic preview · no operational data is changed</small>
+              <small>Narration-ready and silent/captioned review · no operational data is changed</small>
             </div>
           </article>
         ))}
